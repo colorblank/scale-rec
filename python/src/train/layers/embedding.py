@@ -5,6 +5,8 @@ import torch.nn as nn
 
 
 class FeatureEmbeddings(nn.Module):
+    """Discrete feature indices -> dense embedding concat."""
+
     def __init__(self, features: list[tuple[str, int, int]]):
         super().__init__()
         self.ordered_names = []

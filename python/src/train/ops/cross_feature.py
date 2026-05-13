@@ -5,6 +5,8 @@ from typing import Any
 
 
 class CrossFeature:
+    """Feature cross: inner product or cartesian product."""
+
     def __init__(self, cross_type: str):
         self.cross_type = cross_type
 

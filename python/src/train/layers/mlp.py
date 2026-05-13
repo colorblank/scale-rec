@@ -5,6 +5,8 @@ import torch.nn as nn
 
 
 class Mlp(nn.Module):
+    """Generic MLP with inter-layer activation, no final activation."""
+
     def __init__(self, input_dim, hidden_dims, output_dim, activation):
         super().__init__()
         self.input_dim = input_dim

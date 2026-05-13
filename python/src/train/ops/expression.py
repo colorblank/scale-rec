@@ -8,6 +8,8 @@ _SAFE = {"log": math.log, "abs": abs, "max": max, "min": min, "sqrt": math.sqrt}
 
 
 class ExpressionOp:
+    """Evaluate script expressions with restricted eval."""
+
     def __init__(self, script: str):
         self.script = script
 

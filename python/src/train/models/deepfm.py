@@ -11,6 +11,8 @@ from ..layers.towers import Activation
 
 
 class DeepFM(nn.Module):
+    """DeepFM: FM first-order + FM second-order + Deep MLP."""
+
     def __init__(self, features, fm_k, deep_hidden_dims):
         super().__init__()
         self.fm_first = FeatureEmbeddings([(n, v, 1) for n, v, _ in features])

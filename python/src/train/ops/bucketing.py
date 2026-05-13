@@ -5,6 +5,8 @@ from typing import Any
 
 
 class Bucketing:
+    """Continuous value to bucket index."""
+
     def __init__(self, boundaries: list[float]):
         self.boundaries = sorted(boundaries)
 

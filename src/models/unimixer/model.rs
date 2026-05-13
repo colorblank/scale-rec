@@ -87,7 +87,7 @@ impl UniMixerModel {
             let mut y_bar = x.clone();
             for block in &self.blocks {
                 let res = block.forward(&x, temperature, Some(&x_bar), Some(&y_bar), true)?;
-                if let BlockOutput::Siamese(_, new_x_bar, new_y_bar) = res {
+                if let BlockOutput::Siamese(new_x_bar, new_y_bar) = res {
                     x_bar = new_x_bar;
                     y_bar = new_y_bar;
                     x = x_bar.clone();

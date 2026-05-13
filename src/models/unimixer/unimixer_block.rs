@@ -12,7 +12,7 @@ pub enum UniMixingLayer {
 }
 
 pub enum BlockOutput {
-    Siamese((), Tensor, Tensor),
+    Siamese(Tensor, Tensor),
     Standard(Tensor),
 }
 
@@ -91,7 +91,7 @@ impl UniMixerBlock {
             let x_bar_added = x_bar.broadcast_add(&block_output)?;
             let x_bar_new = self.siamese_norm.forward_rmsnorm(&x_bar_added)?;
             let y_bar_new = y_bar.broadcast_add(&block_output)?;
-            Ok(BlockOutput::Siamese((), x_bar_new, y_bar_new))
+            Ok(BlockOutput::Siamese(x_bar_new, y_bar_new))
         } else {
             let mixed = self.apply_unimixing(x, temperature)?;
             let mixed_tokens = mixed.reshape((batch_size, self.num_tokens, self.token_dim))?;

@@ -11,6 +11,8 @@ from ..layers.towers import Activation
 
 
 class MMoE(nn.Module):
+    """Multi-gate Mixture-of-Experts for multi-task learning."""
+
     def __init__(
         self,
         features,

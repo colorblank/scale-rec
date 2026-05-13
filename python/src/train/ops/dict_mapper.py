@@ -5,6 +5,8 @@ from typing import Any
 
 
 class DictMapper:
+    """String/int to index lookup."""
+
     def __init__(self, mapping: dict[str, int], default_idx: int = 0):
         self.mapping = mapping
         self.default_idx = default_idx

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-"""权重导出：safetensors 格式，Candle VarMap 可直接加载。"""
-"""Weight export to safetensors format, loadable by Candle VarMap."""
+"""safetensors 权重导出 — Candle VarMap 可直接加载。"""
 
 import torch.nn as nn
 from safetensors.torch import save_file

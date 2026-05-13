@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-"""训练入口：Polars 数据 → DAG 预处理 → 模型 → BCE → Adam → 导出。"""
-"""Training loop: Polars data → DAG preprocessing → Model → BCE → Adam → export."""
+"""训练入口：Polars → DAG → Model → BCE → Adam → safetensors。"""
 
 import argparse
 

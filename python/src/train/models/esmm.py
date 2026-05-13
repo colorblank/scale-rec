@@ -10,6 +10,8 @@ from ..layers.towers import Activation, TaskTower, TowerConfig
 
 
 class ESMM(nn.Module):
+    """Entire-space multi-task: CTR x CVR = CTCVR, eliminates SSB."""
+
     def __init__(self, features, shared_bottom_dims, ctr_hidden_dims, cvr_hidden_dims):
         super().__init__()
         self.embeddings = FeatureEmbeddings(features)

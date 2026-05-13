@@ -9,6 +9,8 @@ from ..layers.towers import Activation
 
 
 class LogisticRegression(nn.Module):
+    """LR baseline: Embedding + Linear, no feature interaction."""
+
     def __init__(self, features):
         super().__init__()
         self.embeddings = FeatureEmbeddings(features)

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-"""Feature DAG executor — mirrors src/feats/dag.rs."""
-from collections import deque
+"""特征 DAG 执行器 — mirrors src/feats/dag.rs."""
 from dataclasses import dataclass
+from collections import deque
 from typing import Any
 
 import torch
