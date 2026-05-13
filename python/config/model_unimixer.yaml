@@ -1,0 +1,16 @@
+type: unimixer
+token_dim: 16
+num_tokens: 2
+num_blocks: 2
+block_size: 8
+use_lite: false
+hidden_factor: 1.0
+num_basis: 4
+rank: 16
+use_siamese: false
+task_config:
+  towers:
+    - {name: ctr, hidden_dims: [32], output_dim: 1, activation: relu}
+    - {name: cvr, hidden_dims: [32], output_dim: 1, activation: relu}
+  relations:
+    - {target: ctcvr, sources: [ctr, cvr], op: multiply}

@@ -1,0 +1,5 @@
+type: lr
+features:
+  - {name: user_id, vocab_size: 10000, embed_dim: 16}
+  - {name: user_age_bucket, vocab_size: 5, embed_dim: 8}
+  - {name: item_category_idx, vocab_size: 4, embed_dim: 8}
