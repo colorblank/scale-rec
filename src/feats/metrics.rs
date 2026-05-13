@@ -31,7 +31,10 @@ impl FeatureMetrics {
 
     pub fn report(&self) {
         // 可接入 tracing 库或 prometheus
-        println!("Metrics - Mean: {:.4}, StdDev: {:.4}, NullRatio: {:.4}", self.mean, self.std_dev, self.null_ratio);
+        println!(
+            "Metrics - Mean: {:.4}, StdDev: {:.4}, NullRatio: {:.4}",
+            self.mean, self.std_dev, self.null_ratio
+        );
     }
 }
 

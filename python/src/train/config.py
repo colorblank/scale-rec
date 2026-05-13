@@ -1,7 +1,9 @@
 """Feature pipeline config types — mirrors src/feats/config.rs."""
+
 from dataclasses import dataclass, field
 from typing import Optional
 import yaml
+
 
 @dataclass
 class DType:
@@ -15,13 +17,17 @@ class DType:
             return cls(tag=raw)
         if isinstance(raw, dict) and "list" in raw:
             inner_raw = raw["list"]["dtype"]
-            return cls(tag="list", inner=cls.from_dict(inner_raw), length=raw["list"]["length"])
+            return cls(
+                tag="list", inner=cls.from_dict(inner_raw), length=raw["list"]["length"]
+            )
         raise ValueError(f"Invalid DType: {raw}")
+
 
 @dataclass
 class EmbedConfig:
     vocab_size: int
     embed_dim: int
+
 
 @dataclass
 class SourceDef:
@@ -31,6 +37,7 @@ class SourceDef:
     default_val: str
     embed: Optional[EmbedConfig] = None
 
+
 @dataclass
 class OperatorDef:
     name: str
@@ -39,6 +46,7 @@ class OperatorDef:
     outputs: list[str] = field(default_factory=list)
     params: dict = field(default_factory=dict)
     embed: Optional[EmbedConfig] = None
+
 
 @dataclass
 class FlowConfig:
@@ -57,9 +65,26 @@ class FlowConfig:
         sources = []
         for s in raw.get("sources", []):
             embed = EmbedConfig(**s["embed"]) if "embed" in s else None
-            sources.append(SourceDef(name=s["name"], source=s["source"], dtype=DType.from_dict(s["dtype"]), default_val=s["default_val"], embed=embed))
+            sources.append(
+                SourceDef(
+                    name=s["name"],
+                    source=s["source"],
+                    dtype=DType.from_dict(s["dtype"]),
+                    default_val=s["default_val"],
+                    embed=embed,
+                )
+            )
         operators = []
         for o in raw.get("operators", []):
             embed = EmbedConfig(**o["embed"]) if "embed" in o else None
-            operators.append(OperatorDef(name=o["name"], op_type=o["op_type"], inputs=o.get("inputs", []), outputs=o.get("outputs", []), params=o.get("params", {}), embed=embed))
+            operators.append(
+                OperatorDef(
+                    name=o["name"],
+                    op_type=o["op_type"],
+                    inputs=o.get("inputs", []),
+                    outputs=o.get("outputs", []),
+                    params=o.get("params", {}),
+                    embed=embed,
+                )
+            )
         return cls(version=raw["version"], sources=sources, operators=operators)

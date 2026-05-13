@@ -68,9 +68,15 @@ pub enum ModelConfig {
     },
 }
 
-fn default_hidden_factor() -> f64 { 1.0 }
-fn default_num_basis() -> usize { 4 }
-fn default_rank() -> usize { 16 }
+fn default_hidden_factor() -> f64 {
+    1.0
+}
+fn default_num_basis() -> usize {
+    4
+}
+fn default_rank() -> usize {
+    16
+}
 
 impl ModelConfig {
     /// Build model from config. Feature specs come from `FeatureDag::embeddable_features()`.
@@ -85,26 +91,79 @@ impl ModelConfig {
                 let model = lr::LogisticRegression::new(vb, features)?;
                 Ok(Box::new(model))
             }
-            ModelConfig::DeepFM { fm_k, deep_hidden_dims } => {
+            ModelConfig::DeepFM {
+                fm_k,
+                deep_hidden_dims,
+            } => {
                 let model = deepfm::DeepFM::new(vb, features, *fm_k, deep_hidden_dims)?;
                 Ok(Box::new(model))
             }
-            ModelConfig::MMoE { shared_bottom_dims, num_experts, expert_hidden_dims, expert_output_dim, task_configs } => {
-                let task_cfgs: Vec<(String, Vec<usize>)> = task_configs.iter().map(|t| (t.name.clone(), t.tower_dims.clone())).collect();
-                let model = mmoe::MMoE::new(vb, features, shared_bottom_dims, *num_experts, expert_hidden_dims, *expert_output_dim, &task_cfgs)?;
+            ModelConfig::MMoE {
+                shared_bottom_dims,
+                num_experts,
+                expert_hidden_dims,
+                expert_output_dim,
+                task_configs,
+            } => {
+                let task_cfgs: Vec<(String, Vec<usize>)> = task_configs
+                    .iter()
+                    .map(|t| (t.name.clone(), t.tower_dims.clone()))
+                    .collect();
+                let model = mmoe::MMoE::new(
+                    vb,
+                    features,
+                    shared_bottom_dims,
+                    *num_experts,
+                    expert_hidden_dims,
+                    *expert_output_dim,
+                    &task_cfgs,
+                )?;
                 Ok(Box::new(model))
             }
-            ModelConfig::ESMM { shared_bottom_dims, ctr_hidden_dims, cvr_hidden_dims } => {
-                let model = esmm::ESMM::new(vb, features, shared_bottom_dims, ctr_hidden_dims, cvr_hidden_dims)?;
+            ModelConfig::ESMM {
+                shared_bottom_dims,
+                ctr_hidden_dims,
+                cvr_hidden_dims,
+            } => {
+                let model = esmm::ESMM::new(
+                    vb,
+                    features,
+                    shared_bottom_dims,
+                    ctr_hidden_dims,
+                    cvr_hidden_dims,
+                )?;
                 Ok(Box::new(model))
             }
-            ModelConfig::UniMixer { token_dim, num_tokens, num_blocks, block_size, use_lite, hidden_factor, num_basis, rank, use_siamese, task_config } => {
+            ModelConfig::UniMixer {
+                token_dim,
+                num_tokens,
+                num_blocks,
+                block_size,
+                use_lite,
+                hidden_factor,
+                num_basis,
+                rank,
+                use_siamese,
+                task_config,
+            } => {
                 let tokenizer = tokenizer.ok_or_else(|| {
-                    candle_core::Error::Msg("UniMixer requires external FeatureTokenizer from FeatureDag".into())
+                    candle_core::Error::Msg(
+                        "UniMixer requires external FeatureTokenizer from FeatureDag".into(),
+                    )
                 })?;
                 let model = unimixer::model::UniMixerModel::new(
-                    tokenizer, *token_dim, *num_tokens, *num_blocks, *block_size,
-                    *use_lite, *hidden_factor, *num_basis, *rank, task_config, *use_siamese, vb.pp("unimixer"),
+                    tokenizer,
+                    *token_dim,
+                    *num_tokens,
+                    *num_blocks,
+                    *block_size,
+                    *use_lite,
+                    *hidden_factor,
+                    *num_basis,
+                    *rank,
+                    task_config,
+                    *use_siamese,
+                    vb.pp("unimixer"),
                 )?;
                 Ok(Box::new(model))
             }

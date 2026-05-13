@@ -18,5 +18,8 @@ pub use string_parser::StringParser;
 
 pub trait CustomOp: Send + Sync {
     fn name(&self) -> &str;
-    fn process(&self, inputs: &[&(dyn Any + Send + Sync)]) -> Result<Box<dyn Any + Send + Sync>, String>;
+    fn process(
+        &self,
+        inputs: &[&(dyn Any + Send + Sync)],
+    ) -> Result<Box<dyn Any + Send + Sync>, String>;
 }

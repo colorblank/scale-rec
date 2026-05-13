@@ -1,5 +1,7 @@
 use crate::feats::config::{DType, FlowConfig, OperatorDef, SourceDef};
-use crate::feats::ops::{Bucketing, CrossFeature, CustomOp, DictMapper, ExpressionOp, PluginOp, SequenceOp, StringParser};
+use crate::feats::ops::{
+    Bucketing, CrossFeature, CustomOp, DictMapper, ExpressionOp, PluginOp, SequenceOp, StringParser,
+};
 use petgraph::algo::toposort;
 use petgraph::prelude::DiGraph;
 use std::any::Any;
@@ -28,7 +30,10 @@ impl FeatureDag {
             DType::Int => Arc::new(val_str.parse::<i32>().unwrap_or(0)),
             DType::Float => Arc::new(val_str.parse::<f32>().unwrap_or(0.0)),
             DType::String => Arc::new(val_str.to_string()),
-            DType::List { dtype: inner, length } => match inner.as_ref() {
+            DType::List {
+                dtype: inner,
+                length,
+            } => match inner.as_ref() {
                 DType::Int => Arc::new(vec![val_str.parse::<i32>().unwrap_or(0); *length]),
                 DType::Float => Arc::new(vec![val_str.parse::<f32>().unwrap_or(0.0); *length]),
                 DType::String => Arc::new(vec![val_str.to_string(); *length]),
@@ -73,7 +78,10 @@ impl FeatureDag {
         for op_def in &config.operators {
             for input_name in &op_def.inputs {
                 if !valid_inputs.contains(input_name) {
-                    return Err(format!("Operator '{}' references unknown input '{}'", op_def.name, input_name));
+                    return Err(format!(
+                        "Operator '{}' references unknown input '{}'",
+                        op_def.name, input_name
+                    ));
                 }
             }
         }
@@ -86,13 +94,25 @@ impl FeatureDag {
                 }
             }
         }
-        let sorted_indices = toposort(&graph, None).map_err(|_| "Cycle detected in feature DAG".to_string())?;
-        let execution_order = sorted_indices.iter().map(|&idx| graph[idx].clone()).collect();
-        Ok(Self { sources, nodes, node_defs, execution_order, debug_mode })
+        let sorted_indices =
+            toposort(&graph, None).map_err(|_| "Cycle detected in feature DAG".to_string())?;
+        let execution_order = sorted_indices
+            .iter()
+            .map(|&idx| graph[idx].clone())
+            .collect();
+        Ok(Self {
+            sources,
+            nodes,
+            node_defs,
+            execution_order,
+            debug_mode,
+        })
     }
 
     fn yaml_get<'a>(params: &'a serde_yaml::Value, key: &str) -> Option<&'a serde_yaml::Value> {
-        params.as_mapping()?.get(&serde_yaml::Value::String(key.to_string()))
+        params
+            .as_mapping()?
+            .get(&serde_yaml::Value::String(key.to_string()))
     }
     fn yaml_str<'a>(params: &'a serde_yaml::Value, key: &str) -> Option<&'a str> {
         Self::yaml_get(params, key)?.as_str()
@@ -101,7 +121,14 @@ impl FeatureDag {
         Self::yaml_get(params, key)?.as_i64()
     }
     fn yaml_f32_seq(params: &serde_yaml::Value, key: &str) -> Vec<f32> {
-        Self::yaml_get(params, key).and_then(|v| v.as_sequence()).map(|seq| seq.iter().filter_map(|v| v.as_f64().map(|f| f as f32)).collect()).unwrap_or_default()
+        Self::yaml_get(params, key)
+            .and_then(|v| v.as_sequence())
+            .map(|seq| {
+                seq.iter()
+                    .filter_map(|v| v.as_f64().map(|f| f as f32))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     fn create_op(def: &OperatorDef) -> Result<Box<dyn CustomOp>, String> {
@@ -124,11 +151,17 @@ impl FeatureDag {
                 let sep2 = Self::yaml_str(p, "sep2").unwrap_or("|").to_string();
                 let key_index = Self::yaml_i64(p, "key_index").unwrap_or(0) as usize;
                 let pad_len = Self::yaml_i64(p, "pad_len").unwrap_or(0) as usize;
-                let pad_val = Self::yaml_str(p, "pad_val").unwrap_or("unknown").to_string();
-                Ok(Box::new(StringParser::new(sep1, sep2, key_index, pad_len, pad_val)))
+                let pad_val = Self::yaml_str(p, "pad_val")
+                    .unwrap_or("unknown")
+                    .to_string();
+                Ok(Box::new(StringParser::new(
+                    sep1, sep2, key_index, pad_len, pad_val,
+                )))
             }
             "CrossFeature" => {
-                let cross_type = Self::yaml_str(p, "cross_type").unwrap_or("cartesian").to_string();
+                let cross_type = Self::yaml_str(p, "cross_type")
+                    .unwrap_or("cartesian")
+                    .to_string();
                 Ok(Box::new(CrossFeature::new(cross_type)))
             }
             "Bucketing" => {
@@ -141,35 +174,52 @@ impl FeatureDag {
                 Ok(Box::new(SequenceOp::new(max_len, pad_val)))
             }
             "ExpressionOp" => {
-                let script = Self::yaml_str(p, "script").ok_or("Missing script for ExpressionOp")?.to_string();
+                let script = Self::yaml_str(p, "script")
+                    .ok_or("Missing script for ExpressionOp")?
+                    .to_string();
                 Ok(Box::new(ExpressionOp::new(script)))
             }
             "PluginOp" => {
-                let path = Self::yaml_str(p, "path").ok_or("Missing path for PluginOp")?.to_string();
-                let op_name = Self::yaml_str(p, "op_name").unwrap_or("custom_plugin").to_string();
+                let path = Self::yaml_str(p, "path")
+                    .ok_or("Missing path for PluginOp")?
+                    .to_string();
+                let op_name = Self::yaml_str(p, "op_name")
+                    .unwrap_or("custom_plugin")
+                    .to_string();
                 Ok(Box::new(PluginOp::new(&path, op_name)?))
             }
             _ => Err(format!("Unsupported operator type: {}", def.op_type)),
         }
     }
 
-    pub fn source_defs(&self) -> &HashMap<String, SourceDef> { &self.sources }
-    pub fn operator_defs(&self) -> &HashMap<String, OperatorDef> { &self.node_defs }
+    pub fn source_defs(&self) -> &HashMap<String, SourceDef> {
+        &self.sources
+    }
+    pub fn operator_defs(&self) -> &HashMap<String, OperatorDef> {
+        &self.node_defs
+    }
 
     pub fn embeddable_features(&self) -> Vec<(&str, &crate::feats::config::EmbedConfig)> {
         let mut result = Vec::new();
         for (name, src) in &self.sources {
-            if let Some(ref emb) = src.embed { result.push((name.as_str(), emb)); }
+            if let Some(ref emb) = src.embed {
+                result.push((name.as_str(), emb));
+            }
         }
         for (_, op) in &self.node_defs {
             if let Some(ref emb) = op.embed {
-                for out_name in &op.outputs { result.push((out_name.as_str(), emb)); }
+                for out_name in &op.outputs {
+                    result.push((out_name.as_str(), emb));
+                }
             }
         }
         result
     }
 
-    pub fn execute(&self, raw_inputs: &HashMap<String, FeatureValue>) -> Result<FeatureResult, String> {
+    pub fn execute(
+        &self,
+        raw_inputs: &HashMap<String, FeatureValue>,
+    ) -> Result<FeatureResult, String> {
         let mut context: HashMap<String, FeatureValue> = HashMap::new();
         for (name, source_def) in &self.sources {
             let default_val = Self::parse_default(&source_def.default_val, &source_def.dtype);
@@ -185,7 +235,9 @@ impl FeatureDag {
             let def = &self.node_defs[node_name];
             let mut op_inputs: Vec<&(dyn Any + Send + Sync)> = Vec::new();
             for input_name in &def.inputs {
-                let val = context.get(input_name).ok_or_else(|| format!("Required input '{}' not found", input_name))?;
+                let val = context
+                    .get(input_name)
+                    .ok_or_else(|| format!("Required input '{}' not found", input_name))?;
                 op_inputs.push(val.as_ref());
             }
             let output = op.process(&op_inputs)?;
@@ -198,15 +250,42 @@ impl FeatureDag {
         if self.debug_mode {
             self.dump_snapshot(&context, &source_names, &computed_names);
         }
-        Ok(FeatureResult { features: context, source_names, computed_names })
+        Ok(FeatureResult {
+            features: context,
+            source_names,
+            computed_names,
+        })
     }
 
-    pub fn dump_snapshot(&self, context: &HashMap<String, FeatureValue>, source_names: &HashSet<String>, computed_names: &HashSet<String>) {
+    pub fn dump_snapshot(
+        &self,
+        context: &HashMap<String, FeatureValue>,
+        source_names: &HashSet<String>,
+        computed_names: &HashSet<String>,
+    ) {
         println!("[Feature Snapshot]");
         for (name, val) in context {
             let inner = val.as_ref();
-            let type_name = if inner.downcast_ref::<i32>().is_some() { "i32" } else if inner.downcast_ref::<f32>().is_some() { "f32" } else if inner.downcast_ref::<String>().is_some() { "String" } else if inner.downcast_ref::<Vec<String>>().is_some() { "Vec<String>" } else if inner.downcast_ref::<Vec<i32>>().is_some() { "Vec<i32>" } else { "unknown" };
-            let origin = if computed_names.contains(name) { "computed" } else if source_names.contains(name) { "source" } else { "raw" };
+            let type_name = if inner.downcast_ref::<i32>().is_some() {
+                "i32"
+            } else if inner.downcast_ref::<f32>().is_some() {
+                "f32"
+            } else if inner.downcast_ref::<String>().is_some() {
+                "String"
+            } else if inner.downcast_ref::<Vec<String>>().is_some() {
+                "Vec<String>"
+            } else if inner.downcast_ref::<Vec<i32>>().is_some() {
+                "Vec<i32>"
+            } else {
+                "unknown"
+            };
+            let origin = if computed_names.contains(name) {
+                "computed"
+            } else if source_names.contains(name) {
+                "source"
+            } else {
+                "raw"
+            };
             println!(" -> [{:<8}] {:<20} | Type: {}", origin, name, type_name);
         }
     }

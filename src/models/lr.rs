@@ -1,17 +1,26 @@
-use candle_core::{Result, Tensor};
-use candle_nn::VarBuilder;
-use std::collections::HashMap;
+use super::Model;
 use crate::layers::embedding::FeatureEmbeddings;
 use crate::layers::mlp::Mlp;
 use crate::layers::towers::Activation;
-use super::Model;
+use candle_core::{Result, Tensor};
+use candle_nn::VarBuilder;
+use std::collections::HashMap;
 
-pub struct LogisticRegression { embeddings: FeatureEmbeddings, mlp: Mlp }
+pub struct LogisticRegression {
+    embeddings: FeatureEmbeddings,
+    mlp: Mlp,
+}
 
 impl LogisticRegression {
     pub fn new(vb: VarBuilder, features: &[(String, usize, usize)]) -> Result<Self> {
         let embeddings = FeatureEmbeddings::new(vb.pp("embeddings"), features)?;
-        let mlp = Mlp::new(vb.pp("mlp"), embeddings.total_dim, &[], 1, Activation::None_)?;
+        let mlp = Mlp::new(
+            vb.pp("mlp"),
+            embeddings.total_dim,
+            &[],
+            1,
+            Activation::None_,
+        )?;
         Ok(Self { embeddings, mlp })
     }
 }

@@ -25,7 +25,11 @@ impl UniMixing {
     /// - `vb`: 变量构建器，用于张量权重的注册和初始化。
     pub fn new(embed_dim: usize, block_size: usize, vb: VarBuilder) -> Result<Self> {
         if embed_dim % block_size != 0 {
-            candle_core::bail!("embed_dim ({}) 必须能被 block_size ({}) 整除", embed_dim, block_size);
+            candle_core::bail!(
+                "embed_dim ({}) 必须能被 block_size ({}) 整除",
+                embed_dim,
+                block_size
+            );
         }
         let num_blocks = embed_dim / block_size;
 
@@ -33,14 +37,20 @@ impl UniMixing {
         let global_weights_logits = vb.get_with_hints(
             (num_blocks, num_blocks),
             "global_weights_logits",
-            Init::Randn { mean: 0.0, stdev: 1.0 },
+            Init::Randn {
+                mean: 0.0,
+                stdev: 1.0,
+            },
         )?;
 
         // 局部交互权重 W_B，形状: (num_blocks, block_size, block_size)
         let local_weights_logits = vb.get_with_hints(
             (num_blocks, block_size, block_size),
             "local_weights_logits",
-            Init::Randn { mean: 0.0, stdev: 1.0 },
+            Init::Randn {
+                mean: 0.0,
+                stdev: 1.0,
+            },
         )?;
 
         Ok(Self {
@@ -99,7 +109,10 @@ impl UniMixing {
 
         // 使用 Batch Matmul 计算局部混合: H = x_blocks * W_B
         let x_blocks_unsqueezed = x_blocks.unsqueeze(2)?.contiguous()?;
-        let w_b_proc_bcasted = w_b_proc.unsqueeze(0)?.broadcast_as((batch_size, n, b, b))?.contiguous()?;
+        let w_b_proc_bcasted = w_b_proc
+            .unsqueeze(0)?
+            .broadcast_as((batch_size, n, b, b))?
+            .contiguous()?;
 
         let h_unsqueezed = x_blocks_unsqueezed.matmul(&w_b_proc_bcasted)?;
         let h = h_unsqueezed.squeeze(2)?;
@@ -113,7 +126,10 @@ impl UniMixing {
 
         // 使用 Batch Matmul 计算跨块全局混合: out_blocks = W_G * H
         // W_G: [batch_size, N, N], H: [batch_size, N, B] -> [batch_size, N, B]
-        let w_g_proc_bcasted = w_g_proc.unsqueeze(0)?.broadcast_as((batch_size, n, n))?.contiguous()?;
+        let w_g_proc_bcasted = w_g_proc
+            .unsqueeze(0)?
+            .broadcast_as((batch_size, n, n))?
+            .contiguous()?;
         let h_contiguous = h.contiguous()?;
         let out_blocks = w_g_proc_bcasted.matmul(&h_contiguous)?;
 

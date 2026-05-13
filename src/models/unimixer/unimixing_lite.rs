@@ -39,7 +39,11 @@ impl UniMixingLite {
         vb: VarBuilder,
     ) -> Result<Self> {
         if embed_dim % block_size != 0 {
-            candle_core::bail!("embed_dim ({}) 必须能被 block_size ({}) 整除", embed_dim, block_size);
+            candle_core::bail!(
+                "embed_dim ({}) 必须能被 block_size ({}) 整除",
+                embed_dim,
+                block_size
+            );
         }
         let num_blocks = embed_dim / block_size;
 
@@ -47,24 +51,36 @@ impl UniMixingLite {
         let a_g = vb.get_with_hints(
             (num_blocks, rank),
             "a_g",
-            Init::Randn { mean: 0.0, stdev: 1.0 },
+            Init::Randn {
+                mean: 0.0,
+                stdev: 1.0,
+            },
         )?;
         let b_g = vb.get_with_hints(
             (rank, num_blocks),
             "b_g",
-            Init::Randn { mean: 0.0, stdev: 1.0 },
+            Init::Randn {
+                mean: 0.0,
+                stdev: 1.0,
+            },
         )?;
 
         // 局部混合基组合
         let z = vb.get_with_hints(
             (num_basis, block_size, block_size),
             "z",
-            Init::Randn { mean: 0.0, stdev: 1.0 },
+            Init::Randn {
+                mean: 0.0,
+                stdev: 1.0,
+            },
         )?;
         let omega = vb.get_with_hints(
             (num_blocks, num_basis),
             "omega",
-            Init::Randn { mean: 0.0, stdev: 1.0 },
+            Init::Randn {
+                mean: 0.0,
+                stdev: 1.0,
+            },
         )?;
 
         Ok(Self {
@@ -137,7 +153,10 @@ impl UniMixingLite {
         // H = einsum('bnd,nde->bne', x_blocks, W_B_star)
         // 使用批量矩阵乘法实现 [batch_size, N, 1, B] matmul [batch_size, N, B, B]
         let x_blocks_unsqueezed = x_blocks.unsqueeze(2)?.contiguous()?;
-        let w_b_star_bcasted = w_b_star.unsqueeze(0)?.broadcast_as((batch_size, n, b, b))?.contiguous()?;
+        let w_b_star_bcasted = w_b_star
+            .unsqueeze(0)?
+            .broadcast_as((batch_size, n, b, b))?
+            .contiguous()?;
         let h_unsqueezed = x_blocks_unsqueezed.matmul(&w_b_star_bcasted)?;
         let h = h_unsqueezed.squeeze(2)?; // (batch_size, N, B)
 
@@ -154,7 +173,10 @@ impl UniMixingLite {
         let h_perm = h.transpose(1, 2)?;
         let w_r_t = w_r.transpose(0, 1)?;
         // 批处理矩阵乘法 [batch_size, B, N] matmul [batch_size, N, N]
-        let w_r_t_bcasted = w_r_t.unsqueeze(0)?.broadcast_as((batch_size, n, n))?.contiguous()?;
+        let w_r_t_bcasted = w_r_t
+            .unsqueeze(0)?
+            .broadcast_as((batch_size, n, n))?
+            .contiguous()?;
         let h_perm_cont = h_perm.contiguous()?;
         let out_perm = h_perm_cont.matmul(&w_r_t_bcasted)?; // (batch_size, B, N)
 

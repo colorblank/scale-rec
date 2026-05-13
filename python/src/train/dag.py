@@ -1,11 +1,21 @@
 """Feature DAG executor — mirrors src/feats/dag.rs."""
+
 from collections import deque
 from dataclasses import dataclass
 from typing import Any
 from .config import DType, EmbedConfig, FlowConfig, OperatorDef, SourceDef
-from .ops import Bucketing, CrossFeature, CustomOp, DictMapper, ExpressionOp, SequenceOp, StringParser
+from .ops import (
+    Bucketing,
+    CrossFeature,
+    CustomOp,
+    DictMapper,
+    ExpressionOp,
+    SequenceOp,
+    StringParser,
+)
 
 FeatureValue = Any
+
 
 @dataclass
 class FeatureResult:
@@ -13,26 +23,31 @@ class FeatureResult:
     source_names: set[str]
     computed_names: set[str]
 
+
 class FeatureDag:
     def __init__(self, config: FlowConfig, debug_mode: bool = False):
         self.sources: dict[str, SourceDef] = {}
         for s in config.sources:
-            if s.name in self.sources: raise ValueError(f"Duplicate source: '{s.name}'")
+            if s.name in self.sources:
+                raise ValueError(f"Duplicate source: '{s.name}'")
             self.sources[s.name] = s
         valid_inputs: set[str] = set(self.sources.keys())
         output_to_provider: dict[str, str] = {}
         for op in config.operators:
             for out in op.outputs:
-                if out in valid_inputs: raise ValueError(f"Duplicate output '{out}'")
+                if out in valid_inputs:
+                    raise ValueError(f"Duplicate output '{out}'")
                 valid_inputs.add(out)
                 output_to_provider[out] = op.name
         for op in config.operators:
             for inp in op.inputs:
-                if inp not in valid_inputs: raise ValueError(f"Unknown input '{inp}' for '{op.name}'")
+                if inp not in valid_inputs:
+                    raise ValueError(f"Unknown input '{inp}' for '{op.name}'")
         self.nodes: dict[str, CustomOp] = {}
         self.node_defs: dict[str, OperatorDef] = {}
         for op_def in config.operators:
-            if op_def.name in self.nodes: raise ValueError(f"Duplicate operator: '{op_def.name}'")
+            if op_def.name in self.nodes:
+                raise ValueError(f"Duplicate operator: '{op_def.name}'")
             self.nodes[op_def.name] = self._create_op(op_def)
             self.node_defs[op_def.name] = op_def
         in_degree = {op.name: 0 for op in config.operators}
@@ -50,7 +65,8 @@ class FeatureDag:
             execution_order.append(node)
             for neighbor in adjacency[node]:
                 in_degree[neighbor] -= 1
-                if in_degree[neighbor] == 0: queue.append(neighbor)
+                if in_degree[neighbor] == 0:
+                    queue.append(neighbor)
         if len(execution_order) != len(config.operators):
             raise ValueError("Cycle detected in feature DAG")
         self.execution_order = execution_order
@@ -58,14 +74,20 @@ class FeatureDag:
 
     @staticmethod
     def _parse_default(val_str: str, dtype: DType) -> FeatureValue:
-        if dtype.tag == "int": return int(float(val_str))
-        elif dtype.tag == "float": return float(val_str)
-        elif dtype.tag == "string": return val_str
+        if dtype.tag == "int":
+            return int(float(val_str))
+        elif dtype.tag == "float":
+            return float(val_str)
+        elif dtype.tag == "string":
+            return val_str
         elif dtype.tag == "list":
             inner, length = dtype.inner, dtype.length
-            if inner.tag == "int": return [int(float(val_str))] * length
-            elif inner.tag == "float": return [float(val_str)] * length
-            elif inner.tag == "string": return [val_str] * length
+            if inner.tag == "int":
+                return [int(float(val_str))] * length
+            elif inner.tag == "float":
+                return [float(val_str)] * length
+            elif inner.tag == "string":
+                return [val_str] * length
         return 0
 
     @staticmethod
@@ -77,12 +99,19 @@ class FeatureDag:
         elif op_type == "Bucketing":
             return Bucketing([float(x) for x in p.get("boundaries", [])])
         elif op_type == "StringParser":
-            return StringParser(str(p.get("sep1", "#")), str(p.get("sep2", "|")), int(p.get("key_index", 0)), int(p.get("pad_len", 0)), str(p.get("pad_val", "unknown")))
+            return StringParser(
+                str(p.get("sep1", "#")),
+                str(p.get("sep2", "|")),
+                int(p.get("key_index", 0)),
+                int(p.get("pad_len", 0)),
+                str(p.get("pad_val", "unknown")),
+            )
         elif op_type == "CrossFeature":
             return CrossFeature(str(p.get("cross_type", "cartesian")))
         elif op_type == "ExpressionOp":
             script = p.get("script")
-            if not script: raise ValueError("Missing 'script' for ExpressionOp")
+            if not script:
+                raise ValueError("Missing 'script' for ExpressionOp")
             return ExpressionOp(str(script))
         elif op_type == "SequenceOp":
             return SequenceOp(int(p.get("max_len", 10)), int(p.get("pad_val", 0)))
@@ -92,15 +121,20 @@ class FeatureDag:
     def embeddable_features(self) -> list[tuple[str, EmbedConfig]]:
         result: list[tuple[str, EmbedConfig]] = []
         for name, src in self.sources.items():
-            if src.embed is not None: result.append((name, src.embed))
+            if src.embed is not None:
+                result.append((name, src.embed))
         for _, op_def in self.node_defs.items():
             if op_def.embed is not None:
-                for out_name in op_def.outputs: result.append((out_name, op_def.embed))
+                for out_name in op_def.outputs:
+                    result.append((out_name, op_def.embed))
         return result
 
     def feature_tuples(self) -> list[tuple[str, int, int]]:
         """Return (name, vocab_size, embed_dim) tuples from embeddable features."""
-        return [(name, emb.vocab_size, emb.embed_dim) for name, emb in self.embeddable_features()]
+        return [
+            (name, emb.vocab_size, emb.embed_dim)
+            for name, emb in self.embeddable_features()
+        ]
 
     def preprocess_batch(self, rows: list[dict]) -> dict[str, "torch.Tensor"]:
         """Execute DAG on each row and stack embeddable features into tensors.
@@ -108,6 +142,7 @@ class FeatureDag:
         Returns {feature_name: LongTensor [batch_size]} ready for model input.
         """
         import torch
+
         embed_names = [name for name, _ in self.embeddable_features()]
         feature_lists: dict[str, list] = {name: [] for name in embed_names}
         for row in rows:
@@ -115,13 +150,17 @@ class FeatureDag:
             result = self.execute(raw)
             for name in embed_names:
                 feature_lists[name].append(result.features.get(name, 0))
-        return {name: torch.tensor(vals, dtype=torch.long) for name, vals in feature_lists.items()}
+        return {
+            name: torch.tensor(vals, dtype=torch.long)
+            for name, vals in feature_lists.items()
+        }
 
     def execute(self, raw_inputs: dict[str, FeatureValue]) -> FeatureResult:
         context: dict[str, FeatureValue] = {}
         for name, src in self.sources.items():
             context[name] = self._parse_default(src.default_val, src.dtype)
-        for name, val in raw_inputs.items(): context[name] = val
+        for name, val in raw_inputs.items():
+            context[name] = val
         source_names = set(self.sources.keys())
         computed_names: set[str] = set()
         for node_name in self.execution_order:
@@ -131,11 +170,20 @@ class FeatureDag:
             for out_name in def_.outputs:
                 context[out_name] = output
                 computed_names.add(out_name)
-        if self.debug_mode: self._dump_snapshot(context, source_names, computed_names)
-        return FeatureResult(features=context, source_names=source_names, computed_names=computed_names)
+        if self.debug_mode:
+            self._dump_snapshot(context, source_names, computed_names)
+        return FeatureResult(
+            features=context, source_names=source_names, computed_names=computed_names
+        )
 
     def _dump_snapshot(self, context, source_names, computed_names):
         print("[Feature Snapshot]")
         for name, val in sorted(context.items()):
-            origin = "computed" if name in computed_names else "source" if name in source_names else "raw"
+            origin = (
+                "computed"
+                if name in computed_names
+                else "source"
+                if name in source_names
+                else "raw"
+            )
             print(f" -> [{origin}] {name:<20} | value={val}")

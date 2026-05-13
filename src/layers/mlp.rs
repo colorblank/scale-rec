@@ -1,6 +1,6 @@
+use super::towers::Activation;
 use candle_core::{Result, Tensor};
 use candle_nn::{linear, Linear, Module, VarBuilder};
-use super::towers::Activation;
 
 pub struct Mlp {
     layers: Vec<Linear>,
@@ -10,7 +10,13 @@ pub struct Mlp {
 }
 
 impl Mlp {
-    pub fn new(vb: VarBuilder, input_dim: usize, hidden_dims: &[usize], output_dim: usize, activation: Activation) -> Result<Self> {
+    pub fn new(
+        vb: VarBuilder,
+        input_dim: usize,
+        hidden_dims: &[usize],
+        output_dim: usize,
+        activation: Activation,
+    ) -> Result<Self> {
         let mut layers = Vec::with_capacity(hidden_dims.len() + 1);
         let mut in_dim = input_dim;
         for (i, &h_dim) in hidden_dims.iter().enumerate() {
@@ -18,7 +24,12 @@ impl Mlp {
             in_dim = h_dim;
         }
         layers.push(linear(in_dim, output_dim, vb.pp("output"))?);
-        Ok(Self { layers, activation, input_dim, output_dim })
+        Ok(Self {
+            layers,
+            activation,
+            input_dim,
+            output_dim,
+        })
     }
 
     pub fn forward(&self, x: &Tensor) -> Result<Tensor> {
@@ -26,7 +37,9 @@ impl Mlp {
         let n = self.layers.len();
         for (i, layer) in self.layers.iter().enumerate() {
             out = layer.forward(&out)?;
-            if i < n - 1 { out = self.apply_activation(&out)?; }
+            if i < n - 1 {
+                out = self.apply_activation(&out)?;
+            }
         }
         Ok(out)
     }
@@ -35,7 +48,10 @@ impl Mlp {
         match self.activation {
             Activation::Relu => x.relu(),
             Activation::Sigmoid => candle_nn::ops::sigmoid(x),
-            Activation::Swish => { let sig = candle_nn::ops::sigmoid(x)?; x.mul(&sig) }
+            Activation::Swish => {
+                let sig = candle_nn::ops::sigmoid(x)?;
+                x.mul(&sig)
+            }
             Activation::Gelu => x.gelu(),
             Activation::None_ => Ok(x.clone()),
         }
@@ -43,5 +59,7 @@ impl Mlp {
 }
 
 impl Module for Mlp {
-    fn forward(&self, xs: &Tensor) -> Result<Tensor> { self.forward(xs) }
+    fn forward(&self, xs: &Tensor) -> Result<Tensor> {
+        self.forward(xs)
+    }
 }

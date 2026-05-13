@@ -28,7 +28,9 @@ impl SiameseNorm {
         Ok(Self { rmsnorm })
     }
 
-    pub fn forward_rmsnorm(&self, x: &Tensor) -> Result<Tensor> { self.rmsnorm.forward(x) }
+    pub fn forward_rmsnorm(&self, x: &Tensor) -> Result<Tensor> {
+        self.rmsnorm.forward(x)
+    }
 
     pub fn forward(
         &self,
