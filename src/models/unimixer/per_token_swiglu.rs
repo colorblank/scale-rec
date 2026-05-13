@@ -1,3 +1,4 @@
+//! PerTokenSwiGLU：Token 维度的 SwiGLU 激活与投影。
 use candle_core::{Result, Tensor};
 use candle_nn::{Init, VarBuilder};
 

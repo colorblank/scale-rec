@@ -1,3 +1,4 @@
+//! scale-rec 集成示例：特征预处理 + UniMixer 推理。
 //! scale-rec integration example
 mod feats;
 mod layers;

@@ -1,3 +1,4 @@
+//! FeatureTokenizer：分组 Conv1d 将离散特征投影为 Token 序列。
 use candle_core::{Result, Tensor};
 use candle_nn::{conv1d, embedding, Conv1d, Conv1dConfig, Embedding, Module, VarBuilder};
 use std::collections::HashMap;

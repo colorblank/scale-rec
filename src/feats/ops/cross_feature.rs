@@ -1,3 +1,4 @@
+//! 特征交叉算子：内积或笛卡尔积。
 use std::any::Any;
 
 pub struct CrossFeature {

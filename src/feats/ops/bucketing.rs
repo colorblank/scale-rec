@@ -1,3 +1,4 @@
+//! 连续值分桶算子：将浮点数映射为桶索引。
 use std::any::Any;
 
 pub struct Bucketing {

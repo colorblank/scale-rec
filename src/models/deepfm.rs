@@ -1,3 +1,4 @@
+//! DeepFM：FM 一阶 + FM 二阶 + Deep MLP 的联合模型。
 use super::Model;
 use crate::layers::embedding::FeatureEmbeddings;
 use crate::layers::fm::fm_interaction;

@@ -1,3 +1,4 @@
+//! MMoE：多门控专家混合，每个任务独立门控组合专家输出。
 use super::Model;
 use crate::layers::embedding::FeatureEmbeddings;
 use crate::layers::mlp::Mlp;

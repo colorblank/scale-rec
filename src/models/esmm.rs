@@ -1,3 +1,4 @@
+//! ESMM：全量空间多任务模型，CTR·CVR 乘积链消除 SSB。
 use super::Model;
 use crate::layers::embedding::FeatureEmbeddings;
 use crate::layers::mlp::Mlp;

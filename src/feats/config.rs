@@ -1,4 +1,4 @@
-//! # 配置系统 (Configuration System)
+//! 特征配置类型：FlowConfig、SourceDef、OperatorDef、DType、EmbedConfig。
 
 use serde::{Deserialize, Serialize};
 

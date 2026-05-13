@@ -1,3 +1,4 @@
+//! 算子库：统一 CustomOp trait 及 7 个内置算子的注册。
 use std::any::Any;
 
 mod bucketing;

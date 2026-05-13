@@ -1,3 +1,4 @@
+//! UniMixing：标准版双随机矩阵 Token 交互。
 use candle_core::{Result, Tensor};
 use candle_nn::{Init, VarBuilder};
 

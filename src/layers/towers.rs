@@ -1,3 +1,4 @@
+//! 多任务预测塔：TaskTower、MultiTaskTower、任务关系推导。
 use candle_core::{Result, Tensor};
 use candle_nn::{linear, Linear, Module, VarBuilder};
 use serde::{Deserialize, Serialize};

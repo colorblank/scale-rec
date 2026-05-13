@@ -1,3 +1,4 @@
+//! UniMixingLite：轻量版基组合 + 低秩近似 Token 交互。
 use candle_core::{Result, Tensor};
 use candle_nn::{Init, VarBuilder};
 

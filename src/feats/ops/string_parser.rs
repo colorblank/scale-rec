@@ -1,3 +1,4 @@
+//! 字符串解析算子：结构化字符串分词与填充。
 use std::any::Any;
 
 pub struct StringParser {

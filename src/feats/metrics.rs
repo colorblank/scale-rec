@@ -1,3 +1,4 @@
+//! 特征监控指标：数据漂移检测、缺失率统计。
 /// 数据漂移与指标统计 (Data Drift)
 pub struct FeatureMetrics {
     mean: f32,

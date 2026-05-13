@@ -1,3 +1,4 @@
+//! UniMixerBlock：单层交互块，组合 UniMixing + SwiGLU + SiameseNorm。
 use super::per_token_swiglu::PerTokenSwiGlu;
 use super::siamese_norm::SiameseNorm;
 use super::unimixing::UniMixing;

@@ -1,3 +1,4 @@
+//! 表达式算子：Rhai 脚本求值，支持 v0..vN 变量和 log 函数。
 use rhai::{Engine, Scope};
 use std::any::Any;
 

@@ -1,3 +1,4 @@
+//! Mlp：通用多层感知机，层间带激活，末层无激活。
 use super::towers::Activation;
 use candle_core::{Result, Tensor};
 use candle_nn::{linear, Linear, Module, VarBuilder};

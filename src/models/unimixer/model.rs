@@ -1,3 +1,4 @@
+//! UniMixerModel：完整的 UniMixer 架构，特征分词 → Token 交互 → 多任务塔。
 use super::siamese_norm::{SiameseNorm, SiameseNormOutput};
 use super::tokenizer::FeatureTokenizer;
 use super::unimixer_block::{BlockOutput, UniMixerBlock};

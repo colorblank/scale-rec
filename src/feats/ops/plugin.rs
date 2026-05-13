@@ -1,3 +1,4 @@
+//! 插件算子：通过 cdylib 动态加载外部算子。
 use libloading::{Library, Symbol};
 use std::any::Any;
 

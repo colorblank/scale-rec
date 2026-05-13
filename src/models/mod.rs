@@ -1,3 +1,4 @@
+//! 模型注册中心：Model trait、ModelConfig 枚举、5 个推荐模型。
 use candle_core::{Result, Tensor};
 use candle_nn::VarBuilder;
 use serde::{Deserialize, Serialize};

@@ -1,3 +1,4 @@
+//! 特征 DAG 执行器：拓扑排序、算子调度、单样本执行。
 use crate::feats::config::{DType, FlowConfig, OperatorDef, SourceDef};
 use crate::feats::ops::{
     Bucketing, CrossFeature, CustomOp, DictMapper, ExpressionOp, PluginOp, SequenceOp, StringParser,

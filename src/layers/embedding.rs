@@ -1,3 +1,4 @@
+//! FeatureEmbeddings：离散特征索引 → 稠密嵌入拼接。
 use candle_core::{Result, Tensor};
 use candle_nn::{embedding, Embedding, Module, VarBuilder};
 use std::collections::HashMap;

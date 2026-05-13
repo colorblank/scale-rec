@@ -1,3 +1,4 @@
+//! SiameseNorm：双流归一化，调和 Pre-Norm 与 Post-Norm。
 use candle_core::{Result, Tensor};
 use candle_nn::{rms_norm, Module, RmsNorm, VarBuilder};
 

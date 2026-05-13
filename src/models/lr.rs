@@ -1,3 +1,4 @@
+//! 逻辑回归基线：Embedding + Linear，无特征交互。
 use super::Model;
 use crate::layers::embedding::FeatureEmbeddings;
 use crate::layers::mlp::Mlp;

@@ -1,3 +1,4 @@
+//! FM 二阶交互：0.5 * Σ[(Σv_i)² - Σv_i²]。
 use candle_core::{Result, Tensor};
 
 pub fn fm_interaction(stacked: &Tensor) -> Result<Tensor> {
