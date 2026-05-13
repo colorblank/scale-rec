@@ -44,3 +44,26 @@ impl super::CustomOp for DictMapper {
         ))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+        use crate::feats::ops::CustomOp;
+
+    #[test]
+    fn test_known_key() {
+        let op = DictMapper::new(
+            [("elec".into(), 1), ("book".into(), 2)].into(),
+            0,
+        );
+        let result = op.process(&[&"elec".to_string()]).unwrap();
+        assert_eq!(*result.downcast_ref::<i32>().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_unknown_key_uses_default() {
+        let op = DictMapper::new([("a".into(), 1)].into(), 99);
+        let result = op.process(&[&"unknown".to_string()]).unwrap();
+        assert_eq!(*result.downcast_ref::<i32>().unwrap(), 99);
+    }
+}

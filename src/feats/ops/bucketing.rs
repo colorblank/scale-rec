@@ -38,3 +38,31 @@ impl super::CustomOp for Bucketing {
         Ok(Box::new(bucket))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+        use crate::feats::ops::CustomOp;
+
+    #[test]
+    fn test_bucketing() {
+        let op = Bucketing::new(vec![18.0, 25.0, 35.0, 50.0]);
+        let result = op.process(&[&28.5f32]).unwrap();
+        let bucket = result.downcast_ref::<i32>().unwrap();
+        assert_eq!(*bucket, 2); // 25 <= 28.5 < 35
+    }
+
+    #[test]
+    fn test_bucketing_below_range() {
+        let op = Bucketing::new(vec![10.0]);
+        let result = op.process(&[&5.0f32]).unwrap();
+        assert_eq!(*result.downcast_ref::<i32>().unwrap(), 0);
+    }
+
+    #[test]
+    fn test_bucketing_above_range() {
+        let op = Bucketing::new(vec![10.0, 20.0]);
+        let result = op.process(&[&30.0f64]).unwrap();
+        assert_eq!(*result.downcast_ref::<i32>().unwrap(), 2);
+    }
+}
