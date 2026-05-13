@@ -1,6 +1,11 @@
 //! 插件算子：通过 cdylib 动态加载外部算子。
-use libloading::{Library, Symbol};
+use libloading::Library;
 use std::any::Any;
+
+/// 外部插件签名: `fn(&[FeatureValue]) -> Result<Box<dyn Any>, String>`
+type PluginFn = unsafe fn(
+    inputs: &[&(dyn Any + Send + Sync)],
+) -> Result<Box<dyn Any + Send + Sync>, String>;
 
 pub struct PluginOp {
     lib: Library,
@@ -19,10 +24,17 @@ impl super::CustomOp for PluginOp {
     fn name(&self) -> &str {
         &self.op_name
     }
+
     fn process(
         &self,
-        _inputs: &[&(dyn Any + Send + Sync)],
+        inputs: &[&(dyn Any + Send + Sync)],
     ) -> Result<Box<dyn Any + Send + Sync>, String> {
-        Err("PluginOp not fully implemented".into())
+        unsafe {
+            let func: libloading::Symbol<PluginFn> = self
+                .lib
+                .get(b"process_custom")
+                .map_err(|e| format!("PluginOp: symbol 'process_custom' not found: {}", e))?;
+            func(inputs)
+        }
     }
 }
