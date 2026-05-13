@@ -98,6 +98,25 @@ class FeatureDag:
                 for out_name in op_def.outputs: result.append((out_name, op_def.embed))
         return result
 
+    def feature_tuples(self) -> list[tuple[str, int, int]]:
+        """Return (name, vocab_size, embed_dim) tuples from embeddable features."""
+        return [(name, emb.vocab_size, emb.embed_dim) for name, emb in self.embeddable_features()]
+
+    def preprocess_batch(self, rows: list[dict]) -> dict[str, "torch.Tensor"]:
+        """Execute DAG on each row and stack embeddable features into tensors.
+
+        Returns {feature_name: LongTensor [batch_size]} ready for model input.
+        """
+        import torch
+        embed_names = [name for name, _ in self.embeddable_features()]
+        feature_lists: dict[str, list] = {name: [] for name in embed_names}
+        for row in rows:
+            raw = {k: v for k, v in row.items() if k in self.sources}
+            result = self.execute(raw)
+            for name in embed_names:
+                feature_lists[name].append(result.features.get(name, 0))
+        return {name: torch.tensor(vals, dtype=torch.long) for name, vals in feature_lists.items()}
+
     def execute(self, raw_inputs: dict[str, FeatureValue]) -> FeatureResult:
         context: dict[str, FeatureValue] = {}
         for name, src in self.sources.items():

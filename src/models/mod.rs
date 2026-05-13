@@ -17,23 +17,6 @@ pub trait Model: Send + Sync {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FeatureSpec {
-    pub name: String,
-    pub vocab_size: usize,
-    pub embed_dim: usize,
-}
-
-impl FeatureSpec {
-    pub fn to_tuple(&self) -> (String, usize, usize) {
-        (self.name.clone(), self.vocab_size, self.embed_dim)
-    }
-}
-
-fn specs_to_tuples(specs: &[FeatureSpec]) -> Vec<(String, usize, usize)> {
-    specs.iter().map(|s| s.to_tuple()).collect()
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskConfigEntry {
     pub name: String,
     pub tower_dims: Vec<usize>,
@@ -42,15 +25,13 @@ pub struct TaskConfigEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ModelConfig {
-    LR { features: Vec<FeatureSpec> },
+    LR,
     DeepFM {
-        features: Vec<FeatureSpec>,
         fm_k: usize,
         #[serde(default)]
         deep_hidden_dims: Vec<usize>,
     },
     MMoE {
-        features: Vec<FeatureSpec>,
         #[serde(default)]
         shared_bottom_dims: Vec<usize>,
         num_experts: usize,
@@ -60,7 +41,6 @@ pub enum ModelConfig {
         task_configs: Vec<TaskConfigEntry>,
     },
     ESMM {
-        features: Vec<FeatureSpec>,
         #[serde(default)]
         shared_bottom_dims: Vec<usize>,
         #[serde(default)]
@@ -93,27 +73,29 @@ fn default_num_basis() -> usize { 4 }
 fn default_rank() -> usize { 16 }
 
 impl ModelConfig {
+    /// Build model from config. Feature specs come from `FeatureDag::embeddable_features()`.
     pub fn build(
         &self,
         vb: VarBuilder,
+        features: &[(String, usize, usize)],
         tokenizer: Option<FeatureTokenizer>,
     ) -> Result<Box<dyn Model>> {
         match self {
-            ModelConfig::LR { features } => {
-                let model = lr::LogisticRegression::new(vb, &specs_to_tuples(features))?;
+            ModelConfig::LR => {
+                let model = lr::LogisticRegression::new(vb, features)?;
                 Ok(Box::new(model))
             }
-            ModelConfig::DeepFM { features, fm_k, deep_hidden_dims } => {
-                let model = deepfm::DeepFM::new(vb, &specs_to_tuples(features), *fm_k, deep_hidden_dims)?;
+            ModelConfig::DeepFM { fm_k, deep_hidden_dims } => {
+                let model = deepfm::DeepFM::new(vb, features, *fm_k, deep_hidden_dims)?;
                 Ok(Box::new(model))
             }
-            ModelConfig::MMoE { features, shared_bottom_dims, num_experts, expert_hidden_dims, expert_output_dim, task_configs } => {
+            ModelConfig::MMoE { shared_bottom_dims, num_experts, expert_hidden_dims, expert_output_dim, task_configs } => {
                 let task_cfgs: Vec<(String, Vec<usize>)> = task_configs.iter().map(|t| (t.name.clone(), t.tower_dims.clone())).collect();
-                let model = mmoe::MMoE::new(vb, &specs_to_tuples(features), shared_bottom_dims, *num_experts, expert_hidden_dims, *expert_output_dim, &task_cfgs)?;
+                let model = mmoe::MMoE::new(vb, features, shared_bottom_dims, *num_experts, expert_hidden_dims, *expert_output_dim, &task_cfgs)?;
                 Ok(Box::new(model))
             }
-            ModelConfig::ESMM { features, shared_bottom_dims, ctr_hidden_dims, cvr_hidden_dims } => {
-                let model = esmm::ESMM::new(vb, &specs_to_tuples(features), shared_bottom_dims, ctr_hidden_dims, cvr_hidden_dims)?;
+            ModelConfig::ESMM { shared_bottom_dims, ctr_hidden_dims, cvr_hidden_dims } => {
+                let model = esmm::ESMM::new(vb, features, shared_bottom_dims, ctr_hidden_dims, cvr_hidden_dims)?;
                 Ok(Box::new(model))
             }
             ModelConfig::UniMixer { token_dim, num_tokens, num_blocks, block_size, use_lite, hidden_factor, num_basis, rank, use_siamese, task_config } => {
@@ -131,7 +113,7 @@ impl ModelConfig {
 
     pub fn model_type(&self) -> &str {
         match self {
-            ModelConfig::LR { .. } => "lr",
+            ModelConfig::LR => "lr",
             ModelConfig::DeepFM { .. } => "deepfm",
             ModelConfig::MMoE { .. } => "mmoe",
             ModelConfig::ESMM { .. } => "esmm",

@@ -1,4 +1,4 @@
-"""Training loop: Polars data → DAG → Model → BCE → Adam → export."""
+"""Training loop: Polars data → DAG preprocessing → Model → BCE → Adam → export."""
 import argparse
 import polars as pl, torch, torch.nn.functional as F
 from .config import FlowConfig
@@ -6,20 +6,11 @@ from .dag import FeatureDag
 from .export import export_to_safetensors, print_state_dict_keys
 from .models import ModelConfig
 
-def preprocess_batch(dag, batch_df, embed_features):
-    feature_lists = {name: [] for name, _ in embed_features}
-    for row in batch_df.to_dicts():
-        raw = {k: v for k, v in row.items() if k in dag.sources}
-        result = dag.execute(raw)
-        for name, _ in embed_features:
-            feature_lists[name].append(result.features.get(name, 0))
-    return {name: torch.tensor(vals, dtype=torch.long) for name, vals in feature_lists.items()}
-
-def train_epoch(model, optimizer, dag, df, embed_features, task_names, batch_size):
+def train_epoch(model, optimizer, dag, df, batch_size):
     model.train(); total_loss = 0.0; n_batches = 0
     for start in range(0, len(df), batch_size):
         batch_df = df.slice(start, batch_size); actual_bs = len(batch_df)
-        feature_tensors = preprocess_batch(dag, batch_df, embed_features)
+        feature_tensors = dag.preprocess_batch(batch_df.to_dicts())
         outputs = model(feature_tensors)
         loss = None
         for task_name, logits in outputs.items():
@@ -37,31 +28,28 @@ def main():
     parser.add_argument("--feature-config", default="examples/feature_config.yaml")
     parser.add_argument("--model-config", default="config/model_lr.yaml")
     parser.add_argument("--data", default="data/train.parquet")
-    parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--batch-size", type=int, default=64)
-    parser.add_argument("--lr", type=float, default=0.001)
-    parser.add_argument("--export-path", default="model.safetensors")
+    parser.add_argument("--epochs", type=int, default=10); parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--lr", type=float, default=0.001); parser.add_argument("--export-path", default="model.safetensors")
     parser.add_argument("--debug", type=int, default=0)
     args = parser.parse_args()
 
     flow_config = FlowConfig.from_yaml(args.feature_config)
-    print(f"[Config] version={flow_config.version}, sources={len(flow_config.sources)}, ops={len(flow_config.operators)}")
+    print(f"[Config] feature version={flow_config.version}, sources={len(flow_config.sources)}, ops={len(flow_config.operators)}")
     model_config = ModelConfig.from_yaml(args.model_config)
-    print(f"[Config] type={model_config.type}")
+    print(f"[Config] model type={model_config.type}")
 
     dag = FeatureDag(flow_config, debug_mode=args.debug > 0)
-    embed_features = dag.embeddable_features()
-    print(f"[DAG] {len(embed_features)} embeddable features:")
-    for name, emb in embed_features: print(f"  {name:<25} vocab={emb.vocab_size:<8} dim={emb.embed_dim}")
+    features = dag.feature_tuples()
+    print(f"[DAG] {len(features)} embeddable features:")
+    for name, vocab, dim in features: print(f"  {name:<25} vocab={vocab:<8} dim={dim}")
 
     tokenizer = None
     if model_config.type == "unimixer":
         from .models.unimixer.tokenizer import FeatureTokenizer
-        tf = [(name, emb.vocab_size, emb.embed_dim) for name, emb in embed_features]
-        tokenizer = FeatureTokenizer(tf, model_config.token_dim, model_config.num_tokens)
-        print(f"[Tokenizer] {len(tf)} features -> {model_config.num_tokens} tokens x {model_config.token_dim}d = {tokenizer.total_embed_dim}")
+        tokenizer = FeatureTokenizer(features, model_config.token_dim, model_config.num_tokens)
+        print(f"[Tokenizer] {len(features)} features -> {model_config.num_tokens} tokens x {model_config.token_dim}d = {tokenizer.total_embed_dim}")
 
-    model = model_config.build(tokenizer=tokenizer)
+    model = model_config.build(features, tokenizer=tokenizer)
     print(f"[Model] params: {sum(p.numel() for p in model.parameters()):,}")
     if args.debug: print_state_dict_keys(model)
 
@@ -70,10 +58,10 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     print(f"[Train] {args.epochs} epochs, batch_size={args.batch_size}")
     for epoch in range(args.epochs):
-        avg_loss = train_epoch(model, optimizer, dag, df, embed_features, [], args.batch_size)
+        avg_loss = train_epoch(model, optimizer, dag, df, args.batch_size)
         print(f"  epoch {epoch+1:3d}/{args.epochs}  loss={avg_loss:.6f}")
 
-    print(f"[Export] Saving to {args.export_path}")
+    print(f"[Export] {args.export_path}")
     export_to_safetensors(model, args.export_path)
     print("Done.")
 
