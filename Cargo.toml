@@ -1,0 +1,15 @@
+[package]
+name = "scale-rec"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+candle-core = "0.10.2"
+candle-nn = "0.10.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+petgraph = "0.6"
+rhai = { version = "1.19", features = ["sync"] }
+libloading = "0.8"
+tracing = "0.1"
+anyhow = "1.0"
