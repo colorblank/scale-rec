@@ -1,0 +1,73 @@
+version: "1.0.0"
+
+sources:
+  - name: "user_id"
+    source: "User"
+    dtype: "int"
+    default_val: "0"
+    embed:
+      vocab_size: 10000
+      embed_dim: 16
+
+  - name: "user_age"
+    source: "User"
+    dtype: "float"
+    default_val: "0.0"
+
+  - name: "item_category"
+    source: "Item"
+    dtype: "string"
+    default_val: "unknown"
+
+  - name: "user_tags"
+    source: "User"
+    dtype: "string"
+    default_val: ""
+
+  - name: "item_price"
+    source: "Item"
+    dtype: "float"
+    default_val: "1.0"
+
+operators:
+  - name: "age_bucket_op"
+    op_type: "Bucketing"
+    inputs: ["user_age"]
+    outputs: ["user_age_bucket"]
+    params:
+      boundaries: [18, 25, 35, 50]
+    embed:
+      vocab_size: 5
+      embed_dim: 8
+
+  - name: "category_map_op"
+    op_type: "DictMapper"
+    inputs: ["item_category"]
+    outputs: ["item_category_idx"]
+    params:
+      mapping:
+        electronics: 1
+        fashion: 2
+        books: 3
+      default_idx: 0
+    embed:
+      vocab_size: 4
+      embed_dim: 8
+
+  - name: "tag_parser_op"
+    op_type: "StringParser"
+    inputs: ["user_tags"]
+    outputs: ["user_first_tag"]
+    params:
+      sep1: "|"
+      sep2: "#"
+      key_index: 0
+      pad_len: 1
+      pad_val: "none"
+
+  - name: "price_log_op"
+    op_type: "ExpressionOp"
+    inputs: ["item_price"]
+    outputs: ["item_price_log"]
+    params:
+      script: "log(v0 + 1.0)"
