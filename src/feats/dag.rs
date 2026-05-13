@@ -11,12 +11,16 @@ use std::sync::Arc;
 
 pub type FeatureValue = Arc<dyn Any + Send + Sync>;
 
+/// 特征处理结果：包含所有特征值并区分来源。
 pub struct FeatureResult {
     pub features: HashMap<String, FeatureValue>,
     pub source_names: HashSet<String>,
     pub computed_names: HashSet<String>,
 }
 
+/// 特征 DAG 执行引擎。
+///
+/// 根据 FlowConfig 构建算子图，拓扑排序后按序执行单样本处理。
 pub struct FeatureDag {
     sources: HashMap<String, SourceDef>,
     nodes: HashMap<String, Box<dyn CustomOp>>,

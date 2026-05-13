@@ -7,6 +7,10 @@ use candle_core::{Result, Tensor};
 use candle_nn::VarBuilder;
 use std::collections::HashMap;
 
+/// ESMM 模型 (Ma et al., 2018)。
+///
+/// 全量空间多任务：CTR 塔 + CVR 塔，CTCVR = σ(CTR) × σ(CVR)。
+/// 在全量曝光上训练，消除 CVR 样本选择偏差 (SSB)。
 pub struct ESMM {
     embeddings: FeatureEmbeddings,
     shared_bottom: Option<Mlp>,

@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+/// 数据类型：整数、浮点、字符串、列表。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DType {
@@ -11,12 +12,14 @@ pub enum DType {
     List { dtype: Box<DType>, length: usize },
 }
 
+/// 嵌入层配置：词表大小和嵌入维度。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbedConfig {
     pub vocab_size: usize,
     pub embed_dim: usize,
 }
 
+/// 原始输入源定义。`embed` 字段非空表示该特征直接送入 Embedding。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceDef {
     pub name: String,
@@ -27,6 +30,7 @@ pub struct SourceDef {
     pub embed: Option<EmbedConfig>,
 }
 
+/// 算子节点定义。`params` 使用原生 YAML 值，由各算子自行解析。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OperatorDef {
     pub name: String,
@@ -38,6 +42,7 @@ pub struct OperatorDef {
     pub embed: Option<EmbedConfig>,
 }
 
+/// 完整的特征编排配置。包含版本、输入源列表和算子列表。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlowConfig {
     pub version: String,

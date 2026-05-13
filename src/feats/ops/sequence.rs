@@ -1,18 +1,23 @@
 //! 序列算子：填充/截断整数序列至固定长度。
 use std::any::Any;
 
+/// 序列填充/截断算子。
+///
+/// 将 `Vec<i32>` 填充或截断至固定长度 `max_len`，使用 `pad_val` 填充。
 pub struct SequenceOp {
     max_len: usize,
     pad_val: i32,
 }
 
 impl SequenceOp {
+    /// 构造序列算子，`max_len` 为目标长度，`pad_val` 为填充值。
     pub fn new(max_len: usize, pad_val: i32) -> Self {
         Self { max_len, pad_val }
     }
 }
 
 impl super::CustomOp for SequenceOp {
+    /// 执行填充/截断: `Vec<i32>` → `Vec<i32>`(长度 = max_len)。
     fn name(&self) -> &str {
         "SequenceOp"
     }

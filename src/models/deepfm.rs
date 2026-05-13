@@ -8,6 +8,10 @@ use candle_core::{Result, Tensor};
 use candle_nn::VarBuilder;
 use std::collections::HashMap;
 
+/// DeepFM 模型 (Guo et al., 2017)。
+///
+/// FM 一阶 (标量权重求和) + FM 二阶 (隐向量内积交互) + Deep MLP。
+/// 最终 `logit = first_order + second_order + deep_out + global_bias`。
 pub struct DeepFM {
     fm_first_embeddings: FeatureEmbeddings,
     fm_second_embeddings: FeatureEmbeddings,

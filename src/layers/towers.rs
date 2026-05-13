@@ -53,6 +53,10 @@ pub struct MultiTaskConfig {
     pub relations: Vec<TaskRelation>,
 }
 
+/// 单任务预测塔。
+///
+/// 多层 MLP + 层间激活，输出 logits（末层无激活）。
+/// 参数命名: `hidden.{i}` 和 `output.{num_hidden}` 匹配 Candle 路径。
 pub struct TaskTower {
     name: String,
     layers: Vec<Linear>,
@@ -60,6 +64,7 @@ pub struct TaskTower {
 }
 
 impl TaskTower {
+    /// 根据配置构造塔。`input_dim` 为共享底层输出维度。
     pub fn new(config: &TowerConfig, input_dim: usize, vb: VarBuilder) -> Result<Self> {
         let mut layers = Vec::new();
         let mut in_dim = input_dim;
@@ -93,6 +98,9 @@ impl TaskTower {
         }
     }
 
+    /// 前向: hidden → act → ... → output logits。
+    /// 前向：各塔独立输出 → 关系推导（sigmoid 后运算）。
+    /// 返回 `{task_name: logits}` 字典。
     pub fn forward(&self, x: &Tensor) -> Result<Tensor> {
         let mut out = x.clone();
         let n = self.layers.len();
@@ -116,12 +124,16 @@ impl Module for TaskTower {
     }
 }
 
+/// 多任务塔管理器。
+///
+/// 管理独立塔的前向传播和任务间概率关系推导（如 CTCVR = CTR × CVR）。
 pub struct MultiTaskTower {
     towers: Vec<TaskTower>,
     relations: Vec<TaskRelation>,
 }
 
 impl MultiTaskTower {
+    /// 根据配置构建多任务塔。
     pub fn new(config: &MultiTaskConfig, input_dim: usize, vb: VarBuilder) -> Result<Self> {
         let mut towers = Vec::new();
         for tc in &config.towers {
@@ -146,6 +158,9 @@ impl MultiTaskTower {
         self.towers.len()
     }
 
+    /// 前向: hidden → act → ... → output logits。
+    /// 前向：各塔独立输出 → 关系推导（sigmoid 后运算）。
+    /// 返回 `{task_name: logits}` 字典。
     pub fn forward(&self, shared_output: &Tensor) -> Result<HashMap<String, Tensor>> {
         let mut outputs: HashMap<String, Tensor> = HashMap::new();
         for tower in &self.towers {

@@ -7,6 +7,10 @@ use candle_core::{Result, Tensor};
 use candle_nn::VarBuilder;
 use std::collections::HashMap;
 
+/// 逻辑回归基线模型。
+///
+/// Embedding → Concat → Linear(no activation) → logit。
+/// 消融实验中作为无特征交互的对照组。
 pub struct LogisticRegression {
     embeddings: FeatureEmbeddings,
     mlp: Mlp,

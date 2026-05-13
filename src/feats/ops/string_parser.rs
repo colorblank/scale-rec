@@ -1,6 +1,9 @@
 //! 字符串解析算子：结构化字符串分词与填充。
 use std::any::Any;
 
+/// 字符串解析算子。
+///
+/// 两级分隔符解析结构化字符串：`sep1` 分割条目，`sep2` 分割键值对，提取 `key_index` 位置的字段，填充至 `pad_len`。
 pub struct StringParser {
     sep1: String,
     sep2: String,
@@ -10,6 +13,7 @@ pub struct StringParser {
 }
 
 impl StringParser {
+    /// 构造解析算子。
     pub fn new(
         sep1: String,
         sep2: String,
@@ -28,6 +32,7 @@ impl StringParser {
 }
 
 impl super::CustomOp for StringParser {
+    /// 执行解析: `String` → `Vec<String>`(长度 = pad_len)。
     fn name(&self) -> &str {
         "StringParser"
     }

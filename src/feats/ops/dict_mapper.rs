@@ -2,12 +2,16 @@
 use std::any::Any;
 use std::collections::HashMap;
 
+/// 字典映射算子。
+///
+/// 将字符串键映射为整数索引，未命中时返回默认索引。
 pub struct DictMapper {
     mapping: HashMap<String, i32>,
     default_idx: i32,
 }
 
 impl DictMapper {
+    /// 构造映射算子。`default_idx` 为未知键的返回值。
     pub fn new(mapping: HashMap<String, i32>, default_idx: i32) -> Self {
         Self {
             mapping,
@@ -20,6 +24,7 @@ impl DictMapper {
 }
 
 impl super::CustomOp for DictMapper {
+    /// 执行映射: `String` 或 `i32` 输入 → `i32` 索引。
     fn name(&self) -> &str {
         "DictMapper"
     }

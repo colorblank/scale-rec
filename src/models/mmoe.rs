@@ -7,6 +7,9 @@ use candle_core::{Result, Tensor};
 use candle_nn::{linear, Linear, Module, VarBuilder};
 use std::collections::HashMap;
 
+/// MMoE 模型 (Ma et al., 2018)。
+///
+/// 多门控专家混合：共享底层 → N 个并行专家 → 每任务独立门控 (softmax) → 任务专属塔。
 pub struct MMoE {
     embeddings: FeatureEmbeddings,
     shared_bottom: Option<Mlp>,

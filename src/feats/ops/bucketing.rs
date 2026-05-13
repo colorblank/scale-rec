@@ -1,11 +1,16 @@
 //! 连续值分桶算子：将浮点数映射为桶索引。
 use std::any::Any;
 
+/// 连续值分桶算子。
+///
+/// 将浮点值按升序边界映射为 0..N 的桶索引。
+/// 例如 boundaries=[18,25,35,50]，28.5 -> 桶 2。
 pub struct Bucketing {
     boundaries: Vec<f32>,
 }
 
 impl Bucketing {
+    /// 构造分桶算子，`boundaries` 自动升序排列。
     pub fn new(mut boundaries: Vec<f32>) -> Self {
         boundaries.sort_by(|a, b| a.partial_cmp(b).unwrap());
         Self { boundaries }
@@ -13,6 +18,7 @@ impl Bucketing {
 }
 
 impl super::CustomOp for Bucketing {
+    /// 执行分桶: `f32` 或 `f64` 输入 → `i32` 桶索引。
     fn name(&self) -> &str {
         "Bucketing"
     }

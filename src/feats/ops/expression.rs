@@ -2,12 +2,17 @@
 use rhai::{Engine, Scope};
 use std::any::Any;
 
+/// Rhai 脚本求值算子。
+///
+/// 将输入绑定为 v0..vN 变量，执行自定义表达式并返回 f32。
+/// 内置 `log`(ln) 函数。
 pub struct ExpressionOp {
     script: String,
     engine: Engine,
 }
 
 impl ExpressionOp {
+    /// 构造表达式算子，`script` 为 Rhai 表达式字符串。
     pub fn new(script: String) -> Self {
         let mut engine = Engine::new();
         engine.register_fn("log", |f: f64| f.ln());
@@ -16,6 +21,7 @@ impl ExpressionOp {
 }
 
 impl super::CustomOp for ExpressionOp {
+    /// 执行求值: 输入 v0..vN → Rhai 脚本 → `f32`。
     fn name(&self) -> &str {
         "ExpressionOp"
     }

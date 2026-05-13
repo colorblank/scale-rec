@@ -3,6 +3,10 @@ use super::towers::Activation;
 use candle_core::{Result, Tensor};
 use candle_nn::{linear, Linear, Module, VarBuilder};
 
+/// 通用多层感知机。
+///
+/// 全连接层序列，层间带激活，末层无激活（输出 logits）。
+/// 当 `hidden_dims` 为空时退化为单层 Linear。
 pub struct Mlp {
     layers: Vec<Linear>,
     activation: Activation,
@@ -11,6 +15,7 @@ pub struct Mlp {
 }
 
 impl Mlp {
+    /// 构造 MLP。`hidden_dims` 为空时退化为 `Linear(input_dim, output_dim)`。
     pub fn new(
         vb: VarBuilder,
         input_dim: usize,
@@ -33,6 +38,7 @@ impl Mlp {
         })
     }
 
+    /// 前向: hidden → act → ... → output（末层不激活）。
     pub fn forward(&self, x: &Tensor) -> Result<Tensor> {
         let mut out = x.clone();
         let n = self.layers.len();

@@ -3,6 +3,10 @@ use candle_core::{Result, Tensor};
 use candle_nn::{embedding, Embedding, Module, VarBuilder};
 use std::collections::HashMap;
 
+/// 特征嵌入层。
+///
+/// 将稀疏特征索引映射为稠密嵌入向量并沿特征维度拼接。
+/// 所有推荐模型共享的基础组件。
 pub struct FeatureEmbeddings {
     feature_to_idx: HashMap<String, usize>,
     ordered_names: Vec<String>,
@@ -12,6 +16,7 @@ pub struct FeatureEmbeddings {
 }
 
 impl FeatureEmbeddings {
+    /// 构造嵌入层。`features` 为 `(name, vocab_size, embed_dim)` 列表。
     pub fn new(vb: VarBuilder, features: &[(String, usize, usize)]) -> Result<Self> {
         let num_features = features.len();
         let mut feature_to_idx = HashMap::with_capacity(num_features);
@@ -37,6 +42,7 @@ impl FeatureEmbeddings {
         })
     }
 
+    /// 前向：查找嵌入 → 拼接 → `[batch, total_dim]`。
     pub fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<Tensor> {
         let mut embeds = Vec::with_capacity(self.num_features);
         for name in &self.ordered_names {
@@ -49,6 +55,7 @@ impl FeatureEmbeddings {
         Tensor::cat(&embeds, 1)
     }
 
+    /// 返回各特征嵌入的 `[batch, 1, embed_dim]` 列表，用于 FM 交互。
     pub fn forward_stacked(&self, x_inputs: &HashMap<String, Tensor>) -> Result<Vec<Tensor>> {
         let mut embeds = Vec::with_capacity(self.num_features);
         for name in &self.ordered_names {
