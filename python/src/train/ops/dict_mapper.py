@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """字典映射算子：字符串/整数到索引的映射。"""
 from typing import Any
 
@@ -11,8 +13,4 @@ class DictMapper:
         val = inputs[0]
         if isinstance(val, (int, float)):
             val = str(val)
-        return (
-            self.mapping.get(val, self.default_idx)
-            if isinstance(val, str)
-            else self.default_idx
-        )
+        return self.mapping.get(val, self.default_idx) if isinstance(val, str) else self.default_idx

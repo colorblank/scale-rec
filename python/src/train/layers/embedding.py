@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """FeatureEmbeddings：离散特征索引 → 稠密嵌入拼接。"""
 import torch.nn as nn
 
@@ -21,7 +23,4 @@ class FeatureEmbeddings(nn.Module):
         return __import__("torch").cat(embeds, dim=1)
 
     def forward_stacked(self, x_inputs):
-        return [
-            getattr(self, f"emb_{n}")(x_inputs[n]).unsqueeze(1)
-            for n in self.ordered_names
-        ]
+        return [getattr(self, f"emb_{n}")(x_inputs[n]).unsqueeze(1) for n in self.ordered_names]

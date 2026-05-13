@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """表达式算子：受限 eval 执行脚本表达式。"""
 import math
 from typing import Any

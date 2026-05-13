@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 """Mlp：通用多层感知机。"""
 import torch.nn as nn
-from .towers import Activation
 
 
 class Mlp(nn.Module):

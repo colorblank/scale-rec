@@ -1,7 +1,12 @@
+from __future__ import annotations
+
 """多任务塔：TaskTower、MultiTaskTower、任务关系推导。"""
 from dataclasses import dataclass, field
 from enum import Enum, auto
-import torch, torch.nn as nn, torch.nn.functional as F
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 
 class Activation(Enum):
@@ -89,9 +94,7 @@ class MultiTaskTower(nn.Module):
                 "multiply": lambda: probs[rel.sources[0]] * probs[rel.sources[1]],
                 "add": lambda: probs[rel.sources[0]] + probs[rel.sources[1]],
                 "subtract": lambda: probs[rel.sources[0]] - probs[rel.sources[1]],
-                "divide": lambda: (
-                    probs[rel.sources[0]] / (probs[rel.sources[1]] + 1e-8)
-                ),
+                "divide": lambda: probs[rel.sources[0]] / (probs[rel.sources[1]] + 1e-8),
             }
             outputs[rel.target] = m[rel.op]()
         return outputs

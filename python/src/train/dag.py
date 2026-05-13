@@ -1,9 +1,12 @@
-"""特征 DAG 执行器 — 对应 src/feats/dag.rs。"""
-"""Feature DAG executor — mirrors src/feats/dag.rs."""
+from __future__ import annotations
 
+"""Feature DAG executor — mirrors src/feats/dag.rs."""
 from collections import deque
 from dataclasses import dataclass
 from typing import Any
+
+import torch
+
 from .config import DType, EmbedConfig, FlowConfig, OperatorDef, SourceDef
 from .ops import (
     Bucketing,
@@ -131,19 +134,10 @@ class FeatureDag:
         return result
 
     def feature_tuples(self) -> list[tuple[str, int, int]]:
-        """Return (name, vocab_size, embed_dim) tuples from embeddable features."""
-        return [
-            (name, emb.vocab_size, emb.embed_dim)
-            for name, emb in self.embeddable_features()
-        ]
+        return [(name, emb.vocab_size, emb.embed_dim) for name, emb in self.embeddable_features()]
 
-    def preprocess_batch(self, rows: list[dict]) -> dict[str, "torch.Tensor"]:
-        """Execute DAG on each row and stack embeddable features into tensors.
-
-        Returns {feature_name: LongTensor [batch_size]} ready for model input.
-        """
-        import torch
-
+    def preprocess_batch(self, rows: list[dict]) -> dict[str, torch.Tensor]:
+        """Execute DAG on each row and stack embeddable features into tensors."""
         embed_names = [name for name, _ in self.embeddable_features()]
         feature_lists: dict[str, list] = {name: [] for name in embed_names}
         for row in rows:
@@ -151,10 +145,7 @@ class FeatureDag:
             result = self.execute(raw)
             for name in embed_names:
                 feature_lists[name].append(result.features.get(name, 0))
-        return {
-            name: torch.tensor(vals, dtype=torch.long)
-            for name, vals in feature_lists.items()
-        }
+        return {name: torch.tensor(vals, dtype=torch.long) for name, vals in feature_lists.items()}
 
     def execute(self, raw_inputs: dict[str, FeatureValue]) -> FeatureResult:
         context: dict[str, FeatureValue] = {}
@@ -174,7 +165,9 @@ class FeatureDag:
         if self.debug_mode:
             self._dump_snapshot(context, source_names, computed_names)
         return FeatureResult(
-            features=context, source_names=source_names, computed_names=computed_names
+            features=context,
+            source_names=source_names,
+            computed_names=computed_names,
         )
 
     def _dump_snapshot(self, context, source_names, computed_names):

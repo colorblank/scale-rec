@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 """UniMixer：Full model。"""
-import torch, torch.nn as nn
-from ...layers.towers import MultiTaskConfig, MultiTaskTower
+import torch.nn as nn
+
+from ...layers.towers import MultiTaskTower
 from .block import UniMixerBlock
 from .norm import SiameseNorm
-from .tokenizer import FeatureTokenizer
 
 
 class UniMixerModel(nn.Module):

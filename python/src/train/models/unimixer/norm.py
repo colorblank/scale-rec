@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 """SiameseNorm：双流归一化 RMSNorm + 融合。"""
-import torch, torch.nn as nn, torch.nn.functional as F
+import torch
+import torch.nn as nn
 
 
 class RMSNorm(nn.Module):

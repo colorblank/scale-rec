@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 """FeatureTokenizer：分组 Conv1d 特征投影。"""
-import torch, torch.nn as nn
+import torch
+import torch.nn as nn
 
 
 class FeatureTokenizer(nn.Module):

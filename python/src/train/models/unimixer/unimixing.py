@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 """UniMixing + UniMixingLite：双随机矩阵交互。"""
-import torch, torch.nn as nn
+import torch
+import torch.nn as nn
 
 
 def sinkhorn_knopp(mat, n_iters=3):
@@ -50,7 +53,7 @@ class UniMixingLite(nn.Module):
 
     def forward(self, x, temperature):
         bs = x.shape[0]
-        n, b, l = self.num_blocks, self.block_size, self.embed_dim
+        n, b, d = self.num_blocks, self.block_size, self.embed_dim
         x_blocks = x.view(bs, n, b)
         w_b = (self.omega.unsqueeze(2).unsqueeze(3) * self.z.unsqueeze(0)).sum(dim=1)
         w_b = 0.5 * (w_b + w_b.transpose(1, 2))
@@ -60,4 +63,4 @@ class UniMixingLite(nn.Module):
         w_g = 0.5 * (w_g + w_g.transpose(0, 1))
         w_g = sinkhorn_knopp(w_g / temperature)
         out = torch.matmul(w_g.unsqueeze(0).expand(bs, n, n), h)
-        return out.reshape(bs, l)
+        return out.reshape(bs, d)

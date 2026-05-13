@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 """特征配置类型 — 对应 src/feats/config.rs。"""
 """Feature pipeline config types — mirrors src/feats/config.rs."""
 
 from dataclasses import dataclass, field
 from typing import Optional
+
 import yaml
 
 
@@ -18,9 +21,7 @@ class DType:
             return cls(tag=raw)
         if isinstance(raw, dict) and "list" in raw:
             inner_raw = raw["list"]["dtype"]
-            return cls(
-                tag="list", inner=cls.from_dict(inner_raw), length=raw["list"]["length"]
-            )
+            return cls(tag="list", inner=cls.from_dict(inner_raw), length=raw["list"]["length"])
         raise ValueError(f"Invalid DType: {raw}")
 
 

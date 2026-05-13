@@ -1,8 +1,14 @@
+from __future__ import annotations
+
 """训练入口：Polars 数据 → DAG 预处理 → 模型 → BCE → Adam → 导出。"""
 """Training loop: Polars data → DAG preprocessing → Model → BCE → Adam → export."""
 
 import argparse
-import polars as pl, torch, torch.nn.functional as F
+
+import polars as pl
+import torch
+import torch.nn.functional as F
+
 from .config import FlowConfig
 from .dag import FeatureDag
 from .export import export_to_safetensors, print_state_dict_keys
@@ -21,9 +27,9 @@ def train_epoch(model, optimizer, dag, df, batch_size):
         loss = None
         for task_name, logits in outputs.items():
             if task_name in batch_df.columns:
-                labels = torch.tensor(
-                    batch_df[task_name].to_numpy(), dtype=torch.float32
-                ).view(actual_bs, 1)
+                labels = torch.tensor(batch_df[task_name].to_numpy(), dtype=torch.float32).view(
+                    actual_bs, 1
+                )
                 task_loss = F.binary_cross_entropy_with_logits(logits, labels)
                 loss = task_loss if loss is None else loss + task_loss
         if loss is None:
@@ -65,9 +71,7 @@ def main():
     if model_config.type == "unimixer":
         from .models.unimixer.tokenizer import FeatureTokenizer
 
-        tokenizer = FeatureTokenizer(
-            features, model_config.token_dim, model_config.num_tokens
-        )
+        tokenizer = FeatureTokenizer(features, model_config.token_dim, model_config.num_tokens)
         print(
             f"[Tokenizer] {len(features)} features -> {model_config.num_tokens} tokens x {model_config.token_dim}d = {tokenizer.total_embed_dim}"
         )

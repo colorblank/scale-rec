@@ -1,5 +1,9 @@
+from __future__ import annotations
+
 """DeepFM：FM 一阶 + FM 二阶 + Deep MLP。"""
-import torch, torch.nn as nn
+import torch
+import torch.nn as nn
+
 from ..layers.embedding import FeatureEmbeddings
 from ..layers.fm import fm_interaction
 from ..layers.mlp import Mlp

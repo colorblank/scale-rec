@@ -1,11 +1,11 @@
+from __future__ import annotations
+
 """字符串解析算子：结构化字符串的分词与填充。"""
 from typing import Any
 
 
 class StringParser:
-    def __init__(
-        self, sep1: str, sep2: str, key_index: int, pad_len: int, pad_val: str
-    ):
+    def __init__(self, sep1: str, sep2: str, key_index: int, pad_len: int, pad_val: str):
         self.sep1 = sep1
         self.sep2 = sep2
         self.key_index = key_index

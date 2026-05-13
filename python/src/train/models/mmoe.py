@@ -1,5 +1,10 @@
+from __future__ import annotations
+
 """MMoE：多门控专家混合。"""
-import torch, torch.nn as nn, torch.nn.functional as F
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
 from ..layers.embedding import FeatureEmbeddings
 from ..layers.mlp import Mlp
 from ..layers.towers import Activation
@@ -48,14 +53,9 @@ class MMoE(nn.Module):
 
     def forward(self, x_inputs):
         concat = self.embeddings(x_inputs)
-        shared = (
-            self.shared_bottom(concat) if hasattr(self, "shared_bottom") else concat
-        )
+        shared = self.shared_bottom(concat) if hasattr(self, "shared_bottom") else concat
         experts = torch.cat(
-            [
-                getattr(self, f"expert_{e}")(shared).unsqueeze(1)
-                for e in range(self.num_experts)
-            ],
+            [getattr(self, f"expert_{e}")(shared).unsqueeze(1) for e in range(self.num_experts)],
             dim=1,
         )
         outputs = {}

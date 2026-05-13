@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 """UniMixerBlock：交互 + 激活 + 归一 + 残差。"""
-import torch, torch.nn as nn
+import torch.nn as nn
+
 from .norm import SiameseNorm
 from .swiglu import PerTokenSwiGlu
 from .unimixing import UniMixing, UniMixingLite
@@ -36,9 +39,7 @@ class UniMixerBlock(nn.Module):
             else self.unimixing(x, temperature)
         )
 
-    def forward(
-        self, x, temperature, x_bar_opt=None, y_bar_opt=None, use_siamese=False
-    ):
+    def forward(self, x, temperature, x_bar_opt=None, y_bar_opt=None, use_siamese=False):
         bs = x.shape[0]
         if use_siamese:
             ybn = self.siamese_norm.forward_rmsnorm(y_bar_opt)

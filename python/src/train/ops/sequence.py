@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """序列算子：填充/截断整数序列至固定长度。"""
 from typing import Any
 

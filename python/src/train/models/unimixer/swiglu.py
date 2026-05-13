@@ -1,5 +1,10 @@
+from __future__ import annotations
+
 """PerTokenSwiGLU：Token 维度 SwiGLU。"""
-import math, torch, torch.nn as nn
+import math
+
+import torch
+import torch.nn as nn
 
 
 class PerTokenSwiGlu(nn.Module):
@@ -11,17 +16,11 @@ class PerTokenSwiGlu(nn.Module):
         ub = math.sqrt(6.0 / (token_dim + h))
         gb = math.sqrt(6.0 / (token_dim + h))
         db = math.sqrt(6.0 / (h + token_dim))
-        self.w_up = nn.Parameter(
-            torch.empty(num_tokens, h, token_dim).uniform_(-ub, ub)
-        )
+        self.w_up = nn.Parameter(torch.empty(num_tokens, h, token_dim).uniform_(-ub, ub))
         self.b_up = nn.Parameter(torch.zeros(1, num_tokens, h))
-        self.w_gate = nn.Parameter(
-            torch.empty(num_tokens, h, token_dim).uniform_(-gb, gb)
-        )
+        self.w_gate = nn.Parameter(torch.empty(num_tokens, h, token_dim).uniform_(-gb, gb))
         self.b_gate = nn.Parameter(torch.zeros(1, num_tokens, h))
-        self.w_down = nn.Parameter(
-            torch.empty(num_tokens, token_dim, h).uniform_(-db, db)
-        )
+        self.w_down = nn.Parameter(torch.empty(num_tokens, token_dim, h).uniform_(-db, db))
         self.b_down = nn.Parameter(torch.zeros(1, num_tokens, token_dim))
 
     @staticmethod
@@ -29,9 +28,7 @@ class PerTokenSwiGlu(nn.Module):
         wt = w.transpose(1, 2)
         bt, _, _ = x.shape
         _, h, _ = w.shape
-        return torch.matmul(
-            x.unsqueeze(2), wt.unsqueeze(0).expand(bt, h, w.shape[2])
-        ).squeeze(2)
+        return torch.matmul(x.unsqueeze(2), wt.unsqueeze(0).expand(bt, h, w.shape[2])).squeeze(2)
 
     def forward(self, x):
         up = self._einsum(x, self.w_up) + self.b_up
@@ -40,7 +37,5 @@ class PerTokenSwiGlu(nn.Module):
         wdt = self.w_down.transpose(1, 2)
         bt, t, h = hidden.shape
         _, d, _ = self.w_down.shape
-        out = torch.matmul(
-            hidden.unsqueeze(2), wdt.unsqueeze(0).expand(bt, t, h, d)
-        ).squeeze(2)
+        out = torch.matmul(hidden.unsqueeze(2), wdt.unsqueeze(0).expand(bt, t, h, d)).squeeze(2)
         return out + self.b_down

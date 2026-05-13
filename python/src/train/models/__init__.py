@@ -1,11 +1,15 @@
+from __future__ import annotations
+
 """模型注册与配置 — 对应 src/models/mod.rs。"""
 from dataclasses import dataclass, field
-import torch.nn as nn, yaml
+
+import yaml
+
 from ..layers.towers import Activation, MultiTaskConfig, TaskRelation, TowerConfig
-from .lr import LogisticRegression
 from .deepfm import DeepFM
-from .mmoe import MMoE
 from .esmm import ESMM
+from .lr import LogisticRegression
+from .mmoe import MMoE
 from .unimixer.model import UniMixerModel
 from .unimixer.tokenizer import FeatureTokenizer
 
@@ -26,10 +30,7 @@ def _parse_task_config(raw):
         )
         for t in raw.get("towers", [])
     ]
-    relations = [
-        TaskRelation(r["target"], r["sources"], r["op"])
-        for r in raw.get("relations", [])
-    ]
+    relations = [TaskRelation(r["target"], r["sources"], r["op"]) for r in raw.get("relations", [])]
     return MultiTaskConfig(towers=towers, relations=relations)
 
 
@@ -66,8 +67,7 @@ class ModelConfig:
     @classmethod
     def from_dict(cls, raw):
         task_configs = [
-            TaskConfigEntry(t["name"], t.get("tower_dims", []))
-            for t in raw.get("task_configs", [])
+            TaskConfigEntry(t["name"], t.get("tower_dims", [])) for t in raw.get("task_configs", [])
         ]
         tc = _parse_task_config(raw["task_config"]) if "task_config" in raw else None
         return cls(
