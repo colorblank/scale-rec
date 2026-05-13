@@ -1,3 +1,4 @@
+"""字符串解析算子：结构化字符串的分词与填充。"""
 from typing import Any
 
 

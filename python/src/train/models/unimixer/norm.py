@@ -1,3 +1,4 @@
+"""SiameseNorm：双流归一化 RMSNorm + 融合。"""
 import torch, torch.nn as nn, torch.nn.functional as F
 
 

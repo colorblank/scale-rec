@@ -1,3 +1,4 @@
+"""PerTokenSwiGLU：Token 维度 SwiGLU。"""
 import math, torch, torch.nn as nn
 
 

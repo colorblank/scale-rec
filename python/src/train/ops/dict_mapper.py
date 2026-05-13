@@ -1,3 +1,4 @@
+"""字典映射算子：字符串/整数到索引的映射。"""
 from typing import Any
 
 

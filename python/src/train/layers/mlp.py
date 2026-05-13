@@ -1,3 +1,4 @@
+"""Mlp：通用多层感知机。"""
 import torch.nn as nn
 from .towers import Activation
 

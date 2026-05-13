@@ -1,3 +1,4 @@
+"""特征配置类型 — 对应 src/feats/config.rs。"""
 """Feature pipeline config types — mirrors src/feats/config.rs."""
 
 from dataclasses import dataclass, field

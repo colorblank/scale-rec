@@ -1,3 +1,4 @@
+"""MMoE：多门控专家混合。"""
 import torch, torch.nn as nn, torch.nn.functional as F
 from ..layers.embedding import FeatureEmbeddings
 from ..layers.mlp import Mlp

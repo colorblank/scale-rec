@@ -1,3 +1,4 @@
+"""UniMixing + UniMixingLite：双随机矩阵交互。"""
 import torch, torch.nn as nn
 
 

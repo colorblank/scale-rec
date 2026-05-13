@@ -1,3 +1,4 @@
+"""UniMixer：Full model。"""
 import torch, torch.nn as nn
 from ...layers.towers import MultiTaskConfig, MultiTaskTower
 from .block import UniMixerBlock

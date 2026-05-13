@@ -1,3 +1,4 @@
+"""权重导出：safetensors 格式，Candle VarMap 可直接加载。"""
 """Weight export to safetensors format, loadable by Candle VarMap."""
 
 from safetensors.torch import save_file

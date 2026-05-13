@@ -1,3 +1,4 @@
+"""FeatureTokenizer：分组 Conv1d 特征投影。"""
 import torch, torch.nn as nn
 
 

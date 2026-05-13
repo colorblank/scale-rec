@@ -1,3 +1,4 @@
+"""ESMM：全量空间多任务，CTR·CVR 乘积链消除 SSB。"""
 import torch, torch.nn as nn
 from ..layers.embedding import FeatureEmbeddings
 from ..layers.mlp import Mlp

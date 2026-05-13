@@ -1,3 +1,4 @@
+"""分桶算子：连续值到桶索引的映射。"""
 from typing import Any
 
 

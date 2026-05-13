@@ -1,3 +1,4 @@
+"""模型注册与配置 — 对应 src/models/mod.rs。"""
 from dataclasses import dataclass, field
 import torch.nn as nn, yaml
 from ..layers.towers import Activation, MultiTaskConfig, TaskRelation, TowerConfig

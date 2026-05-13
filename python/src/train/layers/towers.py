@@ -1,3 +1,4 @@
+"""多任务塔：TaskTower、MultiTaskTower、任务关系推导。"""
 from dataclasses import dataclass, field
 from enum import Enum, auto
 import torch, torch.nn as nn, torch.nn.functional as F

@@ -1,3 +1,4 @@
+"""逻辑回归基线：Embedding + Linear。"""
 import torch.nn as nn
 from ..layers.embedding import FeatureEmbeddings
 from ..layers.mlp import Mlp

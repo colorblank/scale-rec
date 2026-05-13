@@ -1,3 +1,4 @@
+"""特征算子库 — 对应 src/feats/ops/。"""
 from typing import Any, Protocol
 
 

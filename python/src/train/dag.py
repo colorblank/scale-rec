@@ -1,3 +1,4 @@
+"""特征 DAG 执行器 — 对应 src/feats/dag.rs。"""
 """Feature DAG executor — mirrors src/feats/dag.rs."""
 
 from collections import deque
