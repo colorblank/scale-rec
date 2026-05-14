@@ -8,6 +8,7 @@ class FeatureEmbeddings(nn.Module):
     """Discrete feature indices -> dense embedding concat."""
 
     def __init__(self, features: list[tuple[str, int, int]]):
+        """Build embeddings; each feature gets an nn.Embedding registered via setattr."""
         super().__init__()
         self.ordered_names = []
         self.feature_to_idx = {}
@@ -21,8 +22,10 @@ class FeatureEmbeddings(nn.Module):
         self.total_dim = total_dim
 
     def forward(self, x_inputs):
+        """Lookup embeddings and concatenate -> [batch, total_dim]."""
         embeds = [getattr(self, f"emb_{n}")(x_inputs[n]) for n in self.ordered_names]
         return __import__("torch").cat(embeds, dim=1)
 
     def forward_stacked(self, x_inputs):
+        """Return list of [batch, 1, embed_dim] tensors for FM second-order interaction."""
         return [getattr(self, f"emb_{n}")(x_inputs[n]).unsqueeze(1) for n in self.ordered_names]

@@ -17,6 +17,7 @@ class Activation(Enum):
     NONE = auto()
 
     def apply(self, x):
+        """Apply activation function to tensor."""
         m = {
             self.RELU: F.relu,
             self.SIGMOID: torch.sigmoid,
@@ -28,6 +29,7 @@ class Activation(Enum):
 
     @classmethod
     def from_str(cls, s):
+        """Parse activation from string: relu, sigmoid, swish, gelu, none."""
         return {
             "relu": cls.RELU,
             "sigmoid": cls.SIGMOID,
@@ -46,7 +48,10 @@ class TowerConfig:
 
 
 class TaskTower(nn.Module):
+    """Single-task MLP tower. Naming matches Candle vb.pp paths."""
+
     def __init__(self, config, input_dim):
+        """Build tower from TowerConfig with hidden.{i} and output.{n} naming."""
         super().__init__()
         self.name = config.name
         self._act = config.activation
@@ -60,6 +65,7 @@ class TaskTower(nn.Module):
         self.output[str(n)] = nn.Linear(in_dim, config.output_dim)
 
     def forward(self, x):
+        """Forward: hidden layers with activation, output layer without."""
         for i in range(len(self.hidden)):
             x = self._act.apply(self.hidden[str(i)](x))
         return self.output[str(len(self.hidden))](x)
@@ -79,7 +85,10 @@ class MultiTaskConfig:
 
 
 class MultiTaskTower(nn.Module):
+    """Multi-task tower manager with optional task relation derivation."""
+
     def __init__(self, config, input_dim):
+        """Build towers from config; each registered by name matching Candle vb.pp paths."""
         super().__init__()
         for tc in config.towers:
             setattr(self, tc.name, TaskTower(tc, input_dim))
@@ -87,6 +96,7 @@ class MultiTaskTower(nn.Module):
         self._relations = config.relations
 
     def forward(self, shared):
+        """Run all towers, then apply task relations (sigmoid before op)."""
         outputs = {n: getattr(self, n)(shared) for n in self._tower_names}
         for rel in self._relations:
             probs = {s: torch.sigmoid(outputs[s]) for s in rel.sources}

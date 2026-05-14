@@ -22,6 +22,7 @@ class MMoE(nn.Module):
         expert_output_dim,
         task_configs,
     ):
+        """Build MMoE: embeddings + optional shared_bottom + N experts + K gates + K towers."""
         super().__init__()
         self.embeddings = FeatureEmbeddings(features)
         if shared_bottom_dims:
@@ -54,6 +55,7 @@ class MMoE(nn.Module):
             )
 
     def forward(self, x_inputs):
+        """Forward: embed -> shared -> experts -> gate softmax -> weighted sum -> task towers."""
         concat = self.embeddings(x_inputs)
         shared = self.shared_bottom(concat) if hasattr(self, "shared_bottom") else concat
         experts = torch.cat(

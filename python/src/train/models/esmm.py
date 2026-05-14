@@ -13,6 +13,7 @@ class ESMM(nn.Module):
     """Entire-space multi-task: CTR x CVR = CTCVR, eliminates SSB."""
 
     def __init__(self, features, shared_bottom_dims, ctr_hidden_dims, cvr_hidden_dims):
+        """Build ESMM: embeddings + optional shared_bottom + CTR tower + CVR tower."""
         super().__init__()
         self.embeddings = FeatureEmbeddings(features)
         if shared_bottom_dims:
@@ -29,6 +30,7 @@ class ESMM(nn.Module):
         self.cvr_tower = TaskTower(TowerConfig("cvr", cvr_hidden_dims, 1, Activation.RELU), sd)
 
     def forward(self, x_inputs):
+        """Forward: embed -> shared -> CTR/CVR towers -> CTCVR = sigma(CTR) * sigma(CVR)."""
         concat = self.embeddings(x_inputs)
         shared = self.shared_bottom(concat) if hasattr(self, "shared_bottom") else concat
         ctr_logits = self.ctr_tower(shared)

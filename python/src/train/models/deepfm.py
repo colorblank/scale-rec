@@ -14,6 +14,7 @@ class DeepFM(nn.Module):
     """DeepFM: FM first-order + FM second-order + Deep MLP."""
 
     def __init__(self, features, fm_k, deep_hidden_dims):
+        """Build DeepFM: three embedding groups (fm_first dim=1, fm_second dim=fm_k, deep)."""
         super().__init__()
         self.fm_first = FeatureEmbeddings([(n, v, 1) for n, v, _ in features])
         self.fm_second = FeatureEmbeddings([(n, v, fm_k) for n, v, _ in features])
@@ -24,6 +25,7 @@ class DeepFM(nn.Module):
         self.global_bias = nn.Parameter(torch.zeros(1))
 
     def forward(self, x_inputs):
+        """Forward: FM first + FM second + Deep MLP + global_bias -> {"pred": logits}."""
         first = self.fm_first(x_inputs).sum(dim=1, keepdim=True)
         stacked = torch.cat(self.fm_second.forward_stacked(x_inputs), dim=1)
         second = fm_interaction(stacked)

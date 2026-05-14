@@ -1,7 +1,8 @@
 import torch
-from train.models.lr import LogisticRegression
+
 from train.models.deepfm import DeepFM
 from train.models.esmm import ESMM
+from train.models.lr import LogisticRegression
 from train.models.mmoe import MMoE
 
 FEATURES = [("a", 10, 4), ("b", 5, 4)]

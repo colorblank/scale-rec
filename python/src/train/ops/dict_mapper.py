@@ -8,10 +8,12 @@ class DictMapper:
     """String/int to index lookup."""
 
     def __init__(self, mapping: dict[str, int], default_idx: int = 0):
+        """Initialize with mapping table and fallback index."""
         self.mapping = mapping
         self.default_idx = default_idx
 
     def process(self, inputs: list[Any]) -> int:
+        """Map string key to integer index; returns default_idx for unknown keys."""
         val = inputs[0]
         if isinstance(val, (int, float)):
             val = str(val)

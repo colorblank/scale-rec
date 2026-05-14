@@ -15,6 +15,7 @@ from .models import ModelConfig
 
 
 def train_epoch(model, optimizer, dag, df, batch_size):
+    """Train one epoch: slice df -> preprocess -> forward -> BCE loss -> backward."""
     model.train()
     total_loss = 0.0
     n_batches = 0
@@ -42,6 +43,7 @@ def train_epoch(model, optimizer, dag, df, batch_size):
 
 
 def main():
+    """CLI: load configs -> build DAG + model -> train -> export safetensors."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--feature-config", default="examples/feature_config.yaml")
     parser.add_argument("--model-config", default="config/model_lr.yaml")

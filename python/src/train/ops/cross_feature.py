@@ -8,9 +8,11 @@ class CrossFeature:
     """Feature cross: inner product or cartesian product."""
 
     def __init__(self, cross_type: str):
+        """Initialize with "inner_product" or "cartesian" mode."""
         self.cross_type = cross_type
 
     def process(self, inputs: list[Any]) -> float | list[str]:
+        """Compute cross: dot product (inner_product) or all-pairs concat (cartesian)."""
         a, b = inputs[0], inputs[1]
         if self.cross_type == "inner_product":
             va = [float(x) for x in a]

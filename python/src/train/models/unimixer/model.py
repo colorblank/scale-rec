@@ -9,6 +9,8 @@ from .norm import SiameseNorm
 
 
 class UniMixerModel(nn.Module):
+    """Full UniMixer: FeatureTokenizer + M blocks + MultiTaskTower + optional SiameseNorm."""
+
     def __init__(
         self,
         tokenizer,
@@ -23,6 +25,7 @@ class UniMixerModel(nn.Module):
         task_config,
         use_siamese,
     ):
+        """Build UniMixer: tokenizer + num_blocks UniMixerBlocks + task towers + optional SiameseNorm."""
         super().__init__()
         self.embed_dim = num_tokens * token_dim
         self.block_size = block_size_opt if block_size_opt is not None else token_dim
@@ -47,6 +50,7 @@ class UniMixerModel(nn.Module):
         self.final_norm = SiameseNorm(self.embed_dim) if use_siamese else None
 
     def forward(self, x_inputs, temperature=None):
+        """Forward: tokenize -> M blocks (standard or siamese path) -> task towers."""
         t = temperature if temperature is not None else self.temperature
         tokens = self.tokenizer(x_inputs)
         bs = tokens.shape[0]
