@@ -117,23 +117,24 @@ def main() -> None:
         "--feature-config",
         default=os.path.join(demo_dir, "feature_config_demo.yaml"),
     )
+    temp_dir = os.path.join(demo_dir, "temp")
     parser.add_argument(
         "--model-config",
-        default=os.path.join(demo_dir, "model_deepfm_demo.yaml"),
+        default=os.path.join(demo_dir, "model_lr_demo.yaml"),
     )
-    parser.add_argument("--data", default=os.path.join(demo_dir, "train_data.csv"))
+    parser.add_argument("--data", default=os.path.join(temp_dir, "train_data.csv"))
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=0.01)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument(
-        "--export-path", default=os.path.join(demo_dir, "model.safetensors")
+        "--export-path", default=os.path.join(temp_dir, "model_lr.safetensors")
     )
     parser.add_argument(
-        "--test-data-out", default=os.path.join(demo_dir, "test_data.csv")
+        "--test-data-out", default=os.path.join(temp_dir, "model_lr_test.csv")
     )
     parser.add_argument(
-        "--preds-out", default=os.path.join(demo_dir, "pytorch_predictions.csv")
+        "--preds-out", default=os.path.join(temp_dir, "model_lr_py_preds.csv")
     )
     args = parser.parse_args()
 

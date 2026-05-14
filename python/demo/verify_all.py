@@ -32,11 +32,12 @@ def verify_model(model_type: str, threshold: float = 1e-3) -> dict:
     print(f"  Model: {model_type}")
     print(f"{'=' * 60}")
 
+    temp_dir = os.path.join(DEMO_DIR, "temp")
     model_config = os.path.join(DEMO_DIR, f"model_{model_type}_demo.yaml")
-    safetensors = os.path.join(DEMO_DIR, f"model_{model_type}.safetensors")
-    test_csv = os.path.join(DEMO_DIR, f"model_{model_type}_test.csv")
-    py_preds_csv = os.path.join(DEMO_DIR, f"model_{model_type}_py_preds.csv")
-    rust_preds_csv = os.path.join(DEMO_DIR, f"model_{model_type}_rust_preds.csv")
+    safetensors = os.path.join(temp_dir, f"model_{model_type}.safetensors")
+    test_csv = os.path.join(temp_dir, f"model_{model_type}_test.csv")
+    py_preds_csv = os.path.join(temp_dir, f"model_{model_type}_py_preds.csv")
+    rust_preds_csv = os.path.join(temp_dir, f"model_{model_type}_rust_preds.csv")
 
     # Check prerequisites
     for fpath, desc in [

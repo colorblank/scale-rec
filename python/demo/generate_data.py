@@ -83,8 +83,9 @@ def generate_row(uid: int, rng: random.Random) -> list:
 
 
 def main() -> None:
-    os.makedirs(os.path.dirname(__file__) or ".", exist_ok=True)
-    output = os.path.join(os.path.dirname(__file__), "train_data.csv")
+    temp_dir = os.path.join(os.path.dirname(__file__), "temp")
+    os.makedirs(temp_dir, exist_ok=True)
+    output = os.path.join(temp_dir, "train_data.csv")
     with open(output, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(

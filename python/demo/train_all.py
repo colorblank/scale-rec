@@ -69,7 +69,7 @@ def _wrap_unimixer(model):
 
 DEMO_DIR = os.path.dirname(os.path.abspath(__file__))
 FEATURE_CONFIG = os.path.join(DEMO_DIR, "feature_config_demo.yaml")
-DATA_PATH = os.path.join(DEMO_DIR, "train_data.csv")
+DATA_PATH = os.path.join(DEMO_DIR, "temp", "train_data.csv")
 
 MODELS = [
     ("lr", "model_lr_demo.yaml", ["ctr"]),
@@ -269,7 +269,7 @@ def train_one_model(model_type: str, model_config_path: str,
     print(f"[Best] AUC={best_auc:.4f}")
 
     # Export
-    prefix = os.path.join(DEMO_DIR, f"model_{model_type}")
+    prefix = os.path.join(DEMO_DIR, "temp", f"model_{model_type}")
     safetensors_path = prefix + ".safetensors"
     test_csv_path = prefix + "_test.csv"
     preds_csv_path = prefix + "_py_preds.csv"

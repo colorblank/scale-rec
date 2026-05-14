@@ -28,12 +28,13 @@ def main() -> None:
         os.path.join(os.path.dirname(__file__), "..", "..")
     )
     demo_dir = os.path.abspath(os.path.dirname(__file__))
+    temp_dir = os.path.join(demo_dir, "temp")
     feature_config = os.path.join(demo_dir, "feature_config_demo.yaml")
-    model_config = os.path.join(demo_dir, "model_deepfm_demo.yaml")
-    safetensors = os.path.join(demo_dir, "model.safetensors")
-    test_csv = os.path.join(demo_dir, "test_data.csv")
-    py_preds = os.path.join(demo_dir, "pytorch_predictions.csv")
-    rust_preds = os.path.join(demo_dir, "rust_predictions.csv")
+    model_config = os.path.join(demo_dir, "model_lr_demo.yaml")
+    safetensors = os.path.join(temp_dir, "model_lr.safetensors")
+    test_csv = os.path.join(temp_dir, "model_lr_test.csv")
+    py_preds = os.path.join(temp_dir, "model_lr_py_preds.csv")
+    rust_preds = os.path.join(temp_dir, "model_lr_rust_preds.csv")
 
     # Run Rust inference if not done
     if not os.path.exists(rust_preds):
