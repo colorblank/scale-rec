@@ -40,3 +40,27 @@ def test_esmm_forward():
     assert out["ctr"].shape == (3, 1)
     assert out["cvr"].shape == (3, 1)
     assert out["ctcvr"].shape == (3, 1)
+
+
+def test_unimixer_forward():
+    from train.models.unimixer.tokenizer import FeatureTokenizer
+    from train.models.unimixer.model import UniMixerModel
+    from train.layers.towers import MultiTaskConfig, TowerConfig, Activation
+
+    token_dim = 4
+    num_tokens = 2
+    tokenizer = FeatureTokenizer(FEATURES, token_dim, num_tokens)
+    task_config = MultiTaskConfig(
+        towers=[
+            TowerConfig("ctr", [8], 1, Activation.RELU),
+            TowerConfig("cvr", [8], 1, Activation.RELU),
+        ],
+        relations=[],
+    )
+    model = UniMixerModel(
+        tokenizer, token_dim, num_tokens, 1, 4, False, 1.0, 4, 4,
+        task_config, False,
+    )
+    out = model(_inputs(3))
+    assert out["ctr"].shape == (3, 1)
+    assert out["cvr"].shape == (3, 1)

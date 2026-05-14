@@ -38,6 +38,7 @@ pub enum ModelConfig {
         num_experts: usize,
         #[serde(default)]
         expert_hidden_dims: Vec<usize>,
+        #[serde(default = "default_expert_output_dim")]
         expert_output_dim: usize,
         task_configs: Vec<TaskConfigEntry>,
     },
@@ -77,6 +78,9 @@ fn default_num_basis() -> usize {
 }
 fn default_rank() -> usize {
     16
+}
+fn default_expert_output_dim() -> usize {
+    32
 }
 
 impl ModelConfig {

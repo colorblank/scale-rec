@@ -37,34 +37,37 @@ class MMoE(nn.Module):
             sd = self.embeddings.total_dim
         self.num_experts = num_experts
         self.expert_output_dim = expert_output_dim
+
+        self._experts = []
         for e in range(num_experts):
-            setattr(
-                self,
-                f"expert_{e}",
-                Mlp(sd, expert_hidden_dims, expert_output_dim, Activation.RELU),
-            )
-        self.num_tasks = len(task_configs)
+            expert = Mlp(sd, expert_hidden_dims, expert_output_dim, Activation.RELU)
+            setattr(self, f"expert_{e}", expert)
+            self._experts.append(expert)
+
+        self._gates = []
+        for t in range(len(task_configs)):
+            gate = nn.Linear(sd, num_experts)
+            setattr(self, f"gate_{t}", gate)
+            self._gates.append(gate)
+
         self.task_names = []
+        self._towers = []
         for t, (name, tower_dims) in enumerate(task_configs):
             self.task_names.append(name)
-            setattr(self, f"gate_{t}", nn.Linear(sd, num_experts))
-            setattr(
-                self,
-                f"task_{t}_tower",
-                Mlp(expert_output_dim, tower_dims, 1, Activation.RELU),
-            )
+            tower = Mlp(expert_output_dim, tower_dims, 1, Activation.RELU)
+            setattr(self, f"task_{t}_tower", tower)
+            self._towers.append(tower)
 
     def forward(self, x_inputs):
         """Forward: embed -> shared -> experts -> gate softmax -> weighted sum -> task towers."""
         concat = self.embeddings(x_inputs)
         shared = self.shared_bottom(concat) if hasattr(self, "shared_bottom") else concat
         experts = torch.cat(
-            [getattr(self, f"expert_{e}")(shared).unsqueeze(1) for e in range(self.num_experts)],
-            dim=1,
+            [e(shared).unsqueeze(1) for e in self._experts], dim=1
         )
         outputs = {}
-        for t in range(self.num_tasks):
-            g = F.softmax(getattr(self, f"gate_{t}")(shared), dim=1)
+        for t in range(len(self.task_names)):
+            g = F.softmax(self._gates[t](shared), dim=1)
             gated = (experts * g.unsqueeze(2)).sum(dim=1)
-            outputs[self.task_names[t]] = getattr(self, f"task_{t}_tower")(gated)
+            outputs[self.task_names[t]] = self._towers[t](gated)
         return outputs

@@ -1,23 +1,44 @@
 from __future__ import annotations
 
-"""表达式算子：受限 eval 执行脚本表达式。"""
+"""表达式算子：使用 AST 安全解析执行脚本表达式。"""
+import ast
 import math
+import operator
 from typing import Any
 
-_SAFE = {"log": math.log, "abs": abs, "max": max, "min": min, "sqrt": math.sqrt}
+_FUNCTIONS = {"log": math.log, "abs": abs, "max": max, "min": min, "sqrt": math.sqrt}
+_BINOPS = {
+    ast.Add: operator.add, ast.Sub: operator.sub,
+    ast.Mult: operator.mul, ast.Div: operator.truediv,
+    ast.Pow: operator.pow,
+}
+_UNARYOPS = {ast.USub: operator.neg, ast.UAdd: operator.pos}
 
 
 class ExpressionOp:
-    """Evaluate script expressions with restricted eval."""
+    """Evaluate script expressions using AST parsing (no eval)."""
 
     def __init__(self, script: str):
-        """Initialize with expression script string."""
-        self.script = script
+        self.tree = ast.parse(script.strip(), mode="eval")
 
     def process(self, inputs: list[Any]) -> float:
-        """Evaluate script with inputs bound as v0..vN. Supports log, abs, max, min, sqrt."""
-        scope = {}
-        for i, val in enumerate(inputs):
-            scope[f"v{i}"] = float(val)
-        scope.update(_SAFE)
-        return float(eval(self.script, {"__builtins__": {}}, scope))
+        scope = {f"v{i}": float(val) for i, val in enumerate(inputs)}
+        scope.update(_FUNCTIONS)
+        return float(self._eval(self.tree.body, scope))
+
+    def _eval(self, node, scope):
+        if isinstance(node, ast.Constant):
+            return node.value
+        if isinstance(node, ast.Name):
+            return scope[node.id]
+        if isinstance(node, ast.UnaryOp):
+            return _UNARYOPS[type(node.op)](self._eval(node.operand, scope))
+        if isinstance(node, ast.BinOp):
+            return _BINOPS[type(node.op)](
+                self._eval(node.left, scope), self._eval(node.right, scope)
+            )
+        if isinstance(node, ast.Call):
+            func = self._eval(node.func, scope)
+            args = [self._eval(a, scope) for a in node.args]
+            return func(*args)
+        raise ValueError(f"Unsupported expression node: {type(node).__name__}")

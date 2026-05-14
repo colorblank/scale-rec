@@ -87,3 +87,49 @@ fn test_modelconfig_build_deepfm() {
     let out = model.forward(&dummy_inputs(2)).unwrap();
     assert!(out.contains_key("pred"));
 }
+
+#[test]
+fn test_unimixer_forward_shape() {
+    use scale_rec::models::unimixer::{model::UniMixerModel, tokenizer::FeatureTokenizer};
+
+    let features = dummy_features();
+    let token_dim = 4;
+    let num_tokens = 2;
+    let vb = vb();
+    let tokenizer =
+        FeatureTokenizer::new(vb.pp("tokenizer"), &features, token_dim, num_tokens).unwrap();
+    let task_config = MultiTaskConfig {
+        towers: vec![TowerConfig {
+            name: "ctr".into(),
+            hidden_dims: vec![8],
+            output_dim: 1,
+            activation: Activation::Relu,
+        }],
+        relations: vec![],
+    };
+    let model = UniMixerModel::new(
+        tokenizer, token_dim, num_tokens, 1, Some(4), false, 1.0, 4, 4,
+        &task_config, false, vb.pp("unimixer"),
+    )
+    .unwrap();
+    let out = model.forward(&dummy_inputs(3)).unwrap();
+    assert!(out.contains_key("ctr"));
+    assert_eq!(out["ctr"].dims(), &[3, 1]);
+}
+
+#[test]
+fn test_modelconfig_build_mmoe() {
+    let cfg = ModelConfig::MMoE {
+        shared_bottom_dims: vec![],
+        num_experts: 2,
+        expert_hidden_dims: vec![8],
+        expert_output_dim: 4,
+        task_configs: vec![scale_rec::models::TaskConfigEntry {
+            name: "ctr".into(),
+            tower_dims: vec![4],
+        }],
+    };
+    let model = cfg.build(vb(), &dummy_features(), None).unwrap();
+    let out = model.forward(&dummy_inputs(2)).unwrap();
+    assert!(out.contains_key("ctr"));
+}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 """FeatureEmbeddings：离散特征索引 → 稠密嵌入拼接。"""
+import torch
 import torch.nn as nn
 
 
@@ -24,7 +25,7 @@ class FeatureEmbeddings(nn.Module):
     def forward(self, x_inputs):
         """Lookup embeddings and concatenate -> [batch, total_dim]."""
         embeds = [getattr(self, f"emb_{n}")(x_inputs[n]) for n in self.ordered_names]
-        return __import__("torch").cat(embeds, dim=1)
+        return torch.cat(embeds, dim=1)
 
     def forward_stacked(self, x_inputs):
         """Return list of [batch, 1, embed_dim] tensors for FM second-order interaction."""

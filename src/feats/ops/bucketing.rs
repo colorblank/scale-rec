@@ -12,7 +12,7 @@ pub struct Bucketing {
 impl Bucketing {
     /// 构造分桶算子，`boundaries` 自动升序排列。
     pub fn new(mut boundaries: Vec<f32>) -> Self {
-        boundaries.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        boundaries.sort_by(|a, b| a.total_cmp(b));
         Self { boundaries }
     }
 }

@@ -21,6 +21,8 @@ from train.dag import FeatureDag  # noqa: E402
 from train.export import export_to_safetensors  # noqa: E402
 from train.models import ModelConfig  # noqa: E402
 
+from ._metrics import accuracy, auc, logloss, sigmoid  # noqa: E402
+
 
 def _wrap_unimixer(model):
     """Wrap UniMixer so state_dict matches Rust vb.pp("unimixer") prefix.
@@ -68,8 +70,10 @@ def _wrap_unimixer(model):
 
     # Bind forward method
     import types
+
     wrapper.forward = types.MethodType(forward, wrapper)
     return wrapper
+
 
 DEMO_DIR = os.path.dirname(os.path.abspath(__file__))
 FEATURE_CONFIG = os.path.join(DEMO_DIR, "feature_config_demo.yaml")
@@ -84,32 +88,6 @@ MODELS = [
 ]
 
 SINGLE_TASK_LABEL = "ctr"
-
-
-def sigmoid(x: np.ndarray) -> np.ndarray:
-    return 1.0 / (1.0 + np.exp(-x))
-
-
-def logloss(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    eps = 1e-15
-    p = np.clip(y_pred, eps, 1 - eps)
-    return float(-np.mean(y_true * np.log(p) + (1 - y_true) * np.log(1 - p)))
-
-
-def auc(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    n_pos = int(y_true.sum())
-    n_neg = len(y_true) - n_pos
-    if n_pos == 0 or n_neg == 0:
-        return 0.5
-    order = np.argsort(y_pred)[::-1]
-    y_sorted = y_true[order]
-    pos_ranks = np.where(y_sorted == 1)[0] + 1
-    u_stat = pos_ranks.sum() - n_pos * (n_pos + 1) / 2
-    return float(1.0 - u_stat / (n_pos * n_neg))
-
-
-def accuracy(y_true: np.ndarray, y_pred: np.ndarray, threshold: float = 0.5) -> float:
-    return float(np.mean((y_pred >= threshold) == (y_true == 1)))
 
 
 def evaluate(model, dag, df, task_names: list[str], batch_size: int) -> dict[str, dict]:
@@ -132,7 +110,9 @@ def evaluate(model, dag, df, task_names: list[str], batch_size: int) -> dict[str
     for t in task_names:
         if all_outputs[t]:
             logits_arr = np.concatenate(all_outputs[t])
-            labels_arr = np.concatenate(all_labels[t]) if all_labels[t] else np.zeros_like(logits_arr)
+            labels_arr = (
+                np.concatenate(all_labels[t]) if all_labels[t] else np.zeros_like(logits_arr)
+            )
             probs = sigmoid(logits_arr)
             results[t] = {
                 "logloss": logloss(labels_arr, probs),
@@ -160,8 +140,9 @@ def predict_all(model, dag, df, batch_size: int) -> dict[str, np.ndarray]:
     return {k: np.concatenate(v) for k, v in all_logits.items()}
 
 
-def train_epoch(model, optimizer, dag, df, task_names: list[str],
-                batch_size: int, label_col_map: dict) -> float:
+def train_epoch(
+    model, optimizer, dag, df, task_names: list[str], batch_size: int, label_col_map: dict
+) -> float:
     """Train one epoch; returns average loss across all tasks."""
     model.train()
     total_loss = 0.0
@@ -176,9 +157,9 @@ def train_epoch(model, optimizer, dag, df, task_names: list[str],
             label_col = label_col_map.get(task_name)
             if label_col is None or label_col not in batch_df.columns:
                 continue
-            labels = torch.tensor(
-                batch_df[label_col].to_numpy(), dtype=torch.float32
-            ).view(actual_bs, 1)
+            labels = torch.tensor(batch_df[label_col].to_numpy(), dtype=torch.float32).view(
+                actual_bs, 1
+            )
             task_loss = F.binary_cross_entropy_with_logits(logits, labels)
             loss = task_loss if loss is None else loss + task_loss
         if loss is None:
@@ -191,19 +172,20 @@ def train_epoch(model, optimizer, dag, df, task_names: list[str],
     return total_loss / max(n_batches, 1)
 
 
-def train_one_model(model_type: str, model_config_path: str,
-                    label_cols: list[str], args) -> dict:
+def train_one_model(model_type: str, model_config_path: str, label_cols: list[str], args) -> dict:
     """Train, evaluate, and export one model. Returns summary dict."""
     print(f"\n{'=' * 60}")
     print(f"  Model: {model_type}")
     print(f"{'=' * 60}")
 
     # Load data
-    df = pl.read_csv(args.data).with_columns([
-        pl.col("user_id").cast(pl.Int64),
-        pl.col("ctr").cast(pl.Int64),
-        pl.col("cvr").cast(pl.Int64),
-    ])
+    df = pl.read_csv(args.data).with_columns(
+        [
+            pl.col("user_id").cast(pl.Int64),
+            pl.col("ctr").cast(pl.Int64),
+            pl.col("cvr").cast(pl.Int64),
+        ]
+    )
     df_shuffled = df.sample(fraction=1.0, seed=42)
     n_train = int(len(df_shuffled) * 0.8)
     train_df = df_shuffled.slice(0, n_train)
@@ -222,9 +204,8 @@ def train_one_model(model_type: str, model_config_path: str,
     tokenizer = None
     if model_type == "unimixer":
         from train.models.unimixer.tokenizer import FeatureTokenizer
-        tokenizer = FeatureTokenizer(
-            features, model_config.token_dim, model_config.num_tokens
-        )
+
+        tokenizer = FeatureTokenizer(features, model_config.token_dim, model_config.num_tokens)
 
     model = model_config.build(features, tokenizer=tokenizer)
     # Wrap UniMixer for Rust compatibility: Rust uses vb.pp("unimixer") prefix.
@@ -251,15 +232,12 @@ def train_one_model(model_type: str, model_config_path: str,
         label_col_map = {"ctr": "ctr", "cvr": "cvr"}
 
     # Train
-    optimizer = torch.optim.Adam(
-        model.parameters(), lr=args.lr, weight_decay=args.weight_decay
-    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     best_auc = 0.0
 
     for epoch in range(1, args.epochs + 1):
         train_loss = train_epoch(
-            model, optimizer, dag, train_df,
-            eval_task_names, args.batch_size, label_col_map
+            model, optimizer, dag, train_df, eval_task_names, args.batch_size, label_col_map
         )
         metrics = evaluate(model, dag, test_df, eval_task_names, args.batch_size)
 
@@ -303,8 +281,7 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=0.005)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
-    parser.add_argument("--models", default="all",
-                        help="Comma-separated model types or 'all'")
+    parser.add_argument("--models", default="all", help="Comma-separated model types or 'all'")
     args = parser.parse_args()
 
     if args.models == "all":

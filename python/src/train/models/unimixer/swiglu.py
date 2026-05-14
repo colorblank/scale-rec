@@ -32,8 +32,5 @@ class PerTokenSwiGlu(nn.Module):
         up = self._einsum(x, self.w_up) + self.b_up
         gate = self._einsum(x, self.w_gate) + self.b_gate
         hidden = up * (gate * torch.sigmoid(gate))
-        wdt = self.w_down.transpose(1, 2)
-        bt, t, h = hidden.shape
-        _, d, _ = self.w_down.shape
-        out = torch.matmul(hidden.unsqueeze(2), wdt.unsqueeze(0).expand(bt, t, h, d)).squeeze(2)
+        out = torch.einsum("bth,tdh->btd", hidden, self.w_down)
         return out + self.b_down
