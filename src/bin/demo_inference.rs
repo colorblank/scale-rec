@@ -1,4 +1,5 @@
 //! demo_inference：加载 Python 训练的权重，对 CSV 测试数据做推理，输出 logits。
+//! 支持所有 5 种模型：LR, DeepFM, MMoE, ESMM, UniMixer。
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -7,6 +8,7 @@ use candle_core::{DType, Device, Tensor};
 use candle_nn::{VarBuilder, VarMap};
 use scale_rec::feats::config::FlowConfig;
 use scale_rec::feats::dag::{FeatureDag, FeatureValue};
+use scale_rec::models::unimixer::tokenizer::FeatureTokenizer;
 use scale_rec::models::ModelConfig;
 
 fn main() -> Result<()> {
@@ -48,14 +50,36 @@ fn main() -> Result<()> {
         std::fs::read_to_string(model_config_path).context("Failed to read model config")?;
     let model_config: ModelConfig =
         serde_yaml::from_str(&model_yaml).context("Invalid model config YAML")?;
-    println!("[Rust] model_type={}", model_config.model_type());
+    let model_type = model_config.model_type().to_string();
+    println!("[Rust] model_type={}", model_type);
 
-    // 4. 构建模型（注册 Var entries）→ 加载 safetensors（填充权重）
+    // 4. 构建模型（注册 Var entries 到共享 VarMap） → 加载 safetensors
     let device = Device::Cpu;
     let mut varmap = VarMap::new();
     let vb = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+
+    // UniMixer 需要预构建 FeatureTokenizer（共享 VarMap，权重路径 "tokenizer.*"）
+    let tokenizer: Option<FeatureTokenizer> = if model_type == "unimixer" {
+        let token_dim = match &model_config {
+            ModelConfig::UniMixer { token_dim, .. } => *token_dim,
+            _ => unreachable!(),
+        };
+        let num_tokens = match &model_config {
+            ModelConfig::UniMixer { num_tokens, .. } => *num_tokens,
+            _ => unreachable!(),
+        };
+        Some(FeatureTokenizer::new(
+            vb.pp("tokenizer"),
+            &features,
+            token_dim,
+            num_tokens,
+        )?)
+    } else {
+        None
+    };
+
     let model = model_config
-        .build(vb, &features, None)
+        .build(vb, &features, tokenizer)
         .context("Failed to build model")?;
     varmap
         .load(safetensors_path)
@@ -127,26 +151,43 @@ fn main() -> Result<()> {
     let outputs = model
         .forward(&tensor_inputs)
         .context("Model forward failed")?;
-    let pred = outputs
-        .get("pred")
-        .context("Model output missing 'pred' key")?;
-    let logits: Vec<f32> = pred
-        .to_vec2::<f32>()
-        .context("Failed to convert output to f32")?
-        .iter()
-        .map(|row| row[0])
-        .collect();
 
-    // 8. 写入输出 CSV
+    // 8. 收集所有输出 key 并按名称排序
+    let mut out_keys: Vec<&String> = outputs.keys().collect();
+    out_keys.sort();
+
+    let mut columns: Vec<String> = Vec::new();
+    let mut data: Vec<Vec<f32>> = Vec::new();
+
+    for key in &out_keys {
+        let tensor = outputs.get(*key).context("Missing output")?;
+        let vals: Vec<f32> = tensor
+            .to_vec2::<f32>()
+            .context("Failed to convert")?
+            .iter()
+            .map(|row| row[0])
+            .collect();
+        if columns.is_empty() {
+            data.resize(vals.len(), Vec::new());
+        }
+        columns.push(format!("logit_{}", key));
+        for (i, v) in vals.iter().enumerate() {
+            data[i].push(*v);
+        }
+    }
+
+    // 9. 写入输出 CSV
     let mut writer = csv::Writer::from_path(output_csv_path)?;
-    writer.write_record(&["logit"])?;
-    for &logit in &logits {
-        writer.write_record(&[format!("{:.8}", logit)])?;
+    writer.write_record(&columns)?;
+    for row in &data {
+        let row_strs: Vec<String> = row.iter().map(|v| format!("{:.8}", v)).collect();
+        writer.write_record(&row_strs)?;
     }
     writer.flush()?;
     println!(
-        "[Rust] wrote {} predictions to {}",
-        logits.len(),
+        "[Rust] wrote {} predictions (keys: {:?}) to {}",
+        data.len(),
+        out_keys,
         output_csv_path
     );
     Ok(())

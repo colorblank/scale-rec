@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""合成训练数据生成：基于 feature_config 生成 2000 条 CTR 数据，标签由确定性特征交互产生。"""
+"""合成训练数据生成：2000 条 CTR+CVR 数据，cvr 条件依赖于 ctr。"""
 import csv
 import math
 import os
@@ -26,13 +26,15 @@ def sigmoid(x: float) -> float:
     return 1.0 / (1.0 + math.exp(-x))
 
 
-def user_preference(uid: int) -> float:
-    """Fixed user preference: each user gets a stable score from their ID."""
-    return 1.5 * math.sin(uid * 0.15) - 0.5
+def user_ctr_pref(uid: int) -> float:
+    return 1.5 * math.sin(uid * 0.15)
+
+
+def user_cvr_pref(uid: int) -> float:
+    return 1.2 * math.cos(uid * 0.12) - 0.3
 
 
 def generate_row(uid: int, rng: random.Random) -> list:
-    """Generate one row; label is deterministic given features (no Bernoulli noise)."""
     user_age = round(rng.uniform(10.0, 70.0), 1)
     categories = ["electronics", "fashion", "books", "unknown"]
     item_category = rng.choices(
@@ -46,21 +48,38 @@ def generate_row(uid: int, rng: random.Random) -> list:
     age_bucket = bucket_age(user_age)
     cat_idx = map_category(item_category)
 
-    logit = user_preference(uid)
+    # CTR logit: user preference + age + category + price
+    ctr_logit = user_ctr_pref(uid)
     if age_bucket == 1:
-        logit += 1.0
+        ctr_logit += 1.0
     elif age_bucket == 2:
-        logit += 0.5
+        ctr_logit += 0.5
     if cat_idx == 1:
-        logit += 1.5
+        ctr_logit += 1.5
     elif cat_idx == 2:
-        logit += 0.7
+        ctr_logit += 0.7
     elif cat_idx == 3:
-        logit -= 0.6
-    logit += 0.4 * math.log(item_price + 1.0) / math.log(1001.0)
+        ctr_logit -= 0.6
+    ctr_logit += 0.4 * math.log(item_price + 1.0) / math.log(1001.0)
+    ctr = 1 if sigmoid(ctr_logit) > 0.5 else 0
 
-    ctr = 1 if sigmoid(logit) > 0.5 else 0
-    return [uid, user_age, item_category, user_tags, item_price, ctr]
+    # CVR logit: different user preference + category + age (no price); only when CTR=1
+    cvr = 0
+    if ctr == 1:
+        cvr_logit = user_cvr_pref(uid) - 0.5
+        if age_bucket in (1, 2):
+            cvr_logit += 0.8
+        elif age_bucket == 0:
+            cvr_logit -= 0.3
+        if cat_idx == 1:
+            cvr_logit += 1.0
+        elif cat_idx == 2:
+            cvr_logit += 0.4
+        elif cat_idx == 3:
+            cvr_logit -= 0.8
+        cvr = 1 if sigmoid(cvr_logit) > 0.5 else 0
+
+    return [uid, user_age, item_category, user_tags, item_price, ctr, cvr]
 
 
 def main() -> None:
@@ -69,14 +88,13 @@ def main() -> None:
     with open(output, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(
-            ["user_id", "user_age", "item_category", "user_tags", "item_price", "ctr"]
+            ["user_id", "user_age", "item_category", "user_tags", "item_price", "ctr", "cvr"]
         )
-        # 200 users, 10 rows each = 2000 total; each user has consistent preference
         rng = random.Random(42)
         for uid in range(200):
             for _ in range(10):
                 writer.writerow(generate_row(uid, rng))
-    print(f"[Generate] {200 * 10} rows → {output}")
+    print(f"[Generate] {200 * 10} rows -> {output}")
 
 
 if __name__ == "__main__":

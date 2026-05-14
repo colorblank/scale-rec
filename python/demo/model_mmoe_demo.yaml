@@ -1,0 +1,8 @@
+type: mmoe
+shared_bottom_dims: [8]
+num_experts: 2
+expert_hidden_dims: [8]
+expert_output_dim: 8
+task_configs:
+  - {name: ctr, tower_dims: [8]}
+  - {name: cvr, tower_dims: [8]}

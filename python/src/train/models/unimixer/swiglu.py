@@ -25,10 +25,8 @@ class PerTokenSwiGlu(nn.Module):
 
     @staticmethod
     def _einsum(x, w):
-        wt = w.transpose(1, 2)
-        bt, _, _ = x.shape
-        _, h, _ = w.shape
-        return torch.matmul(x.unsqueeze(2), wt.unsqueeze(0).expand(bt, h, w.shape[2])).squeeze(2)
+        # x: [B, T, D], w: [T, H, D] -> output: [B, T, H]
+        return torch.einsum("btd,thd->bth", x, w)
 
     def forward(self, x):
         up = self._einsum(x, self.w_up) + self.b_up
