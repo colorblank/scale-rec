@@ -131,6 +131,7 @@ class FeatureDag:
             if op_def.embed is not None:
                 for out_name in op_def.outputs:
                     result.append((out_name, op_def.embed))
+        result.sort(key=lambda x: x[0])
         return result
 
     def feature_tuples(self) -> list[tuple[str, int, int]]:

@@ -13,3 +13,4 @@ rhai = { version = "1.19", features = ["sync"] }
 libloading = "0.8"
 tracing = "0.1"
 anyhow = "1.0"
+csv = "1.3"

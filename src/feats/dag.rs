@@ -218,6 +218,7 @@ impl FeatureDag {
                 }
             }
         }
+        result.sort_by(|a, b| a.0.cmp(b.0));
         result
     }
 
