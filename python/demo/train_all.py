@@ -4,13 +4,17 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from pathlib import Path
 
 import numpy as np
 import polars as pl
 import torch
 import torch.nn.functional as F
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# 确保 src/ 在 sys.path 中，使 `train` 包可导入（不依赖 .pth 或 venv 配置）
+_src = Path(__file__).resolve().parent.parent / "src"
+if str(_src) not in sys.path:
+    sys.path.insert(0, str(_src))
 
 from train.config import FlowConfig  # noqa: E402
 from train.dag import FeatureDag  # noqa: E402
@@ -307,15 +311,15 @@ def main() -> None:
         selected = MODELS
     else:
         wanted = set(args.models.split(","))
-        selected = [(t, c, l) for t, c, l in MODELS if t in wanted]
+        selected = [(t, c, lbs) for t, c, lbs in MODELS if t in wanted]
 
     results = []
-    for model_type, config_name, label_cols in selected:
+    for model_type, config_name, lbs in selected:
         config_path = os.path.join(DEMO_DIR, config_name)
         if not os.path.exists(config_path):
             print(f"[Skip] config not found: {config_path}")
             continue
-        result = train_one_model(model_type, config_path, label_cols, args)
+        result = train_one_model(model_type, config_path, lbs, args)
         results.append(result)
 
     print(f"\n{'=' * 60}")

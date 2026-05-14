@@ -4,14 +4,17 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from pathlib import Path
 
 import numpy as np
 import polars as pl
 import torch
 import torch.nn.functional as F
 
-# Allow running as `python -m demo.train_model` from python/ directory
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# 确保 src/ 在 sys.path 中，使 `train` 包可导入（不依赖 .pth 或 venv 配置）
+_src = Path(__file__).resolve().parent.parent / "src"
+if str(_src) not in sys.path:
+    sys.path.insert(0, str(_src))
 
 from train.config import FlowConfig  # noqa: E402
 from train.dag import FeatureDag  # noqa: E402
@@ -137,9 +140,6 @@ def main() -> None:
         "--preds-out", default=os.path.join(temp_dir, "model_lr_py_preds.csv")
     )
     args = parser.parse_args()
-
-    # Resolve relative paths relative to script directory
-    demo_abs = os.path.abspath(demo_dir)
 
     df = pl.read_csv(args.data)
     print(f"[Data] {len(df)} rows, columns={df.columns}")
