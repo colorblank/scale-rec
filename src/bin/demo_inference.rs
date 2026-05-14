@@ -107,13 +107,13 @@ fn main() -> Result<()> {
         let record = result.context("Failed to read CSV row")?;
         let mut raw_inputs: HashMap<String, FeatureValue> = HashMap::new();
 
-        for field in &["user_id", "user_age", "item_category", "user_tags", "item_price"] {
+        for field in &["user_id", "user_age", "item_category", "user_tags", "item_tags", "item_price"] {
             let col = col_index.get(*field).context("Missing column")?;
             let val = record.get(*col).context("Missing field")?;
             let fv: FeatureValue = match *field {
                 "user_id" => Arc::new(val.parse::<i32>().context("Invalid user_id")?),
                 "user_age" => Arc::new(val.parse::<f32>().context("Invalid user_age")?),
-                "item_category" | "user_tags" => Arc::new(val.to_string()),
+                "item_category" | "user_tags" | "item_tags" => Arc::new(val.to_string()),
                 "item_price" => Arc::new(val.parse::<f32>().context("Invalid item_price")?),
                 _ => continue,
             };
@@ -129,9 +129,13 @@ fn main() -> Result<()> {
                 .features
                 .get(name)
                 .with_context(|| format!("Feature '{}' not found in DAG output", name))?;
-            let idx = *(**val)
-                .downcast_ref::<i32>()
-                .with_context(|| format!("Feature '{}' is not i32", name))?;
+            let idx: i32 = if let Some(i) = (**val).downcast_ref::<i32>() {
+                *i
+            } else if let Some(list) = (**val).downcast_ref::<Vec<i32>>() {
+                *list.first().unwrap_or(&0)
+            } else {
+                anyhow::bail!("Feature '{}' has unsupported type", name)
+            };
             all_indices.get_mut(name).unwrap().push(idx as u32);
         }
         row_count += 1;

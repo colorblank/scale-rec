@@ -1,7 +1,8 @@
 //! 特征 DAG 执行器：拓扑排序、算子调度、单样本执行。
 use crate::feats::config::{DType, FlowConfig, OperatorDef, SourceDef};
 use crate::feats::ops::{
-    Bucketing, CrossFeature, CustomOp, DictMapper, ExpressionOp, PluginOp, SequenceOp, StringParser,
+    Bucketing, CrossFeature, CustomOp, DictMapper, ExpressionOp, ListOverlap, PluginOp,
+    SequenceOp, StringConcatHash, StringParser,
 };
 use petgraph::algo::toposort;
 use petgraph::prelude::DiGraph;
@@ -192,6 +193,23 @@ impl FeatureDag {
                     .unwrap_or("custom_plugin")
                     .to_string();
                 Ok(Box::new(PluginOp::new(&path, op_name)?))
+            }
+            "ListOverlap" => Ok(Box::new(ListOverlap::new())),
+            "StringConcatHash" => {
+                let vocab_size = Self::yaml_i64(p, "vocab_size").unwrap_or(1000) as usize;
+                let oov_reserve = Self::yaml_i64(p, "oov_reserve").unwrap_or(0) as usize;
+                let hash_map_path = Self::yaml_str(p, "hash_map_path")
+                    .unwrap_or("")
+                    .to_string();
+                let mode = Self::yaml_str(p, "mode").unwrap_or("train").to_string();
+                let separator = Self::yaml_str(p, "separator").unwrap_or("|").to_string();
+                Ok(Box::new(StringConcatHash::new(
+                    vocab_size,
+                    oov_reserve,
+                    hash_map_path,
+                    mode,
+                    separator,
+                )))
             }
             _ => Err(format!("Unsupported operator type: {}", def.op_type)),
         }

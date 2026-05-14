@@ -24,7 +24,7 @@ impl DictMapper {
 }
 
 impl super::CustomOp for DictMapper {
-    /// 执行映射: `String` 或 `i32` 输入 → `i32` 索引。
+    /// 执行映射: 单值 → i32，列表 → Vec<i32>。
     fn name(&self) -> &str {
         "DictMapper"
     }
@@ -32,6 +32,15 @@ impl super::CustomOp for DictMapper {
         &self,
         inputs: &[&(dyn Any + Send + Sync)],
     ) -> Result<Box<dyn Any + Send + Sync>, String> {
+        // List input: map each element
+        if let Some(list) = inputs[0].downcast_ref::<Vec<String>>() {
+            let result: Vec<i32> = list
+                .iter()
+                .map(|s| self.mapping.get(s.as_str()).copied().unwrap_or(self.default_idx))
+                .collect();
+            return Ok(Box::new(result));
+        }
+        // Single value input
         let key: &str = if let Some(s) = inputs[0].downcast_ref::<String>() {
             s.as_str()
         } else if let Some(i) = inputs[0].downcast_ref::<i32>() {

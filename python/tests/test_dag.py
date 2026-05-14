@@ -6,11 +6,13 @@ def test_dag_from_yaml():
     config = FlowConfig.from_yaml("../examples/feature_config.yaml")
     dag = FeatureDag(config)
     features = dag.feature_tuples()
-    assert len(features) == 3
+    assert len(features) == 5
     names = [f[0] for f in features]
     assert "user_id" in names
     assert "user_age_bucket" in names
     assert "item_category_idx" in names
+    assert "user_tag_mapped" in names
+    assert "user_category_cross" in names
 
 
 def test_dag_execute():

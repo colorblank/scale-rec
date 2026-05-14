@@ -7,12 +7,33 @@ import sys
 
 import numpy as np
 import polars as pl
+import yaml
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 DEMO_DIR = os.path.abspath(os.path.dirname(__file__))
 FEATURE_CONFIG = os.path.join(DEMO_DIR, "feature_config_demo.yaml")
 
 MODEL_TYPES = ["lr", "deepfm", "mmoe", "esmm", "unimixer"]
+
+
+def _make_inference_config(base_path: str) -> str:
+    """Create a temp feature config with StringConcatHash operators in inference mode."""
+    with open(base_path, encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+    modified = False
+    for op in config.get("operators", []):
+        if op.get("op_type") == "StringConcatHash":
+            params = op.setdefault("params", {})
+            if params.get("mode", "train") == "train":
+                params["mode"] = "inference"
+                modified = True
+    if not modified:
+        return base_path
+    out_path = os.path.join(DEMO_DIR, "temp", "_feature_config_infer.yaml")
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(config, f, default_flow_style=False)
+    return out_path
 
 
 def compare_arrays(py_arr: np.ndarray, rust_arr: np.ndarray) -> dict:
@@ -49,12 +70,13 @@ def verify_model(model_type: str, threshold: float = 1e-3) -> dict:
             print(f"  SKIP: missing {desc}: {fpath}")
             return {"model_type": model_type, "status": "SKIP", "reason": f"missing {desc}"}
 
-    # Run Rust inference
+    # Run Rust inference（StringConcatHash 切换到 inference 模式）
+    infer_config = _make_inference_config(FEATURE_CONFIG)
     print(f"  Running Rust inference...")
     result = subprocess.run(
         [
             "cargo", "run", "--bin", "demo_inference", "--",
-            FEATURE_CONFIG, model_config, safetensors, test_csv, rust_preds_csv,
+            infer_config, model_config, safetensors, test_csv, rust_preds_csv,
         ],
         cwd=REPO_ROOT,
         capture_output=True, text=True,

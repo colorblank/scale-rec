@@ -43,6 +43,19 @@ def generate_row(uid: int, rng: random.Random) -> list:
     tag1 = rng.choice(["sports", "music", "gaming", "reading", "travel"])
     tag2 = rng.choice(["sports", "music", "gaming", "reading", "travel"])
     user_tags = f"{tag1}#{rng.randint(0, 5)}|{tag2}#{rng.randint(0, 5)}"
+
+    # Item tags: biased by category for meaningful overlap signal
+    cat_tag_bias = {
+        "electronics": ["gaming", "music", "travel"],
+        "fashion": ["sports", "travel", "music"],
+        "books": ["reading", "travel", "music"],
+        "unknown": ["sports", "reading", "gaming"],
+    }
+    item_tag_choices = cat_tag_bias.get(item_category, ["sports", "music"])
+    item_tag1 = rng.choice(item_tag_choices)
+    item_tag2 = rng.choice(item_tag_choices)
+    item_tags = f"{item_tag1}#1|{item_tag2}#1"
+
     item_price = round(rng.uniform(10.0, 1000.0), 2)
 
     age_bucket = bucket_age(user_age)
@@ -79,7 +92,7 @@ def generate_row(uid: int, rng: random.Random) -> list:
             cvr_logit -= 0.8
         cvr = 1 if sigmoid(cvr_logit) > 0.5 else 0
 
-    return [uid, user_age, item_category, user_tags, item_price, ctr, cvr]
+    return [uid, user_age, item_category, user_tags, item_tags, item_price, ctr, cvr]
 
 
 def main() -> None:
@@ -89,7 +102,7 @@ def main() -> None:
     with open(output, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(
-            ["user_id", "user_age", "item_category", "user_tags", "item_price", "ctr", "cvr"]
+            ["user_id", "user_age", "item_category", "user_tags", "item_tags", "item_price", "ctr", "cvr"]
         )
         rng = random.Random(42)
         for uid in range(200):

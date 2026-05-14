@@ -71,3 +71,53 @@ operators:
     outputs: ["item_price_log"]
     params:
       script: "log(v0 + 1.0)"
+
+  # Chain: StringParser → DictMapper (list input support)
+  - name: "tag_list_parser_op"
+    op_type: "StringParser"
+    inputs: ["user_tags"]
+    outputs: ["user_tag_list"]
+    params:
+      sep1: "|"
+      sep2: "#"
+      key_index: 0
+      pad_len: 3
+      pad_val: "none"
+
+  - name: "tag_list_map_op"
+    op_type: "DictMapper"
+    inputs: ["user_tag_list"]
+    outputs: ["user_tag_mapped"]
+    params:
+      mapping:
+        sports: 1
+        music: 2
+        gaming: 3
+        reading: 4
+        travel: 5
+      default_idx: 0
+    embed:
+      vocab_size: 6
+      embed_dim: 4
+
+  # ListOverlap: check if user_tags and item_tags overlap
+  - name: "tag_overlap_demo_op"
+    op_type: "ListOverlap"
+    inputs: ["user_tag_list", "user_tag_list"]
+    outputs: ["tag_overlap_demo"]
+    params: {}
+
+  # StringConcatHash: user_id x category cross (train mode generates map)
+  - name: "user_category_hash_op"
+    op_type: "StringConcatHash"
+    inputs: ["user_id", "item_category"]
+    outputs: ["user_category_cross"]
+    params:
+      vocab_size: 500
+      oov_reserve: 50
+      hash_map_path: "user_category_hash_map.yaml"
+      mode: "train"
+      separator: "_"
+    embed:
+      vocab_size: 500
+      embed_dim: 8

@@ -59,7 +59,13 @@ fn main() -> Result<()> {
         .iter()
         .map(|(name, _, _)| {
             let val = pre_result.features.get(name).unwrap();
-            let idx = *(**val).downcast_ref::<i32>().unwrap();
+            let idx: i32 = if let Some(i) = (**val).downcast_ref::<i32>() {
+                *i
+            } else if let Some(list) = (**val).downcast_ref::<Vec<i32>>() {
+                *list.first().unwrap_or(&0)
+            } else {
+                panic!("Feature '{}' has unsupported type", name)
+            };
             let tensor = Tensor::from_slice(&[idx as u32], batch_size, &Device::Cpu).unwrap();
             (name.clone(), tensor)
         })

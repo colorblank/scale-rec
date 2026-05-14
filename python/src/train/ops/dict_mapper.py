@@ -12,9 +12,15 @@ class DictMapper:
         self.mapping = mapping
         self.default_idx = default_idx
 
-    def process(self, inputs: list[Any]) -> int:
-        """Map string key to integer index; returns default_idx for unknown keys."""
+    def process(self, inputs: list[Any]) -> int | list[int]:
+        """Map string key to integer index; list input -> list output, single -> single."""
         val = inputs[0]
+        if isinstance(val, list):
+            return [
+                self.mapping.get(str(v), self.default_idx)
+                if isinstance(v, (str, int, float)) else self.default_idx
+                for v in val
+            ]
         if isinstance(val, (int, float)):
             val = str(val)
         return self.mapping.get(val, self.default_idx) if isinstance(val, str) else self.default_idx

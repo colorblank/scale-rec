@@ -24,6 +24,11 @@ sources:
     dtype: "string"
     default_val: ""
 
+  - name: "item_tags"
+    source: "Item"
+    dtype: "string"
+    default_val: ""
+
   - name: "item_price"
     source: "Item"
     dtype: "float"
@@ -53,3 +58,64 @@ operators:
     embed:
       vocab_size: 4
       embed_dim: 4
+
+  # StringParser → DictMapper chaining: parse user_tags, map to indices
+  - name: "user_tag_parser_op"
+    op_type: "StringParser"
+    inputs: ["user_tags"]
+    outputs: ["user_tag_list"]
+    params:
+      sep1: "|"
+      sep2: "#"
+      key_index: 0
+      pad_len: 1
+      pad_val: "none"
+
+  - name: "user_tag_map_op"
+    op_type: "DictMapper"
+    inputs: ["user_tag_list"]
+    outputs: ["user_tag_idx"]
+    params:
+      mapping:
+        sports: 1
+        music: 2
+        gaming: 3
+        reading: 4
+        travel: 5
+      default_idx: 0
+    embed:
+      vocab_size: 6
+      embed_dim: 4
+
+  # ListOverlap: check tag overlap between user and item
+  - name: "item_tag_parser_op"
+    op_type: "StringParser"
+    inputs: ["item_tags"]
+    outputs: ["item_tag_list"]
+    params:
+      sep1: "|"
+      sep2: "#"
+      key_index: 0
+      pad_len: 5
+      pad_val: "none"
+
+  - name: "tag_overlap_op"
+    op_type: "ListOverlap"
+    inputs: ["user_tag_list", "item_tag_list"]
+    outputs: ["tag_overlap_flag"]
+    params: {}
+
+  # StringConcatHash 示例（需先生成 hash_map 后将 mode 改为 inference）
+  # - name: "user_item_hash_op"
+  #   op_type: "StringConcatHash"
+  #   inputs: ["user_id", "item_category"]
+  #   outputs: ["user_item_cross_idx"]
+  #   params:
+  #     vocab_size: 100
+  #     oov_reserve: 10
+  #     hash_map_path: "demo/temp/user_item_hash_map.yaml"
+  #     mode: "train"
+  #     separator: "|"
+  #   embed:
+  #     vocab_size: 100
+  #     embed_dim: 4

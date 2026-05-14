@@ -37,6 +37,7 @@ pub struct OperatorDef {
     pub op_type: String,
     pub inputs: Vec<String>,
     pub outputs: Vec<String>,
+    #[serde(default)]
     pub params: serde_yaml::Value,
     #[serde(default)]
     pub embed: Option<EmbedConfig>,

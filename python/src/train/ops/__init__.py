@@ -13,7 +13,9 @@ from .bucketing import Bucketing as Bucketing
 from .cross_feature import CrossFeature as CrossFeature
 from .dict_mapper import DictMapper as DictMapper
 from .expression import ExpressionOp as ExpressionOp
+from .list_overlap import ListOverlap as ListOverlap
 from .sequence import SequenceOp as SequenceOp
+from .string_concat_hash import StringConcatHash as StringConcatHash
 from .string_parser import StringParser as StringParser
 
 __all__ = [
@@ -22,6 +24,8 @@ __all__ = [
     "CustomOp",
     "DictMapper",
     "ExpressionOp",
+    "ListOverlap",
     "SequenceOp",
+    "StringConcatHash",
     "StringParser",
 ]

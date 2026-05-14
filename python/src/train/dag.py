@@ -14,7 +14,9 @@ from .ops import (
     CustomOp,
     DictMapper,
     ExpressionOp,
+    ListOverlap,
     SequenceOp,
+    StringConcatHash,
     StringParser,
 )
 
@@ -119,6 +121,16 @@ class FeatureDag:
             return ExpressionOp(str(script))
         elif op_type == "SequenceOp":
             return SequenceOp(int(p.get("max_len", 10)), int(p.get("pad_val", 0)))
+        elif op_type == "ListOverlap":
+            return ListOverlap()
+        elif op_type == "StringConcatHash":
+            return StringConcatHash(
+                vocab_size=int(p.get("vocab_size", 1000)),
+                oov_reserve=int(p.get("oov_reserve", 0)),
+                hash_map_path=str(p.get("hash_map_path", "")),
+                mode=str(p.get("mode", "train")),
+                separator=str(p.get("separator", "|")),
+            )
         else:
             raise ValueError(f"Unsupported operator: {op_type}")
 
@@ -138,14 +150,22 @@ class FeatureDag:
         return [(name, emb.vocab_size, emb.embed_dim) for name, emb in self.embeddable_features()]
 
     def preprocess_batch(self, rows: list[dict]) -> dict[str, torch.Tensor]:
-        """Execute DAG on each row and stack embeddable features into tensors."""
+        """Execute DAG on each row and stack embeddable features into tensors.
+
+        Handles both scalar (int) and single-element list ([int]) feature values.
+        Multi-element lists are reduced to first element.
+        """
         embed_names = [name for name, _ in self.embeddable_features()]
         feature_lists: dict[str, list] = {name: [] for name in embed_names}
         for row in rows:
             raw = {k: v for k, v in row.items() if k in self.sources}
             result = self.execute(raw)
             for name in embed_names:
-                feature_lists[name].append(result.features.get(name, 0))
+                val = result.features.get(name, 0)
+                # Flatten list/single-element-list to scalar for embedding lookup
+                if isinstance(val, list):
+                    val = val[0] if val else 0
+                feature_lists[name].append(val)
         return {name: torch.tensor(vals, dtype=torch.long) for name, vals in feature_lists.items()}
 
     def execute(self, raw_inputs: dict[str, FeatureValue]) -> FeatureResult:
