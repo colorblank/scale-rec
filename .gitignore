@@ -35,3 +35,4 @@ Cargo.lock
 # Python / data
 *.safetensors
 *.parquet
+demo/temp/

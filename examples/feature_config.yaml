@@ -115,7 +115,7 @@ operators:
     params:
       vocab_size: 500
       oov_reserve: 50
-      hash_map_path: "user_category_hash_map.yaml"
+      hash_map_path: "python/demo/temp/user_category_hash_map.yaml"
       mode: "train"
       separator: "_"
     embed:

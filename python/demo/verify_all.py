@@ -10,6 +10,7 @@ import polars as pl
 import yaml
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+PYTHON_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DEMO_DIR = os.path.abspath(os.path.dirname(__file__))
 FEATURE_CONFIG = os.path.join(DEMO_DIR, "feature_config_demo.yaml")
 
@@ -78,7 +79,7 @@ def verify_model(model_type: str, threshold: float = 1e-3) -> dict:
             "cargo", "run", "--bin", "demo_inference", "--",
             infer_config, model_config, safetensors, test_csv, rust_preds_csv,
         ],
-        cwd=REPO_ROOT,
+        cwd=PYTHON_DIR,
         capture_output=True, text=True,
         timeout=120,
     )
