@@ -27,37 +27,14 @@ pub struct ValueSnapshot {
 }
 
 impl ValueSnapshot {
-    pub fn of(val: &(dyn Any + Send + Sync)) -> Self {
-        if let Some(i) = val.downcast_ref::<i32>() {
-            ValueSnapshot {
-                value: serde_json::json!(*i),
-                type_name: "int".into(),
-            }
-        } else if let Some(f) = val.downcast_ref::<f32>() {
-            ValueSnapshot {
-                value: serde_json::json!(*f),
-                type_name: "float".into(),
-            }
-        } else if let Some(s) = val.downcast_ref::<String>() {
-            ValueSnapshot {
-                value: serde_json::json!(s.clone()),
-                type_name: "str".into(),
-            }
-        } else if let Some(list_s) = val.downcast_ref::<Vec<String>>() {
-            ValueSnapshot {
-                value: serde_json::json!(list_s),
-                type_name: "list[str]".into(),
-            }
-        } else if let Some(list_i) = val.downcast_ref::<Vec<i32>>() {
-            ValueSnapshot {
-                value: serde_json::json!(list_i),
-                type_name: "list[int]".into(),
-            }
-        } else {
-            ValueSnapshot {
-                value: serde_json::json!(null),
-                type_name: "unknown".into(),
-            }
+    pub fn of(val: &crate::feats::ops::Fv) -> Self {
+        use crate::feats::ops::Fv;
+        match val {
+            Fv::Int(i) => ValueSnapshot { value: serde_json::json!(*i), type_name: "int".into() },
+            Fv::Float(f) => ValueSnapshot { value: serde_json::json!(*f), type_name: "float".into() },
+            Fv::Str(s) => ValueSnapshot { value: serde_json::json!(s.clone()), type_name: "str".into() },
+            Fv::StrList(l) => ValueSnapshot { value: serde_json::json!(l), type_name: "list[str]".into() },
+            Fv::IntList(l) => ValueSnapshot { value: serde_json::json!(l), type_name: "list[int]".into() },
         }
     }
 }
@@ -170,7 +147,7 @@ impl DebugTracer {
     }
 
     /// 记录默认值初始化阶段
-    pub fn trace_defaults(&self, context: &HashMap<String, &(dyn Any + Send + Sync)>) {
+    pub fn trace_defaults(&self, context: &HashMap<String, &crate::feats::ops::Fv>) {
         let mut curr = self.current.lock().unwrap();
         if let Some(ref mut t) = *curr {
             let outputs: HashMap<String, ValueSnapshot> = context
@@ -184,7 +161,7 @@ impl DebugTracer {
     /// 记录 raw_inputs 覆盖阶段
     pub fn trace_overrides(
         &self,
-        context: &HashMap<String, &(dyn Any + Send + Sync)>,
+        context: &HashMap<String, &crate::feats::ops::Fv>,
         overridden: Vec<String>,
     ) {
         let mut curr = self.current.lock().unwrap();
@@ -202,9 +179,9 @@ impl DebugTracer {
         &self,
         op_name: &str,
         input_names: &[String],
-        input_vals: &[&(dyn Any + Send + Sync)],
+        input_vals: &[&crate::feats::ops::Fv],
         output_names: &[String],
-        output_val: &(dyn Any + Send + Sync),
+        output_val: &crate::feats::ops::Fv,
     ) {
         let mut curr = self.current.lock().unwrap();
         if let Some(ref mut t) = *curr {

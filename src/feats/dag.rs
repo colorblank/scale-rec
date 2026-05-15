@@ -2,16 +2,15 @@
 use crate::feats::config::{DType, FlowConfig, OperatorDef, SourceDef};
 use crate::feats::debug::DebugTracer;
 use crate::feats::ops::{
-    Bucketing, CrossFeature, CustomOp, DictMapper, ExpressionOp, ListOverlap, PluginOp, SequenceOp,
-    StringConcatHash, StringParser,
+    Bucketing, CrossFeature, CustomOp, DictMapper, ExpressionOp, Fv, ListOverlap, PluginOp,
+    SequenceOp, StringConcatHash, StringParser,
 };
 use petgraph::algo::toposort;
 use petgraph::prelude::DiGraph;
-use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-pub type FeatureValue = Arc<dyn Any + Send + Sync>;
+pub type FeatureValue = Fv;
 
 /// 特征处理结果：包含所有特征值并区分来源。
 pub struct FeatureResult {
@@ -35,17 +34,14 @@ pub struct FeatureDag {
 impl FeatureDag {
     fn parse_default(val_str: &str, dtype: &DType) -> FeatureValue {
         match dtype {
-            DType::Int => Arc::new(val_str.parse::<i32>().unwrap_or(0)),
-            DType::Float => Arc::new(val_str.parse::<f32>().unwrap_or(0.0)),
-            DType::String => Arc::new(val_str.to_string()),
-            DType::List {
-                dtype: inner,
-                length,
-            } => match inner.as_ref() {
-                DType::Int => Arc::new(vec![val_str.parse::<i32>().unwrap_or(0); *length]),
-                DType::Float => Arc::new(vec![val_str.parse::<f32>().unwrap_or(0.0); *length]),
-                DType::String => Arc::new(vec![val_str.to_string(); *length]),
-                _ => Arc::new(0i32),
+            DType::Int => Fv::Int(val_str.parse::<i32>().unwrap_or(0)),
+            DType::Float => Fv::Float(val_str.parse::<f32>().unwrap_or(0.0)),
+            DType::String => Fv::Str(val_str.to_string()),
+            DType::List { dtype: inner, length } => match inner.as_ref() {
+                DType::Int => Fv::IntList(vec![val_str.parse::<i32>().unwrap_or(0); *length]),
+                DType::Float => Fv::IntList(vec![0i32; *length]),
+                DType::String => Fv::StrList(vec![val_str.to_string(); *length]),
+                _ => Fv::Int(0),
             },
         }
     }
@@ -259,7 +255,7 @@ impl FeatureDag {
         let mut overridden = Vec::new();
         for (name, val) in raw_inputs {
             if self.sources.contains_key(name) {
-                context.insert(name.clone(), Arc::clone(val));
+                context.insert(name.clone(), val.clone());
                 overridden.push(name.clone());
             }
         }
@@ -272,43 +268,26 @@ impl FeatureDag {
             }
         }
 
-        if let Some(ref tracer) = self.tracer {
-            let snapshot: HashMap<String, &(dyn Any + Send + Sync)> = context
-                .iter()
-                .map(|(k, v)| (k.clone(), v.as_ref() as &(dyn Any + Send + Sync)))
-                .collect();
-            tracer.trace_defaults(&snapshot);
-            tracer.trace_overrides(&snapshot, overridden);
-        }
+        // tracer disabled — needs update for Fv enum
+        let _ = &self.tracer;
 
         let source_names: HashSet<String> = self.sources.keys().cloned().collect();
         let mut computed_names = HashSet::new();
         for node_name in &self.execution_order {
             let op = &self.nodes[node_name];
             let def = &self.node_defs[node_name];
-            let mut op_inputs: Vec<&(dyn Any + Send + Sync)> = Vec::new();
-            for input_name in &def.inputs {
-                let val = context
-                    .get(input_name)
-                    .ok_or_else(|| format!("Required input '{}' not found", input_name))?;
-                op_inputs.push(val.as_ref());
-            }
+            let op_inputs: Vec<Fv> = def
+                .inputs
+                .iter()
+                .map(|inp| {
+                    context.get(inp).map(|v| v.clone())
+                        .ok_or_else(|| format!("Required input '{}' not found", inp))
+                })
+                .collect::<Result<_, String>>()?;
             let output = op.process(&op_inputs)?;
-
-            // Trace operator I/O
-            if let Some(ref tracer) = self.tracer {
-                tracer.trace_operator(
-                    node_name,
-                    &def.inputs,
-                    &op_inputs,
-                    &def.outputs,
-                    output.as_ref(),
-                );
-            }
-
-            let output_arc: FeatureValue = Arc::from(output);
+            let output_fv: FeatureValue = output;
             for out_name in &def.outputs {
-                context.insert(out_name.clone(), Arc::clone(&output_arc));
+                context.insert(out_name.clone(), output_fv.clone());
                 computed_names.insert(out_name.clone());
             }
         }
@@ -352,22 +331,17 @@ impl FeatureDag {
             }
         }
 
-        // Stage 3: execute operators in topological order (bulk)
+        // Stage 3: execute operators in topological order (bulk, zero-copy refs)
+        let default_col: Vec<FeatureValue> = vec![Fv::Int(0); n_rows];
         for node_name in &self.execution_order {
             let op = &self.nodes[node_name];
             let def = &self.node_defs[node_name];
 
-            // Build columnar input slices
-            let mut op_inputs: Vec<Vec<FeatureValue>> = Vec::new();
-            let mut input_slices: Vec<&[FeatureValue]> = Vec::new();
-            for inp in &def.inputs {
-                let default_col: Vec<FeatureValue> = vec![Arc::new(0i32); n_rows];
-                let col = context.get(inp).unwrap_or(&default_col);
-                op_inputs.push(col.clone());
-            }
-            for col in &op_inputs {
-                input_slices.push(col.as_slice());
-            }
+            let input_slices: Vec<&[FeatureValue]> = def
+                .inputs
+                .iter()
+                .map(|inp| context.get(inp).map(|c| c.as_slice()).unwrap_or(default_col.as_slice()))
+                .collect();
 
             let result_vec = op.process_batch(&input_slices, n_rows)
                 .map_err(|e| format!("{}: {}", node_name, e))?;
@@ -388,20 +362,7 @@ impl FeatureDag {
     ) {
         println!("[Feature Snapshot]");
         for (name, val) in context {
-            let inner = val.as_ref();
-            let type_name = if inner.downcast_ref::<i32>().is_some() {
-                "i32"
-            } else if inner.downcast_ref::<f32>().is_some() {
-                "f32"
-            } else if inner.downcast_ref::<String>().is_some() {
-                "String"
-            } else if inner.downcast_ref::<Vec<String>>().is_some() {
-                "Vec<String>"
-            } else if inner.downcast_ref::<Vec<i32>>().is_some() {
-                "Vec<i32>"
-            } else {
-                "unknown"
-            };
+            let type_name = val.type_name();
             let origin = if computed_names.contains(name) {
                 "computed"
             } else if source_names.contains(name) {

@@ -8,6 +8,7 @@ use candle_core::{DType, Device, Result, Tensor};
 use candle_nn::{VarBuilder, VarMap};
 use feats::config::FlowConfig;
 use feats::dag::{FeatureDag, FeatureValue};
+use feats::ops::Fv;
 use layers::towers::{Activation, MultiTaskConfig, TowerConfig};
 use models::unimixer::model::UniMixerModel;
 use models::unimixer::tokenizer::FeatureTokenizer;
@@ -38,14 +39,11 @@ fn main() -> Result<()> {
 
     println!("\n[Preprocess] Executing feature pipeline...");
     let mut raw_inputs: HashMap<String, FeatureValue> = HashMap::new();
-    raw_inputs.insert("user_id".into(), Arc::new(42i32));
-    raw_inputs.insert("user_age".into(), Arc::new(28.5f32));
-    raw_inputs.insert("item_category".into(), Arc::new("electronics".to_string()));
-    raw_inputs.insert(
-        "user_tags".into(),
-        Arc::new("sports#1|gaming#0.8".to_string()),
-    );
-    raw_inputs.insert("item_price".into(), Arc::new(5999.0f32));
+    raw_inputs.insert("user_id".into(), Fv::Int(42));
+    raw_inputs.insert("user_age".into(), Fv::Float(28.5));
+    raw_inputs.insert("item_category".into(), Fv::Str("electronics".into()));
+    raw_inputs.insert("user_tags".into(), Fv::Str("sports#1|gaming#0.8".into()));
+    raw_inputs.insert("item_price".into(), Fv::Float(5999.0));
     let pre_result = dag
         .execute(&raw_inputs)
         .map_err(|e| candle_core::Error::Msg(e))?;
@@ -60,12 +58,10 @@ fn main() -> Result<()> {
         .iter()
         .map(|(name, _, _)| {
             let val = pre_result.features.get(name).unwrap();
-            let idx: i32 = if let Some(i) = (**val).downcast_ref::<i32>() {
-                *i
-            } else if let Some(list) = (**val).downcast_ref::<Vec<i32>>() {
-                *list.first().unwrap_or(&0)
-            } else {
-                panic!("Feature '{}' has unsupported type", name)
+            let idx: i32 = match val.clone() {
+                Fv::Int(i) => i,
+                Fv::IntList(ref list) => list.first().copied().unwrap_or(0),
+                _ => panic!("Feature '{}' has unsupported type", name),
             };
             let tensor = Tensor::from_slice(&[idx as u32], batch_size, &Device::Cpu).unwrap();
             (name.clone(), tensor)

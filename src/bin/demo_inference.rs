@@ -8,6 +8,7 @@ use candle_core::{DType, Device, Tensor};
 use candle_nn::{VarBuilder, VarMap};
 use scale_rec::feats::config::FlowConfig;
 use scale_rec::feats::dag::{FeatureDag, FeatureValue};
+use scale_rec::feats::ops::Fv;
 use scale_rec::models::unimixer::tokenizer::FeatureTokenizer;
 use scale_rec::models::ModelConfig;
 
@@ -123,11 +124,11 @@ fn main() -> Result<()> {
             let col = col_index.get(field).context("Missing column")?;
             let val = record.get(*col).context("Missing field")?;
             let fv: FeatureValue = if val.parse::<f64>().is_ok() && val.contains('.') {
-                Arc::new(val.parse::<f32>().unwrap_or(0.0))
+                Fv::Float(val.parse::<f32>().unwrap_or(0.0))
             } else if let Ok(i) = val.parse::<i64>() {
-                Arc::new(i as i32)
+                Fv::Int(i as i32)
             } else {
-                Arc::new(val.to_string())
+                Fv::Str(val.to_string())
             };
             raw_inputs.insert(field.clone(), fv);
         }
@@ -141,12 +142,10 @@ fn main() -> Result<()> {
                 .features
                 .get(name)
                 .with_context(|| format!("Feature '{}' not found in DAG output", name))?;
-            let idx: i32 = if let Some(i) = (**val).downcast_ref::<i32>() {
-                *i
-            } else if let Some(list) = (**val).downcast_ref::<Vec<i32>>() {
-                *list.first().unwrap_or(&0)
-            } else {
-                anyhow::bail!("Feature '{}' has unsupported type", name)
+            let idx: i32 = match val.clone() {
+                Fv::Int(i) => i,
+                Fv::IntList(ref list) => list.first().copied().unwrap_or(0),
+                _ => anyhow::bail!("Feature '{}' has unsupported type", name),
             };
             all_indices.get_mut(name).unwrap().push(idx as u32);
         }

@@ -1,62 +1,25 @@
 //! 特征交叉算子：内积或笛卡尔积。
-use std::any::Any;
+use super::{CustomOp, Fv};
 
-/// 特征交叉算子。
-///
-/// 支持两种交叉模式：
-/// - `"inner_product"` — 两个 `Vec<f32>` 的点积，输出 `f32`
-/// - `"cartesian"` — 两个 `Vec<String>` 的笛卡尔积，输出 `Vec<String>`
-pub struct CrossFeature {
-    cross_type: String,
-}
+pub struct CrossFeature { cross_type: String }
+impl CrossFeature { pub fn new(cross_type: String) -> Self { Self { cross_type } } }
 
-impl CrossFeature {
-    /// 构造交叉算子。
-    ///
-    /// `cross_type` 必须为 `"inner_product"` 或 `"cartesian"`。
-    pub fn new(cross_type: String) -> Self {
-        Self { cross_type }
-    }
-}
-
-impl super::CustomOp for CrossFeature {
-    fn name(&self) -> &str {
-        "CrossFeature"
-    }
-
-    /// 执行特征交叉。
-    ///
-    /// # 输入
-    /// - `inner_product` 模式：需要 2 个 `Vec<f32>` 输入，长度必须相等
-    /// - `cartesian` 模式：需要 2 个 `Vec<String>` 输入
-    fn process(
-        &self,
-        inputs: &[&(dyn Any + Send + Sync)],
-    ) -> Result<Box<dyn Any + Send + Sync>, String> {
+impl CustomOp for CrossFeature {
+    fn name(&self) -> &str { "CrossFeature" }
+    fn process(&self, inputs: &[Fv]) -> Result<Fv, String> {
         match self.cross_type.as_str() {
             "inner_product" => {
-                let a = inputs[0]
-                    .downcast_ref::<Vec<f32>>()
-                    .ok_or("Expected Vec<f32>")?;
-                let b = inputs[1]
-                    .downcast_ref::<Vec<f32>>()
-                    .ok_or("Expected Vec<f32>")?;
-                Ok(Box::new(a.iter().zip(b).map(|(x, y)| x * y).sum::<f32>()))
+                let a: Vec<f32> = match &inputs[0] { Fv::IntList(v) => v.iter().map(|&x| x as f32).collect(), _ => return Err("Expected IntList".into()) };
+                let b: Vec<f32> = match &inputs[1] { Fv::IntList(v) => v.iter().map(|&x| x as f32).collect(), _ => return Err("Expected IntList".into()) };
+                Ok(Fv::Float(a.iter().zip(&b).map(|(x,y)| x*y).sum()))
             }
-            "cartesian" => {
-                let a = inputs[0]
-                    .downcast_ref::<Vec<String>>()
-                    .ok_or("Expected Vec<String>")?;
-                let b = inputs[1]
-                    .downcast_ref::<Vec<String>>()
-                    .ok_or("Expected Vec<String>")?;
-                Ok(Box::new(
-                    a.iter()
-                        .flat_map(|x| b.iter().map(move |y| format!("{}_{}", x, y)))
-                        .collect::<Vec<_>>(),
-                ))
+            _ => {
+                let a = match &inputs[0] { Fv::StrList(v) => v, _ => return Err("Expected StrList".into()) };
+                let b = match &inputs[1] { Fv::StrList(v) => v, _ => return Err("Expected StrList".into()) };
+                let mut r = Vec::new();
+                for x in a { for y in b { r.push(format!("{}_{}", x, y)); } }
+                Ok(Fv::StrList(r))
             }
-            _ => Err(format!("Unknown cross_type: {}", self.cross_type)),
         }
     }
 }

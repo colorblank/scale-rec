@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use candle_core::{Device, Tensor};
 
 use crate::feats::dag::{FeatureDag, FeatureValue};
+use crate::feats::ops::Fv;
 use crate::models::Model;
 
 /// 推理引擎：持有 DAG 和已加载权重的模型。
@@ -52,10 +53,11 @@ impl InferenceEngine {
             let col = batch_result.get(name)
                 .ok_or_else(|| format!("Feature '{}' not found in batch output", name))?;
             let indices: Vec<u32> = col.iter().map(|val| {
-                if let Some(i) = (**val).downcast_ref::<i32>() { *i as u32 }
-                else if let Some(list) = (**val).downcast_ref::<Vec<i32>>() {
-                    list.first().copied().unwrap_or(0) as u32
-                } else { 0 }
+                match val.clone() {
+                    Fv::Int(i) => i as u32,
+                    Fv::IntList(ref list) => list.first().copied().unwrap_or(0) as u32,
+                    _ => 0,
+                }
             }).collect();
             all_indices.insert(name.clone(), indices);
         }
@@ -110,28 +112,18 @@ impl InferenceEngine {
 }
 
 fn json_to_feature(val: &serde_json::Value) -> FeatureValue {
-    use std::sync::Arc;
     match val {
         serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Arc::new(i as i32)
-            } else if let Some(f) = n.as_f64() {
-                Arc::new(f as f32)
-            } else {
-                Arc::new(0i32)
-            }
+            if let Some(i) = n.as_i64() { Fv::Int(i as i32) }
+            else { Fv::Float(n.as_f64().unwrap_or(0.0) as f32) }
         }
-        serde_json::Value::String(s) => Arc::new(s.clone()),
+        serde_json::Value::String(s) => Fv::Str(s.clone()),
         serde_json::Value::Array(arr) => {
-            let strs: Vec<String> = arr
-                .iter()
-                .map(|v| match v {
-                    serde_json::Value::String(s) => s.clone(),
-                    other => other.to_string(),
-                })
-                .collect();
-            Arc::new(strs)
+            Fv::StrList(arr.iter().map(|v| match v {
+                serde_json::Value::String(s) => s.clone(),
+                other => other.to_string(),
+            }).collect())
         }
-        _ => Arc::new(0i32),
+        _ => Fv::Int(0),
     }
 }

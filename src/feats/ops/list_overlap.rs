@@ -1,50 +1,33 @@
 //! 列表重叠检测算子：判断两个列表是否存在共同元素。
-use std::any::Any;
 use std::collections::HashSet;
+use super::{CustomOp, Fv};
 
-/// 列表重叠检测算子。
-///
-/// 两个 `Vec<String>` 输入，判断是否存在交集。返回 1（有交集）或 0（无交集）。
-/// 忽略空字符串元素。
 pub struct ListOverlap;
 
-impl ListOverlap {
-    pub fn new() -> Self {
-        Self
+impl ListOverlap { pub fn new() -> Self { Self } }
+
+impl CustomOp for ListOverlap {
+    fn name(&self) -> &str { "ListOverlap" }
+
+    fn process(&self, inputs: &[Fv]) -> Result<Fv, String> {
+        let a = strs(&inputs[0]); let b = strs(&inputs[1]);
+        if a.is_empty() || b.is_empty() { return Ok(Fv::Int(0)); }
+        Ok(Fv::Int(if a.intersection(&b).next().is_some() { 1 } else { 0 }))
+    }
+
+    fn process_batch(&self, inputs: &[&[Fv]], n_rows: usize) -> Result<Vec<Fv>, String> {
+        let ca = inputs[0]; let cb = inputs[1];
+        let mut results = Vec::with_capacity(n_rows);
+        for i in 0..n_rows {
+            let a = strs(&ca[i]); let b = strs(&cb[i]);
+            let v = if a.is_empty() || b.is_empty() { 0 }
+                    else if a.intersection(&b).next().is_some() { 1 } else { 0 };
+            results.push(Fv::Int(v));
+        }
+        Ok(results)
     }
 }
 
-impl super::CustomOp for ListOverlap {
-    fn name(&self) -> &str {
-        "ListOverlap"
-    }
-    fn process(
-        &self,
-        inputs: &[&(dyn Any + Send + Sync)],
-    ) -> Result<Box<dyn Any + Send + Sync>, String> {
-        let a: HashSet<&str> = if let Some(list) = inputs[0].downcast_ref::<Vec<String>>() {
-            list.iter()
-                .filter(|s| !s.is_empty())
-                .map(|s| s.as_str())
-                .collect()
-        } else {
-            return Ok(Box::new(0i32));
-        };
-        let b: HashSet<&str> = if let Some(list) = inputs[1].downcast_ref::<Vec<String>>() {
-            list.iter()
-                .filter(|s| !s.is_empty())
-                .map(|s| s.as_str())
-                .collect()
-        } else {
-            return Ok(Box::new(0i32));
-        };
-        if a.is_empty() || b.is_empty() {
-            return Ok(Box::new(0i32));
-        }
-        Ok(Box::new(if a.intersection(&b).next().is_some() {
-            1i32
-        } else {
-            0i32
-        }))
-    }
+fn strs(v: &Fv) -> HashSet<&str> {
+    match v { Fv::StrList(l) => l.iter().filter(|s| !s.is_empty()).map(|s| s.as_str()).collect(), _ => HashSet::new() }
 }
