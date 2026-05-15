@@ -106,6 +106,8 @@ fn main() -> Result<()> {
         .map(|(i, h)| (h.to_string(), i))
         .collect();
 
+    // Read source names from feature config to dynamically match CSV columns
+    let source_names: Vec<String> = dag.source_defs().keys().cloned().collect();
     let embed_names: Vec<String> = features.iter().map(|(n, _, _)| n.clone()).collect();
     let mut all_indices: HashMap<String, Vec<u32>> = embed_names
         .iter()
@@ -117,24 +119,17 @@ fn main() -> Result<()> {
         let record = result.context("Failed to read CSV row")?;
         let mut raw_inputs: HashMap<String, FeatureValue> = HashMap::new();
 
-        for field in &[
-            "user_id",
-            "user_age",
-            "item_category",
-            "user_tags",
-            "item_tags",
-            "item_price",
-        ] {
-            let col = col_index.get(*field).context("Missing column")?;
+        for field in &source_names {
+            let col = col_index.get(field).context("Missing column")?;
             let val = record.get(*col).context("Missing field")?;
-            let fv: FeatureValue = match *field {
-                "user_id" => Arc::new(val.parse::<i32>().context("Invalid user_id")?),
-                "user_age" => Arc::new(val.parse::<f32>().context("Invalid user_age")?),
-                "item_category" | "user_tags" | "item_tags" => Arc::new(val.to_string()),
-                "item_price" => Arc::new(val.parse::<f32>().context("Invalid item_price")?),
-                _ => continue,
+            let fv: FeatureValue = if val.parse::<f64>().is_ok() && val.contains('.') {
+                Arc::new(val.parse::<f32>().unwrap_or(0.0))
+            } else if let Ok(i) = val.parse::<i64>() {
+                Arc::new(i as i32)
+            } else {
+                Arc::new(val.to_string())
             };
-            raw_inputs.insert(field.to_string(), fv);
+            raw_inputs.insert(field.clone(), fv);
         }
 
         let pre_result = dag

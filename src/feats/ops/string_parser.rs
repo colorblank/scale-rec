@@ -61,4 +61,30 @@ impl super::CustomOp for StringParser {
         result.truncate(self.pad_len);
         Ok(Box::new(result))
     }
+
+    fn process_batch(
+        &self,
+        inputs: &[&[super::Fv]],
+        n_rows: usize,
+    ) -> Result<Vec<super::Fv>, String> {
+        let col = inputs[0];
+        let mut results: Vec<super::Fv> = Vec::with_capacity(n_rows);
+        for i in 0..n_rows {
+            let s = col[i].as_ref().downcast_ref::<String>().map(|s| s.as_str()).unwrap_or("");
+            let mut result: Vec<String> = s.split(&self.sep1)
+                .filter_map(|item| {
+                    let parts: Vec<&str> = item.split(&self.sep2).collect();
+                    if self.key_index < parts.len() {
+                        Some(parts[self.key_index].to_string())
+                    } else { None }
+                })
+                .collect();
+            while result.len() < self.pad_len {
+                result.push(self.pad_val.clone());
+            }
+            result.truncate(self.pad_len);
+            results.push(std::sync::Arc::new(result));
+        }
+        Ok(results)
+    }
 }

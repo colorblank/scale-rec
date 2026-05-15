@@ -325,6 +325,61 @@ impl FeatureDag {
         })
     }
 
+    /// Batch DAG execution on columnar data. Operators with `process_batch()` are
+    /// invoked once per column, eliminating per-row trait object dispatch overhead.
+    pub fn execute_batch(
+        &self,
+        columns: &HashMap<String, Vec<FeatureValue>>,
+    ) -> Result<HashMap<String, Vec<FeatureValue>>, String> {
+        let n_rows = columns.values().next().map(|v| v.len()).unwrap_or(0);
+        if n_rows == 0 {
+            return Ok(HashMap::new());
+        }
+
+        let mut context: HashMap<String, Vec<FeatureValue>> = HashMap::new();
+
+        // Stage 1: raw inputs
+        for (name, col) in columns {
+            if self.sources.contains_key(name) {
+                context.insert(name.clone(), col.clone());
+            }
+        }
+        // Stage 2: fill defaults for missing keys
+        for (name, source_def) in &self.sources {
+            if !context.contains_key(name) {
+                let default = Self::parse_default(&source_def.default_val, &source_def.dtype);
+                context.insert(name.clone(), vec![default; n_rows]);
+            }
+        }
+
+        // Stage 3: execute operators in topological order (bulk)
+        for node_name in &self.execution_order {
+            let op = &self.nodes[node_name];
+            let def = &self.node_defs[node_name];
+
+            // Build columnar input slices
+            let mut op_inputs: Vec<Vec<FeatureValue>> = Vec::new();
+            let mut input_slices: Vec<&[FeatureValue]> = Vec::new();
+            for inp in &def.inputs {
+                let default_col: Vec<FeatureValue> = vec![Arc::new(0i32); n_rows];
+                let col = context.get(inp).unwrap_or(&default_col);
+                op_inputs.push(col.clone());
+            }
+            for col in &op_inputs {
+                input_slices.push(col.as_slice());
+            }
+
+            let result_vec = op.process_batch(&input_slices, n_rows)
+                .map_err(|e| format!("{}: {}", node_name, e))?;
+
+            for out_name in &def.outputs {
+                context.insert(out_name.clone(), result_vec.clone());
+            }
+        }
+
+        Ok(context)
+    }
+
     pub fn dump_snapshot(
         &self,
         context: &HashMap<String, FeatureValue>,

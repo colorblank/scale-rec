@@ -62,6 +62,40 @@ impl super::CustomOp for DictMapper {
             self.mapping.get(key).copied().unwrap_or(self.default_idx),
         ))
     }
+
+    fn process_batch(
+        &self,
+        inputs: &[&[super::Fv]],
+        n_rows: usize,
+    ) -> Result<Vec<super::Fv>, String> {
+        let col = inputs[0];
+        let mut results: Vec<super::Fv> = Vec::with_capacity(n_rows);
+        for i in 0..n_rows {
+            let val = &col[i];
+            let out: super::Fv =
+                if let Some(list) = (**val).downcast_ref::<Vec<String>>() {
+                    std::sync::Arc::new(
+                        list.iter()
+                            .map(|s| {
+                                self.mapping.get(s.as_str()).copied().unwrap_or(self.default_idx)
+                            })
+                            .collect::<Vec<i32>>(),
+                    )
+                } else if let Some(s) = (**val).downcast_ref::<String>() {
+                    std::sync::Arc::new(
+                        self.mapping.get(s.as_str()).copied().unwrap_or(self.default_idx),
+                    )
+                } else if let Some(i) = (**val).downcast_ref::<i32>() {
+                    std::sync::Arc::new(
+                        self.mapping.get(&i.to_string()).copied().unwrap_or(self.default_idx),
+                    )
+                } else {
+                    std::sync::Arc::new(self.default_idx)
+                };
+            results.push(out);
+        }
+        Ok(results)
+    }
 }
 
 #[cfg(test)]

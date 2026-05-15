@@ -43,6 +43,32 @@ impl super::CustomOp for Bucketing {
         }
         Ok(Box::new(bucket))
     }
+
+    fn process_batch(
+        &self,
+        inputs: &[&[super::Fv]],
+        n_rows: usize,
+    ) -> Result<Vec<super::Fv>, String> {
+        let col = inputs[0];
+        let boundaries = &self.boundaries;
+        let mut results: Vec<super::Fv> = Vec::with_capacity(n_rows);
+        for i in 0..n_rows {
+            let val = &col[i];
+            let v: f32 = if let Some(f) = (**val).downcast_ref::<f32>() {
+                *f
+            } else if let Some(f) = (**val).downcast_ref::<f64>() {
+                *f as f32
+            } else {
+                return Err("Bucketing batch: expected f32/f64".into());
+            };
+            let mut bucket = 0i32;
+            for b in boundaries {
+                if v >= *b { bucket += 1; } else { break; }
+            }
+            results.push(std::sync::Arc::new(bucket));
+        }
+        Ok(results)
+    }
 }
 
 #[cfg(test)]
