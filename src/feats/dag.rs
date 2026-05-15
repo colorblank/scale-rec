@@ -256,33 +256,31 @@ impl FeatureDag {
         }
 
         let mut context: HashMap<String, FeatureValue> = HashMap::new();
-        for (name, source_def) in &self.sources {
-            let default_val = Self::parse_default(&source_def.default_val, &source_def.dtype);
-            context.insert(name.clone(), default_val);
+
+        // Stage 1: raw inputs first (avoid allocating defaults that will be overwritten)
+        let mut overridden = Vec::new();
+        for (name, val) in raw_inputs {
+            if self.sources.contains_key(name) {
+                context.insert(name.clone(), Arc::clone(val));
+                overridden.push(name.clone());
+            }
         }
 
-        // Trace defaults
+        // Stage 2: fill defaults only for missing keys
+        for (name, source_def) in &self.sources {
+            if !context.contains_key(name) {
+                let default_val =
+                    Self::parse_default(&source_def.default_val, &source_def.dtype);
+                context.insert(name.clone(), default_val);
+            }
+        }
+
         if let Some(ref tracer) = self.tracer {
             let snapshot: HashMap<String, &(dyn Any + Send + Sync)> = context
                 .iter()
                 .map(|(k, v)| (k.clone(), v.as_ref() as &(dyn Any + Send + Sync)))
                 .collect();
             tracer.trace_defaults(&snapshot);
-        }
-
-        // Stage 2: raw inputs override
-        let mut overridden = Vec::new();
-        for (name, val) in raw_inputs {
-            if context.contains_key(name) {
-                overridden.push(name.clone());
-            }
-            context.insert(name.clone(), Arc::clone(val));
-        }
-        if let Some(ref tracer) = self.tracer {
-            let snapshot: HashMap<String, &(dyn Any + Send + Sync)> = context
-                .iter()
-                .map(|(k, v)| (k.clone(), v.as_ref() as &(dyn Any + Send + Sync)))
-                .collect();
             tracer.trace_overrides(&snapshot, overridden);
         }
 

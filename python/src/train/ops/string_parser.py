@@ -27,3 +27,24 @@ class StringParser:
         if len(result) < self.pad_len:
             result.extend([self.pad_val] * (self.pad_len - len(result)))
         return result[: self.pad_len]
+
+    def process_batch(self, inputs: list[Any]) -> list[list[str]]:
+        """Batch parse: N strings -> N lists of parsed tokens."""
+        vals = inputs[0]
+        if not vals:
+            return []
+        sep1, sep2 = self.sep1, self.sep2
+        ki, pl, pv = self.key_index, self.pad_len, self.pad_val
+        results = []
+        for val in vals:
+            s = str(val) if val else ""
+            items = s.split(sep1) if s else []
+            result = []
+            for item in items:
+                parts = item.split(sep2)
+                if ki < len(parts):
+                    result.append(parts[ki])
+            if len(result) < pl:
+                result.extend([pv] * (pl - len(result)))
+            results.append(result[:pl])
+        return results

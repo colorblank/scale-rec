@@ -150,44 +150,104 @@ class FeatureDag:
     def feature_tuples(self) -> list[tuple[str, int, int]]:
         return [(name, emb.vocab_size, emb.embed_dim) for name, emb in self.embeddable_features()]
 
+    def execute_batch(self, columns: dict[str, list]) -> dict[str, list]:
+        """Execute DAG on columnar batch data. Each value in `columns` is a list of N elements.
+
+        Operators with `process_batch()` are called once per column.
+        Operators without it fall back to row-by-row `process()`.
+        """
+        n_rows = len(next(iter(columns.values()))) if columns else 0
+        if n_rows == 0:
+            return {}
+
+        context: dict[str, list] = {}
+
+        # Stage 1: raw inputs first
+        overridden = list(columns.keys())
+        for name, col in columns.items():
+            if name in self.sources:
+                context[name] = list(col)
+
+        # Stage 2: defaults for missing
+        for name, src in self.sources.items():
+            if name not in context:
+                default = self._parse_default(src.default_val, src.dtype)
+                context[name] = [default] * n_rows
+
+        # Stage 3: execute operators in topological order (bulk)
+        for node_name in self.execution_order:
+            op, def_ = self.nodes[node_name], self.node_defs[node_name]
+            op_inputs = [context[inp] for inp in def_.inputs]
+
+            if hasattr(op, "process_batch"):
+                output = op.process_batch(op_inputs)
+            else:
+                # Fallback: row-by-row
+                output = []
+                for i in range(n_rows):
+                    row_inputs = [col[i] for col in op_inputs]
+                    output.append(op.process(row_inputs))
+                # Transpose list-of-structs back to column if needed
+                if output and isinstance(output[0], list):
+                    output = [list(x) for x in zip(*output)] if output else output
+
+            if def_.outputs:
+                for out_name in def_.outputs:
+                    context[out_name] = output
+
+        return context
+
     def preprocess_batch(self, rows: list[dict]) -> dict[str, torch.Tensor]:
         """Execute DAG on each row and stack embeddable features into tensors.
 
+        Uses columnar execute_batch() for performance when possible.
         Handles both scalar (int) and single-element list ([int]) feature values.
-        Multi-element lists are reduced to first element.
         """
+        # Build columnar input from rows
+        columns: dict[str, list] = {}
+        for row in rows:
+            for k, v in row.items():
+                if k in self.sources:
+                    columns.setdefault(k, []).append(v)
+
+        if self.tracer:
+            for i in range(len(rows)):
+                self.tracer.begin_sample(i)
+
+        result = self.execute_batch(columns)
+
         embed_names = [name for name, _ in self.embeddable_features()]
         feature_lists: dict[str, list] = {name: [] for name in embed_names}
-        for i, row in enumerate(rows):
-            raw = {k: v for k, v in row.items() if k in self.sources}
-            if self.tracer:
-                self.tracer.begin_sample(i)
-            result = self.execute(raw, sample_id=i)
+        for i in range(len(rows)):
             for name in embed_names:
-                val = result.features.get(name, 0)
-                # Flatten list/single-element-list to scalar for embedding lookup
+                val = result.get(name, [0] * len(rows))[i] if name in result else 0
                 if isinstance(val, list):
                     val = val[0] if val else 0
                 feature_lists[name].append(val)
+
+        if self.tracer:
+            for _ in range(len(rows)):
+                self.tracer.end_sample()
+
         return {name: torch.tensor(vals, dtype=torch.long) for name, vals in feature_lists.items()}
 
     def execute(self, raw_inputs: dict[str, FeatureValue],
                 sample_id: int = 0) -> FeatureResult:
         context: dict[str, FeatureValue] = {}
 
-        # Stage 1: default values
+        # Stage 1: raw inputs first (avoid allocating defaults that will be overwritten)
+        for name, val in raw_inputs.items():
+            if name in self.sources:
+                context[name] = val
+
+        # Stage 2: fill defaults only for missing keys
+        overridden = list(raw_inputs.keys())
         for name, src in self.sources.items():
-            context[name] = self._parse_default(src.default_val, src.dtype)
+            if name not in context:
+                context[name] = self._parse_default(src.default_val, src.dtype)
+
         if self.tracer:
             self.tracer.trace_defaults(context)
-
-        # Stage 2: raw inputs override
-        overridden = []
-        for name, val in raw_inputs.items():
-            if name in context:
-                overridden.append(name)
-            context[name] = val
-        if self.tracer:
             self.tracer.trace_overrides(context, overridden)
 
         source_names = set(self.sources.keys())

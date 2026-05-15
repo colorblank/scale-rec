@@ -20,3 +20,20 @@ class Bucketing:
                 break
             bucket += 1
         return bucket
+
+    def process_batch(self, inputs: list[Any]) -> list[int]:
+        """Batch bucketing: N values -> N bucket indices."""
+        vals = inputs[0]
+        if not vals:
+            return []
+        result = []
+        boundaries = self.boundaries
+        for val in vals:
+            v = float(val)
+            bucket = 0
+            for b in boundaries:
+                if v < b:
+                    break
+                bucket += 1
+            result.append(bucket)
+        return result

@@ -28,6 +28,9 @@ impl super::CustomOp for SequenceOp {
         let seq = inputs[0]
             .downcast_ref::<Vec<i32>>()
             .ok_or("Expected Vec<i32>")?;
+        if seq.len() == self.max_len {
+            return Ok(Box::new(seq.clone()));
+        }
         let mut result = seq.clone();
         result.resize(self.max_len, self.pad_val);
         Ok(Box::new(result))

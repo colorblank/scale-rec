@@ -14,3 +14,16 @@ class ListOverlap:
         if not set_a or not set_b:
             return 0
         return 1 if set_a & set_b else 0
+
+    def process_batch(self, inputs: list[Any]) -> list[int]:
+        """Batch overlap: N pairs of lists -> N flags."""
+        list_a, list_b = inputs[0], inputs[1]
+        result = []
+        for a, b in zip(list_a, list_b):
+            sa = {str(x) for x in a if x and str(x).strip()} if isinstance(a, list) else set()
+            sb = {str(x) for x in b if x and str(x).strip()} if isinstance(b, list) else set()
+            if not sa or not sb:
+                result.append(0)
+            else:
+                result.append(1 if sa & sb else 0)
+        return result

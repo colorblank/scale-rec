@@ -53,6 +53,10 @@ class StringConcatHash:
             with open(self.hash_map_path, "w", encoding="utf-8") as f:
                 yaml.safe_dump({"mapping": self._mapping}, f)
 
+    def save_mapping(self) -> None:
+        """Explicitly persist hash mapping. Called after training, not per-key."""
+        self._save_mapping()
+
     def process(self, inputs: list[Any]) -> int:
         s1 = str(inputs[0]) if inputs[0] is not None else ""
         s2 = str(inputs[1]) if inputs[1] is not None else ""
@@ -67,9 +71,7 @@ class StringConcatHash:
         # Training mode
         if key not in self._mapping:
             if self._next_idx >= self._main_size:
-                # Main range exhausted, fall back to OOV hash
                 return (_djb2(key) % self.oov_reserve) + self._main_size
             self._mapping[key] = self._next_idx
             self._next_idx += 1
-            self._save_mapping()
         return self._mapping[key]
