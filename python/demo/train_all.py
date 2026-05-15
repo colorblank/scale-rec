@@ -192,9 +192,16 @@ def train_one_model(model_type: str, model_config_path: str, label_cols: list[st
     test_df = df_shuffled.slice(n_train, len(df_shuffled) - n_train)
     print(f"[Data] train={len(train_df)} test={len(test_df)}")
 
-    # Build DAG
+    # Build DAG（可选 debug tracer）
     flow_config = FlowConfig.from_yaml(args.feature_config)
-    dag = FeatureDag(flow_config)
+    tracer = None
+    if getattr(args, "debug_trace", 0) > 0:
+        from train.debug.tracer import DebugConfig, DebugTracer
+        tracer = DebugTracer(DebugConfig(
+            max_trace_samples=args.debug_trace,
+            output_dir=os.path.join(DEMO_DIR, "temp", "debug"),
+        ))
+    dag = FeatureDag(flow_config, tracer=tracer)
     features = dag.feature_tuples()
 
     # Build model config
@@ -270,6 +277,9 @@ def train_one_model(model_type: str, model_config_path: str, label_cols: list[st
     print(f"[Export] {safetensors_path}")
     print(f"[Export] {preds_csv_path}")
 
+    if tracer is not None:
+        tracer.save()
+
     return {"model_type": model_type, "best_auc": best_auc, "params": n_params}
 
 
@@ -282,6 +292,8 @@ def main() -> None:
     parser.add_argument("--lr", type=float, default=0.005)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--models", default="all", help="Comma-separated model types or 'all'")
+    parser.add_argument("--debug-trace", type=int, default=0,
+                        help="Enable per-stage feature trace (max N samples, 0=off)")
     args = parser.parse_args()
 
     if args.models == "all":

@@ -31,8 +31,9 @@ class FeatureResult:
 
 
 class FeatureDag:
-    def __init__(self, config: FlowConfig, debug_mode: bool = False):
+    def __init__(self, config: FlowConfig, debug_mode: bool = False, tracer=None):
         self.sources: dict[str, SourceDef] = {}
+        self.tracer = tracer  # Optional[DebugTracer] for per-stage I/O tracing
         for s in config.sources:
             if s.name in self.sources:
                 raise ValueError(f"Duplicate source: '{s.name}'")
@@ -157,9 +158,11 @@ class FeatureDag:
         """
         embed_names = [name for name, _ in self.embeddable_features()]
         feature_lists: dict[str, list] = {name: [] for name in embed_names}
-        for row in rows:
+        for i, row in enumerate(rows):
             raw = {k: v for k, v in row.items() if k in self.sources}
-            result = self.execute(raw)
+            if self.tracer:
+                self.tracer.begin_sample(i)
+            result = self.execute(raw, sample_id=i)
             for name in embed_names:
                 val = result.features.get(name, 0)
                 # Flatten list/single-element-list to scalar for embedding lookup
@@ -168,23 +171,45 @@ class FeatureDag:
                 feature_lists[name].append(val)
         return {name: torch.tensor(vals, dtype=torch.long) for name, vals in feature_lists.items()}
 
-    def execute(self, raw_inputs: dict[str, FeatureValue]) -> FeatureResult:
+    def execute(self, raw_inputs: dict[str, FeatureValue],
+                sample_id: int = 0) -> FeatureResult:
         context: dict[str, FeatureValue] = {}
+
+        # Stage 1: default values
         for name, src in self.sources.items():
             context[name] = self._parse_default(src.default_val, src.dtype)
+        if self.tracer:
+            self.tracer.trace_defaults(context)
+
+        # Stage 2: raw inputs override
+        overridden = []
         for name, val in raw_inputs.items():
+            if name in context:
+                overridden.append(name)
             context[name] = val
+        if self.tracer:
+            self.tracer.trace_overrides(context, overridden)
+
         source_names = set(self.sources.keys())
         computed_names: set[str] = set()
+
+        # Stage 3: execute operators in topological order
         for node_name in self.execution_order:
             op, def_ = self.nodes[node_name], self.node_defs[node_name]
             op_inputs = [context[inp] for inp in def_.inputs]
             output = op.process(op_inputs)
+            if self.tracer:
+                self.tracer.trace_operator(
+                    node_name, def_.inputs, op_inputs, def_.outputs, output
+                )
             for out_name in def_.outputs:
                 context[out_name] = output
                 computed_names.add(out_name)
+
         if self.debug_mode:
             self._dump_snapshot(context, source_names, computed_names)
+        if self.tracer:
+            self.tracer.end_sample()
         return FeatureResult(
             features=context,
             source_names=source_names,

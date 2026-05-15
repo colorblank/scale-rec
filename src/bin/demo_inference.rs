@@ -31,7 +31,7 @@ fn main() -> Result<()> {
         std::fs::read_to_string(feature_config_path).context("Failed to read feature config")?;
     let flow_config = FlowConfig::from_yaml(&yaml_str).context("Invalid feature config YAML")?;
     let dag =
-        FeatureDag::from_config(flow_config, false).map_err(|e| anyhow::anyhow!("{}", e))?;
+        FeatureDag::from_config(flow_config, false, None).map_err(|e| anyhow::anyhow!("{}", e))?;
 
     // 2. 获取 embeddable features
     let embed_features = dag.embeddable_features();

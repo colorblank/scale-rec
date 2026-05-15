@@ -3,5 +3,6 @@
 
 pub mod config;
 pub mod dag;
+pub mod debug;
 pub mod metrics;
 pub mod ops;

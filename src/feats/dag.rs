@@ -1,5 +1,6 @@
 //! 特征 DAG 执行器：拓扑排序、算子调度、单样本执行。
 use crate::feats::config::{DType, FlowConfig, OperatorDef, SourceDef};
+use crate::feats::debug::DebugTracer;
 use crate::feats::ops::{
     Bucketing, CrossFeature, CustomOp, DictMapper, ExpressionOp, ListOverlap, PluginOp,
     SequenceOp, StringConcatHash, StringParser,
@@ -28,6 +29,7 @@ pub struct FeatureDag {
     node_defs: HashMap<String, OperatorDef>,
     execution_order: Vec<String>,
     debug_mode: bool,
+    pub tracer: Option<DebugTracer>,
 }
 
 impl FeatureDag {
@@ -48,7 +50,11 @@ impl FeatureDag {
         }
     }
 
-    pub fn from_config(config: FlowConfig, debug_mode: bool) -> Result<Self, String> {
+    pub fn from_config(
+        config: FlowConfig,
+        debug_mode: bool,
+        tracer: Option<DebugTracer>,
+    ) -> Result<Self, String> {
         let mut sources = HashMap::new();
         for s in config.sources {
             if sources.contains_key(&s.name) {
@@ -112,6 +118,7 @@ impl FeatureDag {
             node_defs,
             execution_order,
             debug_mode,
+            tracer,
         })
     }
 
@@ -244,14 +251,41 @@ impl FeatureDag {
         &self,
         raw_inputs: &HashMap<String, FeatureValue>,
     ) -> Result<FeatureResult, String> {
+        if let Some(ref tracer) = self.tracer {
+            tracer.begin_sample();
+        }
+
         let mut context: HashMap<String, FeatureValue> = HashMap::new();
         for (name, source_def) in &self.sources {
             let default_val = Self::parse_default(&source_def.default_val, &source_def.dtype);
             context.insert(name.clone(), default_val);
         }
+
+        // Trace defaults
+        if let Some(ref tracer) = self.tracer {
+            let snapshot: HashMap<String, &(dyn Any + Send + Sync)> = context
+                .iter()
+                .map(|(k, v)| (k.clone(), v.as_ref() as &(dyn Any + Send + Sync)))
+                .collect();
+            tracer.trace_defaults(&snapshot);
+        }
+
+        // Stage 2: raw inputs override
+        let mut overridden = Vec::new();
         for (name, val) in raw_inputs {
+            if context.contains_key(name) {
+                overridden.push(name.clone());
+            }
             context.insert(name.clone(), Arc::clone(val));
         }
+        if let Some(ref tracer) = self.tracer {
+            let snapshot: HashMap<String, &(dyn Any + Send + Sync)> = context
+                .iter()
+                .map(|(k, v)| (k.clone(), v.as_ref() as &(dyn Any + Send + Sync)))
+                .collect();
+            tracer.trace_overrides(&snapshot, overridden);
+        }
+
         let source_names: HashSet<String> = self.sources.keys().cloned().collect();
         let mut computed_names = HashSet::new();
         for node_name in &self.execution_order {
@@ -265,6 +299,18 @@ impl FeatureDag {
                 op_inputs.push(val.as_ref());
             }
             let output = op.process(&op_inputs)?;
+
+            // Trace operator I/O
+            if let Some(ref tracer) = self.tracer {
+                tracer.trace_operator(
+                    node_name,
+                    &def.inputs,
+                    &op_inputs,
+                    &def.outputs,
+                    output.as_ref(),
+                );
+            }
+
             let output_arc: FeatureValue = Arc::from(output);
             for out_name in &def.outputs {
                 context.insert(out_name.clone(), Arc::clone(&output_arc));
@@ -273,6 +319,9 @@ impl FeatureDag {
         }
         if self.debug_mode {
             self.dump_snapshot(&context, &source_names, &computed_names);
+        }
+        if let Some(ref tracer) = self.tracer {
+            tracer.end_sample();
         }
         Ok(FeatureResult {
             features: context,
