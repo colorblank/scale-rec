@@ -36,7 +36,12 @@ impl super::CustomOp for DictMapper {
         if let Some(list) = inputs[0].downcast_ref::<Vec<String>>() {
             let result: Vec<i32> = list
                 .iter()
-                .map(|s| self.mapping.get(s.as_str()).copied().unwrap_or(self.default_idx))
+                .map(|s| {
+                    self.mapping
+                        .get(s.as_str())
+                        .copied()
+                        .unwrap_or(self.default_idx)
+                })
                 .collect();
             return Ok(Box::new(result));
         }
@@ -62,14 +67,11 @@ impl super::CustomOp for DictMapper {
 #[cfg(test)]
 mod tests {
     use super::*;
-        use crate::feats::ops::CustomOp;
+    use crate::feats::ops::CustomOp;
 
     #[test]
     fn test_known_key() {
-        let op = DictMapper::new(
-            [("elec".into(), 1), ("book".into(), 2)].into(),
-            0,
-        );
+        let op = DictMapper::new([("elec".into(), 1), ("book".into(), 2)].into(), 0);
         let result = op.process(&[&"elec".to_string()]).unwrap();
         assert_eq!(*result.downcast_ref::<i32>().unwrap(), 1);
     }

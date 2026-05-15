@@ -3,9 +3,8 @@ use libloading::Library;
 use std::any::Any;
 
 /// 外部插件签名: `fn(&[FeatureValue]) -> Result<Box<dyn Any>, String>`
-type PluginFn = unsafe fn(
-    inputs: &[&(dyn Any + Send + Sync)],
-) -> Result<Box<dyn Any + Send + Sync>, String>;
+type PluginFn =
+    unsafe fn(inputs: &[&(dyn Any + Send + Sync)]) -> Result<Box<dyn Any + Send + Sync>, String>;
 
 /// 动态加载的外部插件算子。
 ///

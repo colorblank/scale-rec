@@ -17,7 +17,6 @@ from .esmm import ESMM
 from .lr import LogisticRegression
 from .mmoe import MMoE
 from .unimixer.model import UniMixerModel
-from .unimixer.tokenizer import FeatureTokenizer
 
 # ── registry ──
 _registry: dict[str, dict] = {}

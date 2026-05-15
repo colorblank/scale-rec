@@ -42,7 +42,10 @@ fn main() -> Result<()> {
     println!(
         "[Rust] {} embeddable features: {:?}",
         features.len(),
-        features.iter().map(|(n, _, _)| n.as_str()).collect::<Vec<_>>()
+        features
+            .iter()
+            .map(|(n, _, _)| n.as_str())
+            .collect::<Vec<_>>()
     );
 
     // 3. 加载 model config
@@ -60,10 +63,16 @@ fn main() -> Result<()> {
 
     // UniMixer 需要预构建 FeatureTokenizer（共享 VarMap，权重路径 "tokenizer.*"）
     let tokenizer: Option<FeatureTokenizer> = if model_type == "unimixer" {
-        let token_dim = model_config.params.get("token_dim")
-            .and_then(|v| v.as_u64()).unwrap_or(64) as usize;
-        let num_tokens = model_config.params.get("num_tokens")
-            .and_then(|v| v.as_u64()).unwrap_or(8) as usize;
+        let token_dim = model_config
+            .params
+            .get("token_dim")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(64) as usize;
+        let num_tokens = model_config
+            .params
+            .get("num_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(8) as usize;
         Some(FeatureTokenizer::new(
             vb.pp("tokenizer"),
             &features,
@@ -87,7 +96,10 @@ fn main() -> Result<()> {
         .has_headers(true)
         .from_path(test_csv_path)
         .context("Failed to open test CSV")?;
-    let headers = reader.headers().context("Failed to read CSV headers")?.clone();
+    let headers = reader
+        .headers()
+        .context("Failed to read CSV headers")?
+        .clone();
     let col_index: HashMap<String, usize> = headers
         .iter()
         .enumerate()
@@ -95,15 +107,24 @@ fn main() -> Result<()> {
         .collect();
 
     let embed_names: Vec<String> = features.iter().map(|(n, _, _)| n.clone()).collect();
-    let mut all_indices: HashMap<String, Vec<u32>> =
-        embed_names.iter().map(|n| (n.clone(), Vec::new())).collect();
+    let mut all_indices: HashMap<String, Vec<u32>> = embed_names
+        .iter()
+        .map(|n| (n.clone(), Vec::new()))
+        .collect();
 
     let mut row_count = 0usize;
     for result in reader.records() {
         let record = result.context("Failed to read CSV row")?;
         let mut raw_inputs: HashMap<String, FeatureValue> = HashMap::new();
 
-        for field in &["user_id", "user_age", "item_category", "user_tags", "item_tags", "item_price"] {
+        for field in &[
+            "user_id",
+            "user_age",
+            "item_category",
+            "user_tags",
+            "item_tags",
+            "item_price",
+        ] {
             let col = col_index.get(*field).context("Missing column")?;
             let val = record.get(*col).context("Missing field")?;
             let fv: FeatureValue = match *field {

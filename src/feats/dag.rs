@@ -2,8 +2,8 @@
 use crate::feats::config::{DType, FlowConfig, OperatorDef, SourceDef};
 use crate::feats::debug::DebugTracer;
 use crate::feats::ops::{
-    Bucketing, CrossFeature, CustomOp, DictMapper, ExpressionOp, ListOverlap, PluginOp,
-    SequenceOp, StringConcatHash, StringParser,
+    Bucketing, CrossFeature, CustomOp, DictMapper, ExpressionOp, ListOverlap, PluginOp, SequenceOp,
+    StringConcatHash, StringParser,
 };
 use petgraph::algo::toposort;
 use petgraph::prelude::DiGraph;
@@ -205,9 +205,7 @@ impl FeatureDag {
             "StringConcatHash" => {
                 let vocab_size = Self::yaml_i64(p, "vocab_size").unwrap_or(1000) as usize;
                 let oov_reserve = Self::yaml_i64(p, "oov_reserve").unwrap_or(0) as usize;
-                let hash_map_path = Self::yaml_str(p, "hash_map_path")
-                    .unwrap_or("")
-                    .to_string();
+                let hash_map_path = Self::yaml_str(p, "hash_map_path").unwrap_or("").to_string();
                 let mode = Self::yaml_str(p, "mode").unwrap_or("train").to_string();
                 let separator = Self::yaml_str(p, "separator").unwrap_or("|").to_string();
                 Ok(Box::new(StringConcatHash::new(
@@ -269,8 +267,7 @@ impl FeatureDag {
         // Stage 2: fill defaults only for missing keys
         for (name, source_def) in &self.sources {
             if !context.contains_key(name) {
-                let default_val =
-                    Self::parse_default(&source_def.default_val, &source_def.dtype);
+                let default_val = Self::parse_default(&source_def.default_val, &source_def.dtype);
                 context.insert(name.clone(), default_val);
             }
         }

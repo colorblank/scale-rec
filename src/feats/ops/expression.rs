@@ -1,5 +1,5 @@
 //! 表达式算子：Rhai 脚本求值，支持 v0..vN 变量和 log 函数。
-use rhai::{AST, Engine, Scope};
+use rhai::{Engine, Scope, AST};
 use std::any::Any;
 
 /// Rhai 脚本求值算子。
@@ -17,7 +17,9 @@ impl ExpressionOp {
     pub fn new(script: String) -> Self {
         let mut engine = Engine::new();
         engine.register_fn("log", |f: f64| f.ln());
-        let ast = engine.compile(&script).expect("Invalid Rhai expression script");
+        let ast = engine
+            .compile(&script)
+            .expect("Invalid Rhai expression script");
         Self { ast, engine }
     }
 }

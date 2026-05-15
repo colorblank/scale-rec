@@ -90,7 +90,10 @@ impl StringConcatHash {
             serde_yaml::Value::String("mapping".into()),
             serde_yaml::Value::Mapping(inner),
         );
-        let _ = fs::write(&self.hash_map_path, serde_yaml::to_string(&map).unwrap_or_default());
+        let _ = fs::write(
+            &self.hash_map_path,
+            serde_yaml::to_string(&map).unwrap_or_default(),
+        );
     }
 }
 

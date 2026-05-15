@@ -6,10 +6,7 @@ use scale_rec::layers::towers::{Activation, MultiTaskConfig, TowerConfig};
 use scale_rec::models::{deepfm, esmm, lr, mmoe, Model, ModelConfig};
 
 fn dummy_features() -> Vec<(String, usize, usize)> {
-    vec![
-        ("a".into(), 10, 4),
-        ("b".into(), 5, 4),
-    ]
+    vec![("a".into(), 10, 4), ("b".into(), 5, 4)]
 }
 
 fn dummy_inputs(batch: usize) -> HashMap<String, Tensor> {
@@ -51,8 +48,7 @@ fn test_deepfm_forward_shape() {
 #[test]
 fn test_mmoe_forward_shape() {
     let task_cfgs = vec![("ctr".into(), vec![4]), ("cvr".into(), vec![4])];
-    let model =
-        mmoe::MMoE::new(vb(), &dummy_features(), &[8], 2, &[8], 4, &task_cfgs).unwrap();
+    let model = mmoe::MMoE::new(vb(), &dummy_features(), &[8], 2, &[8], 4, &task_cfgs).unwrap();
     let out = model.forward(&dummy_inputs(3)).unwrap();
     assert_eq!(out.len(), 2);
     assert_eq!(out["ctr"].dims(), &[3, 1]);
@@ -116,8 +112,18 @@ fn test_unimixer_forward_shape() {
         relations: vec![],
     };
     let model = UniMixerModel::new(
-        tokenizer, token_dim, num_tokens, 1, Some(4), false, 1.0, 4, 4,
-        &task_config, false, vb.pp("unimixer"),
+        tokenizer,
+        token_dim,
+        num_tokens,
+        1,
+        Some(4),
+        false,
+        1.0,
+        4,
+        4,
+        &task_config,
+        false,
+        vb.pp("unimixer"),
     )
     .unwrap();
     let out = model.forward(&dummy_inputs(3)).unwrap();
@@ -131,8 +137,14 @@ fn test_modelconfig_build_mmoe() {
     params.insert("num_experts".into(), serde_yaml::Value::Number(2.into()));
     let mut expert_dims = serde_yaml::Sequence::new();
     expert_dims.push(serde_yaml::Value::Number(8.into()));
-    params.insert("expert_hidden_dims".into(), serde_yaml::Value::Sequence(expert_dims));
-    params.insert("expert_output_dim".into(), serde_yaml::Value::Number(4.into()));
+    params.insert(
+        "expert_hidden_dims".into(),
+        serde_yaml::Value::Sequence(expert_dims),
+    );
+    params.insert(
+        "expert_output_dim".into(),
+        serde_yaml::Value::Number(4.into()),
+    );
     let mut tcs = serde_yaml::Sequence::new();
     let mut entry = serde_yaml::Mapping::new();
     entry.insert("name".into(), serde_yaml::Value::String("ctr".into()));

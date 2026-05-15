@@ -29,17 +29,35 @@ pub struct ValueSnapshot {
 impl ValueSnapshot {
     pub fn of(val: &(dyn Any + Send + Sync)) -> Self {
         if let Some(i) = val.downcast_ref::<i32>() {
-            ValueSnapshot { value: serde_json::json!(*i), type_name: "int".into() }
+            ValueSnapshot {
+                value: serde_json::json!(*i),
+                type_name: "int".into(),
+            }
         } else if let Some(f) = val.downcast_ref::<f32>() {
-            ValueSnapshot { value: serde_json::json!(*f), type_name: "float".into() }
+            ValueSnapshot {
+                value: serde_json::json!(*f),
+                type_name: "float".into(),
+            }
         } else if let Some(s) = val.downcast_ref::<String>() {
-            ValueSnapshot { value: serde_json::json!(s.clone()), type_name: "str".into() }
+            ValueSnapshot {
+                value: serde_json::json!(s.clone()),
+                type_name: "str".into(),
+            }
         } else if let Some(list_s) = val.downcast_ref::<Vec<String>>() {
-            ValueSnapshot { value: serde_json::json!(list_s), type_name: "list[str]".into() }
+            ValueSnapshot {
+                value: serde_json::json!(list_s),
+                type_name: "list[str]".into(),
+            }
         } else if let Some(list_i) = val.downcast_ref::<Vec<i32>>() {
-            ValueSnapshot { value: serde_json::json!(list_i), type_name: "list[int]".into() }
+            ValueSnapshot {
+                value: serde_json::json!(list_i),
+                type_name: "list[int]".into(),
+            }
         } else {
-            ValueSnapshot { value: serde_json::json!(null), type_name: "unknown".into() }
+            ValueSnapshot {
+                value: serde_json::json!(null),
+                type_name: "unknown".into(),
+            }
         }
     }
 }
@@ -71,16 +89,22 @@ pub struct StageTrace {
 impl StageTrace {
     pub fn defaults(outputs: HashMap<String, ValueSnapshot>) -> Self {
         StageTrace {
-            stage_type: StageType::DefaultInit, name: String::new(),
-            inputs: HashMap::new(), outputs, overridden: vec![], anomalies: vec![],
+            stage_type: StageType::DefaultInit,
+            name: String::new(),
+            inputs: HashMap::new(),
+            outputs,
+            overridden: vec![],
+            anomalies: vec![],
         }
     }
-    pub fn overrides(
-        overridden: Vec<String>, outputs: HashMap<String, ValueSnapshot>,
-    ) -> Self {
+    pub fn overrides(overridden: Vec<String>, outputs: HashMap<String, ValueSnapshot>) -> Self {
         StageTrace {
-            stage_type: StageType::RawOverride, name: String::new(),
-            inputs: HashMap::new(), outputs, overridden, anomalies: vec![],
+            stage_type: StageType::RawOverride,
+            name: String::new(),
+            inputs: HashMap::new(),
+            outputs,
+            overridden,
+            anomalies: vec![],
         }
     }
     pub fn operator(
@@ -89,8 +113,12 @@ impl StageTrace {
         outputs: HashMap<String, ValueSnapshot>,
     ) -> Self {
         StageTrace {
-            stage_type: StageType::Operator, name: name.to_string(),
-            inputs, outputs, overridden: vec![], anomalies: vec![],
+            stage_type: StageType::Operator,
+            name: name.to_string(),
+            inputs,
+            outputs,
+            overridden: vec![],
+            anomalies: vec![],
         }
     }
 }
@@ -134,7 +162,10 @@ impl DebugTracer {
             *seen += 1;
             return;
         }
-        *self.current.lock().unwrap() = Some(SampleTrace { sample: *seen, stages: vec![] });
+        *self.current.lock().unwrap() = Some(SampleTrace {
+            sample: *seen,
+            stages: vec![],
+        });
         *seen += 1;
     }
 
@@ -187,7 +218,8 @@ impl DebugTracer {
             for name in output_names {
                 outputs.insert(name.clone(), out_vs.clone());
             }
-            t.stages.push(StageTrace::operator(op_name, inputs, outputs));
+            t.stages
+                .push(StageTrace::operator(op_name, inputs, outputs));
         }
     }
 
@@ -228,13 +260,14 @@ impl DebugTracer {
             "total_samples": traces.len(),
         });
         if let Ok(mut f) = fs::File::create(&sp) {
-            let _ = writeln!(f, "{}", serde_json::to_string_pretty(&summary).unwrap_or_default());
+            let _ = writeln!(
+                f,
+                "{}",
+                serde_json::to_string_pretty(&summary).unwrap_or_default()
+            );
         }
 
-        println!(
-            "[Debug] summary -> {}",
-            sp.display()
-        );
+        println!("[Debug] summary -> {}", sp.display());
         println!(
             "[Debug] traces -> {} ({} samples)",
             tp.display(),

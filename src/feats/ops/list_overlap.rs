@@ -23,18 +23,28 @@ impl super::CustomOp for ListOverlap {
         inputs: &[&(dyn Any + Send + Sync)],
     ) -> Result<Box<dyn Any + Send + Sync>, String> {
         let a: HashSet<&str> = if let Some(list) = inputs[0].downcast_ref::<Vec<String>>() {
-            list.iter().filter(|s| !s.is_empty()).map(|s| s.as_str()).collect()
+            list.iter()
+                .filter(|s| !s.is_empty())
+                .map(|s| s.as_str())
+                .collect()
         } else {
             return Ok(Box::new(0i32));
         };
         let b: HashSet<&str> = if let Some(list) = inputs[1].downcast_ref::<Vec<String>>() {
-            list.iter().filter(|s| !s.is_empty()).map(|s| s.as_str()).collect()
+            list.iter()
+                .filter(|s| !s.is_empty())
+                .map(|s| s.as_str())
+                .collect()
         } else {
             return Ok(Box::new(0i32));
         };
         if a.is_empty() || b.is_empty() {
             return Ok(Box::new(0i32));
         }
-        Ok(Box::new(if a.intersection(&b).next().is_some() { 1i32 } else { 0i32 }))
+        Ok(Box::new(if a.intersection(&b).next().is_some() {
+            1i32
+        } else {
+            0i32
+        }))
     }
 }

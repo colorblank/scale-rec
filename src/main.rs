@@ -21,7 +21,8 @@ fn main() -> Result<()> {
     let flow_config = FlowConfig::from_yaml(&yaml).expect("Invalid YAML");
     println!("[Config] version={}", flow_config.version);
 
-    let dag = FeatureDag::from_config(flow_config, true, None).map_err(|e| candle_core::Error::Msg(e))?;
+    let dag =
+        FeatureDag::from_config(flow_config, true, None).map_err(|e| candle_core::Error::Msg(e))?;
     let embed_features = dag.embeddable_features();
     println!("\n[Embed] {} embeddable features:", embed_features.len());
     let tokenizer_features: Vec<(String, usize, usize)> = embed_features

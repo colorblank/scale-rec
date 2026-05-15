@@ -93,7 +93,12 @@ fn build_deepfm(
 ) -> Result<Box<dyn Model>> {
     let fm_k = yaml_usize(params, "fm_k", 16);
     let deep_hidden_dims: Vec<usize> = yaml_usize_seq(params, "deep_hidden_dims");
-    Ok(Box::new(deepfm::DeepFM::new(vb, features, fm_k, &deep_hidden_dims)?))
+    Ok(Box::new(deepfm::DeepFM::new(
+        vb,
+        features,
+        fm_k,
+        &deep_hidden_dims,
+    )?))
 }
 
 fn build_mmoe(
@@ -112,8 +117,13 @@ fn build_mmoe(
         .map(|t| (t.name.clone(), t.tower_dims.clone()))
         .collect();
     Ok(Box::new(mmoe::MMoE::new(
-        vb, features, &shared_bottom_dims, num_experts,
-        &expert_hidden_dims, expert_output_dim, &task_cfgs,
+        vb,
+        features,
+        &shared_bottom_dims,
+        num_experts,
+        &expert_hidden_dims,
+        expert_output_dim,
+        &task_cfgs,
     )?))
 }
 
@@ -127,7 +137,11 @@ fn build_esmm(
     let ctr_hidden_dims: Vec<usize> = yaml_usize_seq(params, "ctr_hidden_dims");
     let cvr_hidden_dims: Vec<usize> = yaml_usize_seq(params, "cvr_hidden_dims");
     Ok(Box::new(esmm::ESMM::new(
-        vb, features, &shared_bottom_dims, &ctr_hidden_dims, &cvr_hidden_dims,
+        vb,
+        features,
+        &shared_bottom_dims,
+        &ctr_hidden_dims,
+        &cvr_hidden_dims,
     )?))
 }
 
@@ -151,9 +165,18 @@ fn build_unimixer(
     let use_siamese = yaml_bool(params, "use_siamese");
     let task_config = parse_multi_task_config(params);
     Ok(Box::new(unimixer::model::UniMixerModel::new(
-        tokenizer, token_dim, num_tokens, num_blocks,
-        block_size, use_lite, hidden_factor, num_basis, rank,
-        &task_config, use_siamese, vb.pp("unimixer"),
+        tokenizer,
+        token_dim,
+        num_tokens,
+        num_blocks,
+        block_size,
+        use_lite,
+        hidden_factor,
+        num_basis,
+        rank,
+        &task_config,
+        use_siamese,
+        vb.pp("unimixer"),
     )?))
 }
 
@@ -167,28 +190,26 @@ fn yaml_usize(v: &serde_yaml::Value, key: &str, default: usize) -> usize {
 }
 
 fn yaml_usize_opt(v: &serde_yaml::Value, key: &str) -> Option<usize> {
-    v.get(key)
-        .and_then(|v| v.as_u64())
-        .map(|n| n as usize)
+    v.get(key).and_then(|v| v.as_u64()).map(|n| n as usize)
 }
 
 fn yaml_usize_seq(v: &serde_yaml::Value, key: &str) -> Vec<usize> {
     v.get(key)
         .and_then(|v| v.as_sequence())
-        .map(|seq| seq.iter().filter_map(|v| v.as_u64().map(|n| n as usize)).collect())
+        .map(|seq| {
+            seq.iter()
+                .filter_map(|v| v.as_u64().map(|n| n as usize))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
 fn yaml_f64(v: &serde_yaml::Value, key: &str, default: f64) -> f64 {
-    v.get(key)
-        .and_then(|v| v.as_f64())
-        .unwrap_or(default)
+    v.get(key).and_then(|v| v.as_f64()).unwrap_or(default)
 }
 
 fn yaml_bool(v: &serde_yaml::Value, key: &str) -> bool {
-    v.get(key)
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
+    v.get(key).and_then(|v| v.as_bool()).unwrap_or(false)
 }
 
 fn parse_task_config_entries(params: &serde_yaml::Value) -> Vec<TaskConfigEntry> {
@@ -210,5 +231,8 @@ fn parse_task_config_entries(params: &serde_yaml::Value) -> Vec<TaskConfigEntry>
 fn parse_multi_task_config(params: &serde_yaml::Value) -> MultiTaskConfig {
     let task_config = params.get("task_config");
     serde_yaml::from_value::<MultiTaskConfig>(task_config.cloned().unwrap_or_default())
-        .unwrap_or_else(|_| MultiTaskConfig { towers: vec![], relations: vec![] })
+        .unwrap_or_else(|_| MultiTaskConfig {
+            towers: vec![],
+            relations: vec![],
+        })
 }

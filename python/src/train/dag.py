@@ -163,7 +163,6 @@ class FeatureDag:
         context: dict[str, list] = {}
 
         # Stage 1: raw inputs first
-        overridden = list(columns.keys())
         for name, col in columns.items():
             if name in self.sources:
                 context[name] = list(col)

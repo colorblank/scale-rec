@@ -48,7 +48,7 @@ impl super::CustomOp for Bucketing {
 #[cfg(test)]
 mod tests {
     use super::*;
-        use crate::feats::ops::CustomOp;
+    use crate::feats::ops::CustomOp;
 
     #[test]
     fn test_bucketing() {
