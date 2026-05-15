@@ -60,14 +60,10 @@ fn main() -> Result<()> {
 
     // UniMixer 需要预构建 FeatureTokenizer（共享 VarMap，权重路径 "tokenizer.*"）
     let tokenizer: Option<FeatureTokenizer> = if model_type == "unimixer" {
-        let token_dim = match &model_config {
-            ModelConfig::UniMixer { token_dim, .. } => *token_dim,
-            _ => unreachable!(),
-        };
-        let num_tokens = match &model_config {
-            ModelConfig::UniMixer { num_tokens, .. } => *num_tokens,
-            _ => unreachable!(),
-        };
+        let token_dim = model_config.params.get("token_dim")
+            .and_then(|v| v.as_u64()).unwrap_or(64) as usize;
+        let num_tokens = model_config.params.get("num_tokens")
+            .and_then(|v| v.as_u64()).unwrap_or(8) as usize;
         Some(FeatureTokenizer::new(
             vb.pp("tokenizer"),
             &features,

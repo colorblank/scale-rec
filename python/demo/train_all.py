@@ -19,7 +19,7 @@ if str(_src) not in sys.path:
 from train.config import FlowConfig  # noqa: E402
 from train.dag import FeatureDag  # noqa: E402
 from train.export import export_to_safetensors  # noqa: E402
-from train.models import ModelConfig  # noqa: E402
+from train.models import ModelConfig, get_output_spec  # noqa: E402
 
 from ._metrics import accuracy, auc, logloss, sigmoid  # noqa: E402
 
@@ -212,7 +212,8 @@ def train_one_model(model_type: str, model_config_path: str, label_cols: list[st
     if model_type == "unimixer":
         from train.models.unimixer.tokenizer import FeatureTokenizer
 
-        tokenizer = FeatureTokenizer(features, model_config.token_dim, model_config.num_tokens)
+        p = model_config.params
+        tokenizer = FeatureTokenizer(features, p.get("token_dim", 64), p.get("num_tokens", 8))
 
     model = model_config.build(features, tokenizer=tokenizer)
     # Wrap UniMixer for Rust compatibility: Rust uses vb.pp("unimixer") prefix.
@@ -222,21 +223,10 @@ def train_one_model(model_type: str, model_config_path: str, label_cols: list[st
     n_params = sum(p.numel() for p in model.parameters())
     print(f"[Model] params={n_params:,}")
 
-    # Determine task names for evaluation and label column mapping
-    # Single-task models (LR, DeepFM): output "pred", label "ctr"
-    # Multi-task models: output task names, label same name
-    if model_type in ("lr", "deepfm"):
-        eval_task_names = ["pred"]
-        label_col_map = {"pred": "ctr"}
-    elif model_type == "mmoe":
-        eval_task_names = label_cols
-        label_col_map = {t: t for t in label_cols}
-    elif model_type == "esmm":
-        eval_task_names = ["ctr", "cvr"]
-        label_col_map = {"ctr": "ctr", "cvr": "cvr"}
-    else:  # unimixer
-        eval_task_names = ["ctr", "cvr"]
-        label_col_map = {"ctr": "ctr", "cvr": "cvr"}
+    # Model tells us its output spec — no if-elif chain
+    spec = get_output_spec(model_type, model)
+    eval_task_names = spec.get("task_names", label_cols)
+    label_col_map = spec.get("label_col_map", {})
 
     # Train
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)

@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from .config import FlowConfig
 from .dag import FeatureDag
 from .export import export_to_safetensors, print_state_dict_keys
-from .models import ModelConfig
+from .models import ModelConfig, get_output_spec
 
 
 def train_epoch(model, optimizer, dag, df, batch_size, label_col_map=None):
@@ -89,9 +89,12 @@ def main():
     if model_config.type == "unimixer":
         from .models.unimixer.tokenizer import FeatureTokenizer
 
-        tokenizer = FeatureTokenizer(features, model_config.token_dim, model_config.num_tokens)
+        p = model_config.params
+        td = p.get("token_dim", 64)
+        nt = p.get("num_tokens", 8)
+        tokenizer = FeatureTokenizer(features, td, nt)
         print(
-            f"[Tokenizer] {len(features)} features -> {model_config.num_tokens} tokens x {model_config.token_dim}d = {tokenizer.total_embed_dim}"
+            f"[Tokenizer] {len(features)} features -> {nt} tokens x {td}d = {tokenizer.total_embed_dim}"
         )
 
     model = model_config.build(features, tokenizer=tokenizer)
@@ -129,20 +132,9 @@ def main():
     if args.debug:
         print_state_dict_keys(model)
 
-    # Build label column mapping — model output keys may differ from DataFrame columns
-    mt = model_config.type
-    if mt in ("lr", "deepfm"):
-        label_col_map = {"pred": "ctr"}
-    elif mt == "esmm":
-        label_col_map = {"ctr": "ctr", "cvr": "cvr"}
-    elif mt == "mmoe":
-        # MMoE task names come from config; assume identity mapping
-        label_col_map = {}
-    elif mt == "unimixer":
-        # Tower names are the label columns; relation-derived (ctcvr) skipped
-        label_col_map = {}
-    else:
-        label_col_map = {}
+    # Build label column mapping — model tells us via output_spec()
+    spec = get_output_spec(model_config.type, model)
+    label_col_map = spec.get("label_col_map", {})
 
     df = pl.read_parquet(args.data) if args.data.endswith(".parquet") else pl.read_csv(args.data)
     # Ensure label columns are int

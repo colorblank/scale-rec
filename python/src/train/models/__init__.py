@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-"""模型注册与配置 — 对应 src/models/mod.rs。"""
+"""模型注册表：@register_model 装饰器 + 中央 build() 工厂。
+
+新增模型只需:
+1. 创建 models/newmodel.py，用 @register_model("newmodel") 装饰
+2. 实现 output_spec() 返回 {task_names, label_col_map}
+3. 实现 from_params(params) 静态方法解析 YAML params
+"""
 from dataclasses import dataclass, field
 
 import yaml
@@ -13,6 +19,30 @@ from .mmoe import MMoE
 from .unimixer.model import UniMixerModel
 from .unimixer.tokenizer import FeatureTokenizer
 
+# ── registry ──
+_registry: dict[str, dict] = {}
+"""Each entry: {build_fn, output_spec_fn}"""
+
+
+def register_model(name: str, output_spec_fn, build_fn):
+    _registry[name] = {"build": build_fn, "output_spec": output_spec_fn}
+
+
+def build_model(model_type: str, features, tokenizer=None, **params):
+    """Build any registered model by type name. No if-elif chain."""
+    if model_type not in _registry:
+        raise ValueError(f"Unknown model type: {model_type}. Registered: {list(_registry)}")
+    return _registry[model_type]["build"](features, tokenizer, **params)
+
+
+def get_output_spec(model_type: str, model_instance=None):
+    """Get output spec dict {task_names, label_col_map} for a model type."""
+    if model_type not in _registry:
+        return {"task_names": [], "label_col_map": {}}
+    return _registry[model_type]["output_spec"](model_instance)
+
+
+# ── backward-compat config types ──
 
 @dataclass
 class TaskConfigEntry:
@@ -21,6 +51,8 @@ class TaskConfigEntry:
 
 
 def _parse_task_config(raw):
+    if not raw:
+        return None
     towers = [
         TowerConfig(
             t["name"],
@@ -34,107 +66,97 @@ def _parse_task_config(raw):
     return MultiTaskConfig(towers=towers, relations=relations)
 
 
+def _parse_mmoe_task_configs(raw):
+    return [TaskConfigEntry(t["name"], t.get("tower_dims", [])) for t in raw.get("task_configs", [])]
+
+
 @dataclass
 class ModelConfig:
-    """YAML model config. Feature specs come from FeatureDag, not duplicated here."""
+    """YAML model config. Kept minimal: type + raw params dict."""
 
     type: str
-    fm_k: int = 16
-    deep_hidden_dims: list[int] = field(default_factory=list)
-    shared_bottom_dims: list[int] = field(default_factory=list)
-    num_experts: int = 4
-    expert_hidden_dims: list[int] = field(default_factory=list)
-    expert_output_dim: int = 32
-    task_configs: list[TaskConfigEntry] = field(default_factory=list)
-    ctr_hidden_dims: list[int] = field(default_factory=list)
-    cvr_hidden_dims: list[int] = field(default_factory=list)
-    token_dim: int = 64
-    num_tokens: int = 8
-    num_blocks: int = 2
-    block_size: int | None = None
-    use_lite: bool = False
-    hidden_factor: float = 1.0
-    num_basis: int = 4
-    rank: int = 16
-    use_siamese: bool = False
-    task_config: MultiTaskConfig | None = None
+    params: dict = field(default_factory=dict)
 
     @classmethod
     def from_yaml(cls, path):
         with open(path, encoding="utf-8") as f:
-            return cls.from_dict(yaml.safe_load(f))
+            raw = yaml.safe_load(f)
+        return cls.from_dict(raw)
 
     @classmethod
     def from_dict(cls, raw):
-        task_configs = [
-            TaskConfigEntry(t["name"], t.get("tower_dims", [])) for t in raw.get("task_configs", [])
-        ]
-        tc = _parse_task_config(raw["task_config"]) if "task_config" in raw else None
-        return cls(
-            type=raw["type"],
-            fm_k=raw.get("fm_k", 16),
-            deep_hidden_dims=raw.get("deep_hidden_dims", []),
-            shared_bottom_dims=raw.get("shared_bottom_dims", []),
-            num_experts=raw.get("num_experts", 4),
-            expert_hidden_dims=raw.get("expert_hidden_dims", []),
-            expert_output_dim=raw.get("expert_output_dim", 32),
-            task_configs=task_configs,
-            ctr_hidden_dims=raw.get("ctr_hidden_dims", []),
-            cvr_hidden_dims=raw.get("cvr_hidden_dims", []),
-            token_dim=raw.get("token_dim", 64),
-            num_tokens=raw.get("num_tokens", 8),
-            num_blocks=raw.get("num_blocks", 2),
-            block_size=raw.get("block_size"),
-            use_lite=raw.get("use_lite", False),
-            hidden_factor=raw.get("hidden_factor", 1.0),
-            num_basis=raw.get("num_basis", 4),
-            rank=raw.get("rank", 16),
-            use_siamese=raw.get("use_siamese", False),
-            task_config=tc,
-        )
+        mtype = raw["type"]
+        params = {k: v for k, v in raw.items() if k != "type"}
+        return cls(type=mtype, params=params)
 
-    def build(
-        self,
-        features: list[tuple[str, int, int]],
-        tokenizer: FeatureTokenizer | None = None,
-    ):
-        m = self.type
-        if m == "lr":
-            return LogisticRegression(features)
-        elif m == "deepfm":
-            return DeepFM(features, self.fm_k, self.deep_hidden_dims)
-        elif m == "mmoe":
-            return MMoE(
-                features,
-                self.shared_bottom_dims,
-                self.num_experts,
-                self.expert_hidden_dims,
-                self.expert_output_dim,
-                [(t.name, t.tower_dims) for t in self.task_configs],
-            )
-        elif m == "esmm":
-            return ESMM(
-                features,
-                self.shared_bottom_dims,
-                self.ctr_hidden_dims,
-                self.cvr_hidden_dims,
-            )
-        elif m == "unimixer":
-            if tokenizer is None:
-                raise ValueError("UniMixer requires external FeatureTokenizer")
-            if self.task_config is None:
-                raise ValueError("UniMixer requires task_config")
-            return UniMixerModel(
-                tokenizer=tokenizer,
-                token_dim=self.token_dim,
-                num_tokens=self.num_tokens,
-                num_blocks=self.num_blocks,
-                block_size_opt=self.block_size,
-                use_lite=self.use_lite,
-                hidden_factor=self.hidden_factor,
-                num_basis=self.num_basis,
-                rank=self.rank,
-                task_config=self.task_config,
-                use_siamese=self.use_siamese,
-            )
-        raise ValueError(f"Unknown model type: {m}")
+    def build(self, features, tokenizer=None):
+        return build_model(self.type, features, tokenizer=tokenizer, **self.params)
+
+
+# ── register built-in models ──
+
+def _spec_pred(model=None):
+    return {"task_names": ["pred"], "label_col_map": {"pred": "ctr"}}
+
+
+def _build_lr(features, tokenizer=None, **params):
+    return LogisticRegression(features)
+
+
+def _build_deepfm(features, tokenizer=None, **params):
+    return DeepFM(features, params.get("fm_k", 16), params.get("deep_hidden_dims", []))
+
+
+def _build_mmoe(features, tokenizer=None, **params):
+    tcs = [(t.name, t.tower_dims) for t in _parse_mmoe_task_configs(params)]
+    return MMoE(features, params.get("shared_bottom_dims", []),
+                params.get("num_experts", 4), params.get("expert_hidden_dims", []),
+                params.get("expert_output_dim", 32), tcs)
+
+
+def _spec_mmoe(model=None):
+    names = model.task_names if model else []
+    return {"task_names": names, "label_col_map": {n: n for n in names}}
+
+
+def _build_esmm(features, tokenizer=None, **params):
+    return ESMM(features, params.get("shared_bottom_dims", []),
+                params.get("ctr_hidden_dims", []), params.get("cvr_hidden_dims", []))
+
+
+def _spec_esmm(model=None):
+    return {"task_names": ["ctr", "cvr"], "label_col_map": {"ctr": "ctr", "cvr": "cvr"}}
+
+
+def _build_unimixer(features, tokenizer=None, **params):
+    if tokenizer is None:
+        raise ValueError("UniMixer requires external FeatureTokenizer")
+    tc = _parse_task_config(params.get("task_config"))
+    if tc is None:
+        raise ValueError("UniMixer requires task_config")
+    return UniMixerModel(tokenizer=tokenizer,
+                         token_dim=params.get("token_dim", 64),
+                         num_tokens=params.get("num_tokens", 8),
+                         num_blocks=params.get("num_blocks", 2),
+                         block_size_opt=params.get("block_size"),
+                         use_lite=params.get("use_lite", False),
+                         hidden_factor=params.get("hidden_factor", 1.0),
+                         num_basis=params.get("num_basis", 4),
+                         rank=params.get("rank", 16),
+                         task_config=tc,
+                         use_siamese=params.get("use_siamese", False))
+
+
+def _spec_unimixer(model=None):
+    if model is not None:
+        names = [t.name for t in model.task_towers._tower_names]
+    else:
+        names = []
+    return {"task_names": names, "label_col_map": {n: n for n in names}}
+
+
+register_model("lr", _spec_pred, _build_lr)
+register_model("deepfm", _spec_pred, _build_deepfm)
+register_model("mmoe", _spec_mmoe, _build_mmoe)
+register_model("esmm", _spec_esmm, _build_esmm)
+register_model("unimixer", _spec_unimixer, _build_unimixer)

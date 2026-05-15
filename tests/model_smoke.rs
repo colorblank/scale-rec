@@ -71,7 +71,10 @@ fn test_esmm_forward_shape() {
 
 #[test]
 fn test_modelconfig_build_lr() {
-    let cfg = ModelConfig::LR;
+    let cfg = ModelConfig {
+        model_type: "lr".into(),
+        params: serde_yaml::Value::Mapping(serde_yaml::Mapping::new()),
+    };
     let model = cfg.build(vb(), &dummy_features(), None).unwrap();
     let out = model.forward(&dummy_inputs(2)).unwrap();
     assert!(out.contains_key("pred"));
@@ -79,9 +82,14 @@ fn test_modelconfig_build_lr() {
 
 #[test]
 fn test_modelconfig_build_deepfm() {
-    let cfg = ModelConfig::DeepFM {
-        fm_k: 8,
-        deep_hidden_dims: vec![4],
+    let mut params = serde_yaml::Mapping::new();
+    params.insert("fm_k".into(), serde_yaml::Value::Number(8.into()));
+    let mut dims = serde_yaml::Sequence::new();
+    dims.push(serde_yaml::Value::Number(4.into()));
+    params.insert("deep_hidden_dims".into(), serde_yaml::Value::Sequence(dims));
+    let cfg = ModelConfig {
+        model_type: "deepfm".into(),
+        params: serde_yaml::Value::Mapping(params),
     };
     let model = cfg.build(vb(), &dummy_features(), None).unwrap();
     let out = model.forward(&dummy_inputs(2)).unwrap();
@@ -119,15 +127,23 @@ fn test_unimixer_forward_shape() {
 
 #[test]
 fn test_modelconfig_build_mmoe() {
-    let cfg = ModelConfig::MMoE {
-        shared_bottom_dims: vec![],
-        num_experts: 2,
-        expert_hidden_dims: vec![8],
-        expert_output_dim: 4,
-        task_configs: vec![scale_rec::models::TaskConfigEntry {
-            name: "ctr".into(),
-            tower_dims: vec![4],
-        }],
+    let mut params = serde_yaml::Mapping::new();
+    params.insert("num_experts".into(), serde_yaml::Value::Number(2.into()));
+    let mut expert_dims = serde_yaml::Sequence::new();
+    expert_dims.push(serde_yaml::Value::Number(8.into()));
+    params.insert("expert_hidden_dims".into(), serde_yaml::Value::Sequence(expert_dims));
+    params.insert("expert_output_dim".into(), serde_yaml::Value::Number(4.into()));
+    let mut tcs = serde_yaml::Sequence::new();
+    let mut entry = serde_yaml::Mapping::new();
+    entry.insert("name".into(), serde_yaml::Value::String("ctr".into()));
+    let mut td = serde_yaml::Sequence::new();
+    td.push(serde_yaml::Value::Number(4.into()));
+    entry.insert("tower_dims".into(), serde_yaml::Value::Sequence(td));
+    tcs.push(serde_yaml::Value::Mapping(entry));
+    params.insert("task_configs".into(), serde_yaml::Value::Sequence(tcs));
+    let cfg = ModelConfig {
+        model_type: "mmoe".into(),
+        params: serde_yaml::Value::Mapping(params),
     };
     let model = cfg.build(vb(), &dummy_features(), None).unwrap();
     let out = model.forward(&dummy_inputs(2)).unwrap();

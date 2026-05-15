@@ -73,7 +73,7 @@ def verify_model(model_type: str, threshold: float = 1e-3) -> dict:
 
     # Run Rust inference（StringConcatHash 切换到 inference 模式）
     infer_config = _make_inference_config(FEATURE_CONFIG)
-    print(f"  Running Rust inference...")
+    print("  Running Rust inference...")
     result = subprocess.run(
         [
             "cargo", "run", "--bin", "demo_inference", "--",
@@ -142,7 +142,7 @@ def main() -> None:
 
     # Summary
     print(f"\n{'=' * 60}")
-    print(f"  Verification Summary")
+    print("  Verification Summary")
     print(f"{'=' * 60}")
     all_pass = True
     for r in results:
