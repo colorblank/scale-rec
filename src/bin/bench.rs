@@ -19,6 +19,8 @@ struct Args {
     batch_size: usize,
     #[arg(long, default_value = "10")]
     duration_secs: u64,
+    #[arg(long, default_value = "0")]
+    target_qps: usize,  // rate-limited mode: 0 = unlimited
 }
 
 fn random_user(rng: &mut impl Rng) -> serde_json::Value {
@@ -74,6 +76,11 @@ fn main() {
     let errors = Arc::new(AtomicU64::new(0));
     let running = Arc::new(AtomicBool::new(true));
 
+    // Rate limiting: per-worker interval in ms
+    let rate_interval_ms = if args.target_qps > 0 {
+        (args.concurrency as f64 * 1000.0 / args.target_qps as f64) as u64
+    } else { 0 };
+
     let mut handles = vec![];
     for _ in 0..args.concurrency {
         let client = client.clone();
@@ -89,6 +96,7 @@ fn main() {
         handles.push(std::thread::spawn(move || {
             let mut rng = rand::thread_rng();
             while run.load(Ordering::Relaxed) {
+                let t0 = Instant::now();
                 let url = if mode == "broadcast" {
                     format!("{}/predict/broadcast", target)
                 } else {
@@ -111,6 +119,13 @@ fn main() {
                 } else {
                     errs.fetch_add(1, Ordering::Relaxed);
                 }
+                // Rate limiting
+                if rate_interval_ms > 0 {
+                    let elapsed = t0.elapsed().as_millis() as u64;
+                    if elapsed < rate_interval_ms {
+                        std::thread::sleep(Duration::from_millis(rate_interval_ms - elapsed));
+                    }
+                }
             }
         }));
     }
@@ -126,15 +141,23 @@ fn main() {
     let total = total_reqs.load(Ordering::Relaxed);
     let sum: f64 = lats.iter().sum();
 
-    println!("\nResults:");
-    println!("  Total:    {}", total);
-    println!("  Errors:   {}", errors.load(Ordering::Relaxed));
-    println!("  RPS:      {:.0}", total as f64 / args.duration_secs as f64);
-    println!("  P50:      {:.1} ms", p(&lats, 50.0));
-    println!("  P95:      {:.1} ms", p(&lats, 95.0));
-    println!("  P99:      {:.1} ms", p(&lats, 99.0));
-    println!("  Mean:     {:.1} ms", sum / n as f64);
-    println!("  Min/Max:  {:.1}/{:.1} ms", lats[0], lats[n-1]);
+    let rps = total as f64 / args.duration_secs as f64;
+    println!("\n  ═══════════════════════════════════════");
+    if args.target_qps > 0 {
+        println!("  Target QPS:  {}", args.target_qps);
+    }
+    println!("  Batch:       {}  Concur: {}  Model: {}  Mode: {}",
+             args.batch_size, args.concurrency, args.model, args.mode);
+    println!("  ───────────────────────────────────────");
+    println!("  Total:       {}  Errors: {}  RPS: {:.0}",
+             total, errors.load(Ordering::Relaxed), rps);
+    println!("  P50:         {:.1} ms", p(&lats, 50.0));
+    println!("  P95:         {:.1} ms", p(&lats, 95.0));
+    println!("  P99:         {:.1} ms", p(&lats, 99.0));
+    println!("  P99.9:       {:.1} ms", p(&lats, 99.9));
+    println!("  Mean:        {:.1} ms", sum / n as f64);
+    println!("  Min/Max:     {:.1}/{:.1} ms", lats[0], lats[n-1]);
+    println!("  ═══════════════════════════════════════");
 }
 
 fn p(s: &[f64], pct: f64) -> f64 {
