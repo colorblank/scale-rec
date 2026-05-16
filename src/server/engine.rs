@@ -40,7 +40,7 @@ impl InferenceEngine {
         }
 
         // Batch DAG execution — one pass through all operators on full columns
-        let batch_result = self.dag.execute_batch(&columns)
+        let batch_result = self.dag.execute_batch(&columns, &Default::default())
             .map_err(|e| format!("DAG error: {}", e))?;
 
         // Extract embeddable feature indices from batch result

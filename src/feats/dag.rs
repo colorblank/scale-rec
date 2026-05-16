@@ -241,6 +241,55 @@ impl FeatureDag {
         result
     }
 
+    /// Classify each operator by input source: "user", "item", or "cross" (both).
+    pub fn op_source_kind(&self) -> HashMap<String, &str> {
+        // Determine which source each feature name depends on
+        let mut feat_kind: HashMap<String, &str> = HashMap::new();
+        for (name, _) in &self.sources {
+            let k = if name.starts_with("user_") || name == "user_id" { "user" }
+                    else if name.starts_with("item_") || name == "item_id" { "item" }
+                    else { "other" };
+            feat_kind.insert(name.clone(), k);
+        }
+        // Propagate through operators in topological order
+        for node_name in &self.execution_order {
+            let def = &self.node_defs[node_name];
+            let kinds: Vec<&&str> = def.inputs.iter()
+                .filter_map(|inp| feat_kind.get(inp)).collect();
+            let k = if kinds.iter().any(|k| **k == "user") && kinds.iter().any(|k| **k == "item") {
+                "cross"
+            } else if kinds.iter().any(|k| **k == "user") { "user" }
+            else if kinds.iter().any(|k| **k == "item") { "item" }
+            else { kinds.first().copied().unwrap_or(&&"other") };
+            for out_name in &def.outputs {
+                feat_kind.insert(out_name.clone(), k);
+            }
+        }
+        // Map operator name → kind
+        let mut op_kind: HashMap<String, &str> = HashMap::new();
+        for node_name in &self.execution_order {
+            let def = &self.node_defs[node_name];
+            let kinds: Vec<&&str> = def.inputs.iter()
+                .filter_map(|inp| feat_kind.get(inp)).collect();
+            let k = if kinds.iter().any(|k| **k == "user") && kinds.iter().any(|k| **k == "item") {
+                "cross"
+            } else if kinds.iter().any(|k| **k == "user") { "user" }
+            else if kinds.iter().any(|k| **k == "item") { "item" }
+            else { "other" };
+            op_kind.insert(node_name.clone(), k);
+        }
+        op_kind
+    }
+
+    /// Get source names (used to filter inputs in broadcast mode).
+    pub fn source_names(&self) -> Vec<&str> {
+        self.sources.keys().map(|s| s.as_str()).collect()
+    }
+    /// Get operator outputs by operator name.
+    pub fn op_outputs(&self, op_name: &str) -> Option<&Vec<String>> {
+        self.node_defs.get(op_name).map(|d| &d.outputs)
+    }
+
     pub fn execute(
         &self,
         raw_inputs: &HashMap<String, FeatureValue>,
@@ -309,6 +358,18 @@ impl FeatureDag {
     pub fn execute_batch(
         &self,
         columns: &HashMap<String, Vec<FeatureValue>>,
+        skip_ops: &HashSet<String>,
+    ) -> Result<HashMap<String, Vec<FeatureValue>>, String> {
+        self.execute_batch_precomputed(columns, skip_ops, &HashMap::new())
+    }
+
+    /// Batch execution with precomputed single-value features broadcast to all rows.
+    /// Used for broadcast mode: user features are precomputed once, then injected.
+    pub fn execute_batch_precomputed(
+        &self,
+        columns: &HashMap<String, Vec<FeatureValue>>,
+        skip_ops: &HashSet<String>,
+        precomputed: &HashMap<String, FeatureValue>,
     ) -> Result<HashMap<String, Vec<FeatureValue>>, String> {
         let n_rows = columns.values().next().map(|v| v.len()).unwrap_or(0);
         if n_rows == 0 {
@@ -330,10 +391,15 @@ impl FeatureDag {
                 context.insert(name.clone(), vec![default; n_rows]);
             }
         }
+        // Stage 2.5: inject precomputed values (broadcast single value to N rows)
+        for (name, val) in precomputed {
+            context.insert(name.clone(), vec![val.clone(); n_rows]);
+        }
 
         // Stage 3: execute operators in topological order (bulk, zero-copy refs)
         let default_col: Vec<FeatureValue> = vec![Fv::Int(0); n_rows];
         for node_name in &self.execution_order {
+            if skip_ops.contains(node_name) { continue; }
             let op = &self.nodes[node_name];
             let def = &self.node_defs[node_name];
 
