@@ -19,6 +19,22 @@ pub struct FeatureResult {
     pub computed_names: HashSet<String>,
 }
 
+/// 预编译执行计划：运算符 + 整数索引列，运行时零 HashMap 查找。
+pub struct ExecutionPlan {
+    pub steps: Vec<ExecStep>,
+    pub ops: Vec<Box<dyn CustomOp>>,
+    source_cols: Vec<usize>,
+    source_names: Vec<String>,
+    col_count: usize,
+    embed_ids: Vec<usize>,
+}
+
+pub struct ExecStep {
+    pub op_idx: usize,
+    pub input_cols: Vec<usize>,
+    pub output_cols: Vec<usize>,
+}
+
 /// 特征 DAG 执行引擎。
 ///
 /// 根据 FlowConfig 构建算子图，拓扑排序后按序执行单样本处理。
@@ -26,9 +42,10 @@ pub struct FeatureDag {
     sources: HashMap<String, SourceDef>,
     nodes: HashMap<String, Box<dyn CustomOp>>,
     node_defs: HashMap<String, OperatorDef>,
-    execution_order: Vec<String>,
+    pub execution_order: Vec<String>,
     debug_mode: bool,
     pub tracer: Option<DebugTracer>,
+    pub plan: ExecutionPlan,
 }
 
 impl FeatureDag {
@@ -104,10 +121,68 @@ impl FeatureDag {
         }
         let sorted_indices =
             toposort(&graph, None).map_err(|_| "Cycle detected in feature DAG".to_string())?;
-        let execution_order = sorted_indices
+        let execution_order: Vec<String> = sorted_indices
             .iter()
             .map(|&idx| graph[idx].clone())
             .collect();
+
+        // Build precompiled execution plan (column IDs for zero-HashMap execution)
+        let mut col_id: HashMap<String, usize> = HashMap::new();
+        let mut source_cols: Vec<usize> = Vec::new();
+        let mut source_names: Vec<String> = Vec::new();
+        for (i, s) in sources.keys().enumerate() {
+            col_id.insert(s.clone(), i);
+            source_cols.push(i);
+            source_names.push(s.clone());
+        }
+        let mut col_count = sources.len();
+        // Assign IDs to operator outputs
+        for op_def in &config.operators {
+            for out in &op_def.outputs {
+                if !col_id.contains_key(out) {
+                    col_id.insert(out.clone(), col_count);
+                    col_count += 1;
+                }
+            }
+        }
+        // Build steps with pre-resolved column indices
+        let mut plan_steps: Vec<ExecStep> = Vec::with_capacity(execution_order.len());
+        let mut plan_ops: Vec<Box<dyn CustomOp>> = Vec::with_capacity(nodes.len());
+        let mut op_name_to_idx: HashMap<String, usize> = HashMap::new();
+        for (i, node_name) in execution_order.iter().enumerate() {
+            op_name_to_idx.insert(node_name.clone(), i);
+            plan_ops.push(nodes.remove(node_name).unwrap());
+        }
+        for node_name in &execution_order {
+            let def = &node_defs[node_name];
+            let op_idx = op_name_to_idx[node_name];
+            let input_cols: Vec<usize> = def.inputs.iter()
+                .map(|inp| *col_id.get(inp).unwrap_or(&usize::MAX))
+                .collect();
+            let output_cols: Vec<usize> = def.outputs.iter()
+                .map(|out| *col_id.get(out).unwrap_or(&usize::MAX))
+                .collect();
+            plan_steps.push(ExecStep { op_idx, input_cols, output_cols });
+        }
+        // Embeddable column IDs — sorted by FEATURE NAME to align with embeddable_features()
+        let mut embed_pairs: Vec<(&str, usize)> = Vec::new();
+        for (name, src) in &sources {
+            if src.embed.is_some() { if let Some(&id) = col_id.get(name) { embed_pairs.push((name, id)); } }
+        }
+        for op_def in &config.operators {
+            if op_def.embed.is_some() {
+                for out_name in &op_def.outputs {
+                    if let Some(&id) = col_id.get(out_name) { embed_pairs.push((out_name, id)); }
+                }
+            }
+        }
+        embed_pairs.sort_by_key(|(name, _)| *name);
+        let embed_ids: Vec<usize> = embed_pairs.into_iter().map(|(_, id)| id).collect();
+        let plan = ExecutionPlan {
+            steps: plan_steps, ops: plan_ops,
+            source_cols, source_names, col_count, embed_ids,
+        };
+
         Ok(Self {
             sources,
             nodes,
@@ -115,6 +190,7 @@ impl FeatureDag {
             execution_order,
             debug_mode,
             tracer,
+            plan,
         })
     }
 
@@ -438,5 +514,60 @@ impl FeatureDag {
             };
             println!(" -> [{:<8}] {:<20} | Type: {}", origin, name, type_name);
         }
+    }
+}
+
+impl ExecutionPlan {
+    /// Fast execution using pre-compiled column indices. Zero HashMap lookups.
+    pub fn execute_plan(
+        &self,
+        columns: &HashMap<String, Vec<Fv>>,
+        skip_op_idx: &HashSet<usize>,
+        precomputed: &HashMap<usize, Fv>,
+    ) -> Result<Vec<Vec<Fv>>, String> {
+        let n_rows = columns.values().next().map(|v| v.len()).unwrap_or(0);
+        if n_rows == 0 { return Ok(Vec::new()); }
+
+        let mut context: Vec<Vec<Fv>> = vec![Vec::with_capacity(n_rows); self.col_count];
+        let default: Vec<Fv> = vec![Fv::Int(0); n_rows];
+
+        // Stage 1: fill sources from input
+        for i in 0..self.source_cols.len() {
+            let name = &self.source_names[i];
+            if let Some(col) = columns.get(name) {
+                context[i] = col.clone();
+            } else {
+                context[i] = default.clone();
+            }
+        }
+        // Stage 2: inject precomputed (broadcast mode)
+        for (&col_id, val) in precomputed.iter() {
+            if col_id < context.len() {
+                context[col_id] = vec![val.clone(); n_rows];
+            }
+        }
+
+        // Stage 3: execute steps in order
+        for step in &self.steps {
+            if skip_op_idx.contains(&step.op_idx) { continue; }
+            let op = &self.ops[step.op_idx];
+            let input_slices: Vec<&[Fv]> = step
+                .input_cols
+                .iter()
+                .map(|&cid| context.get(cid).map(|c| c.as_slice()).unwrap_or(&default))
+                .collect();
+            let result_vec = op
+                .process_batch(&input_slices, n_rows)
+                .map_err(|e| format!("step {}: {}", step.op_idx, e))?;
+            for &cid in &step.output_cols {
+                context[cid] = result_vec.clone();
+            }
+        }
+        Ok(context)
+    }
+
+    pub fn embed_ids(&self) -> &[usize] { &self.embed_ids }
+    pub fn source_col_map(&self) -> HashMap<String, usize> {
+        self.source_names.iter().enumerate().map(|(i, n)| (n.clone(), i)).collect()
     }
 }

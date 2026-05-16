@@ -104,11 +104,7 @@ impl ModelRegistry {
             .load(safetensors_path.to_str().unwrap_or(""))
             .map_err(|e| format!("load weights: {}", e))?;
 
-        let engine = Arc::new(InferenceEngine {
-            dag,
-            model,
-            embed_names,
-        });
+        let engine = Arc::new(InferenceEngine::new(dag, model, embed_names));
 
         let mut engines = self.engines.write().unwrap();
         engines.insert(model_name.to_string(), engine);

@@ -1,4 +1,4 @@
-//! 推理引擎：FeatureDag + Box<dyn Model> 封装。
+//! 推理引擎：FeatureDag + Box<dyn Model> + 预编译执行计划。
 use std::collections::{HashMap, HashSet};
 
 use candle_core::{Device, Tensor};
@@ -7,131 +7,83 @@ use crate::feats::dag::{FeatureDag, FeatureValue};
 use crate::feats::ops::Fv;
 use crate::models::Model;
 
-/// 推理引擎：持有 DAG 和已加载权重的模型。
 pub struct InferenceEngine {
     pub dag: FeatureDag,
     pub model: Box<dyn Model>,
     pub embed_names: Vec<String>,
+    // Pre-cached plan data
+    embed_ids: Vec<usize>,
+    source_col_map: HashMap<String, usize>,
+    user_op_indices: HashSet<usize>,
+    op_source_kind: HashMap<String, String>,
 }
 
-/// 预测请求中的单行特征（JSON 反序列化）。
 pub type FeatureRow = HashMap<String, serde_json::Value>;
-
-/// 预测结果中的单行输出。
 pub type PredictionRow = HashMap<String, f32>;
 
 impl InferenceEngine {
-    /// 执行 point-wise 推理：每行是一个完整样本。
-    pub fn predict(&self, features: &[FeatureRow]) -> Result<Vec<PredictionRow>, String> {
-        if features.is_empty() {
-            return Ok(vec![]);
-        }
+    pub fn new(dag: FeatureDag, model: Box<dyn Model>, embed_names: Vec<String>) -> Self {
+        let embed_ids = dag.plan.embed_ids().to_vec();
+        let source_col_map = dag.plan.source_col_map();
+        let op_kind = dag.op_source_kind();
+        let user_ops: HashSet<String> = op_kind.iter()
+            .filter(|(_, &k)| k == "user").map(|(n, _)| n.clone()).collect();
+        let user_op_indices: HashSet<usize> = dag.plan.steps.iter()
+            .filter(|s| user_ops.contains(&dag.execution_order[s.op_idx]))
+            .map(|s| s.op_idx).collect();
+        let op_source_kind: HashMap<String, String> = op_kind.into_iter()
+            .map(|(k, v)| (k, v.to_string())).collect();
+        Self { dag, model, embed_names, embed_ids, source_col_map,
+               user_op_indices, op_source_kind }
+    }
 
+    pub fn predict(&self, features: &[FeatureRow]) -> Result<Vec<PredictionRow>, String> {
+        if features.is_empty() { return Ok(vec![]); }
         let n = features.len();
 
-        // Build columnar input from rows
+        // Build columns from rows
         let mut columns: HashMap<String, Vec<FeatureValue>> = HashMap::new();
         for row in features {
             for (key, val) in row {
-                columns.entry(key.clone())
-                    .or_insert_with(|| Vec::with_capacity(n))
+                columns.entry(key.clone()).or_insert_with(|| Vec::with_capacity(n))
                     .push(json_to_feature(val));
             }
         }
 
-        // Batch DAG execution — one pass through all operators on full columns
-        let batch_result = self.dag.execute_batch(&columns, &Default::default())
-            .map_err(|e| format!("DAG error: {}", e))?;
+        // Plan-based execution: zero HashMap during operator loop
+        let context = self.dag.plan.execute_plan(&columns, &HashSet::new(), &HashMap::new())
+            .map_err(|e| format!("DAG: {}", e))?;
 
-        // Extract embeddable feature indices from batch result
-        let mut all_indices: HashMap<String, Vec<u32>> = self
-            .embed_names
-            .iter()
-            .map(|n| (n.clone(), Vec::with_capacity(features.len())))
-            .collect();
-        for name in &self.embed_names {
-            let col = batch_result.get(name)
-                .ok_or_else(|| format!("Feature '{}' not found in batch output", name))?;
-            let indices: Vec<u32> = col.iter().map(|val| {
-                match val.clone() {
-                    Fv::Int(i) => i as u32,
-                    Fv::IntList(ref list) => list.first().copied().unwrap_or(0) as u32,
-                    _ => 0,
-                }
-            }).collect();
-            all_indices.insert(name.clone(), indices);
-        }
-
-        let tensor_inputs: HashMap<String, Tensor> = all_indices
-            .iter()
-            .map(|(name, indices)| {
-                let t = Tensor::from_slice(indices, indices.len(), &Device::Cpu).unwrap();
-                (name.clone(), t)
-            })
-            .collect();
-
-        let outputs = self
-            .model
-            .forward(&tensor_inputs)
-            .map_err(|e| format!("Model error: {}", e))?;
-
-        let mut out_keys: Vec<&String> = outputs.keys().collect();
-        out_keys.sort();
-        let mut result: Vec<PredictionRow> = vec![HashMap::new(); n];
-        for key in &out_keys {
-            let tensor = outputs.get(*key).unwrap();
-            let vals: Vec<f32> = tensor
-                .to_vec2::<f32>()
-                .map_err(|e| format!("{}", e))?
-                .iter()
-                .map(|row| row[0])
-                .collect();
-            for (i, v) in vals.iter().enumerate() {
-                result[i].insert(key.to_string(), *v);
-            }
-        }
-        Ok(result)
+        self.extract_predictions(&context, n)
     }
 
-    /// 广播模式：预计算用户特征一次，广播到 N 个物品行，跳过用户专属算子。
     pub fn predict_broadcast(
-        &self,
-        user: &FeatureRow,
-        items: &[FeatureRow],
+        &self, user: &FeatureRow, items: &[FeatureRow],
     ) -> Result<Vec<PredictionRow>, String> {
         if items.is_empty() { return Ok(vec![]); }
 
-        // Step 1: Precompute user outputs with first item (1-row batch)
-        let mut pre_cols: HashMap<String, Vec<FeatureValue>> = HashMap::new();
-        for (k, v) in user { pre_cols.insert(k.clone(), vec![json_to_feature(v)]); }
-        for (k, v) in &items[0] { pre_cols.insert(k.clone(), vec![json_to_feature(v)]); }
-        let full_1row = self.dag.execute_batch(&pre_cols, &Default::default())
+        // Step 1: Precompute with one item to get user-derived outputs
+        let mut one: HashMap<String, Vec<FeatureValue>> = HashMap::new();
+        for (k, v) in user { one.insert(k.clone(), vec![json_to_feature(v)]); }
+        for (k, v) in &items[0] { one.insert(k.clone(), vec![json_to_feature(v)]); }
+        let full_1 = self.dag.plan.execute_plan(&one, &HashSet::new(), &HashMap::new())
             .map_err(|e| format!("precompute: {}", e))?;
 
-        // Step 2: Classify operators, extract user-only outputs
-        let op_kind = self.dag.op_source_kind();
-        let mut user_ops: HashSet<String> = HashSet::new();
-        let mut precomputed: HashMap<String, FeatureValue> = HashMap::new();
-        for (op_name, &kind) in &op_kind {
-            if kind != "user" { continue; }
-            user_ops.insert(op_name.clone());
-            if let Some(outputs) = self.dag.op_outputs(op_name) {
-                for out_name in outputs {
-                    if let Some(col) = full_1row.get(out_name) {
-                        if !col.is_empty() { precomputed.insert(out_name.clone(), col[0].clone()); }
-                    }
+        // Extract user-derived outputs (column IDs from user-only ops)
+        let mut precomputed: HashMap<usize, Fv> = HashMap::new();
+        for step in &self.dag.plan.steps {
+            if !self.user_op_indices.contains(&step.op_idx) { continue; }
+            for &cid in &step.output_cols {
+                if let Some(col) = full_1.get(cid) {
+                    if !col.is_empty() { precomputed.insert(cid, col[0].clone()); }
                 }
             }
         }
 
-        // Step 3: Build N-row batch columns — user sources broadcast, item sources per row
+        // Step 2: Build batch columns
         let n = items.len();
         let mut columns: HashMap<String, Vec<FeatureValue>> = HashMap::new();
-        // User source features: broadcast to N rows
-        for (k, v) in user {
-            columns.insert(k.clone(), vec![json_to_feature(v); n]);
-        }
-        // Item source features: one per row
+        for (k, v) in user { columns.insert(k.clone(), vec![json_to_feature(v); n]); }
         for item in items {
             for (k, v) in item {
                 columns.entry(k.clone()).or_insert_with(|| Vec::with_capacity(n))
@@ -139,28 +91,28 @@ impl InferenceEngine {
             }
         }
 
-        // Step 4: Execute batch with precomputed user outputs, skipping user ops
-        let batch_result = self.dag.execute_batch_precomputed(
-            &columns, &user_ops, &precomputed,
-        ).map_err(|e| format!("DAG: {}", e))?;
+        let context = self.dag.plan.execute_plan(&columns, &self.user_op_indices, &precomputed)
+            .map_err(|e| format!("DAG: {}", e))?;
 
-        // Step 5: Extract predictions (same as predict())
+        self.extract_predictions(&context, n)
+    }
+
+    fn extract_predictions(&self, context: &[Vec<Fv>], n: usize) -> Result<Vec<PredictionRow>, String> {
         let mut all_indices: HashMap<String, Vec<u32>> = self.embed_names.iter()
-            .map(|n| (n.clone(), Vec::with_capacity(items.len()))).collect();
-        for name in &self.embed_names {
-            let col = batch_result.get(name)
+            .map(|name| (name.clone(), Vec::with_capacity(n))).collect();
+        for (i, name) in self.embed_names.iter().enumerate() {
+            let cid = self.embed_ids[i];
+            let col = context.get(cid)
                 .ok_or_else(|| format!("Feature '{}' missing", name))?;
-            all_indices.insert(name.clone(), col.iter().map(|val| match val.clone() {
-                Fv::Int(i) => i as u32,
-                Fv::IntList(ref l) => l.first().copied().unwrap_or(0) as u32,
+            all_indices.insert(name.clone(), col.iter().map(|val| match val {
+                Fv::Int(i) => *i as u32,
+                Fv::IntList(l) => l.first().copied().unwrap_or(0) as u32,
                 _ => 0,
             }).collect());
         }
         let tensor_inputs: HashMap<String, Tensor> = all_indices.iter()
-            .map(|(n, indices)| (n.clone(),
-                Tensor::from_slice(indices, indices.len(), &Device::Cpu).unwrap())).collect();
-        let outputs = self.model.forward(&tensor_inputs)
-            .map_err(|e| format!("Model: {}", e))?;
+            .map(|(n, indices)| (n.clone(), Tensor::from_slice(indices, indices.len(), &Device::Cpu).unwrap())).collect();
+        let outputs = self.model.forward(&tensor_inputs).map_err(|e| format!("Model: {}", e))?;
         let mut out_keys: Vec<&String> = outputs.keys().collect(); out_keys.sort();
         let mut result: Vec<PredictionRow> = vec![HashMap::new(); n];
         for key in &out_keys {
@@ -180,12 +132,9 @@ fn json_to_feature(val: &serde_json::Value) -> FeatureValue {
             else { Fv::Float(n.as_f64().unwrap_or(0.0) as f32) }
         }
         serde_json::Value::String(s) => Fv::Str(s.clone()),
-        serde_json::Value::Array(arr) => {
-            Fv::StrList(arr.iter().map(|v| match v {
-                serde_json::Value::String(s) => s.clone(),
-                other => other.to_string(),
-            }).collect())
-        }
+        serde_json::Value::Array(arr) => Fv::StrList(arr.iter().map(|v| match v {
+            serde_json::Value::String(s) => s.clone(), other => other.to_string(),
+        }).collect()),
         _ => Fv::Int(0),
     }
 }
