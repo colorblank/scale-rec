@@ -21,7 +21,7 @@ struct Args {
     duration_secs: u64,
 }
 
-fn random_row(rng: &mut impl Rng) -> serde_json::Value {
+fn random_user(rng: &mut impl Rng) -> serde_json::Value {
     let tags = ["sports","music","gaming","reading","travel","food","fashion","tech","fitness","art",
                 "movie","pet","car","photo","diy"];
     let cat_vals = ["val_0","val_1","val_2","val_3","val_4"];
@@ -37,6 +37,14 @@ fn random_row(rng: &mut impl Rng) -> serde_json::Value {
     let hn = rng.gen_range(10..=20);
     let hist: Vec<String> = (0..hn).map(|_| format!("{}:{}", rng.gen_range(100..=900)/100*100, rng.gen_range(1..=5))).collect();
     row.insert("user_history".into(), serde_json::json!(hist.join(",")));
+    serde_json::Value::Object(row)
+}
+
+fn random_item(rng: &mut impl Rng) -> serde_json::Value {
+    let tags = ["sports","music","gaming","reading","travel","food","fashion","tech","fitness","art",
+                "movie","pet","car","photo","diy"];
+    let cat_vals = ["val_0","val_1","val_2","val_3","val_4"];
+    let mut row = serde_json::Map::new();
     row.insert("item_id".into(), serde_json::json!(rng.gen_range(0..2000)));
     for i in 0..15 { row.insert(format!("item_stat_{}",i), serde_json::json!((rng.gen_range(0.0f64..1.0)*1000.0).round()/1000.0)); }
     for i in 0..15 { row.insert(format!("item_cat_{}",i), serde_json::json!(cat_vals[rng.gen_range(0..5)])); }
@@ -45,6 +53,13 @@ fn random_row(rng: &mut impl Rng) -> serde_json::Value {
         let s: Vec<String> = (0..n).map(|_| format!("{}#1", tags[rng.gen_range(0..15)])).collect();
         row.insert(format!("item_tags_{}",i), serde_json::json!(s.join("|")));
     }
+    serde_json::Value::Object(row)
+}
+
+fn random_row(rng: &mut impl Rng) -> serde_json::Value {
+    let mut row = random_user(rng).as_object().unwrap().clone();
+    let item = random_item(rng);
+    for (k, v) in item.as_object().unwrap() { row.insert(k.clone(), v.clone()); }
     serde_json::Value::Object(row)
 }
 
@@ -74,16 +89,17 @@ fn main() {
         handles.push(std::thread::spawn(move || {
             let mut rng = rand::thread_rng();
             while run.load(Ordering::Relaxed) {
-                let features: Vec<serde_json::Value> =
-                    (0..batch).map(|_| random_row(&mut rng)).collect();
                 let url = if mode == "broadcast" {
                     format!("{}/predict/broadcast", target)
                 } else {
                     format!("{}/predict", target)
                 };
                 let body = if mode == "broadcast" {
-                    serde_json::json!({"model": model, "user": features[0], "items": features})
+                    let user = random_user(&mut rng);
+                    let items: Vec<serde_json::Value> = (0..batch).map(|_| random_item(&mut rng)).collect();
+                    serde_json::json!({"model": model, "user": user, "items": items})
                 } else {
+                    let features: Vec<serde_json::Value> = (0..batch).map(|_| random_row(&mut rng)).collect();
                     serde_json::json!({"model": model, "features": features})
                 };
                 let start = Instant::now();
