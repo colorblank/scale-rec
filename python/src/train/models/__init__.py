@@ -148,7 +148,8 @@ def _build_unimixer(features, tokenizer=None, **params):
 
 def _spec_unimixer(model=None):
     if model is not None:
-        names = [t.name for t in model.task_towers._tower_names]
+        tt = getattr(model, "task_towers", None) or model.unimixer.task_towers
+        names = list(tt._tower_names) if hasattr(tt, '_tower_names') else []
     else:
         names = []
     return {"task_names": names, "label_col_map": {n: n for n in names}}
