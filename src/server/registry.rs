@@ -123,27 +123,21 @@ impl ModelRegistry {
     }
 
     fn find_model_config(&self, model_name: &str) -> Result<PathBuf, String> {
-        // If model_name starts with "model_", use it as-is for config naming
-        let (base, suffix) = if let Some(stripped) = model_name.strip_prefix("model_") {
-            (model_name, stripped)  // model_lr → base=model_lr, suffix=lr
-        } else {
-            (model_name.as_ref(), model_name) // lr → base=lr, suffix=lr
-        };
-        let candidates = vec![
-            self.model_dir.parent().map(|p| p.join(format!("{}_demo.yaml", base))),
-            Some(PathBuf::from(format!("python/config/model_{}.yaml", suffix))),
-            Some(PathBuf::from(format!("python/demo/model_{}_demo.yaml", suffix))),
-            Some(PathBuf::from(format!("python/demo/{}_demo.yaml", base))),
+        // Look next to model_dir first, then alongside feature_config
+        let demo_parent = self.model_dir.parent();
+        let feature_parent = self.feature_config_path.parent();
+        let parent_candidates: Vec<Option<&Path>> = vec![demo_parent, feature_parent];
+        let config_names = vec![
+            format!("{}_demo.yaml", model_name),
+            format!("model_{}_demo.yaml", model_name.strip_prefix("model_").unwrap_or(model_name)),
         ];
-        for c in candidates.into_iter().flatten() {
-            if c.exists() {
-                return Ok(c);
+        for parent in parent_candidates.into_iter().flatten() {
+            for name in &config_names {
+                let p = parent.join(name);
+                if p.exists() { return Ok(p); }
             }
         }
-        Err(format!(
-            "model config not found for '{}' (tried demo/ and config/)",
-            model_name
-        ))
+        Err(format!("model config not found for '{}'", model_name))
     }
 
     pub fn get(&self, name: &str) -> Option<Arc<InferenceEngine>> {

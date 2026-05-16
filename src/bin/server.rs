@@ -18,27 +18,26 @@ async fn main() {
         .init();
 
     let args: Vec<String> = std::env::args().collect();
-    let mut model_dir = PathBuf::from("python/demo/temp");
-    let mut feature_config_path = PathBuf::from("python/demo/feature_config_demo.yaml");
+    let mut model_dir: Option<PathBuf> = None;
+    let mut feature_config_path: Option<PathBuf> = None;
     let mut port: u16 = 8080;
-    let mut watch = false;
 
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "--model-dir" => { i += 1; model_dir = PathBuf::from(&args[i]); }
-            "--feature-config" => { i += 1; feature_config_path = PathBuf::from(&args[i]); }
+            "--model-dir" => { i += 1; model_dir = Some(PathBuf::from(&args[i])); }
+            "--feature-config" => { i += 1; feature_config_path = Some(PathBuf::from(&args[i])); }
             "--port" => { i += 1; port = args[i].parse().unwrap_or(8080); }
-            "--watch" => { watch = true; }
             _ => { eprintln!("unknown arg: {}", args[i]); }
         }
         i += 1;
     }
+    let model_dir = model_dir.expect("--model-dir is required");
+    let feature_config_path = feature_config_path.expect("--feature-config is required");
 
     info!("feature config: {}", feature_config_path.display());
     info!("model dir: {}", model_dir.display());
     info!("port: {}", port);
-    info!("watch: {}", watch);
 
     let registry = Arc::new(
         ModelRegistry::new(&feature_config_path, &model_dir)
