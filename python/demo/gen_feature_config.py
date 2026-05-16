@@ -9,6 +9,28 @@ operators = []
 sources.append({"name": "user_id", "source": "User", "dtype": "int", "default_val": "0",
                  "embed": {"vocab_size": 1000, "embed_dim": 16}})
 
+# ── 环境/上下文特征 (5) — source=Context → broadcast 组 ──
+context_feats = ["ctx_hour", "ctx_device", "ctx_platform", "ctx_network", "ctx_page"]
+for name in context_feats:
+    sources.append({"name": name, "source": "Context",
+                     "dtype": "string" if "device" in name or "platform" in name or "network" in name else "int",
+                     "default_val": "0" if "device" not in name else "unknown"})
+    mapping = {}
+    if "device" in name: mapping = {"phone": 1, "pad": 2, "pc": 3}
+    elif "platform" in name: mapping = {"ios": 1, "android": 2, "web": 3}
+    elif "network" in name: mapping = {"wifi": 1, "4g": 2, "5g": 3}
+    elif "page" in name: mapping = {"home": 1, "detail": 2, "search": 3, "cart": 4}
+    if mapping:
+        operators.append({"name": f"{name}_map", "op_type": "DictMapper", "inputs": [name],
+                           "outputs": [f"{name}_idx"],
+                           "params": {"mapping": mapping, "default_idx": 0},
+                           "embed": {"vocab_size": len(mapping)+1, "embed_dim": 4}})
+    elif "hour" in name:
+        operators.append({"name": f"{name}_bucket", "op_type": "Bucketing", "inputs": [name],
+                           "outputs": [f"{name}_bucket"],
+                           "params": {"boundaries": [6, 12, 18, 22]},
+                           "embed": {"vocab_size": 5, "embed_dim": 4}})
+
 # ── 用户统计特征：15 个浮点 + 分桶 (15) ──
 for i in range(15):
     name = f"user_stat_{i}"
@@ -52,6 +74,15 @@ for i in range(5):
 # ── 物品ID特征 (1) ──
 sources.append({"name": "item_id", "source": "Item", "dtype": "int", "default_val": "0",
                  "embed": {"vocab_size": 2000, "embed_dim": 16}})
+
+# ── 物品统计特征 (5) — source=ItemStats → item 组，离线预计算 ──
+item_stats = ["item_ctr_7d", "item_cvr_7d", "item_click_24h", "item_order_30d", "item_expo_7d"]
+for name in item_stats:
+    sources.append({"name": name, "source": "ItemStats", "dtype": "float", "default_val": "0.0"})
+    operators.append({"name": f"{name}_bucket", "op_type": "Bucketing", "inputs": [name],
+                       "outputs": [f"{name}_bucket"],
+                       "params": {"boundaries": [0.01, 0.05, 0.10, 0.20, 0.50]},
+                       "embed": {"vocab_size": 6, "embed_dim": 4}})
 
 # ── 物品统计特征：15 个浮点 + 分桶 (15) ──
 for i in range(15):

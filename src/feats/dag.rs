@@ -319,12 +319,13 @@ impl FeatureDag {
 
     /// Classify each operator by input source: "user", "item", or "cross" (both).
     pub fn op_source_kind(&self) -> HashMap<String, &str> {
-        // Determine which source each feature name depends on
+        // Classify sources by their `source` field (User/Context→broadcast, Item/ItemStats→item)
         let mut feat_kind: HashMap<String, &str> = HashMap::new();
-        for (name, _) in &self.sources {
-            let k = if name.starts_with("user_") || name == "user_id" { "user" }
-                    else if name.starts_with("item_") || name == "item_id" { "item" }
-                    else { "other" };
+        for (name, src) in &self.sources {
+            let k = match src.source.as_str() {
+                "User" | "Context" => "user",
+                _ => "item",  // Item, ItemStats, and anything else
+            };
             feat_kind.insert(name.clone(), k);
         }
         // Propagate through operators in topological order

@@ -41,6 +41,13 @@ def generate_row(uid: int, rng: random.Random) -> list:
     hist = ",".join(f"{rng.randint(100,900)}:{rng.randint(1,5)}" for _ in range(rng.randint(10, 20)))
     row.append(hist or "0:0")
 
+    # Context features (5) — request-level, source=Context
+    row.append(rng.randint(0, 23))  # ctx_hour
+    row.append(rng.choice(["phone", "pad", "pc"]))  # ctx_device
+    row.append(rng.choice(["ios", "android", "web"]))  # ctx_platform
+    row.append(rng.choice(["wifi", "4g", "5g"]))  # ctx_network
+    row.append(rng.choice(["home", "detail", "search", "cart"]))  # ctx_page
+
     # item_id
     item_id = rng.randint(0, 1999)
     row.append(item_id)
@@ -61,6 +68,10 @@ def generate_row(uid: int, rng: random.Random) -> list:
         row.append(tags)
         item_tag_lists.append(tags)
 
+    # ItemStats features (5) — source=ItemStats, pre-computed offline
+    for _ in range(5):
+        row.append(round(rng.uniform(0.0, 0.5), 4))
+
     # Labels: CTR + CVR
     ctr_logit = user_ctr_pref(uid) + sum(rng.uniform(-0.1, 0.1) for _ in range(5))
     ctr = 1 if sigmoid(ctr_logit) > 0.5 else 0
@@ -80,10 +91,13 @@ def main():
     for i in range(15): headers.append(f"user_cat_{i}")
     for i in range(5): headers.append(f"user_tags_{i}")
     headers.append("user_history")
+    headers.extend(["ctx_hour","ctx_device","ctx_platform","ctx_network","ctx_page"])
     headers.append("item_id")
     for i in range(15): headers.append(f"item_stat_{i}")
     for i in range(15): headers.append(f"item_cat_{i}")
     for i in range(5): headers.append(f"item_tags_{i}")
+    for name in ["item_ctr_7d","item_cvr_7d","item_click_24h","item_order_30d","item_expo_7d"]:
+        headers.append(name)
     headers.extend(["ctr", "cvr"])
 
     with open(out, "w", newline="", encoding="utf-8") as f:

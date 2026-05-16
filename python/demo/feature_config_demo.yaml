@@ -3,6 +3,82 @@ operators:
     embed_dim: 4
     vocab_size: 5
   inputs:
+  - ctx_hour
+  name: ctx_hour_bucket
+  op_type: Bucketing
+  outputs:
+  - ctx_hour_bucket
+  params:
+    boundaries:
+    - 6
+    - 12
+    - 18
+    - 22
+- embed:
+    embed_dim: 4
+    vocab_size: 4
+  inputs:
+  - ctx_device
+  name: ctx_device_map
+  op_type: DictMapper
+  outputs:
+  - ctx_device_idx
+  params:
+    default_idx: 0
+    mapping:
+      pad: 2
+      pc: 3
+      phone: 1
+- embed:
+    embed_dim: 4
+    vocab_size: 4
+  inputs:
+  - ctx_platform
+  name: ctx_platform_map
+  op_type: DictMapper
+  outputs:
+  - ctx_platform_idx
+  params:
+    default_idx: 0
+    mapping:
+      android: 2
+      ios: 1
+      web: 3
+- embed:
+    embed_dim: 4
+    vocab_size: 4
+  inputs:
+  - ctx_network
+  name: ctx_network_map
+  op_type: DictMapper
+  outputs:
+  - ctx_network_idx
+  params:
+    default_idx: 0
+    mapping:
+      4g: 2
+      5g: 3
+      wifi: 1
+- embed:
+    embed_dim: 4
+    vocab_size: 5
+  inputs:
+  - ctx_page
+  name: ctx_page_map
+  op_type: DictMapper
+  outputs:
+  - ctx_page_idx
+  params:
+    default_idx: 0
+    mapping:
+      cart: 4
+      detail: 2
+      home: 1
+      search: 3
+- embed:
+    embed_dim: 4
+    vocab_size: 5
+  inputs:
   - user_stat_0
   name: user_stat_0_bucket
   op_type: Bucketing
@@ -689,6 +765,86 @@ operators:
       sports: 1
       tech: 8
       travel: 5
+- embed:
+    embed_dim: 4
+    vocab_size: 6
+  inputs:
+  - item_ctr_7d
+  name: item_ctr_7d_bucket
+  op_type: Bucketing
+  outputs:
+  - item_ctr_7d_bucket
+  params:
+    boundaries:
+    - 0.01
+    - 0.05
+    - 0.1
+    - 0.2
+    - 0.5
+- embed:
+    embed_dim: 4
+    vocab_size: 6
+  inputs:
+  - item_cvr_7d
+  name: item_cvr_7d_bucket
+  op_type: Bucketing
+  outputs:
+  - item_cvr_7d_bucket
+  params:
+    boundaries:
+    - 0.01
+    - 0.05
+    - 0.1
+    - 0.2
+    - 0.5
+- embed:
+    embed_dim: 4
+    vocab_size: 6
+  inputs:
+  - item_click_24h
+  name: item_click_24h_bucket
+  op_type: Bucketing
+  outputs:
+  - item_click_24h_bucket
+  params:
+    boundaries:
+    - 0.01
+    - 0.05
+    - 0.1
+    - 0.2
+    - 0.5
+- embed:
+    embed_dim: 4
+    vocab_size: 6
+  inputs:
+  - item_order_30d
+  name: item_order_30d_bucket
+  op_type: Bucketing
+  outputs:
+  - item_order_30d_bucket
+  params:
+    boundaries:
+    - 0.01
+    - 0.05
+    - 0.1
+    - 0.2
+    - 0.5
+- embed:
+    embed_dim: 4
+    vocab_size: 6
+  inputs:
+  - item_expo_7d
+  name: item_expo_7d_bucket
+  op_type: Bucketing
+  outputs:
+  - item_expo_7d_bucket
+  params:
+    boundaries:
+    - 0.01
+    - 0.05
+    - 0.1
+    - 0.2
+    - 0.5
 - embed:
     embed_dim: 4
     vocab_size: 5
@@ -1427,6 +1583,26 @@ sources:
     vocab_size: 1000
   name: user_id
   source: User
+- default_val: '0'
+  dtype: int
+  name: ctx_hour
+  source: Context
+- default_val: unknown
+  dtype: string
+  name: ctx_device
+  source: Context
+- default_val: '0'
+  dtype: string
+  name: ctx_platform
+  source: Context
+- default_val: '0'
+  dtype: string
+  name: ctx_network
+  source: Context
+- default_val: '0'
+  dtype: int
+  name: ctx_page
+  source: Context
 - default_val: '0.0'
   dtype: float
   name: user_stat_0
@@ -1574,6 +1750,26 @@ sources:
     vocab_size: 2000
   name: item_id
   source: Item
+- default_val: '0.0'
+  dtype: float
+  name: item_ctr_7d
+  source: ItemStats
+- default_val: '0.0'
+  dtype: float
+  name: item_cvr_7d
+  source: ItemStats
+- default_val: '0.0'
+  dtype: float
+  name: item_click_24h
+  source: ItemStats
+- default_val: '0.0'
+  dtype: float
+  name: item_order_30d
+  source: ItemStats
+- default_val: '0.0'
+  dtype: float
+  name: item_expo_7d
+  source: ItemStats
 - default_val: '0.0'
   dtype: float
   name: item_stat_0

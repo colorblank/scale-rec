@@ -39,6 +39,14 @@ fn random_user(rng: &mut impl Rng) -> serde_json::Value {
     let hn = rng.gen_range(10..=20);
     let hist: Vec<String> = (0..hn).map(|_| format!("{}:{}", rng.gen_range(100..=900)/100*100, rng.gen_range(1..=5))).collect();
     row.insert("user_history".into(), serde_json::json!(hist.join(",")));
+    // Context features (source=Context → broadcast group)
+    row.insert("ctx_hour".into(), serde_json::json!(rng.gen_range(0..24)));
+    let devices = ["phone","pad","pc"]; let platforms = ["ios","android","web"];
+    let networks = ["wifi","4g","5g"]; let pages = ["home","detail","search","cart"];
+    row.insert("ctx_device".into(), serde_json::json!(devices[rng.gen_range(0..3)]));
+    row.insert("ctx_platform".into(), serde_json::json!(platforms[rng.gen_range(0..3)]));
+    row.insert("ctx_network".into(), serde_json::json!(networks[rng.gen_range(0..3)]));
+    row.insert("ctx_page".into(), serde_json::json!(pages[rng.gen_range(0..4)]));
     serde_json::Value::Object(row)
 }
 
@@ -54,6 +62,10 @@ fn random_item(rng: &mut impl Rng) -> serde_json::Value {
         let n = rng.gen_range(3..=8);
         let s: Vec<String> = (0..n).map(|_| format!("{}#1", tags[rng.gen_range(0..15)])).collect();
         row.insert(format!("item_tags_{}",i), serde_json::json!(s.join("|")));
+    }
+    // ItemStats (source=ItemStats → item group)
+    for name in ["item_ctr_7d","item_cvr_7d","item_click_24h","item_order_30d","item_expo_7d"] {
+        row.insert(name.into(), serde_json::json!((rng.gen_range(0.0f64..0.5)*10000.0).round()/10000.0));
     }
     serde_json::Value::Object(row)
 }
