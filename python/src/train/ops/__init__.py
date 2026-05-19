@@ -17,6 +17,8 @@ from .list_overlap import ListOverlap as ListOverlap
 from .sequence import SequenceOp as SequenceOp
 from .string_concat_hash import StringConcatHash as StringConcatHash
 from .string_parser import StringParser as StringParser
+from .json_extract_list import JsonExtractList as JsonExtractList
+from .list_string_parser import ListStringParser as ListStringParser
 
 __all__ = [
     "Bucketing",
@@ -28,4 +30,6 @@ __all__ = [
     "SequenceOp",
     "StringConcatHash",
     "StringParser",
+    "JsonExtractList",
+    "ListStringParser",
 ]

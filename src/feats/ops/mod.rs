@@ -1,20 +1,24 @@
 //! 算子库：统一 CustomOp trait 及 7 个内置算子的注册。
 
-mod bucketing;
-mod cross_feature;
-mod dict_mapper;
-mod expression;
-mod list_overlap;
-mod plugin;
-mod sequence;
-mod string_concat_hash;
-mod string_parser;
+pub mod bucketing;
+pub mod cross_feature;
+pub mod dict_mapper;
+pub mod expression;
+pub mod json_extract_list;
+pub mod list_overlap;
+pub mod list_string_parser;
+pub mod plugin;
+pub mod sequence;
+pub mod string_concat_hash;
+pub mod string_parser;
 
 pub use bucketing::Bucketing;
 pub use cross_feature::CrossFeature;
 pub use dict_mapper::DictMapper;
 pub use expression::ExpressionOp;
+pub use json_extract_list::JsonExtractList;
 pub use list_overlap::ListOverlap;
+pub use list_string_parser::ListStringParser;
 pub use plugin::PluginOp;
 pub use sequence::SequenceOp;
 pub use string_concat_hash::StringConcatHash;

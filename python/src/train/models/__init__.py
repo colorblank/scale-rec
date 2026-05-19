@@ -43,6 +43,7 @@ def get_output_spec(model_type: str, model_instance=None):
 
 # ── backward-compat config types ──
 
+
 @dataclass
 class TaskConfigEntry:
     name: str
@@ -66,7 +67,9 @@ def _parse_task_config(raw):
 
 
 def _parse_mmoe_task_configs(raw):
-    return [TaskConfigEntry(t["name"], t.get("tower_dims", [])) for t in raw.get("task_configs", [])]
+    return [
+        TaskConfigEntry(t["name"], t.get("tower_dims", [])) for t in raw.get("task_configs", [])
+    ]
 
 
 @dataclass
@@ -94,6 +97,7 @@ class ModelConfig:
 
 # ── register built-in models ──
 
+
 def _spec_pred(model=None):
     return {"task_names": ["pred"], "label_col_map": {"pred": "ctr"}}
 
@@ -108,9 +112,14 @@ def _build_deepfm(features, tokenizer=None, **params):
 
 def _build_mmoe(features, tokenizer=None, **params):
     tcs = [(t.name, t.tower_dims) for t in _parse_mmoe_task_configs(params)]
-    return MMoE(features, params.get("shared_bottom_dims", []),
-                params.get("num_experts", 4), params.get("expert_hidden_dims", []),
-                params.get("expert_output_dim", 32), tcs)
+    return MMoE(
+        features,
+        params.get("shared_bottom_dims", []),
+        params.get("num_experts", 4),
+        params.get("expert_hidden_dims", []),
+        params.get("expert_output_dim", 32),
+        tcs,
+    )
 
 
 def _spec_mmoe(model=None):
@@ -119,8 +128,12 @@ def _spec_mmoe(model=None):
 
 
 def _build_esmm(features, tokenizer=None, **params):
-    return ESMM(features, params.get("shared_bottom_dims", []),
-                params.get("ctr_hidden_dims", []), params.get("cvr_hidden_dims", []))
+    return ESMM(
+        features,
+        params.get("shared_bottom_dims", []),
+        params.get("ctr_hidden_dims", []),
+        params.get("cvr_hidden_dims", []),
+    )
 
 
 def _spec_esmm(model=None):
@@ -133,23 +146,25 @@ def _build_unimixer(features, tokenizer=None, **params):
     tc = _parse_task_config(params.get("task_config"))
     if tc is None:
         raise ValueError("UniMixer requires task_config")
-    return UniMixerModel(tokenizer=tokenizer,
-                         token_dim=params.get("token_dim", 64),
-                         num_tokens=params.get("num_tokens", 8),
-                         num_blocks=params.get("num_blocks", 2),
-                         block_size_opt=params.get("block_size"),
-                         use_lite=params.get("use_lite", False),
-                         hidden_factor=params.get("hidden_factor", 1.0),
-                         num_basis=params.get("num_basis", 4),
-                         rank=params.get("rank", 16),
-                         task_config=tc,
-                         use_siamese=params.get("use_siamese", False))
+    return UniMixerModel(
+        tokenizer=tokenizer,
+        token_dim=params.get("token_dim", 64),
+        num_tokens=params.get("num_tokens", 8),
+        num_blocks=params.get("num_blocks", 2),
+        block_size_opt=params.get("block_size"),
+        use_lite=params.get("use_lite", False),
+        hidden_factor=params.get("hidden_factor", 1.0),
+        num_basis=params.get("num_basis", 4),
+        rank=params.get("rank", 16),
+        task_config=tc,
+        use_siamese=params.get("use_siamese", False),
+    )
 
 
 def _spec_unimixer(model=None):
     if model is not None:
         tt = getattr(model, "task_towers", None) or model.unimixer.task_towers
-        names = list(tt._tower_names) if hasattr(tt, '_tower_names') else []
+        names = list(tt._tower_names) if hasattr(tt, "_tower_names") else []
     else:
         names = []
     return {"task_names": names, "label_col_map": {n: n for n in names}}

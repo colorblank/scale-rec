@@ -30,11 +30,26 @@ impl ValueSnapshot {
     pub fn of(val: &crate::feats::ops::Fv) -> Self {
         use crate::feats::ops::Fv;
         match val {
-            Fv::Int(i) => ValueSnapshot { value: serde_json::json!(*i), type_name: "int".into() },
-            Fv::Float(f) => ValueSnapshot { value: serde_json::json!(*f), type_name: "float".into() },
-            Fv::Str(s) => ValueSnapshot { value: serde_json::json!(s.clone()), type_name: "str".into() },
-            Fv::StrList(l) => ValueSnapshot { value: serde_json::json!(l), type_name: "list[str]".into() },
-            Fv::IntList(l) => ValueSnapshot { value: serde_json::json!(l), type_name: "list[int]".into() },
+            Fv::Int(i) => ValueSnapshot {
+                value: serde_json::json!(*i),
+                type_name: "int".into(),
+            },
+            Fv::Float(f) => ValueSnapshot {
+                value: serde_json::json!(*f),
+                type_name: "float".into(),
+            },
+            Fv::Str(s) => ValueSnapshot {
+                value: serde_json::json!(s.clone()),
+                type_name: "str".into(),
+            },
+            Fv::StrList(l) => ValueSnapshot {
+                value: serde_json::json!(l),
+                type_name: "list[str]".into(),
+            },
+            Fv::IntList(l) => ValueSnapshot {
+                value: serde_json::json!(l),
+                type_name: "list[int]".into(),
+            },
         }
     }
 }

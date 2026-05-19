@@ -58,8 +58,17 @@ def test_unimixer_forward():
         relations=[],
     )
     model = UniMixerModel(
-        tokenizer, token_dim, num_tokens, 1, 4, False, 1.0, 4, 4,
-        task_config, False,
+        tokenizer,
+        token_dim,
+        num_tokens,
+        1,
+        4,
+        False,
+        1.0,
+        4,
+        4,
+        task_config,
+        False,
     )
     out = model(_inputs(3))
     assert out["ctr"].shape == (3, 1)

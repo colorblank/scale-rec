@@ -197,10 +197,13 @@ def train_one_model(model_type: str, model_config_path: str, label_cols: list[st
     tracer = None
     if getattr(args, "debug_trace", 0) > 0:
         from train.debug.tracer import DebugConfig, DebugTracer
-        tracer = DebugTracer(DebugConfig(
-            max_trace_samples=args.debug_trace,
-            output_dir=os.path.join(DEMO_DIR, "temp", "debug"),
-        ))
+
+        tracer = DebugTracer(
+            DebugConfig(
+                max_trace_samples=args.debug_trace,
+                output_dir=os.path.join(DEMO_DIR, "temp", "debug"),
+            )
+        )
     dag = FeatureDag(flow_config, tracer=tracer)
     features = dag.feature_tuples()
 
@@ -282,8 +285,12 @@ def main() -> None:
     parser.add_argument("--lr", type=float, default=0.005)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--models", default="all", help="Comma-separated model types or 'all'")
-    parser.add_argument("--debug-trace", type=int, default=0,
-                        help="Enable per-stage feature trace (max N samples, 0=off)")
+    parser.add_argument(
+        "--debug-trace",
+        type=int,
+        default=0,
+        help="Enable per-stage feature trace (max N samples, 0=off)",
+    )
     args = parser.parse_args()
 
     if args.models == "all":

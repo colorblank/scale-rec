@@ -53,6 +53,7 @@ def train_epoch(model, optimizer, dag, df, batch_size, label_col_map=None):
 def main():
     """CLI: load configs -> build DAG + model -> train -> export safetensors."""
     import os as _os
+
     _pkg_root = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), "..", ".."))
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -66,9 +67,7 @@ def main():
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=0.001)
-    parser.add_argument(
-        "--export-path", default=_os.path.join(_pkg_root, "model.safetensors")
-    )
+    parser.add_argument("--export-path", default=_os.path.join(_pkg_root, "model.safetensors"))
     parser.add_argument("--debug", type=int, default=0)
     args = parser.parse_args()
 
@@ -125,6 +124,7 @@ def main():
             return _raw(x_inputs, temperature)
 
         import types
+
         wrapper.forward = types.MethodType(_forward, wrapper)
         model = wrapper
 

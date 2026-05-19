@@ -13,7 +13,7 @@ use tracing_subscriber::EnvFilter;
 async fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
         .init();
 
@@ -25,10 +25,21 @@ async fn main() {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "--model-dir" => { i += 1; model_dir = Some(PathBuf::from(&args[i])); }
-            "--feature-config" => { i += 1; feature_config_path = Some(PathBuf::from(&args[i])); }
-            "--port" => { i += 1; port = args[i].parse().unwrap_or(8080); }
-            _ => { eprintln!("unknown arg: {}", args[i]); }
+            "--model-dir" => {
+                i += 1;
+                model_dir = Some(PathBuf::from(&args[i]));
+            }
+            "--feature-config" => {
+                i += 1;
+                feature_config_path = Some(PathBuf::from(&args[i]));
+            }
+            "--port" => {
+                i += 1;
+                port = args[i].parse().unwrap_or(8080);
+            }
+            _ => {
+                eprintln!("unknown arg: {}", args[i]);
+            }
         }
         i += 1;
     }

@@ -13,7 +13,9 @@ impl Bucketing {
 }
 
 impl CustomOp for Bucketing {
-    fn name(&self) -> &str { "Bucketing" }
+    fn name(&self) -> &str {
+        "Bucketing"
+    }
 
     fn process(&self, inputs: &[Fv]) -> Result<Fv, String> {
         let val: f32 = match &inputs[0] {
@@ -23,7 +25,11 @@ impl CustomOp for Bucketing {
         };
         let mut bucket = 0i32;
         for b in &self.boundaries {
-            if val >= *b { bucket += 1; } else { break; }
+            if val >= *b {
+                bucket += 1;
+            } else {
+                break;
+            }
         }
         Ok(Fv::Int(bucket))
     }
@@ -39,7 +45,11 @@ impl CustomOp for Bucketing {
             };
             let mut bucket = 0i32;
             for b in &self.boundaries {
-                if v >= *b { bucket += 1; } else { break; }
+                if v >= *b {
+                    bucket += 1;
+                } else {
+                    break;
+                }
             }
             results.push(Fv::Int(bucket));
         }

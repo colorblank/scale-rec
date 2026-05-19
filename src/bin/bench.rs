@@ -20,52 +20,111 @@ struct Args {
     #[arg(long, default_value = "10")]
     duration_secs: u64,
     #[arg(long, default_value = "0")]
-    target_qps: usize,  // rate-limited mode: 0 = unlimited
+    target_qps: usize, // rate-limited mode: 0 = unlimited
 }
 
 fn random_user(rng: &mut impl Rng) -> serde_json::Value {
-    let tags = ["sports","music","gaming","reading","travel","food","fashion","tech","fitness","art",
-                "movie","pet","car","photo","diy"];
-    let cat_vals = ["val_0","val_1","val_2","val_3","val_4"];
+    let tags = [
+        "sports", "music", "gaming", "reading", "travel", "food", "fashion", "tech", "fitness",
+        "art", "movie", "pet", "car", "photo", "diy",
+    ];
+    let cat_vals = ["val_0", "val_1", "val_2", "val_3", "val_4"];
     let mut row = serde_json::Map::new();
     row.insert("user_id".into(), serde_json::json!(rng.gen_range(0..1000)));
-    for i in 0..15 { row.insert(format!("user_stat_{}",i), serde_json::json!((rng.gen_range(0.0f64..1.0)*1000.0).round()/1000.0)); }
-    for i in 0..15 { row.insert(format!("user_cat_{}",i), serde_json::json!(cat_vals[rng.gen_range(0..5)])); }
+    for i in 0..15 {
+        row.insert(
+            format!("user_stat_{}", i),
+            serde_json::json!((rng.gen_range(0.0f64..1.0) * 1000.0).round() / 1000.0),
+        );
+    }
+    for i in 0..15 {
+        row.insert(
+            format!("user_cat_{}", i),
+            serde_json::json!(cat_vals[rng.gen_range(0..5)]),
+        );
+    }
     for i in 0..5 {
         let n = rng.gen_range(3..=8);
-        let s: Vec<String> = (0..n).map(|_| format!("{}#{}", tags[rng.gen_range(0..15)], rng.gen_range(0..5))).collect();
-        row.insert(format!("user_tags_{}",i), serde_json::json!(s.join("|")));
+        let s: Vec<String> = (0..n)
+            .map(|_| format!("{}#{}", tags[rng.gen_range(0..15)], rng.gen_range(0..5)))
+            .collect();
+        row.insert(format!("user_tags_{}", i), serde_json::json!(s.join("|")));
     }
     let hn = rng.gen_range(10..=20);
-    let hist: Vec<String> = (0..hn).map(|_| format!("{}:{}", rng.gen_range(100..=900)/100*100, rng.gen_range(1..=5))).collect();
+    let hist: Vec<String> = (0..hn)
+        .map(|_| {
+            format!(
+                "{}:{}",
+                rng.gen_range(100..=900) / 100 * 100,
+                rng.gen_range(1..=5)
+            )
+        })
+        .collect();
     row.insert("user_history".into(), serde_json::json!(hist.join(",")));
     // Context features (source=Context → broadcast group)
     row.insert("ctx_hour".into(), serde_json::json!(rng.gen_range(0..24)));
-    let devices = ["phone","pad","pc"]; let platforms = ["ios","android","web"];
-    let networks = ["wifi","4g","5g"]; let pages = ["home","detail","search","cart"];
-    row.insert("ctx_device".into(), serde_json::json!(devices[rng.gen_range(0..3)]));
-    row.insert("ctx_platform".into(), serde_json::json!(platforms[rng.gen_range(0..3)]));
-    row.insert("ctx_network".into(), serde_json::json!(networks[rng.gen_range(0..3)]));
-    row.insert("ctx_page".into(), serde_json::json!(pages[rng.gen_range(0..4)]));
+    let devices = ["phone", "pad", "pc"];
+    let platforms = ["ios", "android", "web"];
+    let networks = ["wifi", "4g", "5g"];
+    let pages = ["home", "detail", "search", "cart"];
+    row.insert(
+        "ctx_device".into(),
+        serde_json::json!(devices[rng.gen_range(0..3)]),
+    );
+    row.insert(
+        "ctx_platform".into(),
+        serde_json::json!(platforms[rng.gen_range(0..3)]),
+    );
+    row.insert(
+        "ctx_network".into(),
+        serde_json::json!(networks[rng.gen_range(0..3)]),
+    );
+    row.insert(
+        "ctx_page".into(),
+        serde_json::json!(pages[rng.gen_range(0..4)]),
+    );
     serde_json::Value::Object(row)
 }
 
 fn random_item(rng: &mut impl Rng) -> serde_json::Value {
-    let tags = ["sports","music","gaming","reading","travel","food","fashion","tech","fitness","art",
-                "movie","pet","car","photo","diy"];
-    let cat_vals = ["val_0","val_1","val_2","val_3","val_4"];
+    let tags = [
+        "sports", "music", "gaming", "reading", "travel", "food", "fashion", "tech", "fitness",
+        "art", "movie", "pet", "car", "photo", "diy",
+    ];
+    let cat_vals = ["val_0", "val_1", "val_2", "val_3", "val_4"];
     let mut row = serde_json::Map::new();
     row.insert("item_id".into(), serde_json::json!(rng.gen_range(0..2000)));
-    for i in 0..15 { row.insert(format!("item_stat_{}",i), serde_json::json!((rng.gen_range(0.0f64..1.0)*1000.0).round()/1000.0)); }
-    for i in 0..15 { row.insert(format!("item_cat_{}",i), serde_json::json!(cat_vals[rng.gen_range(0..5)])); }
+    for i in 0..15 {
+        row.insert(
+            format!("item_stat_{}", i),
+            serde_json::json!((rng.gen_range(0.0f64..1.0) * 1000.0).round() / 1000.0),
+        );
+    }
+    for i in 0..15 {
+        row.insert(
+            format!("item_cat_{}", i),
+            serde_json::json!(cat_vals[rng.gen_range(0..5)]),
+        );
+    }
     for i in 0..5 {
         let n = rng.gen_range(3..=8);
-        let s: Vec<String> = (0..n).map(|_| format!("{}#1", tags[rng.gen_range(0..15)])).collect();
-        row.insert(format!("item_tags_{}",i), serde_json::json!(s.join("|")));
+        let s: Vec<String> = (0..n)
+            .map(|_| format!("{}#1", tags[rng.gen_range(0..15)]))
+            .collect();
+        row.insert(format!("item_tags_{}", i), serde_json::json!(s.join("|")));
     }
     // ItemStats (source=ItemStats → item group)
-    for name in ["item_ctr_7d","item_cvr_7d","item_click_24h","item_order_30d","item_expo_7d"] {
-        row.insert(name.into(), serde_json::json!((rng.gen_range(0.0f64..0.5)*10000.0).round()/10000.0));
+    for name in [
+        "item_ctr_7d",
+        "item_cvr_7d",
+        "item_click_24h",
+        "item_order_30d",
+        "item_expo_7d",
+    ] {
+        row.insert(
+            name.into(),
+            serde_json::json!((rng.gen_range(0.0f64..0.5) * 10000.0).round() / 10000.0),
+        );
     }
     serde_json::Value::Object(row)
 }
@@ -73,14 +132,18 @@ fn random_item(rng: &mut impl Rng) -> serde_json::Value {
 fn random_row(rng: &mut impl Rng) -> serde_json::Value {
     let mut row = random_user(rng).as_object().unwrap().clone();
     let item = random_item(rng);
-    for (k, v) in item.as_object().unwrap() { row.insert(k.clone(), v.clone()); }
+    for (k, v) in item.as_object().unwrap() {
+        row.insert(k.clone(), v.clone());
+    }
     serde_json::Value::Object(row)
 }
 
 fn main() {
     let args = Args::parse();
-    println!("Benchmark: target={} model={} mode={} concur={} batch={} dur={}s",
-        args.target, args.model, args.mode, args.concurrency, args.batch_size, args.duration_secs);
+    println!(
+        "Benchmark: target={} model={} mode={} concur={} batch={} dur={}s",
+        args.target, args.model, args.mode, args.concurrency, args.batch_size, args.duration_secs
+    );
 
     let client = reqwest::blocking::Client::new();
     let latencies = Arc::new(Mutex::new(Vec::<f64>::new()));
@@ -91,7 +154,9 @@ fn main() {
     // Rate limiting: per-worker interval in ms
     let rate_interval_ms = if args.target_qps > 0 {
         (args.concurrency as f64 * 1000.0 / args.target_qps as f64) as u64
-    } else { 0 };
+    } else {
+        0
+    };
 
     let mut handles = vec![];
     for _ in 0..args.concurrency {
@@ -116,10 +181,12 @@ fn main() {
                 };
                 let body = if mode == "broadcast" {
                     let user = random_user(&mut rng);
-                    let items: Vec<serde_json::Value> = (0..batch).map(|_| random_item(&mut rng)).collect();
+                    let items: Vec<serde_json::Value> =
+                        (0..batch).map(|_| random_item(&mut rng)).collect();
                     serde_json::json!({"model": model, "user": user, "items": items})
                 } else {
-                    let features: Vec<serde_json::Value> = (0..batch).map(|_| random_row(&mut rng)).collect();
+                    let features: Vec<serde_json::Value> =
+                        (0..batch).map(|_| random_row(&mut rng)).collect();
                     serde_json::json!({"model": model, "features": features})
                 };
                 let start = Instant::now();
@@ -144,10 +211,15 @@ fn main() {
 
     std::thread::sleep(Duration::from_secs(args.duration_secs));
     running.store(false, Ordering::Relaxed);
-    for h in handles { let _ = h.join(); }
+    for h in handles {
+        let _ = h.join();
+    }
 
     let mut lats = latencies.lock().unwrap().clone();
-    if lats.is_empty() { println!("No successful requests."); return; }
+    if lats.is_empty() {
+        println!("No successful requests.");
+        return;
+    }
     lats.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let n = lats.len();
     let total = total_reqs.load(Ordering::Relaxed);
@@ -158,17 +230,23 @@ fn main() {
     if args.target_qps > 0 {
         println!("  Target QPS:  {}", args.target_qps);
     }
-    println!("  Batch:       {}  Concur: {}  Model: {}  Mode: {}",
-             args.batch_size, args.concurrency, args.model, args.mode);
+    println!(
+        "  Batch:       {}  Concur: {}  Model: {}  Mode: {}",
+        args.batch_size, args.concurrency, args.model, args.mode
+    );
     println!("  ───────────────────────────────────────");
-    println!("  Total:       {}  Errors: {}  RPS: {:.0}",
-             total, errors.load(Ordering::Relaxed), rps);
+    println!(
+        "  Total:       {}  Errors: {}  RPS: {:.0}",
+        total,
+        errors.load(Ordering::Relaxed),
+        rps
+    );
     println!("  P50:         {:.1} ms", p(&lats, 50.0));
     println!("  P95:         {:.1} ms", p(&lats, 95.0));
     println!("  P99:         {:.1} ms", p(&lats, 99.0));
     println!("  P99.9:       {:.1} ms", p(&lats, 99.9));
     println!("  Mean:        {:.1} ms", sum / n as f64);
-    println!("  Min/Max:     {:.1}/{:.1} ms", lats[0], lats[n-1]);
+    println!("  Min/Max:     {:.1}/{:.1} ms", lats[0], lats[n - 1]);
     println!("  ═══════════════════════════════════════");
 }
 

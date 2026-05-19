@@ -11,11 +11,19 @@ pub struct RequestTimer {
 
 impl RequestTimer {
     pub fn new() -> Self {
-        Self { start: Instant::now(), dag_us: 0, model_us: 0 }
+        Self {
+            start: Instant::now(),
+            dag_us: 0,
+            model_us: 0,
+        }
     }
 
-    pub fn record_dag(&mut self, us: u64) { self.dag_us = us; }
-    pub fn record_model(&mut self, us: u64) { self.model_us = us; }
+    pub fn record_dag(&mut self, us: u64) {
+        self.dag_us = us;
+    }
+    pub fn record_model(&mut self, us: u64) {
+        self.model_us = us;
+    }
 
     /// 输出 span 日志。
     pub fn finish(self, model: &str, batch_size: usize) {

@@ -1,6 +1,6 @@
 //! 字典映射算子：字符串/整数到索引的映射。
-use std::collections::HashMap;
 use super::{CustomOp, Fv};
+use std::collections::HashMap;
 
 pub struct DictMapper {
     mapping: HashMap<String, i32>,
@@ -8,8 +8,15 @@ pub struct DictMapper {
 }
 
 impl DictMapper {
-    pub fn new(mapping: HashMap<String, i32>, default_idx: i32) -> Self { Self { mapping, default_idx } }
-    pub fn max_idx(&self) -> i32 { self.mapping.values().copied().max().unwrap_or(0) }
+    pub fn new(mapping: HashMap<String, i32>, default_idx: i32) -> Self {
+        Self {
+            mapping,
+            default_idx,
+        }
+    }
+    pub fn max_idx(&self) -> i32 {
+        self.mapping.values().copied().max().unwrap_or(0)
+    }
 
     fn map_one(&self, key: &str) -> i32 {
         self.mapping.get(key).copied().unwrap_or(self.default_idx)
@@ -17,7 +24,9 @@ impl DictMapper {
 }
 
 impl CustomOp for DictMapper {
-    fn name(&self) -> &str { "DictMapper" }
+    fn name(&self) -> &str {
+        "DictMapper"
+    }
 
     fn process(&self, inputs: &[Fv]) -> Result<Fv, String> {
         Ok(match &inputs[0] {
@@ -47,7 +56,7 @@ impl CustomOp for DictMapper {
 #[cfg(test)]
 mod tests {
     use super::*;
-        use crate::feats::ops::CustomOp;
+    use crate::feats::ops::CustomOp;
 
     #[test]
     fn test_known_key() {

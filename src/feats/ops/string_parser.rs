@@ -2,28 +2,55 @@
 use super::{CustomOp, Fv};
 
 pub struct StringParser {
-    sep1: String, sep2: String, key_index: usize, pad_len: usize, pad_val: String,
+    sep1: String,
+    sep2: String,
+    key_index: usize,
+    pad_len: usize,
+    pad_val: String,
 }
 
 impl StringParser {
-    pub fn new(sep1: String, sep2: String, key_index: usize, pad_len: usize, pad_val: String) -> Self {
-        Self { sep1, sep2, key_index, pad_len, pad_val }
+    pub fn new(
+        sep1: String,
+        sep2: String,
+        key_index: usize,
+        pad_len: usize,
+        pad_val: String,
+    ) -> Self {
+        Self {
+            sep1,
+            sep2,
+            key_index,
+            pad_len,
+            pad_val,
+        }
     }
 }
 
 impl CustomOp for StringParser {
-    fn name(&self) -> &str { "StringParser" }
+    fn name(&self) -> &str {
+        "StringParser"
+    }
 
     fn process(&self, inputs: &[Fv]) -> Result<Fv, String> {
-        let s = match &inputs[0] { Fv::Str(s) => s.as_str(), _ => "" };
-        let mut result: Vec<String> = s.split(&self.sep1)
+        let s = match &inputs[0] {
+            Fv::Str(s) => s.as_str(),
+            _ => "",
+        };
+        let mut result: Vec<String> = s
+            .split(&self.sep1)
             .filter_map(|item| {
                 let parts: Vec<&str> = item.split(&self.sep2).collect();
-                if self.key_index < parts.len() { Some(parts[self.key_index].to_string()) }
-                else { None }
+                if self.key_index < parts.len() {
+                    Some(parts[self.key_index].to_string())
+                } else {
+                    None
+                }
             })
             .collect();
-        while result.len() < self.pad_len { result.push(self.pad_val.clone()); }
+        while result.len() < self.pad_len {
+            result.push(self.pad_val.clone());
+        }
         result.truncate(self.pad_len);
         Ok(Fv::StrList(result))
     }
@@ -32,14 +59,24 @@ impl CustomOp for StringParser {
         let col = inputs[0];
         let mut results = Vec::with_capacity(n_rows);
         for i in 0..n_rows {
-            let s = match &col[i] { Fv::Str(s) => s.as_str(), _ => "" };
-            let mut result: Vec<String> = s.split(&self.sep1)
+            let s = match &col[i] {
+                Fv::Str(s) => s.as_str(),
+                _ => "",
+            };
+            let mut result: Vec<String> = s
+                .split(&self.sep1)
                 .filter_map(|item| {
                     let parts: Vec<&str> = item.split(&self.sep2).collect();
-                    if self.key_index < parts.len() { Some(parts[self.key_index].to_string()) }
-                    else { None }
-                }).collect();
-            while result.len() < self.pad_len { result.push(self.pad_val.clone()); }
+                    if self.key_index < parts.len() {
+                        Some(parts[self.key_index].to_string())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            while result.len() < self.pad_len {
+                result.push(self.pad_val.clone());
+            }
             result.truncate(self.pad_len);
             results.push(Fv::StrList(result));
         }

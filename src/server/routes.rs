@@ -79,18 +79,26 @@ async fn predict(
     let engine: Arc<InferenceEngine> = reg.get(&req.model).ok_or_else(|| {
         (
             StatusCode::NOT_FOUND,
-            Json(ErrorResponse { error: format!("model '{}' not found", req.model) }),
+            Json(ErrorResponse {
+                error: format!("model '{}' not found", req.model),
+            }),
         )
     })?;
 
     let dag_start = Instant::now();
     let result = engine.predict(&req.features).map_err(|e| {
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse { error: e }))
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse { error: e }),
+        )
     })?;
     timer.record_dag(dag_start.elapsed().as_micros() as u64);
     timer.finish(&req.model, req.features.len());
 
-    Ok(Json(PredictResponse { model: req.model, predictions: result }))
+    Ok(Json(PredictResponse {
+        model: req.model,
+        predictions: result,
+    }))
 }
 
 async fn predict_broadcast(
@@ -102,16 +110,26 @@ async fn predict_broadcast(
     let engine: Arc<InferenceEngine> = reg.get(&req.model).ok_or_else(|| {
         (
             StatusCode::NOT_FOUND,
-            Json(ErrorResponse { error: format!("model '{}' not found", req.model) }),
+            Json(ErrorResponse {
+                error: format!("model '{}' not found", req.model),
+            }),
         )
     })?;
 
     let dag_start = Instant::now();
-    let result = engine.predict_broadcast(&req.user, &req.items).map_err(|e| {
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse { error: e }))
-    })?;
+    let result = engine
+        .predict_broadcast(&req.user, &req.items)
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse { error: e }),
+            )
+        })?;
     timer.record_dag(dag_start.elapsed().as_micros() as u64);
     timer.finish(&req.model, req.items.len());
 
-    Ok(Json(PredictResponse { model: req.model, predictions: result }))
+    Ok(Json(PredictResponse {
+        model: req.model,
+        predictions: result,
+    }))
 }

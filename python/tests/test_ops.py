@@ -4,6 +4,8 @@ from train.ops.dict_mapper import DictMapper
 from train.ops.expression import ExpressionOp
 from train.ops.sequence import SequenceOp
 from train.ops.string_parser import StringParser
+from train.ops.json_extract_list import JsonExtractList
+from train.ops.list_string_parser import ListStringParser
 
 
 def test_bucketing():
@@ -23,6 +25,26 @@ def test_string_parser():
     op = StringParser("|", "#", 0, 2, "none")
     result = op.process(["sports#1|gaming#0.8"])
     assert result == ["sports", "gaming"]
+
+
+def test_json_extract_list():
+    op_obj = JsonExtractList("tag", 2, "none")
+    result_obj = op_obj.process(['[{"score":0.99,"tag":"invest"}, {"score":0.5,"tag":"finance"}]'])
+    assert result_obj == ["invest", "finance"]
+
+    op_str = JsonExtractList(None, 2, "none")
+    result_str = op_str.process(['["603538,17"]'])
+    assert result_str == ["603538,17", "none"]
+
+
+def test_list_string_parser():
+    op = ListStringParser(",", 0)
+    result = op.process([["603538,17", "000001,33"]])
+    assert result == ["603538", "000001"]
+
+    op2 = ListStringParser(",", 1)
+    result2 = op2.process([["603538,17", "000001,33"]])
+    assert result2 == ["17", "33"]
 
 
 def test_expression():

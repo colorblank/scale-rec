@@ -18,7 +18,8 @@ class DictMapper:
         if isinstance(val, list):
             return [
                 self.mapping.get(str(v), self.default_idx)
-                if isinstance(v, (str, int, float)) else self.default_idx
+                if isinstance(v, (str, int, float))
+                else self.default_idx
                 for v in val
             ]
         if isinstance(val, (int, float)):
@@ -33,14 +34,17 @@ class DictMapper:
         first = vals[0]
         if isinstance(first, list):
             return [
-                [self.mapping.get(str(v), self.default_idx)
-                 if isinstance(v, (str, int, float)) else self.default_idx
-                 for v in row]
+                [
+                    self.mapping.get(str(v), self.default_idx)
+                    if isinstance(v, (str, int, float))
+                    else self.default_idx
+                    for v in row
+                ]
                 for row in vals
             ]
         return [
-            self.mapping.get(str(v), self.default_idx) if isinstance(v, (str, int, float))
-            else self.mapping.get(v, self.default_idx) if isinstance(v, str)
+            self.mapping.get(str(v), self.default_idx)
+            if isinstance(v, (str, int, float))
             else self.default_idx
             for v in vals
         ]

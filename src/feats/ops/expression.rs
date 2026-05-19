@@ -1,8 +1,11 @@
 //! 表达式算子：Rhai 脚本求值，支持 v0..vN 变量和 log 函数。
-use rhai::{Engine, Scope, AST};
 use super::{CustomOp, Fv};
+use rhai::{Engine, Scope, AST};
 
-pub struct ExpressionOp { ast: AST, engine: Engine }
+pub struct ExpressionOp {
+    ast: AST,
+    engine: Engine,
+}
 
 impl ExpressionOp {
     pub fn new(script: String) -> Self {
@@ -14,7 +17,9 @@ impl ExpressionOp {
 }
 
 impl CustomOp for ExpressionOp {
-    fn name(&self) -> &str { "ExpressionOp" }
+    fn name(&self) -> &str {
+        "ExpressionOp"
+    }
     fn process(&self, inputs: &[Fv]) -> Result<Fv, String> {
         let mut scope = Scope::new();
         for (i, v) in inputs.iter().enumerate() {
@@ -25,7 +30,8 @@ impl CustomOp for ExpressionOp {
             };
             scope.push(format!("v{}", i), val);
         }
-        self.engine.eval_ast_with_scope::<f64>(&mut scope, &self.ast)
+        self.engine
+            .eval_ast_with_scope::<f64>(&mut scope, &self.ast)
             .map(|r| Fv::Float(r as f32))
             .map_err(|e| e.to_string())
     }

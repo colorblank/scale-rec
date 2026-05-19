@@ -18,6 +18,8 @@ from .ops import (
     SequenceOp,
     StringConcatHash,
     StringParser,
+    JsonExtractList,
+    ListStringParser,
 )
 
 FeatureValue = Any
@@ -112,6 +114,17 @@ class FeatureDag:
                 int(p.get("key_index", 0)),
                 int(p.get("pad_len", 0)),
                 str(p.get("pad_val", "unknown")),
+            )
+        elif op_type == "JsonExtractList":
+            return JsonExtractList(
+                p.get("key"),
+                int(p.get("pad_len", 0)),
+                str(p.get("pad_val", "")),
+            )
+        elif op_type == "ListStringParser":
+            return ListStringParser(
+                str(p.get("sep", ",")),
+                int(p.get("key_index", 0)),
             )
         elif op_type == "CrossFeature":
             return CrossFeature(str(p.get("cross_type", "cartesian")))
@@ -230,8 +243,7 @@ class FeatureDag:
 
         return {name: torch.tensor(vals, dtype=torch.long) for name, vals in feature_lists.items()}
 
-    def execute(self, raw_inputs: dict[str, FeatureValue],
-                sample_id: int = 0) -> FeatureResult:
+    def execute(self, raw_inputs: dict[str, FeatureValue], sample_id: int = 0) -> FeatureResult:
         context: dict[str, FeatureValue] = {}
 
         # Stage 1: raw inputs first (avoid allocating defaults that will be overwritten)
@@ -258,9 +270,7 @@ class FeatureDag:
             op_inputs = [context[inp] for inp in def_.inputs]
             output = op.process(op_inputs)
             if self.tracer:
-                self.tracer.trace_operator(
-                    node_name, def_.inputs, op_inputs, def_.outputs, output
-                )
+                self.tracer.trace_operator(node_name, def_.inputs, op_inputs, def_.outputs, output)
             for out_name in def_.outputs:
                 context[out_name] = output
                 computed_names.add(out_name)

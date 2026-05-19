@@ -76,9 +76,9 @@ def train_epoch(model, optimizer, dag, df: pl.DataFrame, batch_size: int) -> flo
         actual_bs = len(batch_df)
         feature_tensors = dag.preprocess_batch(batch_df.to_dicts())
         outputs = model(feature_tensors)
-        labels = torch.tensor(
-            batch_df[LABEL_COL].to_numpy(), dtype=torch.float32
-        ).view(actual_bs, 1)
+        labels = torch.tensor(batch_df[LABEL_COL].to_numpy(), dtype=torch.float32).view(
+            actual_bs, 1
+        )
         loss = F.binary_cross_entropy_with_logits(outputs["pred"], labels)
         optimizer.zero_grad()
         loss.backward()
@@ -105,25 +105,21 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=0.01)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
-    parser.add_argument(
-        "--export-path", default=os.path.join(temp_dir, "model_lr.safetensors")
-    )
-    parser.add_argument(
-        "--test-data-out", default=os.path.join(temp_dir, "model_lr_test.csv")
-    )
-    parser.add_argument(
-        "--preds-out", default=os.path.join(temp_dir, "model_lr_py_preds.csv")
-    )
+    parser.add_argument("--export-path", default=os.path.join(temp_dir, "model_lr.safetensors"))
+    parser.add_argument("--test-data-out", default=os.path.join(temp_dir, "model_lr_test.csv"))
+    parser.add_argument("--preds-out", default=os.path.join(temp_dir, "model_lr_py_preds.csv"))
     args = parser.parse_args()
 
     df = pl.read_csv(args.data)
     print(f"[Data] {len(df)} rows, columns={df.columns}")
 
     # Ensure correct dtypes for numeric columns
-    df = df.with_columns([
-        pl.col("user_id").cast(pl.Int64),
-        pl.col(LABEL_COL).cast(pl.Int64),
-    ])
+    df = df.with_columns(
+        [
+            pl.col("user_id").cast(pl.Int64),
+            pl.col(LABEL_COL).cast(pl.Int64),
+        ]
+    )
 
     # Train/test split 80/20 (shuffled to mix user IDs)
     df_shuffled = df.sample(fraction=1.0, seed=42)
@@ -144,9 +140,7 @@ def main() -> None:
     n_params = sum(p.numel() for p in model.parameters())
     print(f"[Model] DeepFM params={n_params:,}")
 
-    optimizer = torch.optim.Adam(
-        model.parameters(), lr=args.lr, weight_decay=args.weight_decay
-    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     best_auc = 0.0
 
     for epoch in range(1, args.epochs + 1):
@@ -171,10 +165,12 @@ def main() -> None:
     test_df.write_csv(args.test_data_out)
     logits = predict_logits(model, dag, test_df, args.batch_size)
     labels_arr = test_df[LABEL_COL].to_numpy().astype(np.float32)
-    preds_df = pl.DataFrame({
-        "label": labels_arr,
-        "logit": logits.tolist(),
-    })
+    preds_df = pl.DataFrame(
+        {
+            "label": labels_arr,
+            "logit": logits.tolist(),
+        }
+    )
     preds_df.write_csv(args.preds_out)
     print(f"[Export] test_data → {args.test_data_out}")
     print(f"[Export] predictions → {args.preds_out}")

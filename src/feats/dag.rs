@@ -1,10 +1,10 @@
 //! 特征 DAG 执行器：拓扑排序、算子调度、单样本执行。
+use super::ops::{
+    Bucketing, CrossFeature, CustomOp, DictMapper, ExpressionOp, Fv, JsonExtractList, ListOverlap,
+    ListStringParser, PluginOp, SequenceOp, StringConcatHash, StringParser,
+};
 use crate::feats::config::{DType, FlowConfig, OperatorDef, SourceDef};
 use crate::feats::debug::DebugTracer;
-use crate::feats::ops::{
-    Bucketing, CrossFeature, CustomOp, DictMapper, ExpressionOp, Fv, ListOverlap, PluginOp,
-    SequenceOp, StringConcatHash, StringParser,
-};
 use petgraph::algo::toposort;
 use petgraph::prelude::DiGraph;
 use std::collections::{HashMap, HashSet};
@@ -54,7 +54,10 @@ impl FeatureDag {
             DType::Int => Fv::Int(val_str.parse::<i32>().unwrap_or(0)),
             DType::Float => Fv::Float(val_str.parse::<f32>().unwrap_or(0.0)),
             DType::String => Fv::Str(val_str.to_string()),
-            DType::List { dtype: inner, length } => match inner.as_ref() {
+            DType::List {
+                dtype: inner,
+                length,
+            } => match inner.as_ref() {
                 DType::Int => Fv::IntList(vec![val_str.parse::<i32>().unwrap_or(0); *length]),
                 DType::Float => Fv::IntList(vec![0i32; *length]),
                 DType::String => Fv::StrList(vec![val_str.to_string(); *length]),
@@ -156,31 +159,49 @@ impl FeatureDag {
         for node_name in &execution_order {
             let def = &node_defs[node_name];
             let op_idx = op_name_to_idx[node_name];
-            let input_cols: Vec<usize> = def.inputs.iter()
+            let input_cols: Vec<usize> = def
+                .inputs
+                .iter()
                 .map(|inp| *col_id.get(inp).unwrap_or(&usize::MAX))
                 .collect();
-            let output_cols: Vec<usize> = def.outputs.iter()
+            let output_cols: Vec<usize> = def
+                .outputs
+                .iter()
                 .map(|out| *col_id.get(out).unwrap_or(&usize::MAX))
                 .collect();
-            plan_steps.push(ExecStep { op_idx, input_cols, output_cols });
+            plan_steps.push(ExecStep {
+                op_idx,
+                input_cols,
+                output_cols,
+            });
         }
         // Embeddable column IDs — sorted by FEATURE NAME to align with embeddable_features()
         let mut embed_pairs: Vec<(&str, usize)> = Vec::new();
         for (name, src) in &sources {
-            if src.embed.is_some() { if let Some(&id) = col_id.get(name) { embed_pairs.push((name, id)); } }
+            if src.embed.is_some() {
+                if let Some(&id) = col_id.get(name) {
+                    embed_pairs.push((name, id));
+                }
+            }
         }
         for op_def in &config.operators {
             if op_def.embed.is_some() {
                 for out_name in &op_def.outputs {
-                    if let Some(&id) = col_id.get(out_name) { embed_pairs.push((out_name, id)); }
+                    if let Some(&id) = col_id.get(out_name) {
+                        embed_pairs.push((out_name, id));
+                    }
                 }
             }
         }
         embed_pairs.sort_by_key(|(name, _)| *name);
         let embed_ids: Vec<usize> = embed_pairs.into_iter().map(|(_, id)| id).collect();
         let plan = ExecutionPlan {
-            steps: plan_steps, ops: plan_ops,
-            source_cols, source_names, col_count, embed_ids,
+            steps: plan_steps,
+            ops: plan_ops,
+            source_cols,
+            source_names,
+            col_count,
+            embed_ids,
         };
 
         Ok(Self {
@@ -242,6 +263,17 @@ impl FeatureDag {
                 Ok(Box::new(StringParser::new(
                     sep1, sep2, key_index, pad_len, pad_val,
                 )))
+            }
+            "JsonExtractList" => {
+                let key = Self::yaml_str(p, "key").map(|s| s.to_string());
+                let pad_len = Self::yaml_i64(p, "pad_len").unwrap_or(0) as usize;
+                let pad_val = Self::yaml_str(p, "pad_val").unwrap_or("").to_string();
+                Ok(Box::new(JsonExtractList::new(key, pad_len, pad_val)))
+            }
+            "ListStringParser" => {
+                let sep = Self::yaml_str(p, "sep").unwrap_or(",").to_string();
+                let key_index = Self::yaml_i64(p, "key_index").unwrap_or(0) as usize;
+                Ok(Box::new(ListStringParser::new(sep, key_index)))
             }
             "CrossFeature" => {
                 let cross_type = Self::yaml_str(p, "cross_type")
@@ -324,20 +356,27 @@ impl FeatureDag {
         for (name, src) in &self.sources {
             let k = match src.source.as_str() {
                 "User" | "Context" => "user",
-                _ => "item",  // Item, ItemStats, and anything else
+                _ => "item", // Item, ItemStats, and anything else
             };
             feat_kind.insert(name.clone(), k);
         }
         // Propagate through operators in topological order
         for node_name in &self.execution_order {
             let def = &self.node_defs[node_name];
-            let kinds: Vec<&&str> = def.inputs.iter()
-                .filter_map(|inp| feat_kind.get(inp)).collect();
+            let kinds: Vec<&&str> = def
+                .inputs
+                .iter()
+                .filter_map(|inp| feat_kind.get(inp))
+                .collect();
             let k = if kinds.iter().any(|k| **k == "user") && kinds.iter().any(|k| **k == "item") {
                 "cross"
-            } else if kinds.iter().any(|k| **k == "user") { "user" }
-            else if kinds.iter().any(|k| **k == "item") { "item" }
-            else { kinds.first().copied().unwrap_or(&&"other") };
+            } else if kinds.iter().any(|k| **k == "user") {
+                "user"
+            } else if kinds.iter().any(|k| **k == "item") {
+                "item"
+            } else {
+                kinds.first().copied().unwrap_or(&&"other")
+            };
             for out_name in &def.outputs {
                 feat_kind.insert(out_name.clone(), k);
             }
@@ -346,13 +385,20 @@ impl FeatureDag {
         let mut op_kind: HashMap<String, &str> = HashMap::new();
         for node_name in &self.execution_order {
             let def = &self.node_defs[node_name];
-            let kinds: Vec<&&str> = def.inputs.iter()
-                .filter_map(|inp| feat_kind.get(inp)).collect();
+            let kinds: Vec<&&str> = def
+                .inputs
+                .iter()
+                .filter_map(|inp| feat_kind.get(inp))
+                .collect();
             let k = if kinds.iter().any(|k| **k == "user") && kinds.iter().any(|k| **k == "item") {
                 "cross"
-            } else if kinds.iter().any(|k| **k == "user") { "user" }
-            else if kinds.iter().any(|k| **k == "item") { "item" }
-            else { "other" };
+            } else if kinds.iter().any(|k| **k == "user") {
+                "user"
+            } else if kinds.iter().any(|k| **k == "item") {
+                "item"
+            } else {
+                "other"
+            };
             op_kind.insert(node_name.clone(), k);
         }
         op_kind
@@ -406,7 +452,9 @@ impl FeatureDag {
                 .inputs
                 .iter()
                 .map(|inp| {
-                    context.get(inp).map(|v| v.clone())
+                    context
+                        .get(inp)
+                        .map(|v| v.clone())
                         .ok_or_else(|| format!("Required input '{}' not found", inp))
                 })
                 .collect::<Result<_, String>>()?;
@@ -476,17 +524,25 @@ impl FeatureDag {
         // Stage 3: execute operators in topological order (bulk, zero-copy refs)
         let default_col: Vec<FeatureValue> = vec![Fv::Int(0); n_rows];
         for node_name in &self.execution_order {
-            if skip_ops.contains(node_name) { continue; }
+            if skip_ops.contains(node_name) {
+                continue;
+            }
             let op = &self.nodes[node_name];
             let def = &self.node_defs[node_name];
 
             let input_slices: Vec<&[FeatureValue]> = def
                 .inputs
                 .iter()
-                .map(|inp| context.get(inp).map(|c| c.as_slice()).unwrap_or(default_col.as_slice()))
+                .map(|inp| {
+                    context
+                        .get(inp)
+                        .map(|c| c.as_slice())
+                        .unwrap_or(default_col.as_slice())
+                })
                 .collect();
 
-            let result_vec = op.process_batch(&input_slices, n_rows)
+            let result_vec = op
+                .process_batch(&input_slices, n_rows)
                 .map_err(|e| format!("{}: {}", node_name, e))?;
 
             for out_name in &def.outputs {
@@ -527,7 +583,9 @@ impl ExecutionPlan {
         precomputed: &HashMap<usize, Fv>,
     ) -> Result<Vec<Vec<Fv>>, String> {
         let n_rows = columns.values().next().map(|v| v.len()).unwrap_or(0);
-        if n_rows == 0 { return Ok(Vec::new()); }
+        if n_rows == 0 {
+            return Ok(Vec::new());
+        }
 
         let mut context: Vec<Vec<Fv>> = vec![Vec::with_capacity(n_rows); self.col_count];
         let default: Vec<Fv> = vec![Fv::Int(0); n_rows];
@@ -550,7 +608,9 @@ impl ExecutionPlan {
 
         // Stage 3: execute steps in order
         for step in &self.steps {
-            if skip_op_idx.contains(&step.op_idx) { continue; }
+            if skip_op_idx.contains(&step.op_idx) {
+                continue;
+            }
             let op = &self.ops[step.op_idx];
             let input_slices: Vec<&[Fv]> = step
                 .input_cols
@@ -567,8 +627,14 @@ impl ExecutionPlan {
         Ok(context)
     }
 
-    pub fn embed_ids(&self) -> &[usize] { &self.embed_ids }
+    pub fn embed_ids(&self) -> &[usize] {
+        &self.embed_ids
+    }
     pub fn source_col_map(&self) -> HashMap<String, usize> {
-        self.source_names.iter().enumerate().map(|(i, n)| (n.clone(), i)).collect()
+        self.source_names
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (n.clone(), i))
+            .collect()
     }
 }

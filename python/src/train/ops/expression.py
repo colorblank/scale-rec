@@ -8,8 +8,10 @@ from typing import Any
 
 _FUNCTIONS = {"log": math.log, "abs": abs, "max": max, "min": min, "sqrt": math.sqrt}
 _BINOPS = {
-    ast.Add: operator.add, ast.Sub: operator.sub,
-    ast.Mult: operator.mul, ast.Div: operator.truediv,
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
     ast.Pow: operator.pow,
 }
 _UNARYOPS = {ast.USub: operator.neg, ast.UAdd: operator.pos}

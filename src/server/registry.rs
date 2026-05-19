@@ -34,8 +34,8 @@ impl ModelRegistry {
         let yaml = std::fs::read_to_string(feature_config_path)
             .map_err(|e| format!("read feature config: {}", e))?;
         let flow_config = FlowConfig::from_yaml(&yaml).map_err(|e| format!("parse: {}", e))?;
-        let dag = FeatureDag::from_config(flow_config, false, None)
-            .map_err(|e| format!("dag: {}", e))?;
+        let dag =
+            FeatureDag::from_config(flow_config, false, None).map_err(|e| format!("dag: {}", e))?;
         let embed_features = dag.embeddable_features();
         let features: Vec<(String, usize, usize)> = embed_features
             .iter()
@@ -53,7 +53,10 @@ impl ModelRegistry {
     pub fn load_model(&self, model_name: &str) -> Result<ModelInfo, String> {
         let safetensors_path = self.model_dir.join(format!("{}.safetensors", model_name));
         if !safetensors_path.exists() {
-            return Err(format!("model file not found: {}", safetensors_path.display()));
+            return Err(format!(
+                "model file not found: {}",
+                safetensors_path.display()
+            ));
         }
 
         let model_config_path = self.find_model_config(model_name)?;
@@ -66,8 +69,8 @@ impl ModelRegistry {
         let yaml = std::fs::read_to_string(&self.feature_config_path)
             .map_err(|e| format!("read feature config: {}", e))?;
         let flow_config = FlowConfig::from_yaml(&yaml).map_err(|e| format!("parse: {}", e))?;
-        let dag = FeatureDag::from_config(flow_config, false, None)
-            .map_err(|e| format!("dag: {}", e))?;
+        let dag =
+            FeatureDag::from_config(flow_config, false, None).map_err(|e| format!("dag: {}", e))?;
         let embed_names: Vec<String> = dag
             .embeddable_features()
             .iter()
@@ -91,8 +94,10 @@ impl ModelRegistry {
                 .get("num_tokens")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(8) as usize;
-            Some(FeatureTokenizer::new(vb.pp("tokenizer"), &cached_features, td, nt)
-                .map_err(|e| format!("tokenizer: {}", e))?)
+            Some(
+                FeatureTokenizer::new(vb.pp("tokenizer"), &cached_features, td, nt)
+                    .map_err(|e| format!("tokenizer: {}", e))?,
+            )
         } else {
             None
         };
@@ -129,12 +134,17 @@ impl ModelRegistry {
         let parent_candidates: Vec<Option<&Path>> = vec![demo_parent, feature_parent];
         let config_names = vec![
             format!("{}_demo.yaml", model_name),
-            format!("model_{}_demo.yaml", model_name.strip_prefix("model_").unwrap_or(model_name)),
+            format!(
+                "model_{}_demo.yaml",
+                model_name.strip_prefix("model_").unwrap_or(model_name)
+            ),
         ];
         for parent in parent_candidates.into_iter().flatten() {
             for name in &config_names {
                 let p = parent.join(name);
-                if p.exists() { return Ok(p); }
+                if p.exists() {
+                    return Ok(p);
+                }
             }
         }
         Err(format!("model config not found for '{}'", model_name))

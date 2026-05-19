@@ -110,8 +110,12 @@ class DebugTracer:
         )
 
     def trace_operator(
-        self, op_name: str, input_names: list[str], input_vals: list[Any],
-        output_names: list[str], output_val: Any,
+        self,
+        op_name: str,
+        input_names: list[str],
+        input_vals: list[Any],
+        output_names: list[str],
+        output_val: Any,
     ) -> None:
         """Record one operator execution."""
         if self._current is None:
@@ -149,7 +153,11 @@ class DebugTracer:
                 e["anomalies"] += len(stage.anomalies)
                 for name, vs in stage.outputs.items():
                     f = per_feature.setdefault(name, {"missing": 0, "anomalies": 0})
-                    if vs.value is None or vs.value == "" or (isinstance(vs.value, float) and math.isnan(vs.value)):
+                    if (
+                        vs.value is None
+                        or vs.value == ""
+                        or (isinstance(vs.value, float) and math.isnan(vs.value))
+                    ):
                         f["missing"] += 1
                     f["anomalies"] += sum(1 for a in stage.anomalies if a.feature == name)
         return {"total_samples": total, "per_feature": per_feature, "per_operator": per_operator}

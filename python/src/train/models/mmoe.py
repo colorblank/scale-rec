@@ -62,9 +62,7 @@ class MMoE(nn.Module):
         """Forward: embed -> shared -> experts -> gate softmax -> weighted sum -> task towers."""
         concat = self.embeddings(x_inputs)
         shared = self.shared_bottom(concat) if hasattr(self, "shared_bottom") else concat
-        experts = torch.cat(
-            [e(shared).unsqueeze(1) for e in self._experts], dim=1
-        )
+        experts = torch.cat([e(shared).unsqueeze(1) for e in self._experts], dim=1)
         outputs = {}
         for t in range(len(self.task_names)):
             g = F.softmax(self._gates[t](shared), dim=1)

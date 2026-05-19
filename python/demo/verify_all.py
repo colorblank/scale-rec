@@ -76,11 +76,20 @@ def verify_model(model_type: str, threshold: float = 1e-3) -> dict:
     print("  Running Rust inference...")
     result = subprocess.run(
         [
-            "cargo", "run", "--bin", "demo_inference", "--",
-            infer_config, model_config, safetensors, test_csv, rust_preds_csv,
+            "cargo",
+            "run",
+            "--bin",
+            "demo_inference",
+            "--",
+            infer_config,
+            model_config,
+            safetensors,
+            test_csv,
+            rust_preds_csv,
         ],
         cwd=PYTHON_DIR,
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
         timeout=120,
     )
     if result.returncode != 0:
@@ -151,9 +160,7 @@ def main() -> None:
             all_pass = False
         details = ""
         if "keys" in r:
-            keys_info = ", ".join(
-                f"{k}: max={v['max_abs_diff']:.2e}" for k, v in r["keys"].items()
-            )
+            keys_info = ", ".join(f"{k}: max={v['max_abs_diff']:.2e}" for k, v in r["keys"].items())
             details = f"  [{keys_info}]"
         elif "reason" in r:
             details = f"  ({r['reason']})"

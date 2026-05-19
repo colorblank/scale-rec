@@ -1,4 +1,5 @@
 """生成大规模特征配置文件（80 个可嵌入特征）。"""
+
 import yaml
 import os
 
@@ -6,30 +7,60 @@ sources = []
 operators = []
 
 # ── 用户ID特征 (1) ──
-sources.append({"name": "user_id", "source": "User", "dtype": "int", "default_val": "0",
-                 "embed": {"vocab_size": 1000, "embed_dim": 16}})
+sources.append(
+    {
+        "name": "user_id",
+        "source": "User",
+        "dtype": "int",
+        "default_val": "0",
+        "embed": {"vocab_size": 1000, "embed_dim": 16},
+    }
+)
 
 # ── 环境/上下文特征 (5) — source=Context → broadcast 组 ──
 context_feats = ["ctx_hour", "ctx_device", "ctx_platform", "ctx_network", "ctx_page"]
 for name in context_feats:
-    sources.append({"name": name, "source": "Context",
-                     "dtype": "string" if "device" in name or "platform" in name or "network" in name else "int",
-                     "default_val": "0" if "device" not in name else "unknown"})
+    sources.append(
+        {
+            "name": name,
+            "source": "Context",
+            "dtype": "string"
+            if "device" in name or "platform" in name or "network" in name
+            else "int",
+            "default_val": "0" if "device" not in name else "unknown",
+        }
+    )
     mapping = {}
-    if "device" in name: mapping = {"phone": 1, "pad": 2, "pc": 3}
-    elif "platform" in name: mapping = {"ios": 1, "android": 2, "web": 3}
-    elif "network" in name: mapping = {"wifi": 1, "4g": 2, "5g": 3}
-    elif "page" in name: mapping = {"home": 1, "detail": 2, "search": 3, "cart": 4}
+    if "device" in name:
+        mapping = {"phone": 1, "pad": 2, "pc": 3}
+    elif "platform" in name:
+        mapping = {"ios": 1, "android": 2, "web": 3}
+    elif "network" in name:
+        mapping = {"wifi": 1, "4g": 2, "5g": 3}
+    elif "page" in name:
+        mapping = {"home": 1, "detail": 2, "search": 3, "cart": 4}
     if mapping:
-        operators.append({"name": f"{name}_map", "op_type": "DictMapper", "inputs": [name],
-                           "outputs": [f"{name}_idx"],
-                           "params": {"mapping": mapping, "default_idx": 0},
-                           "embed": {"vocab_size": len(mapping)+1, "embed_dim": 4}})
+        operators.append(
+            {
+                "name": f"{name}_map",
+                "op_type": "DictMapper",
+                "inputs": [name],
+                "outputs": [f"{name}_idx"],
+                "params": {"mapping": mapping, "default_idx": 0},
+                "embed": {"vocab_size": len(mapping) + 1, "embed_dim": 4},
+            }
+        )
     elif "hour" in name:
-        operators.append({"name": f"{name}_bucket", "op_type": "Bucketing", "inputs": [name],
-                           "outputs": [f"{name}_bucket"],
-                           "params": {"boundaries": [6, 12, 18, 22]},
-                           "embed": {"vocab_size": 5, "embed_dim": 4}})
+        operators.append(
+            {
+                "name": f"{name}_bucket",
+                "op_type": "Bucketing",
+                "inputs": [name],
+                "outputs": [f"{name}_bucket"],
+                "params": {"boundaries": [6, 12, 18, 22]},
+                "embed": {"vocab_size": 5, "embed_dim": 4},
+            }
+        )
 
 # ── 用户统计特征：15 个浮点 + 分桶 (15) ──
 for i in range(15):
@@ -37,94 +68,199 @@ for i in range(15):
     sources.append({"name": name, "source": "User", "dtype": "float", "default_val": "0.0"})
     op_name = f"user_stat_{i}_bucket"
     boundaries = [0.2, 0.4, 0.6, 0.8]
-    operators.append({"name": op_name, "op_type": "Bucketing", "inputs": [name],
-                       "outputs": [f"{name}_bucket"],
-                       "params": {"boundaries": boundaries},
-                       "embed": {"vocab_size": len(boundaries)+1, "embed_dim": 4}})
+    operators.append(
+        {
+            "name": op_name,
+            "op_type": "Bucketing",
+            "inputs": [name],
+            "outputs": [f"{name}_bucket"],
+            "params": {"boundaries": boundaries},
+            "embed": {"vocab_size": len(boundaries) + 1, "embed_dim": 4},
+        }
+    )
 
 # ── 用户分类特征：15 个 string + DictMapper (15) ──
 for i in range(15):
     name = f"user_cat_{i}"
     sources.append({"name": name, "source": "User", "dtype": "string", "default_val": "unknown"})
     op_name = f"user_cat_{i}_map"
-    mapping = {f"val_{j}": j+1 for j in range(5)}
+    mapping = {f"val_{j}": j + 1 for j in range(5)}
     mapping["unknown"] = 0
-    operators.append({"name": op_name, "op_type": "DictMapper", "inputs": [name],
-                       "outputs": [f"{name}_idx"],
-                       "params": {"mapping": mapping, "default_idx": 0},
-                       "embed": {"vocab_size": 6, "embed_dim": 4}})
+    operators.append(
+        {
+            "name": op_name,
+            "op_type": "DictMapper",
+            "inputs": [name],
+            "outputs": [f"{name}_idx"],
+            "params": {"mapping": mapping, "default_idx": 0},
+            "embed": {"vocab_size": 6, "embed_dim": 4},
+        }
+    )
 
 # ── 用户标签序列特征：5 个 StringParser + DictMapper (5×2=10) ──
 for i in range(5):
     src_name = f"user_tags_{i}"
     sources.append({"name": src_name, "source": "User", "dtype": "string", "default_val": ""})
     parse_op = f"user_tags_{i}_parse"
-    operators.append({"name": parse_op, "op_type": "StringParser", "inputs": [src_name],
-                       "outputs": [f"{src_name}_list"],
-                       "params": {"sep1": "|", "sep2": "#", "key_index": 0, "pad_len": 10, "pad_val": "none"}})
-    tag_mapping = {t: j+1 for j, t in enumerate(
-        ["sports","music","gaming","reading","travel","food","fashion","tech","fitness","art",
-         "movie","pet","car","photo","diy"])}
+    operators.append(
+        {
+            "name": parse_op,
+            "op_type": "StringParser",
+            "inputs": [src_name],
+            "outputs": [f"{src_name}_list"],
+            "params": {"sep1": "|", "sep2": "#", "key_index": 0, "pad_len": 10, "pad_val": "none"},
+        }
+    )
+    tag_mapping = {
+        t: j + 1
+        for j, t in enumerate(
+            [
+                "sports",
+                "music",
+                "gaming",
+                "reading",
+                "travel",
+                "food",
+                "fashion",
+                "tech",
+                "fitness",
+                "art",
+                "movie",
+                "pet",
+                "car",
+                "photo",
+                "diy",
+            ]
+        )
+    }
     map_op = f"user_tags_{i}_map"
-    operators.append({"name": map_op, "op_type": "DictMapper", "inputs": [f"{src_name}_list"],
-                       "outputs": [f"{src_name}_ids"],
-                       "params": {"mapping": tag_mapping, "default_idx": 0},
-                       "embed": {"vocab_size": len(tag_mapping)+1, "embed_dim": 4}})
+    operators.append(
+        {
+            "name": map_op,
+            "op_type": "DictMapper",
+            "inputs": [f"{src_name}_list"],
+            "outputs": [f"{src_name}_ids"],
+            "params": {"mapping": tag_mapping, "default_idx": 0},
+            "embed": {"vocab_size": len(tag_mapping) + 1, "embed_dim": 4},
+        }
+    )
 
 # ── 物品ID特征 (1) ──
-sources.append({"name": "item_id", "source": "Item", "dtype": "int", "default_val": "0",
-                 "embed": {"vocab_size": 2000, "embed_dim": 16}})
+sources.append(
+    {
+        "name": "item_id",
+        "source": "Item",
+        "dtype": "int",
+        "default_val": "0",
+        "embed": {"vocab_size": 2000, "embed_dim": 16},
+    }
+)
 
 # ── 物品统计特征 (5) — source=ItemStats → item 组，离线预计算 ──
 item_stats = ["item_ctr_7d", "item_cvr_7d", "item_click_24h", "item_order_30d", "item_expo_7d"]
 for name in item_stats:
     sources.append({"name": name, "source": "ItemStats", "dtype": "float", "default_val": "0.0"})
-    operators.append({"name": f"{name}_bucket", "op_type": "Bucketing", "inputs": [name],
-                       "outputs": [f"{name}_bucket"],
-                       "params": {"boundaries": [0.01, 0.05, 0.10, 0.20, 0.50]},
-                       "embed": {"vocab_size": 6, "embed_dim": 4}})
+    operators.append(
+        {
+            "name": f"{name}_bucket",
+            "op_type": "Bucketing",
+            "inputs": [name],
+            "outputs": [f"{name}_bucket"],
+            "params": {"boundaries": [0.01, 0.05, 0.10, 0.20, 0.50]},
+            "embed": {"vocab_size": 6, "embed_dim": 4},
+        }
+    )
 
 # ── 物品统计特征：15 个浮点 + 分桶 (15) ──
 for i in range(15):
     name = f"item_stat_{i}"
     sources.append({"name": name, "source": "Item", "dtype": "float", "default_val": "0.0"})
     boundaries = [0.2, 0.4, 0.6, 0.8]
-    operators.append({"name": f"item_stat_{i}_bucket", "op_type": "Bucketing", "inputs": [name],
-                       "outputs": [f"{name}_bucket"],
-                       "params": {"boundaries": boundaries},
-                       "embed": {"vocab_size": len(boundaries)+1, "embed_dim": 4}})
+    operators.append(
+        {
+            "name": f"item_stat_{i}_bucket",
+            "op_type": "Bucketing",
+            "inputs": [name],
+            "outputs": [f"{name}_bucket"],
+            "params": {"boundaries": boundaries},
+            "embed": {"vocab_size": len(boundaries) + 1, "embed_dim": 4},
+        }
+    )
 
 # ── 物品分类特征：15 个 string + DictMapper (15) ──
 for i in range(15):
     name = f"item_cat_{i}"
     sources.append({"name": name, "source": "Item", "dtype": "string", "default_val": "unknown"})
-    mapping = {f"val_{j}": j+1 for j in range(5)}
+    mapping = {f"val_{j}": j + 1 for j in range(5)}
     mapping["unknown"] = 0
-    operators.append({"name": f"item_cat_{i}_map", "op_type": "DictMapper", "inputs": [name],
-                       "outputs": [f"{name}_idx"],
-                       "params": {"mapping": mapping, "default_idx": 0},
-                       "embed": {"vocab_size": 6, "embed_dim": 4}})
+    operators.append(
+        {
+            "name": f"item_cat_{i}_map",
+            "op_type": "DictMapper",
+            "inputs": [name],
+            "outputs": [f"{name}_idx"],
+            "params": {"mapping": mapping, "default_idx": 0},
+            "embed": {"vocab_size": 6, "embed_dim": 4},
+        }
+    )
 
 # ── 物品标签序列特征：5 个 StringParser + DictMapper (5×2=10) ──
 for i in range(5):
     src_name = f"item_tags_{i}"
     sources.append({"name": src_name, "source": "Item", "dtype": "string", "default_val": ""})
-    operators.append({"name": f"item_tags_{i}_parse", "op_type": "StringParser", "inputs": [src_name],
-                       "outputs": [f"{src_name}_list"],
-                       "params": {"sep1": "|", "sep2": "#", "key_index": 0, "pad_len": 10, "pad_val": "none"}})
-    tag_mapping = {t: j+1 for j, t in enumerate(
-        ["sports","music","gaming","reading","travel","food","fashion","tech","fitness","art",
-         "movie","pet","car","photo","diy"])}
-    operators.append({"name": f"item_tags_{i}_map", "op_type": "DictMapper", "inputs": [f"{src_name}_list"],
-                       "outputs": [f"{src_name}_ids"],
-                       "params": {"mapping": tag_mapping, "default_idx": 0},
-                       "embed": {"vocab_size": len(tag_mapping)+1, "embed_dim": 4}})
+    operators.append(
+        {
+            "name": f"item_tags_{i}_parse",
+            "op_type": "StringParser",
+            "inputs": [src_name],
+            "outputs": [f"{src_name}_list"],
+            "params": {"sep1": "|", "sep2": "#", "key_index": 0, "pad_len": 10, "pad_val": "none"},
+        }
+    )
+    tag_mapping = {
+        t: j + 1
+        for j, t in enumerate(
+            [
+                "sports",
+                "music",
+                "gaming",
+                "reading",
+                "travel",
+                "food",
+                "fashion",
+                "tech",
+                "fitness",
+                "art",
+                "movie",
+                "pet",
+                "car",
+                "photo",
+                "diy",
+            ]
+        )
+    }
+    operators.append(
+        {
+            "name": f"item_tags_{i}_map",
+            "op_type": "DictMapper",
+            "inputs": [f"{src_name}_list"],
+            "outputs": [f"{src_name}_ids"],
+            "params": {"mapping": tag_mapping, "default_idx": 0},
+            "embed": {"vocab_size": len(tag_mapping) + 1, "embed_dim": 4},
+        }
+    )
 
 # ── ListOverlap: user tags vs item tags (5, non-embeddable) ──
 for i in range(5):
-    operators.append({"name": f"overlap_{i}", "op_type": "ListOverlap",
-                       "inputs": [f"user_tags_{i}_list", f"item_tags_{i}_list"],
-                       "outputs": [f"overlap_{i}_flag"], "params": {}})
+    operators.append(
+        {
+            "name": f"overlap_{i}",
+            "op_type": "ListOverlap",
+            "inputs": [f"user_tags_{i}_list", f"item_tags_{i}_list"],
+            "outputs": [f"overlap_{i}_flag"],
+            "params": {},
+        }
+    )
 
 config = {"version": "1.0.0", "sources": sources, "operators": operators}
 
