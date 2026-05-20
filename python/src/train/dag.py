@@ -14,9 +14,12 @@ from .ops import (
     CustomOp,
     DictMapper,
     ExpressionOp,
+    FeatureHash,
+    FlatSplit,
     ListOverlap,
     SequenceOp,
-    StringConcatHash,
+    Split,
+    StringConcat,
     StringParser,
     JsonExtractList,
     ListStringParser,
@@ -135,14 +138,26 @@ class FeatureDag:
             return ExpressionOp(str(script))
         elif op_type == "SequenceOp":
             return SequenceOp(int(p.get("max_len", 10)), int(p.get("pad_val", 0)))
+        elif op_type == "Split":
+            return Split(
+                str(p.get("sep", "|")),
+                int(p.get("max_len", 0)),
+                str(p.get("pad_val", "")),
+            )
+        elif op_type == "FlatSplit":
+            return FlatSplit(
+                str(p.get("sep", ",")),
+                int(p.get("max_len", 0)),
+                str(p.get("pad_val", "")),
+            )
         elif op_type == "ListOverlap":
             return ListOverlap()
-        elif op_type == "StringConcatHash":
-            return StringConcatHash(
+        elif op_type == "StringConcat":
+            return StringConcat(str(p.get("separator", "_")))
+        elif op_type == "FeatureHash":
+            return FeatureHash(
                 vocab_size=int(p.get("vocab_size", 1000)),
-                oov_reserve=int(p.get("oov_reserve", 0)),
-                hash_map_path=str(p.get("hash_map_path", "")),
-                mode=str(p.get("mode", "train")),
+                num_hashes=int(p.get("num_hashes", 1)),
                 separator=str(p.get("separator", "|")),
             )
         else:

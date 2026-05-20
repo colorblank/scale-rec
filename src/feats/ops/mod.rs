@@ -4,24 +4,30 @@ pub mod bucketing;
 pub mod cross_feature;
 pub mod dict_mapper;
 pub mod expression;
+pub mod feature_hash;
+pub mod flat_split;
 pub mod json_extract_list;
 pub mod list_overlap;
 pub mod list_string_parser;
 pub mod plugin;
 pub mod sequence;
-pub mod string_concat_hash;
+pub mod split;
+pub mod string_concat;
 pub mod string_parser;
 
 pub use bucketing::Bucketing;
 pub use cross_feature::CrossFeature;
 pub use dict_mapper::DictMapper;
 pub use expression::ExpressionOp;
+pub use feature_hash::FeatureHash;
+pub use flat_split::FlatSplit;
 pub use json_extract_list::JsonExtractList;
 pub use list_overlap::ListOverlap;
 pub use list_string_parser::ListStringParser;
 pub use plugin::PluginOp;
 pub use sequence::SequenceOp;
-pub use string_concat_hash::StringConcatHash;
+pub use split::Split;
+pub use string_concat::StringConcat;
 pub use string_parser::StringParser;
 
 /// 强类型特征值，替代 `Arc<dyn Any>`，消除 vtable/downcast 开销。
@@ -42,6 +48,18 @@ impl Fv {
             Fv::Str(_) => "str",
             Fv::IntList(_) => "list[int]",
             Fv::StrList(_) => "list[str]",
+        }
+    }
+}
+
+impl std::fmt::Display for Fv {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Fv::Int(v) => write!(f, "{}", v),
+            Fv::Float(v) => write!(f, "{}", v),
+            Fv::Str(v) => write!(f, "{}", v),
+            Fv::IntList(v) => write!(f, "{:?}", v),
+            Fv::StrList(v) => write!(f, "{:?}", v),
         }
     }
 }
