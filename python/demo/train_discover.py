@@ -85,9 +85,9 @@ def train_epoch(model, optimizer, dag, df, task_names, batch_size, label_col_map
             label_col = label_col_map.get(task_name)
             if label_col is None or label_col not in batch_df.columns:
                 continue
-            labels = torch.tensor(
-                batch_df[label_col].to_numpy(), dtype=torch.float32
-            ).view(actual_bs, 1)
+            labels = torch.tensor(batch_df[label_col].to_numpy(), dtype=torch.float32).view(
+                actual_bs, 1
+            )
             task_loss = F.binary_cross_entropy_with_logits(logits, labels)
             loss = task_loss if loss is None else loss + task_loss
         if loss is None:
@@ -112,10 +112,12 @@ def main():
     args = parser.parse_args()
 
     # ── Load data (Tab 分隔, 与真实数据格式一致) ──
-    df = pl.read_csv(args.data, separator="\t").with_columns([
-        pl.col("ctr").cast(pl.Int64),
-        pl.col("cvr").cast(pl.Int64),
-    ])
+    df = pl.read_csv(args.data, separator="\t").with_columns(
+        [
+            pl.col("ctr").cast(pl.Int64),
+            pl.col("cvr").cast(pl.Int64),
+        ]
+    )
     df = df.sample(fraction=1.0, seed=42)
     n_train = int(len(df) * 0.8)
     train_df = df.slice(0, n_train)

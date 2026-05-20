@@ -58,6 +58,7 @@ class FeatureHash:
 
 # ── module-level for fastest call ──
 
+
 def _djb2_seeded(key: str, seed: int) -> int:
     """DJB2 with seed prefix and 32-bit wrapping — matches Rust exactly."""
     # inline the seeded key to avoid allocation of format string

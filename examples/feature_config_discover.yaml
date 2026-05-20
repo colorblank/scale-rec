@@ -212,7 +212,7 @@ operators:
   embed:
     vocab_size: 5
     embed_dim: 4
-- name: quality_score_log_op
+- name: quality_score_log
   op_type: ExpressionOp
   inputs:
   - quality_score_label
@@ -396,99 +396,6 @@ operators:
     default_idx: 0
   embed:
     vocab_size: 11
-    embed_dim: 4
-- name: stock_list_parse
-  op_type: JsonExtractList
-  inputs:
-  - stock_list
-  outputs:
-  - stock_list_raw
-  params:
-    key: null
-    pad_len: 5
-    pad_val: ''
-- name: stock_code_extract
-  op_type: ListStringParser
-  inputs:
-  - stock_list_raw
-  outputs:
-  - stock_codes
-  params:
-    sep: ','
-    key_index: 0
-- name: stock_code_map
-  op_type: DictMapper
-  inputs:
-  - stock_codes
-  outputs:
-  - stock_code_ids
-  params:
-    mapping:
-      '600000': 1
-      '600001': 2
-      '600002': 3
-      '600003': 4
-      '600004': 5
-      '600005': 6
-      '600006': 7
-      '600007': 8
-      '600008': 9
-      '600009': 10
-      '600010': 11
-      '600011': 12
-      '600012': 13
-      '600013': 14
-      '600014': 15
-      '600015': 16
-      '600016': 17
-      '600017': 18
-      '600018': 19
-      '600019': 20
-      '600020': 21
-      '600021': 22
-      '600022': 23
-      '600023': 24
-      '600024': 25
-      '600025': 26
-      '600026': 27
-      '600027': 28
-      '600028': 29
-      '600029': 30
-      '600030': 31
-      '600031': 32
-      '600032': 33
-      '600033': 34
-      '600034': 35
-      '600035': 36
-      '600036': 37
-      '600037': 38
-      '600038': 39
-      '600039': 40
-      '600040': 41
-      '600041': 42
-      '600042': 43
-      '600043': 44
-      '600044': 45
-      '600045': 46
-      '600046': 47
-      '600047': 48
-      '600048': 49
-      '600049': 50
-    default_idx: 0
-  embed:
-    vocab_size: 51
-    embed_dim: 4
-- name: stock_code_pad
-  op_type: SequenceOp
-  inputs:
-  - stock_code_ids
-  outputs:
-  - stock_code_padded
-  params:
-    max_len: 5
-    pad_val: 0
-  embed:
-    vocab_size: 51
     embed_dim: 4
 - name: entities_v3_parse
   op_type: JsonExtractList
@@ -934,28 +841,99 @@ operators:
   embed:
     vocab_size: 201
     embed_dim: 4
-- name: author_id_concat
-  op_type: StringConcat
+- name: stock_list_parse
+  op_type: JsonExtractList
   inputs:
-  - author_id
+  - stock_list
   outputs:
-  - author_id_str
+  - stock_list_raw
   params:
-    separator: _
-
-- name: author_id_hash
-  op_type: FeatureHash
+    key: null
+    pad_len: 5
+    pad_val: ''
+- name: stock_code_extract
+  op_type: ListStringParser
   inputs:
-  - author_id_str
+  - stock_list_raw
   outputs:
-  - author_id_idx
+  - stock_codes
   params:
-    vocab_size: 500
-    num_hashes: 1
+    sep: ','
+    key_index: 0
+- name: stock_code_map
+  op_type: DictMapper
+  inputs:
+  - stock_codes
+  outputs:
+  - stock_code_ids
+  params:
+    mapping:
+      '600000': 1
+      '600001': 2
+      '600002': 3
+      '600003': 4
+      '600004': 5
+      '600005': 6
+      '600006': 7
+      '600007': 8
+      '600008': 9
+      '600009': 10
+      '600010': 11
+      '600011': 12
+      '600012': 13
+      '600013': 14
+      '600014': 15
+      '600015': 16
+      '600016': 17
+      '600017': 18
+      '600018': 19
+      '600019': 20
+      '600020': 21
+      '600021': 22
+      '600022': 23
+      '600023': 24
+      '600024': 25
+      '600025': 26
+      '600026': 27
+      '600027': 28
+      '600028': 29
+      '600029': 30
+      '600030': 31
+      '600031': 32
+      '600032': 33
+      '600033': 34
+      '600034': 35
+      '600035': 36
+      '600036': 37
+      '600037': 38
+      '600038': 39
+      '600039': 40
+      '600040': 41
+      '600041': 42
+      '600042': 43
+      '600043': 44
+      '600044': 45
+      '600045': 46
+      '600046': 47
+      '600047': 48
+      '600048': 49
+      '600049': 50
+    default_idx: 0
   embed:
-    vocab_size: 500
-    embed_dim: 8
-
+    vocab_size: 51
+    embed_dim: 4
+- name: stock_code_pad
+  op_type: SequenceOp
+  inputs:
+  - stock_code_ids
+  outputs:
+  - stock_code_padded
+  params:
+    max_len: 5
+    pad_val: 0
+  embed:
+    vocab_size: 51
+    embed_dim: 4
 - name: title_concat
   op_type: StringConcat
   inputs:
@@ -963,8 +941,7 @@ operators:
   outputs:
   - title_str
   params:
-    separator: _
-
+    separator: ''
 - name: title_hash
   op_type: FeatureHash
   inputs:
@@ -972,12 +949,71 @@ operators:
   outputs:
   - title_idx
   params:
+    vocab_size: 2000
+    num_hashes: 1
+  embed:
+    vocab_size: 2000
+    embed_dim: 8
+- name: content_concat
+  op_type: StringConcat
+  inputs:
+  - content
+  outputs:
+  - content_str
+  params:
+    separator: ''
+- name: content_hash
+  op_type: FeatureHash
+  inputs:
+  - content_str
+  outputs:
+  - content_idx
+  params:
+    vocab_size: 8000
+    num_hashes: 1
+  embed:
+    vocab_size: 8000
+    embed_dim: 8
+- name: insight_concat
+  op_type: StringConcat
+  inputs:
+  - insight
+  outputs:
+  - insight_str
+  params:
+    separator: ''
+- name: insight_hash
+  op_type: FeatureHash
+  inputs:
+  - insight_str
+  outputs:
+  - insight_idx
+  params:
     vocab_size: 500
     num_hashes: 1
   embed:
     vocab_size: 500
+    embed_dim: 4
+- name: author_id_concat
+  op_type: StringConcat
+  inputs:
+  - author_id
+  outputs:
+  - author_id_str
+  params:
+    separator: ''
+- name: author_id_hash
+  op_type: FeatureHash
+  inputs:
+  - author_id_str
+  outputs:
+  - author_id_idx
+  params:
+    vocab_size: 1000
+    num_hashes: 1
+  embed:
+    vocab_size: 1000
     embed_dim: 8
-
 - name: author_concat
   op_type: StringConcat
   inputs:
@@ -985,8 +1021,7 @@ operators:
   outputs:
   - author_str
   params:
-    separator: _
-
+    separator: ''
 - name: author_hash
   op_type: FeatureHash
   inputs:
@@ -994,10 +1029,10 @@ operators:
   outputs:
   - author_idx
   params:
-    vocab_size: 200
+    vocab_size: 1000
     num_hashes: 1
   embed:
-    vocab_size: 200
+    vocab_size: 1000
     embed_dim: 8
 - name: rec_algo_map
   op_type: DictMapper
@@ -1078,6 +1113,26 @@ operators:
   embed:
     vocab_size: 4
     embed_dim: 4
+- name: last_trade_date_concat
+  op_type: StringConcat
+  inputs:
+  - last_trade_date
+  outputs:
+  - last_trade_date_str
+  params:
+    separator: ''
+- name: last_trade_date_hash
+  op_type: FeatureHash
+  inputs:
+  - last_trade_date_str
+  outputs:
+  - last_trade_date_idx
+  params:
+    vocab_size: 500
+    num_hashes: 1
+  embed:
+    vocab_size: 500
+    embed_dim: 4
 - name: stay_time_bucket
   op_type: Bucketing
   inputs:
@@ -1120,80 +1175,6 @@ operators:
   - fav_stock_codes
   outputs:
   - fav_stock_ids
-  params:
-    mapping:
-      '600000': 1
-      '600001': 2
-      '600002': 3
-      '600003': 4
-      '600004': 5
-      '600005': 6
-      '600006': 7
-      '600007': 8
-      '600008': 9
-      '600009': 10
-      '600010': 11
-      '600011': 12
-      '600012': 13
-      '600013': 14
-      '600014': 15
-      '600015': 16
-      '600016': 17
-      '600017': 18
-      '600018': 19
-      '600019': 20
-      '600020': 21
-      '600021': 22
-      '600022': 23
-      '600023': 24
-      '600024': 25
-      '600025': 26
-      '600026': 27
-      '600027': 28
-      '600028': 29
-      '600029': 30
-      '600030': 31
-      '600031': 32
-      '600032': 33
-      '600033': 34
-      '600034': 35
-      '600035': 36
-      '600036': 37
-      '600037': 38
-      '600038': 39
-      '600039': 40
-      '600040': 41
-      '600041': 42
-      '600042': 43
-      '600043': 44
-      '600044': 45
-      '600045': 46
-      '600046': 47
-      '600047': 48
-      '600048': 49
-      '600049': 50
-    default_idx: 0
-  embed:
-    vocab_size: 51
-    embed_dim: 4
-- name: recent_stocks_parse
-  op_type: StringParser
-  inputs:
-  - recent_stocks
-  outputs:
-  - recent_stocks_raw
-  params:
-    sep1: '|'
-    sep2: ','
-    key_index: 0
-    pad_len: 10
-    pad_val: ''
-- name: recent_stocks_map
-  op_type: DictMapper
-  inputs:
-  - recent_stocks_raw
-  outputs:
-  - recent_stocks_ids
   params:
     mapping:
       '600000': 1
@@ -1486,90 +1467,6 @@ operators:
   embed:
     vocab_size: 51
     embed_dim: 4
-- name: hist_items_parse
-  op_type: StringParser
-  inputs:
-  - historical_click_items
-  outputs:
-  - hist_items_raw
-  params:
-    sep1: '|'
-    sep2: '#'
-    key_index: 0
-    pad_len: 10
-    pad_val: ''
-- name: hist_a_extract
-  op_type: FlatSplit
-  inputs:
-  - hist_items_raw
-  outputs:
-  - hist_semantic_ids
-  params:
-    sep: ','
-    max_len: 40
-    pad_val: ''
-- name: hist_a_map
-  op_type: DictMapper
-  inputs:
-  - hist_semantic_ids
-  outputs:
-  - hist_a_ids
-  params:
-    mapping:
-      a_00: 1
-      a_01: 2
-      a_02: 3
-      a_03: 4
-      a_04: 5
-      a_05: 6
-      a_06: 7
-      a_07: 8
-      a_08: 9
-      a_09: 10
-      a_10: 11
-      a_11: 12
-      a_12: 13
-      a_13: 14
-      a_14: 15
-      a_15: 16
-      a_16: 17
-      a_17: 18
-      a_18: 19
-      a_19: 20
-      a_20: 21
-      a_21: 22
-      a_22: 23
-      a_23: 24
-      a_24: 25
-      a_25: 26
-      a_26: 27
-      a_27: 28
-      a_28: 29
-      a_29: 30
-      a_30: 31
-      a_31: 32
-      a_32: 33
-      a_33: 34
-      a_34: 35
-      a_35: 36
-      a_36: 37
-      a_37: 38
-      a_38: 39
-      a_39: 40
-      a_40: 41
-      a_41: 42
-      a_42: 43
-      a_43: 44
-      a_44: 45
-      a_45: 46
-      a_46: 47
-      a_47: 48
-      a_48: 49
-      a_49: 50
-    default_idx: 0
-  embed:
-    vocab_size: 51
-    embed_dim: 4
 - name: invest_style_parse
   op_type: StringParser
   inputs:
@@ -1664,6 +1561,334 @@ operators:
   embed:
     vocab_size: 9
     embed_dim: 4
+- name: recent_stocks_parse
+  op_type: StringParser
+  inputs:
+  - recent_stocks
+  outputs:
+  - recent_stocks_raw
+  params:
+    sep1: '|'
+    sep2: ','
+    key_index: 0
+    pad_len: 10
+    pad_val: ''
+- name: recent_stocks_map
+  op_type: DictMapper
+  inputs:
+  - recent_stocks_raw
+  outputs:
+  - recent_stocks_ids
+  params:
+    mapping:
+      '600000': 1
+      '600001': 2
+      '600002': 3
+      '600003': 4
+      '600004': 5
+      '600005': 6
+      '600006': 7
+      '600007': 8
+      '600008': 9
+      '600009': 10
+      '600010': 11
+      '600011': 12
+      '600012': 13
+      '600013': 14
+      '600014': 15
+      '600015': 16
+      '600016': 17
+      '600017': 18
+      '600018': 19
+      '600019': 20
+      '600020': 21
+      '600021': 22
+      '600022': 23
+      '600023': 24
+      '600024': 25
+      '600025': 26
+      '600026': 27
+      '600027': 28
+      '600028': 29
+      '600029': 30
+      '600030': 31
+      '600031': 32
+      '600032': 33
+      '600033': 34
+      '600034': 35
+      '600035': 36
+      '600036': 37
+      '600037': 38
+      '600038': 39
+      '600039': 40
+      '600040': 41
+      '600041': 42
+      '600042': 43
+      '600043': 44
+      '600044': 45
+      '600045': 46
+      '600046': 47
+      '600047': 48
+      '600048': 49
+      '600049': 50
+    default_idx: 0
+  embed:
+    vocab_size: 51
+    embed_dim: 4
+- name: hist_items_parse
+  op_type: StringParser
+  inputs:
+  - historical_click_items
+  outputs:
+  - hist_vectors
+  params:
+    sep1: '|'
+    sep2: '#'
+    key_index: 0
+    pad_len: 10
+    pad_val: ''
+- name: hist_semantic_flat
+  op_type: FlatSplit
+  inputs:
+  - hist_vectors
+  outputs:
+  - hist_semantic_ids
+  params:
+    sep: ','
+    max_len: 40
+    pad_val: ''
+- name: hist_semantic_map
+  op_type: DictMapper
+  inputs:
+  - hist_semantic_ids
+  outputs:
+  - hist_semantic_mapped
+  params:
+    mapping:
+      a_00: 1
+      a_01: 2
+      a_02: 3
+      a_03: 4
+      a_04: 5
+      a_05: 6
+      a_06: 7
+      a_07: 8
+      a_08: 9
+      a_09: 10
+      a_10: 11
+      a_11: 12
+      a_12: 13
+      a_13: 14
+      a_14: 15
+      a_15: 16
+      a_16: 17
+      a_17: 18
+      a_18: 19
+      a_19: 20
+      a_20: 21
+      a_21: 22
+      a_22: 23
+      a_23: 24
+      a_24: 25
+      a_25: 26
+      a_26: 27
+      a_27: 28
+      a_28: 29
+      a_29: 30
+      a_30: 31
+      a_31: 32
+      a_32: 33
+      a_33: 34
+      a_34: 35
+      a_35: 36
+      a_36: 37
+      a_37: 38
+      a_38: 39
+      a_39: 40
+      a_40: 41
+      a_41: 42
+      a_42: 43
+      a_43: 44
+      a_44: 45
+      a_45: 46
+      a_46: 47
+      a_47: 48
+      a_48: 49
+      a_49: 50
+      b_00: 51
+      b_01: 52
+      b_02: 53
+      b_03: 54
+      b_04: 55
+      b_05: 56
+      b_06: 57
+      b_07: 58
+      b_08: 59
+      b_09: 60
+      b_10: 61
+      b_11: 62
+      b_12: 63
+      b_13: 64
+      b_14: 65
+      b_15: 66
+      b_16: 67
+      b_17: 68
+      b_18: 69
+      b_19: 70
+      b_20: 71
+      b_21: 72
+      b_22: 73
+      b_23: 74
+      b_24: 75
+      b_25: 76
+      b_26: 77
+      b_27: 78
+      b_28: 79
+      b_29: 80
+      b_30: 81
+      b_31: 82
+      b_32: 83
+      b_33: 84
+      b_34: 85
+      b_35: 86
+      b_36: 87
+      b_37: 88
+      b_38: 89
+      b_39: 90
+      b_40: 91
+      b_41: 92
+      b_42: 93
+      b_43: 94
+      b_44: 95
+      b_45: 96
+      b_46: 97
+      b_47: 98
+      b_48: 99
+      b_49: 100
+      c_00: 101
+      c_01: 102
+      c_02: 103
+      c_03: 104
+      c_04: 105
+      c_05: 106
+      c_06: 107
+      c_07: 108
+      c_08: 109
+      c_09: 110
+      c_10: 111
+      c_11: 112
+      c_12: 113
+      c_13: 114
+      c_14: 115
+      c_15: 116
+      c_16: 117
+      c_17: 118
+      c_18: 119
+      c_19: 120
+      c_20: 121
+      c_21: 122
+      c_22: 123
+      c_23: 124
+      c_24: 125
+      c_25: 126
+      c_26: 127
+      c_27: 128
+      c_28: 129
+      c_29: 130
+      c_30: 131
+      c_31: 132
+      c_32: 133
+      c_33: 134
+      c_34: 135
+      c_35: 136
+      c_36: 137
+      c_37: 138
+      c_38: 139
+      c_39: 140
+      c_40: 141
+      c_41: 142
+      c_42: 143
+      c_43: 144
+      c_44: 145
+      c_45: 146
+      c_46: 147
+      c_47: 148
+      c_48: 149
+      c_49: 150
+      d_00: 151
+      d_01: 152
+      d_02: 153
+      d_03: 154
+      d_04: 155
+      d_05: 156
+      d_06: 157
+      d_07: 158
+      d_08: 159
+      d_09: 160
+      d_10: 161
+      d_11: 162
+      d_12: 163
+      d_13: 164
+      d_14: 165
+      d_15: 166
+      d_16: 167
+      d_17: 168
+      d_18: 169
+      d_19: 170
+      d_20: 171
+      d_21: 172
+      d_22: 173
+      d_23: 174
+      d_24: 175
+      d_25: 176
+      d_26: 177
+      d_27: 178
+      d_28: 179
+      d_29: 180
+      d_30: 181
+      d_31: 182
+      d_32: 183
+      d_33: 184
+      d_34: 185
+      d_35: 186
+      d_36: 187
+      d_37: 188
+      d_38: 189
+      d_39: 190
+      d_40: 191
+      d_41: 192
+      d_42: 193
+      d_43: 194
+      d_44: 195
+      d_45: 196
+      d_46: 197
+      d_47: 198
+      d_48: 199
+      d_49: 200
+    default_idx: 0
+  embed:
+    vocab_size: 201
+    embed_dim: 4
+- name: p_date_concat
+  op_type: StringConcat
+  inputs:
+  - p_date
+  outputs:
+  - p_date_str
+  params:
+    separator: ''
+- name: p_date_hash
+  op_type: FeatureHash
+  inputs:
+  - p_date_str
+  outputs:
+  - p_date_idx
+  params:
+    vocab_size: 100
+    num_hashes: 1
+  embed:
+    vocab_size: 100
+    embed_dim: 4
 - name: entity_overlap
   op_type: ListOverlap
   inputs:
@@ -1697,31 +1922,45 @@ operators:
   embed:
     vocab_size: 2
     embed_dim: 4
-- name: user_author_hash
-  op_type: FeatureHash
+- name: user_author_concat
+  op_type: StringConcat
   inputs:
   - user_id
   - author_id
+  outputs:
+  - user_author_str
+  params:
+    separator: ''
+- name: user_author_hash
+  op_type: FeatureHash
+  inputs:
+  - user_author_str
   outputs:
   - user_author_hash_idx
   params:
     vocab_size: 5000
     num_hashes: 1
-    separator: '|'
   embed:
     vocab_size: 5000
     embed_dim: 8
-- name: item_type_source_hash
-  op_type: FeatureHash
+- name: type_source_concat
+  op_type: StringConcat
   inputs:
   - item_type
   - source_name
   outputs:
-  - item_type_source_hash_ids
+  - type_source_str
   params:
-    vocab_size: 1000
-    num_hashes: 4
-    separator: '|'
+    separator: ''
+- name: type_source_hash
+  op_type: FeatureHash
+  inputs:
+  - type_source_str
+  outputs:
+  - type_source_hash_idx
+  params:
+    vocab_size: 100
+    num_hashes: 1
   embed:
-    vocab_size: 1000
+    vocab_size: 100
     embed_dim: 4

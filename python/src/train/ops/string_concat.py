@@ -26,8 +26,6 @@ class StringConcat:
         sep = self.separator
         results = []
         for i in range(n):
-            key = sep.join(
-                str(col[i]) if col[i] is not None else "" for col in inputs
-            )
+            key = sep.join(str(col[i]) if col[i] is not None else "" for col in inputs)
             results.append(key)
         return results

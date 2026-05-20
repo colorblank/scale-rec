@@ -25,19 +25,48 @@ ENTITY_CODES = {
 }
 
 INTEREST_KEYWORDS = [
-    "人工智能", "新能源", "半导体", "医药", "消费", "金融", "房地产",
-    "汽车", "互联网", "5G", "区块链", "云计算", "大数据", "物联网",
-    "芯片", "光伏", "锂电池", "军工", "农业", "传媒",
+    "人工智能",
+    "新能源",
+    "半导体",
+    "医药",
+    "消费",
+    "金融",
+    "房地产",
+    "汽车",
+    "互联网",
+    "5G",
+    "区块链",
+    "云计算",
+    "大数据",
+    "物联网",
+    "芯片",
+    "光伏",
+    "锂电池",
+    "军工",
+    "农业",
+    "传媒",
 ]
 FOLLOW_AUTHORS = [str(100000 + i) for i in range(20)]
 INVEST_STYLES = ["主力追踪", "事件驱动", "成长股投资", "价值投资", "趋势交易", "量化对冲"]
 THEME_INTERESTS = [
-    "同花顺新质50", "车联网(车路协同)", "低空经济", "人工智能",
-    "新能源", "半导体", "机器人", "数字经济",
+    "同花顺新质50",
+    "车联网(车路协同)",
+    "低空经济",
+    "人工智能",
+    "新能源",
+    "半导体",
+    "机器人",
+    "数字经济",
 ]
 INDUSTRY_INTERESTS = [
-    "系统软件(A股)", "煤炭开采加工", "银行", "医药生物",
-    "食品饮料", "电力设备", "汽车制造", "房地产",
+    "系统软件(A股)",
+    "煤炭开采加工",
+    "银行",
+    "医药生物",
+    "食品饮料",
+    "电力设备",
+    "汽车制造",
+    "房地产",
 ]
 ROLE_NEEDS_FIRST = ["投顾", "量化", "个人投资者", "机构投资者"]
 ROLE_NEEDS_SECOND = ["投资研究", "风险管理", "资产配置", "交易执行"]
@@ -50,7 +79,16 @@ REC_ALGOS = ["favSecuritiesV1", "stockFenshiKxian-hot", "favEntitiesV1"]
 CITIES = ["上海市", "北京市", "深圳市", "杭州市", "广州市", "成都市"]
 ASSET_LEVELS = ["1万以下", "1-10万", "10-30万", "30-100万", "100万以上"]
 ITEM_TYPES = ["state", "ask_answer", "iwc_dialogue", "news", "report", "snslivepost", "snsview"]
-AUTHOR_NAMES = ["诗予拾", "股市老手", "价值猎人", "趋势追踪者", "金融分析师李", "小散日记", "涨停板猎手", "波段王者"]
+AUTHOR_NAMES = [
+    "诗予拾",
+    "股市老手",
+    "价值猎人",
+    "趋势追踪者",
+    "金融分析师李",
+    "小散日记",
+    "涨停板猎手",
+    "波段王者",
+]
 
 TITLE_TEMPLATES = [
     "{stock}连续回调，市场情绪谨慎",
@@ -76,7 +114,9 @@ def _json_str_array(items: list[str]) -> str:
     return json.dumps(items, ensure_ascii=False)
 
 
-def _pick_with_scores(pool: list[str], rng: random.Random, min_n: int = 1, max_n: int = 3) -> list[dict]:
+def _pick_with_scores(
+    pool: list[str], rng: random.Random, min_n: int = 1, max_n: int = 3
+) -> list[dict]:
     count = rng.randint(min_n, max_n)
     chosen = rng.sample(pool, min(count, len(pool)))
     return [{"score": round(rng.uniform(0.5, 1.0), 4), "tag": t} for t in chosen]
@@ -86,17 +126,27 @@ def _raw_overlap(a: list[str], b: list[str]) -> int:
     return 1 if set(a) & set(b) else 0
 
 
-def _compute_labels(rng: random.Random, user_id: int, quality: float,
-                    stock_overlap: int, entity_overlap: int) -> tuple[int, int, int, int]:
+def _compute_labels(
+    rng: random.Random, user_id: int, quality: float, stock_overlap: int, entity_overlap: int
+) -> tuple[int, int, int, int]:
     """基于特征计算 CTR/CVR/click_detail/click_stock."""
     user_bias = math.sin(user_id * 0.17) * 0.8
     # 负偏置压低 CTR 基准率至 ~15-25%
-    ctr_logit = user_bias + quality * 2.5 + stock_overlap * 0.6 + entity_overlap * 0.4 + rng.uniform(-1.0, 1.0) - 2.5
+    ctr_logit = (
+        user_bias
+        + quality * 2.5
+        + stock_overlap * 0.6
+        + entity_overlap * 0.4
+        + rng.uniform(-1.0, 1.0)
+        - 2.5
+    )
     ctr = 1 if sigmoid(ctr_logit) > 0.5 else 0
 
     cvr = 0
     if ctr == 1:
-        cvr_logit = user_bias * 0.5 + quality * 1.5 + entity_overlap * 0.5 + rng.uniform(-0.5, 0.5) - 1.0
+        cvr_logit = (
+            user_bias * 0.5 + quality * 1.5 + entity_overlap * 0.5 + rng.uniform(-0.5, 0.5) - 1.0
+        )
         cvr = 1 if sigmoid(cvr_logit) > 0.5 else 0
 
     is_click_detail = 1 if ctr == 1 and rng.random() < 0.7 else 0
@@ -165,14 +215,16 @@ def make_user(user_id: int, rng: random.Random) -> dict:
     hist_hold_codes_data = rng.sample(STOCK_CODES, rng.randint(2, 5))
 
     # fav_securities: "code,market#weight|..."
-    fav_str = "|".join(f"{c},{rng.choice(['17','33'])}#{rng.uniform(1,15):.2f}" for c in fav_codes)
+    fav_str = "|".join(
+        f"{c},{rng.choice(['17', '33'])}#{rng.uniform(1, 15):.2f}" for c in fav_codes
+    )
 
     # recent_stocks: "code,market|..."
-    recent_str = "|".join(f"{c},{rng.choice(['17','33'])}" for c in recent_codes)
+    recent_str = "|".join(f"{c},{rng.choice(['17', '33'])}" for c in recent_codes)
 
     # interest_keywords: "词#权重|..."
     kws = rng.sample(INTEREST_KEYWORDS, rng.randint(5, 10))
-    kw_str = "|".join(f"{kw}#{rng.uniform(1,10):.2f}" for kw in kws)
+    kw_str = "|".join(f"{kw}#{rng.uniform(1, 10):.2f}" for kw in kws)
 
     # follow_authors: "authorId#2.0|..."
     auths = rng.sample(FOLLOW_AUTHORS, rng.randint(3, 8))
@@ -180,13 +232,13 @@ def make_user(user_id: int, rng: random.Random) -> dict:
 
     # hold_stocks: "code#market#weight#mean|..."
     hold_str = "|".join(
-        f"{c}#{rng.choice(['17','33'])}#{rng.uniform(0.01,0.2):.3f}#{rng.uniform(0.01,0.1):.3f}"
+        f"{c}#{rng.choice(['17', '33'])}#{rng.uniform(0.01, 0.2):.3f}#{rng.uniform(0.01, 0.1):.3f}"
         for c in hold_codes
     )
 
     # hist_hold_stocks: "code#market#days#mean|..."
     hist_hold_str = "|".join(
-        f"{c}#{rng.choice(['17','33'])}#{rng.uniform(1,10):.1f}#{rng.uniform(0.5,5):.2f}"
+        f"{c}#{rng.choice(['17', '33'])}#{rng.uniform(1, 10):.1f}#{rng.uniform(0.5, 5):.2f}"
         for c in hist_hold_codes_data
     )
 
@@ -205,15 +257,17 @@ def make_user(user_id: int, rng: random.Random) -> dict:
 
     # invest_style: "风格名#权重#类型标志|..."
     styles = rng.sample(INVEST_STYLES, rng.randint(1, 3))
-    style_str = "|".join(f"{s}#{rng.uniform(0.01,0.6):.2f}#0" for s in styles)
+    style_str = "|".join(f"{s}#{rng.uniform(0.01, 0.6):.2f}#0" for s in styles)
 
     # theme_interest: "题材名#关注程度#权重|..."
     themes = rng.sample(THEME_INTERESTS, rng.randint(2, 5))
-    theme_str = "|".join(f"{t}#{rng.choice(THEME_LEVELS)}#{rng.uniform(0.3,1):.2f}" for t in themes)
+    theme_str = "|".join(
+        f"{t}#{rng.choice(THEME_LEVELS)}#{rng.uniform(0.3, 1):.2f}" for t in themes
+    )
 
     # industry_interest
     inds = rng.sample(INDUSTRY_INTERESTS, rng.randint(2, 5))
-    ind_str = "|".join(f"{i}#{rng.choice(THEME_LEVELS)}#{rng.uniform(0.3,1):.2f}" for i in inds)
+    ind_str = "|".join(f"{i}#{rng.choice(THEME_LEVELS)}#{rng.uniform(0.3, 1):.2f}" for i in inds)
 
     return {
         "user_id": user_id,
@@ -230,7 +284,7 @@ def make_user(user_id: int, rng: random.Random) -> dict:
         "hist_hold_stocks": hist_hold_str,
         "historical_click_items": hist_click_str,
         "asset_level": rng.choice(ASSET_LEVELS),
-        "last_trade_date": f"20260{3 + rng.randint(0,2):01d}{rng.randint(10,30):02d}",
+        "last_trade_date": f"20260{3 + rng.randint(0, 2):01d}{rng.randint(10, 30):02d}",
         "city": rng.choice(CITIES),
         "investment_horizon": rng.choice(["短期", "中期", "长期"]) if rng.random() < 0.7 else "",
         "invest_style": style_str,
@@ -256,16 +310,44 @@ def main():
 
     # 数据列定义 (Tab 分隔, 与真实数据格式一致)
     source_cols = [
-        "item_id", "item_type", "title", "content", "insight",
-        "roleneeds_first_label", "roleneeds_second_label",
-        "invest_label", "invest_label_second", "invest_label_third",
-        "quality_score_label", "stock_list", "entity_words_label",
-        "item_entities_v3", "author_id", "author", "source_name", "emb_id",
-        "user_id", "rec_algo", "scene", "stay_time", "p_date",
-        "fav_securities", "recent_stocks", "interest_keywords",
-        "follow_authors", "is_new_user", "hold_stocks", "hist_hold_stocks",
-        "historical_click_items", "asset_level", "last_trade_date", "city",
-        "investment_horizon", "invest_style", "theme_interest", "industry_interest",
+        "item_id",
+        "item_type",
+        "title",
+        "content",
+        "insight",
+        "roleneeds_first_label",
+        "roleneeds_second_label",
+        "invest_label",
+        "invest_label_second",
+        "invest_label_third",
+        "quality_score_label",
+        "stock_list",
+        "entity_words_label",
+        "item_entities_v3",
+        "author_id",
+        "author",
+        "source_name",
+        "emb_id",
+        "user_id",
+        "rec_algo",
+        "scene",
+        "stay_time",
+        "p_date",
+        "fav_securities",
+        "recent_stocks",
+        "interest_keywords",
+        "follow_authors",
+        "is_new_user",
+        "hold_stocks",
+        "hist_hold_stocks",
+        "historical_click_items",
+        "asset_level",
+        "last_trade_date",
+        "city",
+        "investment_horizon",
+        "invest_style",
+        "theme_interest",
+        "industry_interest",
         "const_dummy",
     ]
     label_cols = ["ctr", "cvr", "is_click_detail", "is_click_stock"]
