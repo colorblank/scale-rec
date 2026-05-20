@@ -1,0 +1,1685 @@
+version: 1.0.0
+sources:
+- name: item_id
+  source: Item
+  dtype: int
+  default_val: '0'
+  embed:
+    vocab_size: 5000
+    embed_dim: 16
+- name: item_type
+  source: Item
+  dtype: string
+  default_val: unknown
+- name: title
+  source: Item
+  dtype: string
+  default_val: ''
+- name: content
+  source: Item
+  dtype: string
+  default_val: ''
+- name: insight
+  source: Item
+  dtype: string
+  default_val: ''
+- name: roleneeds_first_label
+  source: Item
+  dtype: string
+  default_val: '[]'
+- name: roleneeds_second_label
+  source: Item
+  dtype: string
+  default_val: '[]'
+- name: invest_label
+  source: Item
+  dtype: string
+  default_val: '[]'
+- name: invest_label_second
+  source: Item
+  dtype: string
+  default_val: '[]'
+- name: invest_label_third
+  source: Item
+  dtype: string
+  default_val: '[]'
+- name: quality_score_label
+  source: Item
+  dtype: float
+  default_val: '0.0'
+- name: stock_list
+  source: Item
+  dtype: string
+  default_val: '[]'
+- name: entity_words_label
+  source: Item
+  dtype: string
+  default_val: '[]'
+- name: item_entities_v3
+  source: Item
+  dtype: string
+  default_val: '[]'
+- name: author_id
+  source: Item
+  dtype: int
+  default_val: '0'
+- name: author
+  source: Item
+  dtype: string
+  default_val: ''
+- name: source_name
+  source: Item
+  dtype: string
+  default_val: unknown
+- name: emb_id
+  source: Item
+  dtype: string
+  default_val: '[]'
+- name: user_id
+  source: User
+  dtype: int
+  default_val: '0'
+  embed:
+    vocab_size: 5000
+    embed_dim: 16
+- name: rec_algo
+  source: Context
+  dtype: string
+  default_val: unknown
+- name: scene
+  source: Context
+  dtype: int
+  default_val: '0'
+  embed:
+    vocab_size: 2
+    embed_dim: 4
+- name: stay_time
+  source: Context
+  dtype: int
+  default_val: '0'
+- name: p_date
+  source: Context
+  dtype: string
+  default_val: '20260331'
+- name: fav_securities
+  source: User
+  dtype: string
+  default_val: ''
+- name: recent_stocks
+  source: User
+  dtype: string
+  default_val: ''
+- name: interest_keywords
+  source: User
+  dtype: string
+  default_val: ''
+- name: follow_authors
+  source: User
+  dtype: string
+  default_val: ''
+- name: is_new_user
+  source: User
+  dtype: string
+  default_val: 老用户
+- name: hold_stocks
+  source: User
+  dtype: string
+  default_val: ''
+- name: hist_hold_stocks
+  source: User
+  dtype: string
+  default_val: ''
+- name: historical_click_items
+  source: User
+  dtype: string
+  default_val: ''
+- name: asset_level
+  source: User
+  dtype: string
+  default_val: 未知
+- name: last_trade_date
+  source: User
+  dtype: string
+  default_val: ''
+- name: city
+  source: User
+  dtype: string
+  default_val: 未知
+- name: investment_horizon
+  source: User
+  dtype: string
+  default_val: ''
+- name: invest_style
+  source: User
+  dtype: string
+  default_val: ''
+- name: theme_interest
+  source: User
+  dtype: string
+  default_val: ''
+- name: industry_interest
+  source: User
+  dtype: string
+  default_val: ''
+- name: const_dummy
+  source: Context
+  dtype: string
+  default_val: _
+operators:
+- name: item_type_map
+  op_type: DictMapper
+  inputs:
+  - item_type
+  outputs:
+  - item_type_idx
+  params:
+    mapping:
+      state: 1
+      ask_answer: 2
+      iwc_dialogue: 3
+      news: 4
+      report: 5
+      snslivepost: 6
+      snsview: 7
+    default_idx: 0
+  embed:
+    vocab_size: 8
+    embed_dim: 4
+- name: source_name_map
+  op_type: DictMapper
+  inputs:
+  - source_name
+  outputs:
+  - source_name_idx
+  params:
+    mapping:
+      社区: 1
+      同花顺: 2
+      东方财富: 3
+      雪球: 4
+    default_idx: 0
+  embed:
+    vocab_size: 5
+    embed_dim: 4
+- name: quality_score_bucket
+  op_type: Bucketing
+  inputs:
+  - quality_score_label
+  outputs:
+  - quality_score_bucket
+  params:
+    boundaries:
+    - 0.2
+    - 0.4
+    - 0.6
+    - 0.8
+  embed:
+    vocab_size: 5
+    embed_dim: 4
+- name: quality_score_log_op
+  op_type: ExpressionOp
+  inputs:
+  - quality_score_label
+  outputs:
+  - quality_score_log
+  params:
+    script: log(v0 + 0.01)
+- name: quality_score_log_bucket
+  op_type: Bucketing
+  inputs:
+  - quality_score_log
+  outputs:
+  - quality_score_log_bucket
+  params:
+    boundaries:
+    - -4.0
+    - -2.0
+    - -1.0
+    - 0.0
+  embed:
+    vocab_size: 5
+    embed_dim: 4
+- name: roleneeds_first_parse
+  op_type: JsonExtractList
+  inputs:
+  - roleneeds_first_label
+  outputs:
+  - roleneeds_first_tags
+  params:
+    key: tag
+    pad_len: 3
+    pad_val: ''
+- name: roleneeds_first_map
+  op_type: DictMapper
+  inputs:
+  - roleneeds_first_tags
+  outputs:
+  - roleneeds_first_ids
+  params:
+    mapping:
+      投顾: 1
+      量化: 2
+      个人投资者: 3
+      机构投资者: 4
+    default_idx: 0
+  embed:
+    vocab_size: 5
+    embed_dim: 4
+- name: roleneeds_second_parse
+  op_type: JsonExtractList
+  inputs:
+  - roleneeds_second_label
+  outputs:
+  - roleneeds_second_tags
+  params:
+    key: tag
+    pad_len: 3
+    pad_val: ''
+- name: roleneeds_second_map
+  op_type: DictMapper
+  inputs:
+  - roleneeds_second_tags
+  outputs:
+  - roleneeds_second_ids
+  params:
+    mapping:
+      投资研究: 1
+      风险管理: 2
+      资产配置: 3
+      交易执行: 4
+    default_idx: 0
+  embed:
+    vocab_size: 5
+    embed_dim: 4
+- name: invest_label_parse
+  op_type: JsonExtractList
+  inputs:
+  - invest_label
+  outputs:
+  - invest_label_tags
+  params:
+    key: tag
+    pad_len: 3
+    pad_val: ''
+- name: invest_label_map
+  op_type: DictMapper
+  inputs:
+  - invest_label_tags
+  outputs:
+  - invest_label_ids
+  params:
+    mapping:
+      大势研判: 1
+      行业研究: 2
+      公司研究: 3
+      技术分析: 4
+    default_idx: 0
+  embed:
+    vocab_size: 5
+    embed_dim: 4
+- name: invest_label_second_parse
+  op_type: JsonExtractList
+  inputs:
+  - invest_label_second
+  outputs:
+  - invest_label_second_tags
+  params:
+    key: tag
+    pad_len: 3
+    pad_val: ''
+- name: invest_label_second_map
+  op_type: DictMapper
+  inputs:
+  - invest_label_second_tags
+  outputs:
+  - invest_label_second_ids
+  params:
+    mapping:
+      大盘技术面: 1
+      行业基本面: 2
+      公司财务: 3
+      资金流向: 4
+    default_idx: 0
+  embed:
+    vocab_size: 5
+    embed_dim: 4
+- name: invest_label_third_parse
+  op_type: JsonExtractList
+  inputs:
+  - invest_label_third
+  outputs:
+  - invest_label_third_tags
+  params:
+    key: tag
+    pad_len: 3
+    pad_val: ''
+- name: invest_label_third_map
+  op_type: DictMapper
+  inputs:
+  - invest_label_third_tags
+  outputs:
+  - invest_label_third_ids
+  params:
+    mapping:
+      行业新闻: 1
+      公司公告: 2
+      政策解读: 3
+      市场数据: 4
+    default_idx: 0
+  embed:
+    vocab_size: 5
+    embed_dim: 4
+- name: entity_words_parse
+  op_type: JsonExtractList
+  inputs:
+  - entity_words_label
+  outputs:
+  - entity_words_tags
+  params:
+    key: tag
+    pad_len: 5
+    pad_val: ''
+- name: entity_words_map
+  op_type: DictMapper
+  inputs:
+  - entity_words_tags
+  outputs:
+  - entity_words_ids
+  params:
+    mapping:
+      反弹: 1
+      上涨: 2
+      下跌: 3
+      突破: 4
+      支撑: 5
+      压力: 6
+      成交量: 7
+      MACD: 8
+      KDJ: 9
+      RSI: 10
+    default_idx: 0
+  embed:
+    vocab_size: 11
+    embed_dim: 4
+- name: stock_list_parse
+  op_type: JsonExtractList
+  inputs:
+  - stock_list
+  outputs:
+  - stock_list_raw
+  params:
+    key: null
+    pad_len: 5
+    pad_val: ''
+- name: stock_code_extract
+  op_type: ListStringParser
+  inputs:
+  - stock_list_raw
+  outputs:
+  - stock_codes
+  params:
+    sep: ','
+    key_index: 0
+- name: stock_code_map
+  op_type: DictMapper
+  inputs:
+  - stock_codes
+  outputs:
+  - stock_code_ids
+  params:
+    mapping:
+      '600000': 1
+      '600001': 2
+      '600002': 3
+      '600003': 4
+      '600004': 5
+      '600005': 6
+      '600006': 7
+      '600007': 8
+      '600008': 9
+      '600009': 10
+      '600010': 11
+      '600011': 12
+      '600012': 13
+      '600013': 14
+      '600014': 15
+      '600015': 16
+      '600016': 17
+      '600017': 18
+      '600018': 19
+      '600019': 20
+      '600020': 21
+      '600021': 22
+      '600022': 23
+      '600023': 24
+      '600024': 25
+      '600025': 26
+      '600026': 27
+      '600027': 28
+      '600028': 29
+      '600029': 30
+      '600030': 31
+      '600031': 32
+      '600032': 33
+      '600033': 34
+      '600034': 35
+      '600035': 36
+      '600036': 37
+      '600037': 38
+      '600038': 39
+      '600039': 40
+      '600040': 41
+      '600041': 42
+      '600042': 43
+      '600043': 44
+      '600044': 45
+      '600045': 46
+      '600046': 47
+      '600047': 48
+      '600048': 49
+      '600049': 50
+    default_idx: 0
+  embed:
+    vocab_size: 51
+    embed_dim: 4
+- name: stock_code_pad
+  op_type: SequenceOp
+  inputs:
+  - stock_code_ids
+  outputs:
+  - stock_code_padded
+  params:
+    max_len: 5
+    pad_val: 0
+  embed:
+    vocab_size: 51
+    embed_dim: 4
+- name: entities_v3_parse
+  op_type: JsonExtractList
+  inputs:
+  - item_entities_v3
+  outputs:
+  - entities_v3_list
+  params:
+    key: null
+    pad_len: 4
+    pad_val: ''
+- name: entities_v3_map
+  op_type: DictMapper
+  inputs:
+  - entities_v3_list
+  outputs:
+  - entities_v3_ids
+  params:
+    mapping:
+      a_00: 1
+      a_01: 2
+      a_02: 3
+      a_03: 4
+      a_04: 5
+      a_05: 6
+      a_06: 7
+      a_07: 8
+      a_08: 9
+      a_09: 10
+      a_10: 11
+      a_11: 12
+      a_12: 13
+      a_13: 14
+      a_14: 15
+      a_15: 16
+      a_16: 17
+      a_17: 18
+      a_18: 19
+      a_19: 20
+      a_20: 21
+      a_21: 22
+      a_22: 23
+      a_23: 24
+      a_24: 25
+      a_25: 26
+      a_26: 27
+      a_27: 28
+      a_28: 29
+      a_29: 30
+      a_30: 31
+      a_31: 32
+      a_32: 33
+      a_33: 34
+      a_34: 35
+      a_35: 36
+      a_36: 37
+      a_37: 38
+      a_38: 39
+      a_39: 40
+      a_40: 41
+      a_41: 42
+      a_42: 43
+      a_43: 44
+      a_44: 45
+      a_45: 46
+      a_46: 47
+      a_47: 48
+      a_48: 49
+      a_49: 50
+      b_00: 51
+      b_01: 52
+      b_02: 53
+      b_03: 54
+      b_04: 55
+      b_05: 56
+      b_06: 57
+      b_07: 58
+      b_08: 59
+      b_09: 60
+      b_10: 61
+      b_11: 62
+      b_12: 63
+      b_13: 64
+      b_14: 65
+      b_15: 66
+      b_16: 67
+      b_17: 68
+      b_18: 69
+      b_19: 70
+      b_20: 71
+      b_21: 72
+      b_22: 73
+      b_23: 74
+      b_24: 75
+      b_25: 76
+      b_26: 77
+      b_27: 78
+      b_28: 79
+      b_29: 80
+      b_30: 81
+      b_31: 82
+      b_32: 83
+      b_33: 84
+      b_34: 85
+      b_35: 86
+      b_36: 87
+      b_37: 88
+      b_38: 89
+      b_39: 90
+      b_40: 91
+      b_41: 92
+      b_42: 93
+      b_43: 94
+      b_44: 95
+      b_45: 96
+      b_46: 97
+      b_47: 98
+      b_48: 99
+      b_49: 100
+      c_00: 101
+      c_01: 102
+      c_02: 103
+      c_03: 104
+      c_04: 105
+      c_05: 106
+      c_06: 107
+      c_07: 108
+      c_08: 109
+      c_09: 110
+      c_10: 111
+      c_11: 112
+      c_12: 113
+      c_13: 114
+      c_14: 115
+      c_15: 116
+      c_16: 117
+      c_17: 118
+      c_18: 119
+      c_19: 120
+      c_20: 121
+      c_21: 122
+      c_22: 123
+      c_23: 124
+      c_24: 125
+      c_25: 126
+      c_26: 127
+      c_27: 128
+      c_28: 129
+      c_29: 130
+      c_30: 131
+      c_31: 132
+      c_32: 133
+      c_33: 134
+      c_34: 135
+      c_35: 136
+      c_36: 137
+      c_37: 138
+      c_38: 139
+      c_39: 140
+      c_40: 141
+      c_41: 142
+      c_42: 143
+      c_43: 144
+      c_44: 145
+      c_45: 146
+      c_46: 147
+      c_47: 148
+      c_48: 149
+      c_49: 150
+      d_00: 151
+      d_01: 152
+      d_02: 153
+      d_03: 154
+      d_04: 155
+      d_05: 156
+      d_06: 157
+      d_07: 158
+      d_08: 159
+      d_09: 160
+      d_10: 161
+      d_11: 162
+      d_12: 163
+      d_13: 164
+      d_14: 165
+      d_15: 166
+      d_16: 167
+      d_17: 168
+      d_18: 169
+      d_19: 170
+      d_20: 171
+      d_21: 172
+      d_22: 173
+      d_23: 174
+      d_24: 175
+      d_25: 176
+      d_26: 177
+      d_27: 178
+      d_28: 179
+      d_29: 180
+      d_30: 181
+      d_31: 182
+      d_32: 183
+      d_33: 184
+      d_34: 185
+      d_35: 186
+      d_36: 187
+      d_37: 188
+      d_38: 189
+      d_39: 190
+      d_40: 191
+      d_41: 192
+      d_42: 193
+      d_43: 194
+      d_44: 195
+      d_45: 196
+      d_46: 197
+      d_47: 198
+      d_48: 199
+      d_49: 200
+    default_idx: 0
+  embed:
+    vocab_size: 201
+    embed_dim: 4
+- name: emb_id_parse
+  op_type: JsonExtractList
+  inputs:
+  - emb_id
+  outputs:
+  - emb_id_list
+  params:
+    key: null
+    pad_len: 4
+    pad_val: ''
+- name: emb_id_map
+  op_type: DictMapper
+  inputs:
+  - emb_id_list
+  outputs:
+  - emb_id_ids
+  params:
+    mapping:
+      a_00: 1
+      a_01: 2
+      a_02: 3
+      a_03: 4
+      a_04: 5
+      a_05: 6
+      a_06: 7
+      a_07: 8
+      a_08: 9
+      a_09: 10
+      a_10: 11
+      a_11: 12
+      a_12: 13
+      a_13: 14
+      a_14: 15
+      a_15: 16
+      a_16: 17
+      a_17: 18
+      a_18: 19
+      a_19: 20
+      a_20: 21
+      a_21: 22
+      a_22: 23
+      a_23: 24
+      a_24: 25
+      a_25: 26
+      a_26: 27
+      a_27: 28
+      a_28: 29
+      a_29: 30
+      a_30: 31
+      a_31: 32
+      a_32: 33
+      a_33: 34
+      a_34: 35
+      a_35: 36
+      a_36: 37
+      a_37: 38
+      a_38: 39
+      a_39: 40
+      a_40: 41
+      a_41: 42
+      a_42: 43
+      a_43: 44
+      a_44: 45
+      a_45: 46
+      a_46: 47
+      a_47: 48
+      a_48: 49
+      a_49: 50
+      b_00: 51
+      b_01: 52
+      b_02: 53
+      b_03: 54
+      b_04: 55
+      b_05: 56
+      b_06: 57
+      b_07: 58
+      b_08: 59
+      b_09: 60
+      b_10: 61
+      b_11: 62
+      b_12: 63
+      b_13: 64
+      b_14: 65
+      b_15: 66
+      b_16: 67
+      b_17: 68
+      b_18: 69
+      b_19: 70
+      b_20: 71
+      b_21: 72
+      b_22: 73
+      b_23: 74
+      b_24: 75
+      b_25: 76
+      b_26: 77
+      b_27: 78
+      b_28: 79
+      b_29: 80
+      b_30: 81
+      b_31: 82
+      b_32: 83
+      b_33: 84
+      b_34: 85
+      b_35: 86
+      b_36: 87
+      b_37: 88
+      b_38: 89
+      b_39: 90
+      b_40: 91
+      b_41: 92
+      b_42: 93
+      b_43: 94
+      b_44: 95
+      b_45: 96
+      b_46: 97
+      b_47: 98
+      b_48: 99
+      b_49: 100
+      c_00: 101
+      c_01: 102
+      c_02: 103
+      c_03: 104
+      c_04: 105
+      c_05: 106
+      c_06: 107
+      c_07: 108
+      c_08: 109
+      c_09: 110
+      c_10: 111
+      c_11: 112
+      c_12: 113
+      c_13: 114
+      c_14: 115
+      c_15: 116
+      c_16: 117
+      c_17: 118
+      c_18: 119
+      c_19: 120
+      c_20: 121
+      c_21: 122
+      c_22: 123
+      c_23: 124
+      c_24: 125
+      c_25: 126
+      c_26: 127
+      c_27: 128
+      c_28: 129
+      c_29: 130
+      c_30: 131
+      c_31: 132
+      c_32: 133
+      c_33: 134
+      c_34: 135
+      c_35: 136
+      c_36: 137
+      c_37: 138
+      c_38: 139
+      c_39: 140
+      c_40: 141
+      c_41: 142
+      c_42: 143
+      c_43: 144
+      c_44: 145
+      c_45: 146
+      c_46: 147
+      c_47: 148
+      c_48: 149
+      c_49: 150
+      d_00: 151
+      d_01: 152
+      d_02: 153
+      d_03: 154
+      d_04: 155
+      d_05: 156
+      d_06: 157
+      d_07: 158
+      d_08: 159
+      d_09: 160
+      d_10: 161
+      d_11: 162
+      d_12: 163
+      d_13: 164
+      d_14: 165
+      d_15: 166
+      d_16: 167
+      d_17: 168
+      d_18: 169
+      d_19: 170
+      d_20: 171
+      d_21: 172
+      d_22: 173
+      d_23: 174
+      d_24: 175
+      d_25: 176
+      d_26: 177
+      d_27: 178
+      d_28: 179
+      d_29: 180
+      d_30: 181
+      d_31: 182
+      d_32: 183
+      d_33: 184
+      d_34: 185
+      d_35: 186
+      d_36: 187
+      d_37: 188
+      d_38: 189
+      d_39: 190
+      d_40: 191
+      d_41: 192
+      d_42: 193
+      d_43: 194
+      d_44: 195
+      d_45: 196
+      d_46: 197
+      d_47: 198
+      d_48: 199
+      d_49: 200
+    default_idx: 0
+  embed:
+    vocab_size: 201
+    embed_dim: 4
+- name: author_id_hash
+  op_type: StringConcatHash
+  inputs:
+  - author_id
+  - const_dummy
+  outputs:
+  - author_id_idx
+  params:
+    vocab_size: 500
+    oov_reserve: 50
+    hash_map_path: demo/temp/author_id_hash_map.yaml
+    mode: train
+    separator: _
+  embed:
+    vocab_size: 500
+    embed_dim: 8
+- name: title_hash
+  op_type: StringConcatHash
+  inputs:
+  - title
+  - const_dummy
+  outputs:
+  - title_idx
+  params:
+    vocab_size: 500
+    oov_reserve: 50
+    hash_map_path: demo/temp/title_hash_map.yaml
+    mode: train
+    separator: _
+  embed:
+    vocab_size: 500
+    embed_dim: 8
+- name: author_hash
+  op_type: StringConcatHash
+  inputs:
+  - author
+  - const_dummy
+  outputs:
+  - author_idx
+  params:
+    vocab_size: 200
+    oov_reserve: 20
+    hash_map_path: demo/temp/author_hash_map.yaml
+    mode: train
+    separator: _
+  embed:
+    vocab_size: 200
+    embed_dim: 8
+- name: rec_algo_map
+  op_type: DictMapper
+  inputs:
+  - rec_algo
+  outputs:
+  - rec_algo_idx
+  params:
+    mapping:
+      favSecuritiesV1: 1
+      stockFenshiKxian-hot: 2
+      favEntitiesV1: 3
+    default_idx: 0
+  embed:
+    vocab_size: 4
+    embed_dim: 4
+- name: is_new_user_map
+  op_type: DictMapper
+  inputs:
+  - is_new_user
+  outputs:
+  - is_new_user_idx
+  params:
+    mapping:
+      老用户: 1
+      新用户: 2
+    default_idx: 0
+  embed:
+    vocab_size: 3
+    embed_dim: 4
+- name: asset_level_map
+  op_type: DictMapper
+  inputs:
+  - asset_level
+  outputs:
+  - asset_level_idx
+  params:
+    mapping:
+      1万以下: 1
+      1-10万: 2
+      10-30万: 3
+      30-100万: 4
+      100万以上: 5
+    default_idx: 0
+  embed:
+    vocab_size: 6
+    embed_dim: 4
+- name: city_map
+  op_type: DictMapper
+  inputs:
+  - city
+  outputs:
+  - city_idx
+  params:
+    mapping:
+      上海市: 1
+      北京市: 2
+      深圳市: 3
+      杭州市: 4
+      广州市: 5
+      成都市: 6
+    default_idx: 0
+  embed:
+    vocab_size: 7
+    embed_dim: 4
+- name: investment_horizon_map
+  op_type: DictMapper
+  inputs:
+  - investment_horizon
+  outputs:
+  - investment_horizon_idx
+  params:
+    mapping:
+      短期: 1
+      中期: 2
+      长期: 3
+    default_idx: 0
+  embed:
+    vocab_size: 4
+    embed_dim: 4
+- name: stay_time_bucket
+  op_type: Bucketing
+  inputs:
+  - stay_time
+  outputs:
+  - stay_time_bucket
+  params:
+    boundaries:
+    - 60
+    - 300
+    - 900
+    - 3600
+  embed:
+    vocab_size: 5
+    embed_dim: 4
+- name: fav_stock_parse
+  op_type: StringParser
+  inputs:
+  - fav_securities
+  outputs:
+  - fav_stock_raw
+  params:
+    sep1: '|'
+    sep2: '#'
+    key_index: 0
+    pad_len: 5
+    pad_val: ''
+- name: fav_stock_code_extract
+  op_type: ListStringParser
+  inputs:
+  - fav_stock_raw
+  outputs:
+  - fav_stock_codes
+  params:
+    sep: ','
+    key_index: 0
+- name: fav_stock_map
+  op_type: DictMapper
+  inputs:
+  - fav_stock_codes
+  outputs:
+  - fav_stock_ids
+  params:
+    mapping:
+      '600000': 1
+      '600001': 2
+      '600002': 3
+      '600003': 4
+      '600004': 5
+      '600005': 6
+      '600006': 7
+      '600007': 8
+      '600008': 9
+      '600009': 10
+      '600010': 11
+      '600011': 12
+      '600012': 13
+      '600013': 14
+      '600014': 15
+      '600015': 16
+      '600016': 17
+      '600017': 18
+      '600018': 19
+      '600019': 20
+      '600020': 21
+      '600021': 22
+      '600022': 23
+      '600023': 24
+      '600024': 25
+      '600025': 26
+      '600026': 27
+      '600027': 28
+      '600028': 29
+      '600029': 30
+      '600030': 31
+      '600031': 32
+      '600032': 33
+      '600033': 34
+      '600034': 35
+      '600035': 36
+      '600036': 37
+      '600037': 38
+      '600038': 39
+      '600039': 40
+      '600040': 41
+      '600041': 42
+      '600042': 43
+      '600043': 44
+      '600044': 45
+      '600045': 46
+      '600046': 47
+      '600047': 48
+      '600048': 49
+      '600049': 50
+    default_idx: 0
+  embed:
+    vocab_size: 51
+    embed_dim: 4
+- name: recent_stocks_parse
+  op_type: StringParser
+  inputs:
+  - recent_stocks
+  outputs:
+  - recent_stocks_raw
+  params:
+    sep1: '|'
+    sep2: ','
+    key_index: 0
+    pad_len: 10
+    pad_val: ''
+- name: recent_stocks_map
+  op_type: DictMapper
+  inputs:
+  - recent_stocks_raw
+  outputs:
+  - recent_stocks_ids
+  params:
+    mapping:
+      '600000': 1
+      '600001': 2
+      '600002': 3
+      '600003': 4
+      '600004': 5
+      '600005': 6
+      '600006': 7
+      '600007': 8
+      '600008': 9
+      '600009': 10
+      '600010': 11
+      '600011': 12
+      '600012': 13
+      '600013': 14
+      '600014': 15
+      '600015': 16
+      '600016': 17
+      '600017': 18
+      '600018': 19
+      '600019': 20
+      '600020': 21
+      '600021': 22
+      '600022': 23
+      '600023': 24
+      '600024': 25
+      '600025': 26
+      '600026': 27
+      '600027': 28
+      '600028': 29
+      '600029': 30
+      '600030': 31
+      '600031': 32
+      '600032': 33
+      '600033': 34
+      '600034': 35
+      '600035': 36
+      '600036': 37
+      '600037': 38
+      '600038': 39
+      '600039': 40
+      '600040': 41
+      '600041': 42
+      '600042': 43
+      '600043': 44
+      '600044': 45
+      '600045': 46
+      '600046': 47
+      '600047': 48
+      '600048': 49
+      '600049': 50
+    default_idx: 0
+  embed:
+    vocab_size: 51
+    embed_dim: 4
+- name: interest_kw_parse
+  op_type: StringParser
+  inputs:
+  - interest_keywords
+  outputs:
+  - interest_kw_list
+  params:
+    sep1: '|'
+    sep2: '#'
+    key_index: 0
+    pad_len: 10
+    pad_val: ''
+- name: interest_kw_map
+  op_type: DictMapper
+  inputs:
+  - interest_kw_list
+  outputs:
+  - interest_kw_ids
+  params:
+    mapping:
+      人工智能: 1
+      新能源: 2
+      半导体: 3
+      医药: 4
+      消费: 5
+      金融: 6
+      房地产: 7
+      汽车: 8
+      互联网: 9
+      5G: 10
+      区块链: 11
+      云计算: 12
+      大数据: 13
+      物联网: 14
+      芯片: 15
+      光伏: 16
+      锂电池: 17
+      军工: 18
+      农业: 19
+      传媒: 20
+    default_idx: 0
+  embed:
+    vocab_size: 21
+    embed_dim: 4
+- name: follow_authors_parse
+  op_type: StringParser
+  inputs:
+  - follow_authors
+  outputs:
+  - follow_authors_list
+  params:
+    sep1: '|'
+    sep2: '#'
+    key_index: 0
+    pad_len: 10
+    pad_val: ''
+- name: follow_authors_map
+  op_type: DictMapper
+  inputs:
+  - follow_authors_list
+  outputs:
+  - follow_authors_ids
+  params:
+    mapping:
+      '100000': 1
+      '100001': 2
+      '100002': 3
+      '100003': 4
+      '100004': 5
+      '100005': 6
+      '100006': 7
+      '100007': 8
+      '100008': 9
+      '100009': 10
+      '100010': 11
+      '100011': 12
+      '100012': 13
+      '100013': 14
+      '100014': 15
+      '100015': 16
+      '100016': 17
+      '100017': 18
+      '100018': 19
+      '100019': 20
+    default_idx: 0
+  embed:
+    vocab_size: 21
+    embed_dim: 4
+- name: hold_stocks_parse
+  op_type: StringParser
+  inputs:
+  - hold_stocks
+  outputs:
+  - hold_stocks_raw
+  params:
+    sep1: '|'
+    sep2: '#'
+    key_index: 0
+    pad_len: 5
+    pad_val: ''
+- name: hold_stocks_map
+  op_type: DictMapper
+  inputs:
+  - hold_stocks_raw
+  outputs:
+  - hold_stocks_ids
+  params:
+    mapping:
+      '600000': 1
+      '600001': 2
+      '600002': 3
+      '600003': 4
+      '600004': 5
+      '600005': 6
+      '600006': 7
+      '600007': 8
+      '600008': 9
+      '600009': 10
+      '600010': 11
+      '600011': 12
+      '600012': 13
+      '600013': 14
+      '600014': 15
+      '600015': 16
+      '600016': 17
+      '600017': 18
+      '600018': 19
+      '600019': 20
+      '600020': 21
+      '600021': 22
+      '600022': 23
+      '600023': 24
+      '600024': 25
+      '600025': 26
+      '600026': 27
+      '600027': 28
+      '600028': 29
+      '600029': 30
+      '600030': 31
+      '600031': 32
+      '600032': 33
+      '600033': 34
+      '600034': 35
+      '600035': 36
+      '600036': 37
+      '600037': 38
+      '600038': 39
+      '600039': 40
+      '600040': 41
+      '600041': 42
+      '600042': 43
+      '600043': 44
+      '600044': 45
+      '600045': 46
+      '600046': 47
+      '600047': 48
+      '600048': 49
+      '600049': 50
+    default_idx: 0
+  embed:
+    vocab_size: 51
+    embed_dim: 4
+- name: hist_hold_stocks_parse
+  op_type: StringParser
+  inputs:
+  - hist_hold_stocks
+  outputs:
+  - hist_hold_stocks_raw
+  params:
+    sep1: '|'
+    sep2: '#'
+    key_index: 0
+    pad_len: 5
+    pad_val: ''
+- name: hist_hold_stocks_map
+  op_type: DictMapper
+  inputs:
+  - hist_hold_stocks_raw
+  outputs:
+  - hist_hold_stocks_ids
+  params:
+    mapping:
+      '600000': 1
+      '600001': 2
+      '600002': 3
+      '600003': 4
+      '600004': 5
+      '600005': 6
+      '600006': 7
+      '600007': 8
+      '600008': 9
+      '600009': 10
+      '600010': 11
+      '600011': 12
+      '600012': 13
+      '600013': 14
+      '600014': 15
+      '600015': 16
+      '600016': 17
+      '600017': 18
+      '600018': 19
+      '600019': 20
+      '600020': 21
+      '600021': 22
+      '600022': 23
+      '600023': 24
+      '600024': 25
+      '600025': 26
+      '600026': 27
+      '600027': 28
+      '600028': 29
+      '600029': 30
+      '600030': 31
+      '600031': 32
+      '600032': 33
+      '600033': 34
+      '600034': 35
+      '600035': 36
+      '600036': 37
+      '600037': 38
+      '600038': 39
+      '600039': 40
+      '600040': 41
+      '600041': 42
+      '600042': 43
+      '600043': 44
+      '600044': 45
+      '600045': 46
+      '600046': 47
+      '600047': 48
+      '600048': 49
+      '600049': 50
+    default_idx: 0
+  embed:
+    vocab_size: 51
+    embed_dim: 4
+- name: hist_items_parse
+  op_type: StringParser
+  inputs:
+  - historical_click_items
+  outputs:
+  - hist_items_raw
+  params:
+    sep1: '|'
+    sep2: '#'
+    key_index: 0
+    pad_len: 10
+    pad_val: ''
+- name: hist_a_extract
+  op_type: ListStringParser
+  inputs:
+  - hist_items_raw
+  outputs:
+  - hist_a_list
+  params:
+    sep: ','
+    key_index: 0
+- name: hist_a_map
+  op_type: DictMapper
+  inputs:
+  - hist_a_list
+  outputs:
+  - hist_a_ids
+  params:
+    mapping:
+      a_00: 1
+      a_01: 2
+      a_02: 3
+      a_03: 4
+      a_04: 5
+      a_05: 6
+      a_06: 7
+      a_07: 8
+      a_08: 9
+      a_09: 10
+      a_10: 11
+      a_11: 12
+      a_12: 13
+      a_13: 14
+      a_14: 15
+      a_15: 16
+      a_16: 17
+      a_17: 18
+      a_18: 19
+      a_19: 20
+      a_20: 21
+      a_21: 22
+      a_22: 23
+      a_23: 24
+      a_24: 25
+      a_25: 26
+      a_26: 27
+      a_27: 28
+      a_28: 29
+      a_29: 30
+      a_30: 31
+      a_31: 32
+      a_32: 33
+      a_33: 34
+      a_34: 35
+      a_35: 36
+      a_36: 37
+      a_37: 38
+      a_38: 39
+      a_39: 40
+      a_40: 41
+      a_41: 42
+      a_42: 43
+      a_43: 44
+      a_44: 45
+      a_45: 46
+      a_46: 47
+      a_47: 48
+      a_48: 49
+      a_49: 50
+    default_idx: 0
+  embed:
+    vocab_size: 51
+    embed_dim: 4
+- name: invest_style_parse
+  op_type: StringParser
+  inputs:
+  - invest_style
+  outputs:
+  - invest_style_list
+  params:
+    sep1: '|'
+    sep2: '#'
+    key_index: 0
+    pad_len: 5
+    pad_val: ''
+- name: invest_style_map
+  op_type: DictMapper
+  inputs:
+  - invest_style_list
+  outputs:
+  - invest_style_ids
+  params:
+    mapping:
+      主力追踪: 1
+      事件驱动: 2
+      成长股投资: 3
+      价值投资: 4
+      趋势交易: 5
+      量化对冲: 6
+    default_idx: 0
+  embed:
+    vocab_size: 7
+    embed_dim: 4
+- name: theme_interest_parse
+  op_type: StringParser
+  inputs:
+  - theme_interest
+  outputs:
+  - theme_interest_list
+  params:
+    sep1: '|'
+    sep2: '#'
+    key_index: 0
+    pad_len: 5
+    pad_val: ''
+- name: theme_interest_map
+  op_type: DictMapper
+  inputs:
+  - theme_interest_list
+  outputs:
+  - theme_interest_ids
+  params:
+    mapping:
+      同花顺新质50: 1
+      车联网(车路协同): 2
+      低空经济: 3
+      人工智能: 4
+      新能源: 5
+      半导体: 6
+      机器人: 7
+      数字经济: 8
+    default_idx: 0
+  embed:
+    vocab_size: 9
+    embed_dim: 4
+- name: industry_interest_parse
+  op_type: StringParser
+  inputs:
+  - industry_interest
+  outputs:
+  - industry_interest_list
+  params:
+    sep1: '|'
+    sep2: '#'
+    key_index: 0
+    pad_len: 5
+    pad_val: ''
+- name: industry_interest_map
+  op_type: DictMapper
+  inputs:
+  - industry_interest_list
+  outputs:
+  - industry_interest_ids
+  params:
+    mapping:
+      系统软件(A股): 1
+      煤炭开采加工: 2
+      银行: 3
+      医药生物: 4
+      食品饮料: 5
+      电力设备: 6
+      汽车制造: 7
+      房地产: 8
+    default_idx: 0
+  embed:
+    vocab_size: 9
+    embed_dim: 4
+- name: entity_overlap
+  op_type: ListOverlap
+  inputs:
+  - entities_v3_list
+  - hist_a_list
+  outputs:
+  - entity_overlap_flag
+  params: {}
+  embed:
+    vocab_size: 2
+    embed_dim: 4
+- name: stock_overlap
+  op_type: ListOverlap
+  inputs:
+  - stock_codes
+  - fav_stock_codes
+  outputs:
+  - stock_overlap_flag
+  params: {}
+  embed:
+    vocab_size: 2
+    embed_dim: 4
+- name: stock_overlap_recent
+  op_type: ListOverlap
+  inputs:
+  - stock_codes
+  - recent_stocks_raw
+  outputs:
+  - stock_overlap_recent_flag
+  params: {}
+  embed:
+    vocab_size: 2
+    embed_dim: 4
