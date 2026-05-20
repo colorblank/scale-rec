@@ -57,10 +57,11 @@ fn test_mmoe_forward_shape() {
 
 #[test]
 fn test_esmm_forward_shape() {
-    let model = esmm::ESMM::new(vb(), &dummy_features(), &[8], &[4], &[4]).unwrap();
+    let model =
+        esmm::ESMM::new(vb(), &dummy_features(), &[8], &[4], &[4], &[4], &[4], &[4]).unwrap();
     let out = model.forward(&dummy_inputs(3)).unwrap();
-    assert_eq!(out.len(), 3);
-    assert_eq!(out["ctr"].dims(), &[3, 1]);
+    assert_eq!(out.len(), 9);
+    assert_eq!(out["click"].dims(), &[3, 1]);
     assert_eq!(out["cvr"].dims(), &[3, 1]);
     assert_eq!(out["ctcvr"].dims(), &[3, 1]);
 }

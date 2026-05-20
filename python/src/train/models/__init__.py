@@ -131,13 +131,25 @@ def _build_esmm(features, tokenizer=None, **params):
     return ESMM(
         features,
         params.get("shared_bottom_dims", []),
-        params.get("ctr_hidden_dims", []),
-        params.get("cvr_hidden_dims", []),
+        params.get("click_hidden_dims", [8]),
+        params.get("cvr_hidden_dims", [8]),
+        params.get("detail_hidden_dims", [8]),
+        params.get("stock_hidden_dims", [8]),
+        params.get("stay_hidden_dims", [8]),
     )
 
 
 def _spec_esmm(model=None):
-    return {"task_names": ["ctr", "cvr"], "label_col_map": {"ctr": "is_click", "cvr": "is_cvr"}}
+    return {
+        "task_names": ["click", "cvr", "detail", "stock", "stay"],
+        "label_col_map": {
+            "click": "is_click",
+            "cvr": "is_cvr",
+            "detail": "is_click_detail",
+            "stock": "is_click_stock",
+            "stay": "stay_time",
+        },
+    }
 
 
 def _build_unimixer(features, tokenizer=None, **params):

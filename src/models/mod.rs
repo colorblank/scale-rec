@@ -134,14 +134,20 @@ fn build_esmm(
     params: &serde_yaml::Value,
 ) -> Result<Box<dyn Model>> {
     let shared_bottom_dims: Vec<usize> = yaml_usize_seq(params, "shared_bottom_dims");
-    let ctr_hidden_dims: Vec<usize> = yaml_usize_seq(params, "ctr_hidden_dims");
+    let click_hidden_dims: Vec<usize> = yaml_usize_seq(params, "click_hidden_dims");
     let cvr_hidden_dims: Vec<usize> = yaml_usize_seq(params, "cvr_hidden_dims");
+    let detail_hidden_dims: Vec<usize> = yaml_usize_seq(params, "detail_hidden_dims");
+    let stock_hidden_dims: Vec<usize> = yaml_usize_seq(params, "stock_hidden_dims");
+    let stay_hidden_dims: Vec<usize> = yaml_usize_seq(params, "stay_hidden_dims");
     Ok(Box::new(esmm::ESMM::new(
         vb,
         features,
         &shared_bottom_dims,
-        &ctr_hidden_dims,
+        &click_hidden_dims,
         &cvr_hidden_dims,
+        &detail_hidden_dims,
+        &stock_hidden_dims,
+        &stay_hidden_dims,
     )?))
 }
 
