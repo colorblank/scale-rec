@@ -1,6 +1,6 @@
 # 特征预处理系统文档
 
-本文档完整描述 scale-rec 特征预处理系统的架构、配置格式、全部 10 个算子及执行模式，面向算法工程师和系统开发者。
+本文档完整描述 scale-rec 特征预处理系统的架构、配置格式、全部 14 个算子及执行模式，面向算法工程师和系统开发者。
 
 ---
 
@@ -102,11 +102,11 @@ dtype: { dtype: string, length: 10 }
 
 ```rust
 pub enum Fv {
-    Int(i32),           // type_name: "int"
-    Float(f32),         // type_name: "float"
-    Str(String),        // type_name: "str"
-    IntList(Vec<i32>),  // type_name: "list[int]"
-    StrList(Vec<String>), // type_name: "list[str]"
+    Int(i32),              // type_name: "int"
+    Float(f32),            // type_name: "float"
+    Str(String),           // type_name: "str"
+    IntList(Vec<i32>),     // type_name: "list[int]"
+    StrList(Vec<String>),  // type_name: "list[str]"
 }
 ```
 
@@ -122,52 +122,76 @@ DAG 在初始化阶段根据 SourceDef.dtype 生成默认值：
 
 ---
 
-## 4. 全部 10 个算子
+## 4. 全部 14 个算子
 
 ### 4.1 Bucketing — 数值分桶
 
-将连续数值离散化为整数桶索引。
+将连续数值离散化为整数桶索引。使用二分查找在有序边界上确定输入值所属区间。
+
+**参数**：
 
 | 参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `boundaries` | float[] | — | 有序桶边界，N 个边界产生 N+1 个桶 |
 
-**输入**：`Int` 或 `Float`（单值）
+**输入**：`Int` 或 `Float`
 **输出**：`Int`（桶索引 0..N）
 
-**行为**：桶 0 = `(-inf, boundaries[0])`，桶 i = `[boundaries[i-1], boundaries[i])`，桶 N = `[boundaries[N-1], +inf)`。
+**处理流程**：
+
+1. 取第一个输入值，转为浮点数
+2. 在 `boundaries` 数组上二分查找，找到第一个不小于该值的边界索引
+3. 索引即为桶号：桶 0 = `(-∞, boundaries[0])`，桶 i = `[boundaries[i-1], boundaries[i])`，桶 N = `[boundaries[N-1], +∞)`
 
 **示例**：
+
 ```yaml
 - name: hour_bucket
   op_type: Bucketing
   inputs: [ctx_hour]
   outputs: [hour_bucket]
-  params: { boundaries: [6, 12, 18, 22] }
+  params:
+    boundaries: [6, 12, 18, 22]
   embed: { vocab_size: 5, embed_dim: 4 }
-# 输入 15 → 输出 2（落在 [12, 18) 区间）
+```
+
+```
+boundaries = [6, 12, 18, 22]  →  5 个桶
+
+输入 5   → 5 < 6         → 桶 0  (凌晨)
+输入 9   → 9 ∈ [6,12)    → 桶 1  (上午)
+输入 15  → 15 ∈ [12,18)  → 桶 2  (下午)
+输入 20  → 20 ∈ [18,22)  → 桶 3  (晚间)
+输入 23  → 23 ≥ 22       → 桶 4  (深夜)
 ```
 
 ---
 
 ### 4.2 DictMapper — 字典映射
 
-将字符串/数值 key 映射为整数索引，支持单值和列表输入。
+将字符串或数值 key 映射为整数索引。支持单值输入和列表输入，是类别特征标准化的核心算子。
+
+**索引约定**：mapping 值从 1 起始，`default_idx=0` 保留为「未命中/缺失」。下游 Embedding 可将 index 0 固定映射为零向量，从而区分 padding 占位符与真实特征。
+
+**参数**：
 
 | 参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `mapping` | object | — | key → index 映射表 |
-| `default_idx` | int | 0 | 未命中时的默认索引 |
+| `mapping` | object | — | key → index 映射表（值从 1 开始） |
+| `default_idx` | int | 0 | 未命中时的默认索引（保留为 padding token） |
 
 **输入**：`Int` / `Float` / `Str` / `StrList` / `IntList`
-**输出**：`Int` / `IntList`（与输入结构对应）
+**输出**：`Int`（单值输入）或 `IntList`（列表输入）
 
-**行为**：
-- 单值输入 → `mapping.get(str(val), default_idx)`
-- 列表输入 → 逐元素映射，保持列表长度
-- 非 string/int/float 类型元素 → `default_idx`
+**处理流程**：
+
+1. 判断输入类型：单值还是列表
+2. 单值：将值转为字符串，在 `mapping` 中查找，命中返回对应索引，未命中返回 `default_idx`
+3. 列表：对列表中每个元素执行步骤 2，保持列表长度不变
+4. 非 string/int/float 类型的值直接返回 `default_idx`
 
 **示例**：
+
 ```yaml
 - name: device_map
   op_type: DictMapper
@@ -177,27 +201,48 @@ DAG 在初始化阶段根据 SourceDef.dtype 生成默认值：
     mapping: { phone: 1, pad: 2, pc: 3 }
     default_idx: 0
   embed: { vocab_size: 4, embed_dim: 4 }
-# 输入 "phone" → 输出 1
+```
+
+```
+mapping = {phone:1, pad:2, pc:3}, default_idx=0
+
+单值模式：
+  输入 "phone"   → 命中 "phone" → 输出 1
+  输入 "tablet"  → 未命中      → 输出 0
+
+列表模式：
+  输入 ["phone","tablet","pc"]
+  逐元素映射               → 输出 [1, 0, 3]
 ```
 
 ---
 
 ### 4.3 StringParser — 两级字符串分词
 
-解析 `K1#V1|K2#V2` 格式的拼接字符串，支持固定长度填充。
+解析 `K1#V1|K2#V2|...` 格式的拼接字符串，提取指定字段后补齐到固定长度。适用于用户标签（`tag#weight|...`）、证券持仓（`code#market#weight|...`）等结构化字符串。
+
+**参数**：
 
 | 参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `sep1` | string | `"#"` | 一级分隔符（分隔键值对） |
 | `sep2` | string | `"\|"` | 二级分隔符（分隔 Key 和 Value） |
-| `key_index` | int | 0 | 提取索引：0=Key, 1=Value |
+| `key_index` | int | 0 | 提取切分后的第几个字段：0=Key, 1=第一个 Value |
 | `pad_len` | int | 0 | 结果列表固定长度，不足则填充 |
 | `pad_val` | string | `"unknown"` | 填充值 |
 
 **输入**：`Str`
-**输出**：`StrList`
+**输出**：`StrList`（长度 = `pad_len`）
+
+**处理流程**：
+
+1. 将输入转为字符串，若为空串直接返回全填充列表
+2. 用 `sep1` 切分 → 得到若干段（如 `["sports#1", "music#2", "gaming#3"]`）
+3. 每段用 `sep2` 切分 → 取 `key_index` 位置的字段
+4. 若结果数不足 `pad_len`，用 `pad_val` 填充至目标长度；超出则截断
 
 **示例**：
+
 ```yaml
 - name: tags_parse
   op_type: StringParser
@@ -207,17 +252,27 @@ DAG 在初始化阶段根据 SourceDef.dtype 生成默认值：
     sep1: "|"
     sep2: "#"
     key_index: 0
-    pad_len: 10
+    pad_len: 5
     pad_val: "none"
-# 输入 "sports#1|music#2|gaming#3"
-# 输出 ["sports", "music", "gaming", "none", "none", ...]（补齐至 10 个）
+```
+
+```
+输入 "sports#0.9|music#0.8|gaming#0.7"
+
+处理步骤：
+  sep1("|")  → ["sports#0.9", "music#0.8", "gaming#0.7"]
+  sep2("#")  → [[sports,0.9], [music,0.8], [gaming,0.7]]
+  key_index=0 → ["sports", "music", "gaming"]
+  pad_len=5  → ["sports", "music", "gaming", "none", "none"]
 ```
 
 ---
 
-### 4.4 JsonExtractList — JSON 数组解析
+### 4.4 JsonExtractList — JSON 数组提取
 
-解析 JSON 字符串中的数组，提取指定 key 的内容。
+解析 JSON 字符串中的数组，提取指定字段或直接取出元素值。支持对象数组（`[{key:val}, ...]`）和纯值数组（`["a","b"]`）两种格式。
+
+**参数**：
 
 | 参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
@@ -226,39 +281,188 @@ DAG 在初始化阶段根据 SourceDef.dtype 生成默认值：
 | `pad_val` | string | `""` | 填充值 |
 
 **输入**：`Str`（JSON 格式字符串）
-**输出**：`StrList`
+**输出**：`StrList`（长度 = `pad_len`）
 
-**行为**：
-- `key` 非空：从对象数组中提取指定字段
-- `key` 为空：数组元素直接转为字符串
-- 解析失败或空字符串 → 全填充值
+**处理流程**：
 
-**示例**：
+1. 将输入解析为 JSON，取顶层数组
+2. 若 `key` 非空：遍历数组中每个对象，提取 `key` 字段的值
+3. 若 `key` 为空：遍历数组，将每个元素转为字符串
+4. 若结果数不足 `pad_len`，用 `pad_val` 填充；超出则截断
+5. 解析失败或空字符串 → 全填充值
+
+**示例一：对象数组提取字段**：
+
 ```yaml
-# 场景一：对象数组提取字段
 - name: extract_tags
   op_type: JsonExtractList
   inputs: [json_tags]
   outputs: [tag_list]
   params: { key: "tag", pad_len: 3, pad_val: "none" }
-# 输入 '[{"tag":"科技"},{"tag":"数码"}]'
-# 输出 ["科技", "数码", "none"]
+```
 
-# 场景二：简单字符串数组
+```
+输入 '[{"score":0.99,"tag":"科技"},{"score":0.5,"tag":"数码"}]'
+
+处理步骤：
+  JSON 解析 → [{score:0.99,tag:"科技"}, {score:0.5,tag:"数码"}]
+  key="tag" → ["科技", "数码"]
+  pad_len=3 → ["科技", "数码", "none"]
+```
+
+**示例二：纯值数组**：
+
+```yaml
 - name: extract_codes
   op_type: JsonExtractList
   inputs: [stock_list]
   outputs: [codes]
   params: { pad_len: 5, pad_val: "" }
-# 输入 '["600519,17","000001,33"]'
-# 输出 ["600519,17", "000001,33", "", "", ""]
+```
+
+```
+输入 '["600519,17","000001,33"]'
+
+处理步骤：
+  JSON 解析 → ["600519,17", "000001,33"]
+  key=null  → ["600519,17", "000001,33"]
+  pad_len=5 → ["600519,17", "000001,33", "", "", ""]
 ```
 
 ---
 
-### 4.5 ListStringParser — 列表二次切分
+### 4.5 Split — 字符串直接切分
 
-对 `StrList` 中每个元素进行分隔符切分，提取指定索引。
+将单个字符串按分隔符切分为字符串列表，支持定长截断和填充。适用于 `"key1|key2|key3"` 这类简单分隔格式。
+
+**参数**：
+
+| 参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `sep` | string | `"\|"` | 分隔符 |
+| `max_len` | int | `0` | 最大长度，0 表示不限制。超出截断，不足则填充 `pad_val` |
+| `pad_val` | string | `""` | 填充值 |
+
+**输入**：`Str`
+**输出**：`StrList`（若 max_len > 0 则固定长度，否则变长）
+
+**处理流程**：
+
+1. 将输入转为字符串，若为空串直接返回空列表（或全填充列表）
+2. 用 `sep` 切分字符串
+3. 若 `max_len > 0`：截断至 `max_len`，不足用 `pad_val` 补齐
+
+**与 StringParser 的区别**：Split 只有一级分隔符，不做字段提取，适合 `"a|b|c"` 这种扁平列表格式。
+
+**示例**：
+
+```yaml
+- name: tag_split
+  op_type: Split
+  inputs: [interest_keywords]
+  outputs: [interest_list]
+  params:
+    sep: "|"
+    max_len: 5
+    pad_val: "none"
+```
+
+```
+输入 "新能源|半导体|医药|消费"
+
+处理步骤：
+  sep("|")  → ["新能源", "半导体", "医药", "消费"]
+  max_len=5 → ["新能源", "半导体", "医药", "消费", "none"]
+```
+
+---
+
+### 4.6 FlatSplit — 列表打平分割
+
+将字符串列表中每个元素按分隔符切分后打平为单层列表。用于从序列化的向量序列中提取全部语义 ID。
+
+**参数**：
+
+| 参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `sep` | string | `","` | 元素内分隔符 |
+| `max_len` | int | `0` | 最大长度，0 表示不限制。超出截断，不足则填充 `pad_val` |
+| `pad_val` | string | `""` | 填充值 |
+
+**输入**：`StrList`（每个元素是含分隔符的字符串）
+**输出**：`StrList`
+
+**处理流程**：
+
+1. 遍历列表中每个字符串元素
+2. 每个元素用 `sep` 切分，将切分结果追加到累加列表
+3. 若 `max_len > 0`：截断或填充至目标长度
+
+**与 ListStringParser 的区别**：ListStringParser 从每个元素只提取一个字段（`key_index`），FlatSplit 收集所有切分后的部分并打平。
+
+**示例**：
+
+```yaml
+- name: semantic_ids_flat
+  op_type: FlatSplit
+  inputs: [item_vectors]
+  outputs: [all_semantic_ids]
+  params:
+    sep: ","
+    max_len: 40
+    pad_val: ""
+```
+
+```
+输入 ["a_93,b_129,c_140,d_53", "a_51,b_245,c_205,d_157"]
+
+处理步骤：
+  "a_93,b_129,c_140,d_53".split(",")  → ["a_93","b_129","c_140","d_53"]
+  "a_51,b_245,c_205,d_157".split(",") → ["a_51","b_245","c_205","d_157"]
+  打平 → ["a_93","b_129","c_140","d_53","a_51","b_245","c_205","d_157"]
+```
+
+典型应用场景：RQ-VAE 语义 ID 序列解析。
+
+```yaml
+# historical_click_items: "a_xx,b_xx,c_xx,d_xx#ts|..."
+- name: parse_hist
+  op_type: StringParser
+  inputs: [historical_click_items]
+  outputs: [hist_vectors]
+  params:
+    sep1: "|"
+    sep2: "#"
+    key_index: 0
+    pad_len: 10
+    pad_val: ""
+
+- name: flatten_ids
+  op_type: FlatSplit
+  inputs: [hist_vectors]
+  outputs: [all_ids]
+  params:
+    sep: ","
+    max_len: 40       # 10 个向量 × 4 个 ID
+    pad_val: ""
+
+- name: map_ids
+  op_type: DictMapper
+  inputs: [all_ids]
+  outputs: [all_ids_mapped]
+  params:
+    mapping: { a_00: 1, a_01: 2, ..., d_49: 200 }
+    default_idx: 0
+  embed: { vocab_size: 201, embed_dim: 4 }
+```
+
+---
+
+### 4.7 ListStringParser — 列表二次切分
+
+对 `StrList` 中每个元素进行分隔符切分，提取指定索引位置的值。适用于从 `"code,market"` 格式的列表中提取纯代码。
+
+**参数**：
 
 | 参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
@@ -268,170 +472,312 @@ DAG 在初始化阶段根据 SourceDef.dtype 生成默认值：
 **输入**：`StrList`
 **输出**：`StrList`
 
+**处理流程**：
+
+1. 遍历列表中每个元素，转为字符串
+2. 用 `sep` 切分该元素
+3. 取切分结果中 `key_index` 位置的字段
+4. 若该位置不存在（数组越界），跳过该元素
+
 **示例**：
+
 ```yaml
 - name: extract_code
   op_type: ListStringParser
   inputs: [code_with_market]
   outputs: [pure_codes]
   params: { sep: ",", key_index: 0 }
-# 输入 ["600519,17", "000001,33"]
-# 输出 ["600519", "000001"]
+```
+
+```
+输入 ["600519,17", "000001,33"]
+
+处理步骤：
+  "600519,17".split(",") → ["600519","17"], key_index=0 → "600519"
+  "000001,33".split(",") → ["000001","33"], key_index=0 → "000001"
+
+输出 ["600519", "000001"]
 ```
 
 ---
 
-### 4.6 ExpressionOp — 脚本表达式
+### 4.8 ExpressionOp — 脚本表达式
 
-使用 Rhai 脚本执行数学计算。变量 `v0, v1, ...` 对应输入列表的索引。
+使用 Rhai 脚本执行数学计算。变量 `v0, v1, ...` 对应输入列表的索引位置。
+
+**参数**：
 
 | 参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `script` | string | — | Rhai 表达式，支持 `log`, `abs`, `max`, `min`, `sqrt` |
 
 **输入**：任意 `Fv`（在脚本中自动转为数值）
-**输出**：`Float`（计算结果）
+**输出**：`Float`
 
-**内置函数**：`log(x)`, `abs(x)`, `max(x,y)`, `min(x,y)`, `sqrt(x)`
+**处理流程**：
+
+1. 将每个输入值转为 f64 浮点数
+2. 注入变量 `v0, v1, ...` 对应 inputs[0], inputs[1], ...
+3. 注入数学函数：`log`, `abs`, `max`, `min`, `sqrt`
+4. 执行 Rhai 脚本，返回计算结果
 
 **示例**：
+
 ```yaml
-# CTR 平滑计算
+# CTR 平滑
 - name: calc_smooth_ctr
   op_type: ExpressionOp
   inputs: [click_cnt, expo_cnt]
   outputs: [smooth_ctr]
   params: { script: "v0 / (v1 + 1.0)" }
-# 输入 [3, 10] → 输出 0.272727...
 
 # 对数变换
-- name: log_transform
+- name: log_price
   op_type: ExpressionOp
-  inputs: [raw_value]
-  outputs: [log_value]
-  params: { script: "log(v0 + 1.0)" }
+  inputs: [item_price]
+  outputs: [log_price]
+  params: { script: "log(v0 + 0.01)" }
+```
+
+```
+输入 [3, 10], script="v0 / (v1 + 1.0)"
+  v0=3, v1=10 → 3 / (10 + 1.0) → 0.272727...
+
+输入 [9999], script="log(v0 + 0.01)"
+  v0=9999 → log(9999.01) → 9.21034...
 ```
 
 ---
 
-### 4.7 CrossFeature — 特征交叉
+### 4.9 CrossFeature — 特征交叉
 
-两个列表特征的笛卡尔积或内积。
+对两个列表特征进行组合操作，支持笛卡尔积和内积。
+
+**参数**：
 
 | 参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `cross_type` | string | `"cartesian"` | `"cartesian"` 或 `"inner_product"` |
+| `cross_type` | string | `"cartesian"` | `"cartesian"`（笛卡尔积）或 `"inner_product"`（内积） |
 
-**输入**：两个 `StrList`（cartesian）或两个 `IntList`（inner_product）
+**输入**：`StrList` × 2（cartesian）或 `IntList` × 2（inner_product）
 **输出**：`StrList`（cartesian）或 `Float`（inner_product）
 
+**处理流程（笛卡尔积）**：
+
+1. 将两个列表元素转为字符串
+2. 双层遍历：`list1[i] + "_" + list2[j]` → 结果列表
+
+**处理流程（内积）**：
+
+1. 将两个列表元素转为 f32
+2. 按较短列表的长度，逐元素相乘后求和
+
 **示例**：
+
 ```yaml
-# 笛卡尔积：用户标签 × 物品标签
+# 笛卡尔积
 - name: tag_cross
   op_type: CrossFeature
   inputs: [user_tags, item_tags]
   outputs: [cross_tags]
   params: { cross_type: cartesian }
-# 输入 ["a","b"] × ["x","y"]
-# 输出 ["a_x", "a_y", "b_x", "b_y"]
 
-# 内积：两个嵌入向量的点积
+# 内积
 - name: vector_dot
   op_type: CrossFeature
   inputs: [user_vec, item_vec]
   outputs: [dot_score]
   params: { cross_type: inner_product }
-# 输入 [1,2,3] × [4,5,6] → 输出 1*4 + 2*5 + 3*6 = 32.0
+```
+
+```
+笛卡尔积：
+  输入 ["a","b"] × ["x","y"]
+  → ["a_x", "a_y", "b_x", "b_y"]
+
+内积：
+  输入 [1.0, 2.0, 3.0] × [4.0, 5.0, 6.0]
+  → 1×4 + 2×5 + 3×6 = 32.0
 ```
 
 ---
 
-### 4.8 ListOverlap — 列表交集检测
+### 4.10 ListOverlap — 列表交集检测
 
-判断两个字符串列表是否有交集。
+判断两个字符串列表是否有交集，用于用户-物品交互信号提取。
 
-| 参数 | 无 |
-|---|---|
+**参数**：无
 
 **输入**：两个 `StrList`
 **输出**：`Int`（1=有交集，0=无交集）
 
+**处理流程**：
+
+1. 将第一个列表转为 HashSet
+2. 遍历第二个列表，检查是否有元素存在于 HashSet 中
+3. 命中任一元素返回 1，遍历完未命中返回 0
+
 **示例**：
+
 ```yaml
 - name: tag_overlap
   op_type: ListOverlap
-  inputs: [user_tag_list, item_tag_list]
+  inputs: [user_tags, item_tags]
   outputs: [overlap_flag]
-# 输入 ["sports","music"] 和 ["music","travel"]
-# 输出 1（交集: "music"）
+  embed: { vocab_size: 2, embed_dim: 4 }
+```
+
+```
+输入 ["sports","music","gaming"] 和 ["music","travel","food"]
+  HashSet: {sports, music, gaming}
+  遍历第二个列表: "music" 命中 → 输出 1
+
+输入 ["sports","music"] 和 ["travel","food"]
+  HashSet: {sports, music}
+  遍历第二个列表: 无命中 → 输出 0
 ```
 
 ---
 
-### 4.9 SequenceOp — 序列截断填充
+### 4.11 SequenceOp — 序列截断填充
 
-将整数序列裁剪或填充至固定长度。
+将整数序列裁剪或填充至固定长度，确保下游模型接收统一长度的序列输入。
+
+**参数**：
 
 | 参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `max_len` | int | 10 | 序列最大长度 |
-| `pad_val` | int | 0 | 填充值 |
+| `max_len` | int | 10 | 目标序列长度 |
+| `pad_val` | int | 0 | 填充值（需在 Embedding 词表内，通常保留 0 为 padding token） |
 
 **输入**：`IntList`
-**输出**：`IntList`（长度固定为 max_len）
+**输出**：`IntList`（长度 = `max_len`）
+
+**处理流程**：
+
+1. 若输入长度 > `max_len`：截取前 `max_len` 个元素
+2. 若输入长度 < `max_len`：尾部用 `pad_val` 补齐至 `max_len`
+3. 若恰好等于 `max_len`：原样返回
 
 **示例**：
+
 ```yaml
 - name: pad_history
   op_type: SequenceOp
   inputs: [click_seq]
   outputs: [padded_seq]
-  params: { max_len: 20, pad_val: 0 }
-# 输入 [3, 7, 15]（长度 3）
-# 输出 [3, 7, 15, 0, 0, ..., 0]（长度 20）
+  params: { max_len: 5, pad_val: 0 }
+```
+
+```
+max_len=5, pad_val=0
+
+输入 [3, 7, 15]           → 补齐 → [3, 7, 15, 0, 0]
+输入 [1, 2, 3, 4, 5]     → 不变 → [1, 2, 3, 4, 5]
+输入 [1, 2, 3, 4, 5, 6]  → 截断 → [1, 2, 3, 4, 5]
 ```
 
 ---
 
-### 4.10 StringConcatHash — 哈希交叉
+### 4.12 StringConcat — 字符串拼接
 
-拼接两个字段并通过哈希映射到固定词表。支持**训练模式**（自动构建映射）和**推理模式**（使用持久化映射文件）。
+将多路输入拼接到单个字符串，类型不限。作为特征交叉前的桥接算子，与 `FeatureHash` 配合完成特征哈希。
+
+**参数**：
 
 | 参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `vocab_size` | int | 1000 | 总词表大小 |
-| `oov_reserve` | int | 0 | OOV 保留空间（vocab_size 尾部） |
-| `separator` | string | `"\|"` | 拼接分隔符 |
-| `mode` | string | `"train"` | `"train"` 自动建表 / `"inference"` 读取映射文件 |
-| `hash_map_path` | string | `""` | 推理模式下映射文件路径 |
+| `separator` | string | `"_"` | 拼接分隔符 |
 
-**输入**：两个 `Str`（或 `Int` + `Str`）
-**输出**：`Int`（词表内索引）
+**输入**：任意数量和类型（内部转为字符串）
+**输出**：`Str`
 
-**行为**：
-- 拼接：`s1 + separator + s2`
-- 训练模式：首次遇到的 key 分配递增索引，词表满后使用 djb2 哈希落入 OOV 区
-- 推理模式：查映射表，未命中则 djb2 哈希落入 OOV 区
-- 哈希算法：djb2（`h = 5381; h = h*33 + byte`），对 `0x7FFFFFFF` 取模
+**处理流程**：
+
+1. 将每个输入值转为字符串
+2. 用 `separator` 连接所有字符串
 
 **示例**：
+
 ```yaml
-- name: user_item_cross
-  op_type: StringConcatHash
-  inputs: [user_id, item_id]
-  outputs: [cross_id]
+- name: user_item_concat
+  op_type: StringConcat
+  inputs: [user_id, item_category]
+  outputs: [user_item_str]
   params:
-    vocab_size: 10000
-    oov_reserve: 1000
     separator: "_"
-    mode: train
-    hash_map_path: ""
-  embed: { vocab_size: 10000, embed_dim: 16 }
-# 输入 user_id="u1", item_id="i5" → key="u1_i5" → 映射索引或哈希值
 ```
 
-**插件算子**：`PluginOp` 通过 `cdylib` 动态加载外部算子。`params` 需包含 `path`（动态库路径）和 `op_name`（算子标识）。外部库必须导出 `process_custom` 符号，签名为 `fn(&[&(dyn Any)]) -> Result<Box<dyn Any>, String>`。不建议在生产环境依赖，主要用于实验性特征快速验证。
+```
+输入 [42, "electronics"]
+  42.toString()  → "42"
+  join("_")      → "42_electronics"
+```
+
+---
+
+### 4.13 FeatureHash — 特征哈希
+
+无状态 DJB2 多种子哈希。将输入拼接后用 k 个独立种子分别哈希，输出一个或一组索引。Python 与 Rust 实现逐位一致。
+
+**参数**：
+
+| 参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `vocab_size` | int | 1000 | 哈希空间大小 [0, vocab_size) |
+| `num_hashes` | int | 1 | 独立哈希函数数量（>1 降低碰撞率） |
+| `separator` | string | `"\|"` | 输入拼接分隔符 |
+
+**输入**：任意数量和类型
+**输出**：`Int`（`num_hashes=1`）或 `IntList`（`num_hashes>1`）
+
+**处理流程**：
+
+1. 将全部输入值转为字符串，用 `separator` 拼接为单 key
+2. 对每个种子 s ∈ [0, num_hashes)：计算 `(djb2_seeded(key, s) % vocab_size)`
+3. `num_hashes=1` 返回单个 `Int`，否则返回 `IntList`
+4. DJB2 算法：`h=5381; for byte: h = h*33 + byte`，32 位回绕后取 `0x7FFFFFFF` 低 31 位
+
+**示例**：
+
+```yaml
+- name: cross_hash
+  op_type: FeatureHash
+  inputs: [user_item_str]
+  outputs: [hash_idx]
+  params:
+    vocab_size: 500
+    num_hashes: 1
+  embed: { vocab_size: 500, embed_dim: 8 }
+```
+
+```
+单哈希 (num_hashes=1)：
+  输入 "42_electronics"
+  → djb2_seeded("42_electronics", seed=0) = 1442432207
+  → 1442432207 % 500 = 207
+
+多哈希 (num_hashes=4)：
+  输入 "invest"
+  → [djb2_seeded(..., seed=0)%500, ..., djb2_seeded(..., seed=3)%500]
+  → [312, 89, 457, 23]
+```
+
+---
+
+### 4.14 PluginOp — 外部插件
+
+通过 `cdylib` 动态加载外部算子，用于实验性特征快速验证。
+
+| 参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `path` | string | — | 动态库路径 |
+| `op_name` | string | `"custom_plugin"` | 算子标识 |
+
+**输入**：任意
+**输出**：任意
+
+**约束**：外部库必须导出 `process_custom` 符号，签名为 `fn(&[&(dyn Any)]) -> Result<Box<dyn Any>, String>`。不建议在生产环境使用。
 
 ---
 
@@ -507,7 +853,7 @@ let context: Vec<Vec<Fv>> = dag.plan.execute_plan(&columns, &skip_op_idx, &preco
 
 ### 6.1 多级级联解析
 
-处理复杂嵌套数据的典型链路：JSON 提取 → 切分 → 映射。
+复杂嵌套数据的典型处理链路：JSON 提取 → 二次切分 → 字典映射。
 
 ```yaml
 # 原始字段: stock_json = '[{"code":"600519,17"}, {"code":"000001,33"}]'
@@ -529,7 +875,9 @@ let context: Vec<Vec<Fv>> = dag.plan.execute_plan(&columns, &skip_op_idx, &preco
   op_type: DictMapper
   inputs: [pure_codes]
   outputs: [stock_ids]
-  params: { mapping: { "600519": 1, "000001": 2 }, default_idx: 0 }
+  params:
+    mapping: { "600519": 1, "000001": 2 }
+    default_idx: 0
   embed: { vocab_size: 1000, embed_dim: 16 }
 ```
 
@@ -553,38 +901,74 @@ let context: Vec<Vec<Fv>> = dag.plan.execute_plan(&columns, &skip_op_idx, &preco
   embed: { vocab_size: 5, embed_dim: 8 }
 ```
 
-### 6.3 序列特征上的哈希交叉
+### 6.3 语义 ID 序列完整解析
+
+RQ-VAE 语义 ID 序列的完整处理链路：两级解析 → 打平 → 映射。
 
 ```yaml
-# 对变长行为序列和候选物品进行哈希交叉
-# StringConcatHash 的 process_batch 自动处理序列中的每个元素
+# 原始字段: historical_click_items
+# 格式: "a_93,b_129,c_140,d_53#1773893763|a_51,b_245,c_205,d_157#1773843030|..."
+# 目标: 提取全部语义 ID 并映射为 Embedding
 
-- name: seq_pad
-  op_type: SequenceOp
-  inputs: [click_seq]
-  outputs: [padded_seq]
-  params: { max_len: 20, pad_val: 0 }
-
-- name: seq_cross
-  op_type: StringConcatHash
-  inputs: [padded_seq, item_id]
-  outputs: [cross_ids]
+- name: parse_hist
+  op_type: StringParser
+  inputs: [historical_click_items]
+  outputs: [hist_vectors]
   params:
-    vocab_size: 10000
-    oov_reserve: 1000
-    mode: train
-  embed: { vocab_size: 10000, embed_dim: 16 }
+    sep1: "|"
+    sep2: "#"
+    key_index: 0
+    pad_len: 10
+    pad_val: ""
+
+- name: flatten_ids
+  op_type: FlatSplit
+  inputs: [hist_vectors]
+  outputs: [all_semantic_ids]
+  params:
+    sep: ","
+    max_len: 40
+    pad_val: ""
+
+- name: map_ids
+  op_type: DictMapper
+  inputs: [all_semantic_ids]
+  outputs: [mapped_ids]
+  params:
+    mapping: { a_00: 1, a_01: 2, ..., d_49: 200 }
+    default_idx: 0
+  embed: { vocab_size: 201, embed_dim: 4 }
 ```
 
-### 6.4 用户-物品交互信号
+### 6.4 特征哈希交叉
+
+将高基数 ID 特征拼接后哈希到固定词表。
 
 ```yaml
-# 标签重叠 + 标签交叉组合
+- name: concat
+  op_type: StringConcat
+  inputs: [user_id, item_category]
+  outputs: [cross_str]
+  params: { separator: "_" }
 
+- name: hash_cross
+  op_type: FeatureHash
+  inputs: [cross_str]
+  outputs: [cross_idx]
+  params:
+    vocab_size: 500
+    num_hashes: 1
+  embed: { vocab_size: 500, embed_dim: 8 }
+```
+
+### 6.5 用户-物品交互信号
+
+```yaml
 - name: tag_overlap
   op_type: ListOverlap
   inputs: [user_tags, item_tags]
   outputs: [match_flag]
+  embed: { vocab_size: 2, embed_dim: 4 }
 
 - name: tag_cross
   op_type: CrossFeature
@@ -601,14 +985,17 @@ let context: Vec<Vec<Fv>> = dag.plan.execute_plan(&columns, &skip_op_idx, &preco
 |---|---|---|---|---|
 | Bucketing | Int/Float | Int | boundaries | 连续值离散化 |
 | DictMapper | Any/List | Int/IntList | mapping, default_idx | 类别→索引 |
-| StringParser | Str | StrList | sep1, sep2, key_index | 拼接字符串解析 |
+| StringParser | Str | StrList | sep1, sep2, key_index, pad_len | 结构化字符串解析 |
 | JsonExtractList | Str | StrList | key, pad_len | JSON 数组提取 |
-| ListStringParser | StrList | StrList | sep, key_index | 列表元素二次拆解 |
+| Split | Str | StrList | sep, max_len | 简单分隔字符串切分 |
+| FlatSplit | StrList | StrList | sep, max_len | 序列化向量打平 |
+| ListStringParser | StrList | StrList | sep, key_index | 列表元素字段提取 |
 | ExpressionOp | Numeric | Float | script | 数学变换 |
 | CrossFeature | StrList×2 / IntList×2 | StrList / Float | cross_type | 特征交叉 |
 | ListOverlap | StrList×2 | Int | — | 列表交集检测 |
 | SequenceOp | IntList | IntList | max_len, pad_val | 序列定长对齐 |
-| StringConcatHash | Str×2 | Int | vocab_size, mode | 在线哈希交叉 |
+| StringConcat | Any×N | Str | separator | 多值字符串拼接 |
+| FeatureHash | Any×N | Int/IntList | vocab_size, num_hashes | 特征哈希 |
 | PluginOp | Any | Any | path, op_name | 实验性外部算子 |
 
 ---

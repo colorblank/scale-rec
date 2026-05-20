@@ -5,7 +5,11 @@ from typing import Any
 
 
 class DictMapper:
-    """String/int to index lookup."""
+    """String/int to index lookup.
+
+    约定：mapping 值从 1 起始，0 保留为 default_idx 表示未命中/缺失。
+    下游 Embedding 的 index 0 可固定映射为零向量，避免 padding 与真实特征混淆。
+    """
 
     def __init__(self, mapping: dict[str, int], default_idx: int = 0):
         """Initialize with mapping table and fallback index."""

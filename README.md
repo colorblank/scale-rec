@@ -63,7 +63,8 @@ scale-rec/
 | **DictMapper** | 字典映射 | str / list[str] → i32 / list[i32] |
 | **StringParser** | 字符串解析 | str → list[str] |
 | **ListOverlap** | 列表重叠检测 | list, list → 0/1 |
-| **StringConcatHash** | 字符串拼接哈希 | str, str → i32 (固定词表) |
+| **StringConcat** | 字符串拼接 | any.. → str |
+| **FeatureHash** | 特征哈希 | any.. → i32 / list[i32] |
 | **ExpressionOp** | 表达式求值 | f32.. → f32 |
 | **CrossFeature** | 特征交叉 | list, list → f32 / list[str] |
 | **SequenceOp** | 序列填充/截断 | list[i32] → list[i32] |

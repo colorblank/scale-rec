@@ -2,6 +2,10 @@
 use super::{CustomOp, Fv};
 use std::collections::HashMap;
 
+/// 字典映射算子。
+///
+/// 约定：mapping 值从 1 起始，0 保留为 default_idx 表示未命中/缺失。
+/// 这样下游 Embedding 的 index 0 可固定映射为零向量，避免 padding 与真实特征混淆。
 pub struct DictMapper {
     mapping: HashMap<String, i32>,
     default_idx: i32,
