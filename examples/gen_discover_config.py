@@ -103,14 +103,6 @@ def _build_operators() -> list[dict]:
     def add(op: dict):
         ops.append(op)
 
-    # ── 低基数枚举 → DictMapper（仅以下 6 类 + scene 直接 embed）──
-    def dm(name, inp, out, mapping, default_idx=0, embed=None):
-        op = {"name": name, "op_type": "DictMapper", "inputs": [inp], "outputs": [out],
-              "params": {"mapping": mapping, "default_idx": default_idx}}
-        if embed:
-            op["embed"] = embed
-        add(op)
-
     # ── FeatureHash 辅助：列表特征直接哈希（FeatureHash 内部拼接所有输入）──
     def fh(name, inps, out, vocab_size, num_hashes=1, embed=None):
         op = {"name": name, "op_type": "FeatureHash", "inputs": inps, "outputs": [out],
@@ -173,22 +165,22 @@ def _build_operators() -> list[dict]:
         add(op)
 
     # ═══════════════════════════════════════════════════
-    # Section 1: 低基数枚举 → DictMapper
+    # Section 1: 单值特征 → FeatureHash（全量使用 FeatureHash，无 DictMapper）
     # ═══════════════════════════════════════════════════
-    dm("item_type_map", "item_type", "item_type_idx", _m(ITEM_TYPES),
-       embed={"vocab_size": 8, "embed_dim": 4})
-    dm("source_name_map", "source_name", "source_name_idx", _m(SOURCE_NAMES),
-       embed={"vocab_size": 5, "embed_dim": 4})
-    dm("rec_algo_map", "rec_algo", "rec_algo_idx", _m(REC_ALGOS),
-       embed={"vocab_size": 4, "embed_dim": 4})
-    dm("is_new_user_map", "is_new_user", "is_new_user_idx",
-       {"老用户": 1, "新用户": 2}, embed={"vocab_size": 3, "embed_dim": 4})
-    dm("asset_level_map", "asset_level", "asset_level_idx", _m(ASSET_LEVELS),
-       embed={"vocab_size": 6, "embed_dim": 4})
-    dm("city_map", "city", "city_idx", _m(CITIES),
-       embed={"vocab_size": 7, "embed_dim": 4})
-    dm("investment_horizon_map", "investment_horizon", "investment_horizon_idx",
-       {"短期": 1, "中期": 2, "长期": 3}, embed={"vocab_size": 4, "embed_dim": 4})
+    concat_hash("item_type_hash", "item_type", "item_type_idx", 20,
+                embed={"vocab_size": 20, "embed_dim": 4})
+    concat_hash("source_name_hash", "source_name", "source_name_idx", 20,
+                embed={"vocab_size": 20, "embed_dim": 4})
+    concat_hash("rec_algo_hash", "rec_algo", "rec_algo_idx", 20,
+                embed={"vocab_size": 20, "embed_dim": 4})
+    concat_hash("is_new_user_hash", "is_new_user", "is_new_user_idx", 10,
+                embed={"vocab_size": 10, "embed_dim": 4})
+    concat_hash("asset_level_hash", "asset_level", "asset_level_idx", 20,
+                embed={"vocab_size": 20, "embed_dim": 4})
+    concat_hash("city_hash", "city", "city_idx", 50,
+                embed={"vocab_size": 50, "embed_dim": 4})
+    concat_hash("investment_horizon_hash", "investment_horizon", "investment_horizon_idx", 20,
+                embed={"vocab_size": 20, "embed_dim": 4})
 
     # ═══════════════════════════════════════════════════
     # Section 2: 数值 → Bucketing / ExpressionOp

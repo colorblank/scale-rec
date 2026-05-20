@@ -162,119 +162,145 @@ sources:
   dtype: string
   default_val: ''
 operators:
-- name: item_type_map
-  op_type: DictMapper
+- name: item_type_hash_concat
+  op_type: StringConcat
   inputs:
   - item_type
   outputs:
+  - item_type_idx_str
+  params:
+    separator: ''
+- name: item_type_hash
+  op_type: FeatureHash
+  inputs:
+  - item_type_idx_str
+  outputs:
   - item_type_idx
   params:
-    mapping:
-      state: 1
-      ask_answer: 2
-      iwc_dialogue: 3
-      news: 4
-      report: 5
-      snslivepost: 6
-      snsview: 7
-    default_idx: 0
+    vocab_size: 20
+    num_hashes: 1
   embed:
-    vocab_size: 8
+    vocab_size: 20
     embed_dim: 4
-- name: source_name_map
-  op_type: DictMapper
+- name: source_name_hash_concat
+  op_type: StringConcat
   inputs:
   - source_name
   outputs:
+  - source_name_idx_str
+  params:
+    separator: ''
+- name: source_name_hash
+  op_type: FeatureHash
+  inputs:
+  - source_name_idx_str
+  outputs:
   - source_name_idx
   params:
-    mapping:
-      社区: 1
-      同花顺: 2
-      东方财富: 3
-      雪球: 4
-    default_idx: 0
+    vocab_size: 20
+    num_hashes: 1
   embed:
-    vocab_size: 5
+    vocab_size: 20
     embed_dim: 4
-- name: rec_algo_map
-  op_type: DictMapper
+- name: rec_algo_hash_concat
+  op_type: StringConcat
   inputs:
   - rec_algo
   outputs:
+  - rec_algo_idx_str
+  params:
+    separator: ''
+- name: rec_algo_hash
+  op_type: FeatureHash
+  inputs:
+  - rec_algo_idx_str
+  outputs:
   - rec_algo_idx
   params:
-    mapping:
-      favSecuritiesV1: 1
-      stockFenshiKxian-hot: 2
-      favEntitiesV1: 3
-    default_idx: 0
+    vocab_size: 20
+    num_hashes: 1
   embed:
-    vocab_size: 4
+    vocab_size: 20
     embed_dim: 4
-- name: is_new_user_map
-  op_type: DictMapper
+- name: is_new_user_hash_concat
+  op_type: StringConcat
   inputs:
   - is_new_user
   outputs:
+  - is_new_user_idx_str
+  params:
+    separator: ''
+- name: is_new_user_hash
+  op_type: FeatureHash
+  inputs:
+  - is_new_user_idx_str
+  outputs:
   - is_new_user_idx
   params:
-    mapping:
-      老用户: 1
-      新用户: 2
-    default_idx: 0
+    vocab_size: 10
+    num_hashes: 1
   embed:
-    vocab_size: 3
+    vocab_size: 10
     embed_dim: 4
-- name: asset_level_map
-  op_type: DictMapper
+- name: asset_level_hash_concat
+  op_type: StringConcat
   inputs:
   - asset_level
   outputs:
+  - asset_level_idx_str
+  params:
+    separator: ''
+- name: asset_level_hash
+  op_type: FeatureHash
+  inputs:
+  - asset_level_idx_str
+  outputs:
   - asset_level_idx
   params:
-    mapping:
-      1万以下: 1
-      1-10万: 2
-      10-30万: 3
-      30-100万: 4
-      100万以上: 5
-    default_idx: 0
+    vocab_size: 20
+    num_hashes: 1
   embed:
-    vocab_size: 6
+    vocab_size: 20
     embed_dim: 4
-- name: city_map
-  op_type: DictMapper
+- name: city_hash_concat
+  op_type: StringConcat
   inputs:
   - city
   outputs:
+  - city_idx_str
+  params:
+    separator: ''
+- name: city_hash
+  op_type: FeatureHash
+  inputs:
+  - city_idx_str
+  outputs:
   - city_idx
   params:
-    mapping:
-      上海市: 1
-      北京市: 2
-      深圳市: 3
-      杭州市: 4
-      广州市: 5
-      成都市: 6
-    default_idx: 0
+    vocab_size: 50
+    num_hashes: 1
   embed:
-    vocab_size: 7
+    vocab_size: 50
     embed_dim: 4
-- name: investment_horizon_map
-  op_type: DictMapper
+- name: investment_horizon_hash_concat
+  op_type: StringConcat
   inputs:
   - investment_horizon
   outputs:
+  - investment_horizon_idx_str
+  params:
+    separator: ''
+- name: investment_horizon_hash
+  op_type: FeatureHash
+  inputs:
+  - investment_horizon_idx_str
+  outputs:
   - investment_horizon_idx
   params:
-    mapping:
-      短期: 1
-      中期: 2
-      长期: 3
-    default_idx: 0
+    vocab_size: 20
+    num_hashes: 1
   embed:
-    vocab_size: 4
+    vocab_size: 20
     embed_dim: 4
 - name: quality_score_bucket
   op_type: Bucketing
