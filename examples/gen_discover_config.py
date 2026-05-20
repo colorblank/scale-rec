@@ -108,12 +108,9 @@ def _build_operators() -> list[dict]:
             op["embed"] = embed
         add(op)
 
-    # ── StringConcat → FeatureHash（单值文本先拼接再哈希）──
-    def concat_hash(name, inp, out, vocab_size, embed=None):
-        concat_out = f"{out}_str"
-        add({"name": f"{name}_concat", "op_type": "StringConcat",
-             "inputs": [inp], "outputs": [concat_out], "params": {"separator": ""}})
-        fh(name, [concat_out], out, vocab_size, embed=embed)
+    # ── 单值 → 直接 FeatureHash（无需 StringConcat 中转，FeatureHash 内部 str(v)）──
+    def single_fh(name, inp, out, vocab_size, embed=None):
+        fh(name, [inp], out, vocab_size, embed=embed)
 
     # ── 数值 ──
     def bk(name, inp, out, boundaries, embed=None):
@@ -164,25 +161,25 @@ def _build_operators() -> list[dict]:
     # ═══════════════════════════════════════════════════
     # Section 1: 单值特征 → FeatureHash（全量 FeatureHash，sources 无 embed）
     # ═══════════════════════════════════════════════════
-    concat_hash("item_id_hash", "item_id", "item_id_idx", 5000,
+    single_fh("item_id_hash", "item_id", "item_id_idx", 5000,
                 embed={"vocab_size": 5000, "embed_dim": 16})
-    concat_hash("user_id_hash", "user_id", "user_id_idx", 5000,
+    single_fh("user_id_hash", "user_id", "user_id_idx", 5000,
                 embed={"vocab_size": 5000, "embed_dim": 16})
-    concat_hash("scene_hash", "scene", "scene_idx", 10,
+    single_fh("scene_hash", "scene", "scene_idx", 10,
                 embed={"vocab_size": 10, "embed_dim": 4})
-    concat_hash("item_type_hash", "item_type", "item_type_idx", 20,
+    single_fh("item_type_hash", "item_type", "item_type_idx", 20,
                 embed={"vocab_size": 20, "embed_dim": 4})
-    concat_hash("source_name_hash", "source_name", "source_name_idx", 20,
+    single_fh("source_name_hash", "source_name", "source_name_idx", 20,
                 embed={"vocab_size": 20, "embed_dim": 4})
-    concat_hash("rec_algo_hash", "rec_algo", "rec_algo_idx", 20,
+    single_fh("rec_algo_hash", "rec_algo", "rec_algo_idx", 20,
                 embed={"vocab_size": 20, "embed_dim": 4})
-    concat_hash("is_new_user_hash", "is_new_user", "is_new_user_idx", 10,
+    single_fh("is_new_user_hash", "is_new_user", "is_new_user_idx", 10,
                 embed={"vocab_size": 10, "embed_dim": 4})
-    concat_hash("asset_level_hash", "asset_level", "asset_level_idx", 20,
+    single_fh("asset_level_hash", "asset_level", "asset_level_idx", 20,
                 embed={"vocab_size": 20, "embed_dim": 4})
-    concat_hash("city_hash", "city", "city_idx", 50,
+    single_fh("city_hash", "city", "city_idx", 50,
                 embed={"vocab_size": 50, "embed_dim": 4})
-    concat_hash("investment_horizon_hash", "investment_horizon", "investment_horizon_idx", 20,
+    single_fh("investment_horizon_hash", "investment_horizon", "investment_horizon_idx", 20,
                 embed={"vocab_size": 20, "embed_dim": 4})
 
     # ═══════════════════════════════════════════════════
@@ -245,14 +242,14 @@ def _build_operators() -> list[dict]:
     # ═══════════════════════════════════════════════════
     # Section 6: 高基数 ID/文本 → StringConcat → FeatureHash
     # ═══════════════════════════════════════════════════
-    concat_hash("title_hash", "title", "title_idx", 2000, embed={"vocab_size": 2000, "embed_dim": 8})
-    concat_hash("content_hash", "content", "content_idx", 8000, embed={"vocab_size": 8000, "embed_dim": 8})
-    concat_hash("insight_hash", "insight", "insight_idx", 500, embed={"vocab_size": 500, "embed_dim": 4})
-    concat_hash("author_id_hash", "author_id", "author_id_idx", 1000, embed={"vocab_size": 1000, "embed_dim": 8})
-    concat_hash("author_hash", "author", "author_idx", 1000, embed={"vocab_size": 1000, "embed_dim": 8})
-    concat_hash("last_trade_date_hash", "last_trade_date", "last_trade_date_idx", 500,
+    single_fh("title_hash", "title", "title_idx", 2000, embed={"vocab_size": 2000, "embed_dim": 8})
+    single_fh("content_hash", "content", "content_idx", 8000, embed={"vocab_size": 8000, "embed_dim": 8})
+    single_fh("insight_hash", "insight", "insight_idx", 500, embed={"vocab_size": 500, "embed_dim": 4})
+    single_fh("author_id_hash", "author_id", "author_id_idx", 1000, embed={"vocab_size": 1000, "embed_dim": 8})
+    single_fh("author_hash", "author", "author_idx", 1000, embed={"vocab_size": 1000, "embed_dim": 8})
+    single_fh("last_trade_date_hash", "last_trade_date", "last_trade_date_idx", 500,
                 embed={"vocab_size": 500, "embed_dim": 4})
-    concat_hash("p_date_hash", "p_date", "p_date_idx", 100, embed={"vocab_size": 100, "embed_dim": 4})
+    single_fh("p_date_hash", "p_date", "p_date_idx", 100, embed={"vocab_size": 100, "embed_dim": 4})
 
     # ═══════════════════════════════════════════════════
     # Section 7: User — 结构化字符串 → StringParser → FeatureHash
