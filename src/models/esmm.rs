@@ -1,4 +1,4 @@
-//! ESMM：全量空间多任务模型，CTR·CVR 乘积链消除 SSB。
+//! ESMM：全量空间多任务模型（5 塔），点击条件乘积链消除 SSB。
 use super::Model;
 use crate::layers::embedding::FeatureEmbeddings;
 use crate::layers::mlp::Mlp;
@@ -7,15 +7,25 @@ use candle_core::{Result, Tensor};
 use candle_nn::VarBuilder;
 use std::collections::HashMap;
 
-/// ESMM 模型 (Ma et al., 2018)。
+/// ESMM 5-tower model.
 ///
-/// 全量空间多任务：CTR 塔 + CVR 塔，CTCVR = σ(CTR) × σ(CVR)。
-/// 在全量曝光上训练，消除 CVR 样本选择偏差 (SSB)。
+/// 概率关系:
+///   is_click = is_click_detail ∨ is_click_stock
+///   is_cvr ← is_click (转化在点击后发生)
+///   stay_time ← is_click_detail (阅读仅在点详情后发生)
+///
+///   P(detail) = σ(click) × σ(detail)
+///   P(stock)  = σ(click) × σ(stock)
+///   P(cvr)    = σ(click) × σ(cvr)
+///   P(stay)   = σ(detail) × σ(stay)
 pub struct ESMM {
     embeddings: FeatureEmbeddings,
     shared_bottom: Option<Mlp>,
-    ctr_tower: TaskTower,
+    click_tower: TaskTower,
     cvr_tower: TaskTower,
+    detail_tower: TaskTower,
+    stock_tower: TaskTower,
+    stay_tower: TaskTower,
 }
 
 impl ESMM {
@@ -23,8 +33,11 @@ impl ESMM {
         vb: VarBuilder,
         features: &[(String, usize, usize)],
         shared_bottom_dims: &[usize],
-        ctr_hidden_dims: &[usize],
+        click_hidden_dims: &[usize],
         cvr_hidden_dims: &[usize],
+        detail_hidden_dims: &[usize],
+        stock_hidden_dims: &[usize],
+        stay_hidden_dims: &[usize],
     ) -> Result<Self> {
         let embeddings = FeatureEmbeddings::new(vb.pp("embeddings"), features)?;
         let (shared_bottom, shared_output_dim) = if shared_bottom_dims.is_empty() {
@@ -40,31 +53,31 @@ impl ESMM {
             )?;
             (Some(mlp), output_dim)
         };
-        let ctr_tower = TaskTower::new(
-            &TowerConfig {
-                name: "ctr".into(),
-                hidden_dims: ctr_hidden_dims.to_vec(),
-                output_dim: 1,
-                activation: Activation::Relu,
-            },
-            shared_output_dim,
-            vb.pp("ctr_tower"),
-        )?;
-        let cvr_tower = TaskTower::new(
-            &TowerConfig {
-                name: "cvr".into(),
-                hidden_dims: cvr_hidden_dims.to_vec(),
-                output_dim: 1,
-                activation: Activation::Relu,
-            },
-            shared_output_dim,
-            vb.pp("cvr_tower"),
-        )?;
+        let mk_tower = |name: &str, dims: &[usize], vb: VarBuilder| -> Result<TaskTower> {
+            TaskTower::new(
+                &TowerConfig {
+                    name: name.into(),
+                    hidden_dims: dims.to_vec(),
+                    output_dim: 1,
+                    activation: Activation::Relu,
+                },
+                shared_output_dim,
+                vb,
+            )
+        };
+        let click_tower = mk_tower("click", click_hidden_dims, vb.pp("click_tower"))?;
+        let cvr_tower = mk_tower("cvr", cvr_hidden_dims, vb.pp("cvr_tower"))?;
+        let detail_tower = mk_tower("detail", detail_hidden_dims, vb.pp("detail_tower"))?;
+        let stock_tower = mk_tower("stock", stock_hidden_dims, vb.pp("stock_tower"))?;
+        let stay_tower = mk_tower("stay", stay_hidden_dims, vb.pp("stay_tower"))?;
         Ok(Self {
             embeddings,
             shared_bottom,
-            ctr_tower,
+            click_tower,
             cvr_tower,
+            detail_tower,
+            stock_tower,
+            stay_tower,
         })
     }
 }
@@ -76,15 +89,30 @@ impl Model for ESMM {
             Some(b) => b.forward(&concat)?,
             None => concat,
         };
-        let ctr_logits = self.ctr_tower.forward(&shared_output)?;
+        let click_logits = self.click_tower.forward(&shared_output)?;
         let cvr_logits = self.cvr_tower.forward(&shared_output)?;
-        let ctr_prob = candle_nn::ops::sigmoid(&ctr_logits)?;
-        let cvr_prob = candle_nn::ops::sigmoid(&cvr_logits)?;
-        let ctcvr = ctr_prob.mul(&cvr_prob)?;
+        let detail_logits = self.detail_tower.forward(&shared_output)?;
+        let stock_logits = self.stock_tower.forward(&shared_output)?;
+        let stay_logits = self.stay_tower.forward(&shared_output)?;
+
+        let click_prob = candle_nn::ops::sigmoid(&click_logits)?;
+        let detail_prob = candle_nn::ops::sigmoid(&detail_logits)?;
+
         let mut outputs = HashMap::new();
-        outputs.insert("ctr".to_string(), ctr_logits);
-        outputs.insert("cvr".to_string(), cvr_logits);
-        outputs.insert("ctcvr".to_string(), ctcvr);
+        let ctcvr = click_prob.mul(&candle_nn::ops::sigmoid(&cvr_logits)?)?;
+        let ctdetail = click_prob.mul(&detail_prob)?;
+        let ctstock = click_prob.mul(&candle_nn::ops::sigmoid(&stock_logits)?)?;
+        let ctstay = detail_prob.mul(&candle_nn::ops::sigmoid(&stay_logits)?)?;
+
+        outputs.insert("click".into(), click_logits);
+        outputs.insert("cvr".into(), cvr_logits);
+        outputs.insert("detail".into(), detail_logits);
+        outputs.insert("stock".into(), stock_logits);
+        outputs.insert("stay".into(), stay_logits);
+        outputs.insert("ctcvr".into(), ctcvr);
+        outputs.insert("ctdetail".into(), ctdetail);
+        outputs.insert("ctstock".into(), ctstock);
+        outputs.insert("ctstay".into(), ctstay);
         Ok(outputs)
     }
 }
