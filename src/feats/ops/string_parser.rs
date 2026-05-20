@@ -37,17 +37,20 @@ impl CustomOp for StringParser {
             Fv::Str(s) => s.as_str(),
             _ => "",
         };
-        let mut result: Vec<String> = s
-            .split(&self.sep1)
-            .filter_map(|item| {
-                let parts: Vec<&str> = item.split(&self.sep2).collect();
-                if self.key_index < parts.len() {
-                    Some(parts[self.key_index].to_string())
-                } else {
-                    None
-                }
-            })
-            .collect();
+        let mut result: Vec<String> = if s.is_empty() {
+            Vec::new()
+        } else {
+            s.split(&self.sep1)
+                .filter_map(|item| {
+                    let parts: Vec<&str> = item.split(&self.sep2).collect();
+                    if self.key_index < parts.len() {
+                        Some(parts[self.key_index].to_string())
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        };
         while result.len() < self.pad_len {
             result.push(self.pad_val.clone());
         }
@@ -63,17 +66,20 @@ impl CustomOp for StringParser {
                 Fv::Str(s) => s.as_str(),
                 _ => "",
             };
-            let mut result: Vec<String> = s
-                .split(&self.sep1)
-                .filter_map(|item| {
-                    let parts: Vec<&str> = item.split(&self.sep2).collect();
-                    if self.key_index < parts.len() {
-                        Some(parts[self.key_index].to_string())
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+            let mut result: Vec<String> = if s.is_empty() {
+                Vec::new()
+            } else {
+                s.split(&self.sep1)
+                    .filter_map(|item| {
+                        let parts: Vec<&str> = item.split(&self.sep2).collect();
+                        if self.key_index < parts.len() {
+                            Some(parts[self.key_index].to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+            };
             while result.len() < self.pad_len {
                 result.push(self.pad_val.clone());
             }

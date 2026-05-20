@@ -1,7 +1,8 @@
 //! 特征 DAG 执行器：拓扑排序、算子调度、单样本执行。
 use super::ops::{
-    Bucketing, CrossFeature, CustomOp, DictMapper, ExpressionOp, Fv, JsonExtractList, ListOverlap,
-    ListStringParser, PluginOp, SequenceOp, StringConcatHash, StringParser,
+    Bucketing, CrossFeature, CustomOp, DictMapper, ExpressionOp, FeatureHash, FlatSplit, Fv,
+    JsonExtractList, ListOverlap, ListStringParser, PluginOp, SequenceOp, Split, StringConcat,
+    StringParser,
 };
 use crate::feats::config::{DType, FlowConfig, OperatorDef, SourceDef};
 use crate::feats::debug::DebugTracer;
@@ -58,7 +59,10 @@ impl FeatureDag {
                 length,
             } => match inner.as_ref() {
                 DType::Int => Fv::IntList(vec![val_str.parse::<i32>().unwrap_or(0); *length]),
-                DType::Float => Fv::IntList(vec![0i32; *length]),
+                DType::Float => {
+                    let v = val_str.parse::<f32>().unwrap_or(0.0) as i32;
+                    Fv::IntList(vec![v; *length])
+                }
                 DType::String => Fv::StrList(vec![val_str.to_string(); *length]),
                 _ => Fv::Int(0),
             },
@@ -289,6 +293,18 @@ impl FeatureDag {
                 let pad_val = Self::yaml_i64(p, "pad_val").unwrap_or(0) as i32;
                 Ok(Box::new(SequenceOp::new(max_len, pad_val)))
             }
+            "Split" => {
+                let sep = Self::yaml_str(p, "sep").unwrap_or("|").to_string();
+                let max_len = Self::yaml_i64(p, "max_len").unwrap_or(0) as usize;
+                let pad_val = Self::yaml_str(p, "pad_val").unwrap_or("").to_string();
+                Ok(Box::new(Split::new(sep, max_len, pad_val)))
+            }
+            "FlatSplit" => {
+                let sep = Self::yaml_str(p, "sep").unwrap_or(",").to_string();
+                let max_len = Self::yaml_i64(p, "max_len").unwrap_or(0) as usize;
+                let pad_val = Self::yaml_str(p, "pad_val").unwrap_or("").to_string();
+                Ok(Box::new(FlatSplit::new(sep, max_len, pad_val)))
+            }
             "ExpressionOp" => {
                 let script = Self::yaml_str(p, "script")
                     .ok_or("Missing script for ExpressionOp")?
@@ -305,19 +321,15 @@ impl FeatureDag {
                 Ok(Box::new(PluginOp::new(&path, op_name)?))
             }
             "ListOverlap" => Ok(Box::new(ListOverlap::new())),
-            "StringConcatHash" => {
-                let vocab_size = Self::yaml_i64(p, "vocab_size").unwrap_or(1000) as usize;
-                let oov_reserve = Self::yaml_i64(p, "oov_reserve").unwrap_or(0) as usize;
-                let hash_map_path = Self::yaml_str(p, "hash_map_path").unwrap_or("").to_string();
-                let mode = Self::yaml_str(p, "mode").unwrap_or("train").to_string();
+            "StringConcat" => {
+                let separator = Self::yaml_str(p, "separator").unwrap_or("_").to_string();
+                Ok(Box::new(StringConcat::new(separator)))
+            }
+            "FeatureHash" => {
+                let vocab_size = Self::yaml_i64(p, "vocab_size").unwrap_or(1000) as u32;
+                let num_hashes = Self::yaml_i64(p, "num_hashes").unwrap_or(1) as u32;
                 let separator = Self::yaml_str(p, "separator").unwrap_or("|").to_string();
-                Ok(Box::new(StringConcatHash::new(
-                    vocab_size,
-                    oov_reserve,
-                    hash_map_path,
-                    mode,
-                    separator,
-                )))
+                Ok(Box::new(FeatureHash::new(vocab_size, num_hashes, separator)))
             }
             _ => Err(format!("Unsupported operator type: {}", def.op_type)),
         }
