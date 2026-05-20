@@ -6,6 +6,8 @@ from train.ops.sequence import SequenceOp
 from train.ops.string_parser import StringParser
 from train.ops.json_extract_list import JsonExtractList
 from train.ops.list_string_parser import ListStringParser
+from train.ops.flat_split import FlatSplit
+from train.ops.split import Split
 
 
 def test_bucketing():
@@ -62,3 +64,34 @@ def test_sequence():
 def test_cross_feature_inner_product():
     op = CrossFeature("inner_product")
     assert op.process([[1.0, 2.0], [3.0, 4.0]]) == 11.0
+
+
+def test_split():
+    op = Split("|", 3, "none")
+    assert op.process(["a|b|c"]) == ["a", "b", "c"]
+    assert op.process(["a|b"]) == ["a", "b", "none"]
+    assert op.process(["a|b|c|d"]) == ["a", "b", "c"]
+
+
+def test_split_no_limit():
+    op = Split("|", 0, "")
+    assert op.process(["a|b|c"]) == ["a", "b", "c"]
+    assert op.process(["hello"]) == ["hello"]
+
+
+def test_flat_split():
+    op = FlatSplit(",", 8, "")
+    result = op.process([["a_93,b_129,c_140,d_53", "a_51,b_245,c_205,d_157"]])
+    assert result == ["a_93", "b_129", "c_140", "d_53", "a_51", "b_245", "c_205", "d_157"]
+
+
+def test_flat_split_truncate():
+    op = FlatSplit(",", 3, "none")
+    result = op.process([["a,b,c,d"]])
+    assert result == ["a", "b", "c"]
+
+
+def test_flat_split_pad():
+    op = FlatSplit(",", 4, "pad")
+    result = op.process([["x"]])
+    assert result == ["x", "pad", "pad", "pad"]
