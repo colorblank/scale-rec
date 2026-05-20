@@ -165,9 +165,6 @@ class FeatureDag:
 
     def embeddable_features(self) -> list[tuple[str, EmbedConfig]]:
         result: list[tuple[str, EmbedConfig]] = []
-        for name, src in self.sources.items():
-            if src.embed is not None:
-                result.append((name, src.embed))
         for _, op_def in self.node_defs.items():
             if op_def.embed is not None:
                 for out_name in op_def.outputs:

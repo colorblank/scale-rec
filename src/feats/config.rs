@@ -19,7 +19,7 @@ pub struct EmbedConfig {
     pub embed_dim: usize,
 }
 
-/// 原始输入源定义。`embed` 字段非空表示该特征直接送入 Embedding。
+/// 原始输入源定义。`embed` 已弃用，全部 embedding 由算子输出配置。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceDef {
     pub name: String,
@@ -27,7 +27,7 @@ pub struct SourceDef {
     pub dtype: DType,
     pub default_val: String,
     #[serde(default)]
-    pub embed: Option<EmbedConfig>,
+    pub embed: Option<EmbedConfig>,  // 已弃用：保留字段兼容旧配置
 }
 
 /// 算子节点定义。`params` 使用原生 YAML 值，由各算子自行解析。

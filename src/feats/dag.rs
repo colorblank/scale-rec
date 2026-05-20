@@ -178,15 +178,8 @@ impl FeatureDag {
                 output_cols,
             });
         }
-        // Embeddable column IDs — sorted by FEATURE NAME to align with embeddable_features()
+        // Embeddable column IDs — 全部来自算子 embed 配置
         let mut embed_pairs: Vec<(&str, usize)> = Vec::new();
-        for (name, src) in &sources {
-            if src.embed.is_some() {
-                if let Some(&id) = col_id.get(name) {
-                    embed_pairs.push((name, id));
-                }
-            }
-        }
         for op_def in &config.operators {
             if op_def.embed.is_some() {
                 for out_name in &op_def.outputs {
@@ -346,11 +339,6 @@ impl FeatureDag {
 
     pub fn embeddable_features(&self) -> Vec<(&str, &crate::feats::config::EmbedConfig)> {
         let mut result = Vec::new();
-        for (name, src) in &self.sources {
-            if let Some(ref emb) = src.embed {
-                result.push((name.as_str(), emb));
-            }
-        }
         for (_, op) in &self.node_defs {
             if let Some(ref emb) = op.embed {
                 for out_name in &op.outputs {
