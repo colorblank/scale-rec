@@ -329,7 +329,9 @@ impl FeatureDag {
                 let vocab_size = Self::yaml_i64(p, "vocab_size").unwrap_or(1000) as u32;
                 let num_hashes = Self::yaml_i64(p, "num_hashes").unwrap_or(1) as u32;
                 let separator = Self::yaml_str(p, "separator").unwrap_or("|").to_string();
-                Ok(Box::new(FeatureHash::new(vocab_size, num_hashes, separator)))
+                Ok(Box::new(FeatureHash::new(
+                    vocab_size, num_hashes, separator,
+                )))
             }
             _ => Err(format!("Unsupported operator type: {}", def.op_type)),
         }

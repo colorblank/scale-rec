@@ -75,9 +75,7 @@ mod tests {
     #[test]
     fn test_int_and_str() {
         let op = StringConcat::new("|".into());
-        let result = op
-            .process(&[Fv::Int(42), Fv::Str("abc".into())])
-            .unwrap();
+        let result = op.process(&[Fv::Int(42), Fv::Str("abc".into())]).unwrap();
         assert_eq!(result, Fv::Str("42|abc".into()));
     }
 
@@ -85,7 +83,11 @@ mod tests {
     fn test_custom_separator() {
         let op = StringConcat::new("#".into());
         let result = op
-            .process(&[Fv::Str("a".into()), Fv::Str("b".into()), Fv::Str("c".into())])
+            .process(&[
+                Fv::Str("a".into()),
+                Fv::Str("b".into()),
+                Fv::Str("c".into()),
+            ])
             .unwrap();
         assert_eq!(result, Fv::Str("a#b#c".into()));
     }

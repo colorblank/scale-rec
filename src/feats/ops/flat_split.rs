@@ -11,7 +11,11 @@ pub struct FlatSplit {
 
 impl FlatSplit {
     pub fn new(sep: String, max_len: usize, pad_val: String) -> Self {
-        Self { sep, max_len, pad_val }
+        Self {
+            sep,
+            max_len,
+            pad_val,
+        }
     }
 
     fn normalize(&self, mut parts: Vec<String>) -> Vec<String> {
@@ -94,8 +98,14 @@ mod tests {
         assert_eq!(
             result,
             Fv::StrList(vec![
-                "a_93".into(), "b_129".into(), "c_140".into(), "d_53".into(),
-                "a_51".into(), "b_245".into(), "c_205".into(), "d_157".into(),
+                "a_93".into(),
+                "b_129".into(),
+                "c_140".into(),
+                "d_53".into(),
+                "a_51".into(),
+                "b_245".into(),
+                "c_205".into(),
+                "d_157".into(),
             ])
         );
     }
@@ -103,9 +113,7 @@ mod tests {
     #[test]
     fn test_truncate() {
         let op = FlatSplit::new(",".into(), 4, "".into());
-        let result = op
-            .process(&[Fv::StrList(vec!["a,b,c".into()])])
-            .unwrap();
+        let result = op.process(&[Fv::StrList(vec!["a,b,c".into()])]).unwrap();
         assert_eq!(
             result,
             Fv::StrList(vec!["a".into(), "b".into(), "c".into(), "".into()])
@@ -115,9 +123,7 @@ mod tests {
     #[test]
     fn test_pad() {
         let op = FlatSplit::new("|".into(), 4, "none".into());
-        let result = op
-            .process(&[Fv::StrList(vec!["x|y".into()])])
-            .unwrap();
+        let result = op.process(&[Fv::StrList(vec!["x|y".into()])]).unwrap();
         assert_eq!(
             result,
             Fv::StrList(vec!["x".into(), "y".into(), "none".into(), "none".into()])
@@ -140,10 +146,7 @@ mod tests {
         ];
         let results = op.process_batch(&[&col], 2).unwrap();
         assert_eq!(results.len(), 2);
-        assert_eq!(
-            results[0],
-            Fv::StrList(vec!["a".into(), "b".into()])
-        );
+        assert_eq!(results[0], Fv::StrList(vec!["a".into(), "b".into()]));
         assert_eq!(
             results[1],
             Fv::StrList(vec!["c".into(), "d".into(), "e".into()])

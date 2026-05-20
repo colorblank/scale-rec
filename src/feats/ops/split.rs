@@ -11,7 +11,11 @@ pub struct Split {
 
 impl Split {
     pub fn new(sep: String, max_len: usize, pad_val: String) -> Self {
-        Self { sep, max_len, pad_val }
+        Self {
+            sep,
+            max_len,
+            pad_val,
+        }
     }
 
     fn normalize(&self, mut parts: Vec<String>) -> Vec<String> {
@@ -130,10 +134,7 @@ mod tests {
     #[test]
     fn test_batch() {
         let op = Split::new("|".into(), 0, "".into());
-        let col = vec![
-            Fv::Str("a|b".into()),
-            Fv::Str("c|d|e".into()),
-        ];
+        let col = vec![Fv::Str("a|b".into()), Fv::Str("c|d|e".into())];
         let results = op.process_batch(&[&col], 2).unwrap();
         assert_eq!(results.len(), 2);
         assert_eq!(results[0], Fv::StrList(vec!["a".into(), "b".into()]));
@@ -146,10 +147,7 @@ mod tests {
     #[test]
     fn test_batch_truncate_pad() {
         let op = Split::new("|".into(), 2, "".into());
-        let col = vec![
-            Fv::Str("a".into()),
-            Fv::Str("x|y|z".into()),
-        ];
+        let col = vec![Fv::Str("a".into()), Fv::Str("x|y|z".into())];
         let results = op.process_batch(&[&col], 2).unwrap();
         assert_eq!(results[0], Fv::StrList(vec!["a".into(), "".into()]));
         assert_eq!(results[1], Fv::StrList(vec!["x".into(), "y".into()]));
