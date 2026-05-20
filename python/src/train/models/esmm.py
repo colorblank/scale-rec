@@ -47,10 +47,16 @@ class ESMM(nn.Module):
         else:
             sd = self.embeddings.total_dim
 
-        self.click_tower = TaskTower(TowerConfig("click", click_hidden_dims, 1, Activation.RELU), sd)
+        self.click_tower = TaskTower(
+            TowerConfig("click", click_hidden_dims, 1, Activation.RELU), sd
+        )
         self.cvr_tower = TaskTower(TowerConfig("cvr", cvr_hidden_dims, 1, Activation.RELU), sd)
-        self.detail_tower = TaskTower(TowerConfig("detail", detail_hidden_dims, 1, Activation.RELU), sd)
-        self.stock_tower = TaskTower(TowerConfig("stock", stock_hidden_dims, 1, Activation.RELU), sd)
+        self.detail_tower = TaskTower(
+            TowerConfig("detail", detail_hidden_dims, 1, Activation.RELU), sd
+        )
+        self.stock_tower = TaskTower(
+            TowerConfig("stock", stock_hidden_dims, 1, Activation.RELU), sd
+        )
         self.stay_tower = TaskTower(TowerConfig("stay", stay_hidden_dims, 1, Activation.RELU), sd)
 
     def forward(self, x_inputs):

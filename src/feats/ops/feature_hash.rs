@@ -234,12 +234,8 @@ mod tests {
     fn test_cache_hit() {
         let op = FeatureHash::new(1000, 1, "|".into());
         // 两次相同输入
-        let a = op
-            .process(&[Fv::Str("cached_key".into())])
-            .unwrap();
-        let b = op
-            .process(&[Fv::Str("cached_key".into())])
-            .unwrap();
+        let a = op.process(&[Fv::Str("cached_key".into())]).unwrap();
+        let b = op.process(&[Fv::Str("cached_key".into())]).unwrap();
         assert_eq!(a, b);
         assert!(op.cache_hits() >= 1);
         assert_eq!(op.cache_size(), 1);
