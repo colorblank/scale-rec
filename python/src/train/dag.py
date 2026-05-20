@@ -83,6 +83,46 @@ class FeatureDag:
             raise ValueError("Cycle detected in feature DAG")
         self.execution_order = execution_order
         self.debug_mode = debug_mode
+        self._validate(config)
+
+    def _validate(self, config: FlowConfig) -> None:
+        """校验 DAG 完整性：source 消费率、输出利用率、推理跳过算子。"""
+        # 下游消费者集合
+        downstream_consumers: set[str] = set()
+        for op in config.operators:
+            downstream_consumers.update(op.inputs)
+
+        # 算子输出分类
+        embeddable = {name for name, _ in self.embeddable_features()}
+        orphan_sources = []
+        orphan_outputs = []
+        intermediate = 0
+
+        for s in config.sources:
+            if s.name not in downstream_consumers and s.name not in embeddable:
+                orphan_sources.append(s.name)
+
+        for op in config.operators:
+            for out_name in op.outputs:
+                if out_name in embeddable:
+                    continue  # 送入模型
+                if out_name in downstream_consumers:
+                    intermediate += 1  # 被下游算子消费
+                    continue
+                orphan_outputs.append(f"{op.name} -> {out_name}")
+
+        print(
+            f"[DAG] sources: consumed={len(config.sources) - len(orphan_sources)}/"
+            f"{len(config.sources)} orphan={len(orphan_sources)}"
+        )
+        print(
+            f"[DAG] outputs: embeddable={len(embeddable)}"
+            f" intermediate={intermediate} orphan={len(orphan_outputs)}"
+        )
+        if orphan_sources:
+            print(f"[DAG] WARNING orphan sources: {orphan_sources}")
+        if orphan_outputs:
+            print(f"[DAG] WARNING orphan outputs: {orphan_outputs}")
 
     @staticmethod
     def _parse_default(val_str: str, dtype: DType) -> FeatureValue:

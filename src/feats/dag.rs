@@ -190,6 +190,9 @@ impl FeatureDag {
             }
         }
         embed_pairs.sort_by_key(|(name, _)| *name);
+
+        Self::validate(&sources, &config.operators, &embed_pairs);
+
         let embed_ids: Vec<usize> = embed_pairs.into_iter().map(|(_, id)| id).collect();
         let plan = ExecutionPlan {
             steps: plan_steps,
@@ -209,6 +212,60 @@ impl FeatureDag {
             tracer,
             plan,
         })
+    }
+
+    fn validate(
+        sources: &HashMap<String, SourceDef>,
+        operators: &[OperatorDef],
+        embed_pairs: &[(&str, usize)],
+    ) {
+        let embeddable: HashSet<&str> = embed_pairs.iter().map(|(n, _)| *n).collect();
+        let mut downstream: HashSet<&str> = HashSet::new();
+        for op in operators {
+            for inp in &op.inputs {
+                downstream.insert(inp.as_str());
+            }
+        }
+
+        let orphan_src: Vec<&str> = sources
+            .keys()
+            .filter(|n| !downstream.contains(n.as_str()) && !embeddable.contains(n.as_str()))
+            .map(|s| s.as_str())
+            .collect();
+
+        let mut orphan_out = 0usize;
+        let mut intermediate = 0usize;
+        for op in operators {
+            for out in &op.outputs {
+                if embeddable.contains(out.as_str()) {
+                    continue;
+                }
+                if downstream.contains(out.as_str()) {
+                    intermediate += 1;
+                    continue;
+                }
+                orphan_out += 1;
+            }
+        }
+
+        println!(
+            "[DAG] sources: consumed={}/{} orphan={}",
+            sources.len() - orphan_src.len(),
+            sources.len(),
+            orphan_src.len()
+        );
+        println!(
+            "[DAG] outputs: embeddable={} intermediate={} orphan={}",
+            embeddable.len(),
+            intermediate,
+            orphan_out
+        );
+        if !orphan_src.is_empty() {
+            println!("[DAG] WARNING orphan sources: {:?}", orphan_src);
+        }
+        if orphan_out > 0 {
+            println!("[DAG] WARNING {} orphan outputs (no consumer, no embed)", orphan_out);
+        }
     }
 
     fn yaml_get<'a>(params: &'a serde_yaml::Value, key: &str) -> Option<&'a serde_yaml::Value> {
