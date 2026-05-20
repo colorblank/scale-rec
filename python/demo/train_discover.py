@@ -36,6 +36,8 @@ DEMO_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJ_ROOT = os.path.dirname(os.path.dirname(DEMO_DIR))
 
 DEFAULT_FEATURE_CONFIG = os.path.join(_PROJ_ROOT, "examples", "feature_config_discover.yaml")
+DEFAULT_ITEM_CONFIG = os.path.join(_PROJ_ROOT, "examples", "feature_config_item.yaml")
+DEFAULT_USER_CONFIG = os.path.join(_PROJ_ROOT, "examples", "feature_config_user.yaml")
 DEFAULT_MODEL_CONFIG = os.path.join(DEMO_DIR, "model_discover_esmm.yaml")
 DEFAULT_DATA = os.path.join(DEMO_DIR, "temp", "discover_train_data.txt")
 
@@ -230,6 +232,45 @@ def _dtype_to_polars(dt: DType) -> pl.DataType:
     return {"int": pl.Int64, "float": pl.Float64, "string": pl.Utf8}.get(t, pl.Utf8)
 
 
+def _build_schema(config_path: str, label_cols: list[str]) -> dict[str, pl.DataType]:
+    """从 YAML 配置构建 Polars schema。"""
+    import yaml
+    with open(config_path) as f:
+        cfg = yaml.safe_load(f)
+    schema: dict[str, pl.DataType] = {}
+    for s in cfg.get("sources", []):
+        dt = s.get("dtype", "string")
+        schema[s["name"]] = {"int": pl.Int64, "float": pl.Float64, "string": pl.Utf8}.get(dt, pl.Utf8)
+    for ln in label_cols:
+        schema[ln] = pl.Int64
+    return schema
+
+
+def _read_tsv(path: str, schema: dict[str, pl.DataType], *,
+              has_header: bool = True, sep: str = "\t",
+              null_markers: set[str] = NULL_MARKERS) -> pl.DataFrame:
+    """按 Polars schema 读取 TSV 文件。"""
+    cols = list(schema)
+    if has_header:
+        df = pl.read_csv(path, separator=sep, has_header=True,
+                         schema_overrides=schema, null_values=list(null_markers),
+                         truncate_ragged_lines=True, ignore_errors=True)
+        df = df.select([c for c in cols if c in df.columns])
+    else:
+        df = pl.read_csv(path, separator=sep, has_header=False,
+                         null_values=list(null_markers),
+                         truncate_ragged_lines=True, ignore_errors=True)
+        df = df.select(df.columns[:len(cols)])
+        df.columns = cols
+        for cn, dt in schema.items():
+            if cn in df.columns:
+                try:
+                    df = df.with_columns(pl.col(cn).cast(dt, strict=False))
+                except Exception:
+                    pass
+    return df
+
+
 def load_single_file(
     path: str,
     flow_config: FlowConfig,
@@ -250,41 +291,9 @@ def load_single_file(
     Returns:
         仅包含 schema 列 + 标签列的 DataFrame。
     """
-    schema: dict[str, pl.DataType] = {
-        s.name: _dtype_to_polars(s.dtype) for s in flow_config.sources
-    }
+    schema = {s.name: _dtype_to_polars(s.dtype) for s in flow_config.sources}
     schema.update({ln: pl.Int64 for ln in LABEL_COLUMNS})
-    cols = list(schema)
-
-    if has_header:
-        df = pl.read_csv(
-            path,
-            separator=sep,
-            has_header=True,
-            schema_overrides=schema,
-            null_values=list(null_markers),
-            truncate_ragged_lines=True,
-            ignore_errors=True,
-        )
-        df = df.select([c for c in cols if c in df.columns])
-    else:
-        df = pl.read_csv(
-            path,
-            separator=sep,
-            has_header=False,
-            null_values=list(null_markers),
-            truncate_ragged_lines=True,
-            ignore_errors=True,
-        )
-        df = df.select(df.columns[: len(cols)])
-        df.columns = cols
-        for cn, dt in schema.items():
-            if cn in df.columns:
-                try:
-                    df = df.with_columns(pl.col(cn).cast(dt, strict=False))
-                except Exception:
-                    pass
-    return df
+    return _read_tsv(path, schema, has_header=has_header, sep=sep, null_markers=null_markers)
 
 
 def prepare_labels(df: pl.DataFrame) -> pl.DataFrame:
@@ -489,8 +498,13 @@ def train_on_prod(
         最佳 AUC 值。
     """
     item_files = [p.strip() for p in args.item_files.split(",") if p.strip()]
-    item_src_names = [s.name for s in flow_config.sources if s.source == "Item"]
-    all_src_names = [s.name for s in flow_config.sources]
+
+    # 从独立配置文件读取列定义（Polars schema）
+    item_schema = _build_schema(args.item_config, [])
+    item_src_names = list(item_schema.keys())
+    user_schema = _build_schema(args.user_config, LABEL_COLUMNS)
+    all_src_names = list(user_schema.keys())
+
     src_dtypes = {
         s.name: (s.dtype.tag if hasattr(s.dtype, "tag") else str(s.dtype))
         for s in flow_config.sources
@@ -562,7 +576,9 @@ def main() -> None:
     g.add_argument("--data")
     g.add_argument("--user-data")
     p.add_argument("--item-files")
-    p.add_argument("--feature-config", default=DEFAULT_FEATURE_CONFIG)
+    p.add_argument("--feature-config", default=DEFAULT_FEATURE_CONFIG, help="DAG 完整配置")
+    p.add_argument("--item-config", default=DEFAULT_ITEM_CONFIG, help="Item 侧读取配置")
+    p.add_argument("--user-config", default=DEFAULT_USER_CONFIG, help="User 侧读取配置")
     p.add_argument("--model-config", default=DEFAULT_MODEL_CONFIG)
     p.add_argument("--export-path")
     p.add_argument("--epochs", type=int, default=30)
