@@ -247,7 +247,11 @@ class FeatureDag:
         feature_lists: dict[str, list] = {name: [] for name in embed_names}
         for i in range(len(rows)):
             for name in embed_names:
-                val = result.get(name, [0] * len(rows))[i] if name in result else 0
+                col = result.get(name)
+                if col is not None and i < len(col):
+                    val = col[i]
+                else:
+                    val = 0
                 if isinstance(val, list):
                     val = val[0] if val else 0
                 feature_lists[name].append(val)
