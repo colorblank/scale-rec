@@ -306,13 +306,6 @@ def _build_sources() -> list[dict]:
             "dtype": "string",
             "default_val": "",
         },
-        # ═══════════ 辅助常量 ═══════════
-        {
-            "name": "const_dummy",
-            "source": "Context",
-            "dtype": "string",
-            "default_val": "_",
-        },
     ]
 
 
@@ -364,6 +357,16 @@ def _build_operators() -> list[dict]:
         }
         ops.append(op)
 
+    def fls(name, inp, out, sep=",", max_len=0, pad_val=""):
+        op = {
+            "name": name,
+            "op_type": "FlatSplit",
+            "inputs": [inp],
+            "outputs": [out],
+            "params": {"sep": sep, "max_len": max_len, "pad_val": pad_val},
+        }
+        ops.append(op)
+
     def sp(name, inp, out, sep1, sep2, key_index, pad_len, pad_val=""):
         op = {
             "name": name,
@@ -382,26 +385,29 @@ def _build_operators() -> list[dict]:
 
     def sch(
         name,
-        inp1,
-        inp2,
+        inp,
         out,
         vocab_size,
-        oov_reserve,
-        hash_map_path,
-        mode="train",
+        num_hashes=1,
         embed=None,
     ):
+        """Generate StringConcat + FeatureHash chain."""
+        concat_out = f"{out}_str"
+        ops.append({
+            "name": f"{name}_concat",
+            "op_type": "StringConcat",
+            "inputs": [inp],
+            "outputs": [concat_out],
+            "params": {"separator": "_"},
+        })
         op = {
             "name": name,
-            "op_type": "StringConcatHash",
-            "inputs": [inp1, inp2],
+            "op_type": "FeatureHash",
+            "inputs": [concat_out],
             "outputs": [out],
             "params": {
                 "vocab_size": vocab_size,
-                "oov_reserve": oov_reserve,
-                "hash_map_path": hash_map_path,
-                "mode": mode,
-                "separator": "_",
+                "num_hashes": num_hashes,
             },
         }
         if embed:
@@ -440,6 +446,22 @@ def _build_operators() -> list[dict]:
             "outputs": [out],
             "params": {"script": script},
         }
+        ops.append(op)
+
+    def fh(name, inps, out, vocab_size, num_hashes=1, separator="|", embed=None):
+        op = {
+            "name": name,
+            "op_type": "FeatureHash",
+            "inputs": inps,
+            "outputs": [out],
+            "params": {
+                "vocab_size": vocab_size,
+                "num_hashes": num_hashes,
+                "separator": separator,
+            },
+        }
+        if embed:
+            op["embed"] = embed
         ops.append(op)
 
     # ═══════════════════════════════════════════
@@ -624,39 +646,27 @@ def _build_operators() -> list[dict]:
     )
 
     # ═══════════════════════════════════════════
-    # Section 5: Item — 高基数文本 → StringConcatHash (train=建表, inference=查表+OOV哈希)
+    # Section 5: Item — 高基数文本 → StringConcat → FeatureHash
     # ═══════════════════════════════════════════
     sch(
         "author_id_hash",
         "author_id",
-        "const_dummy",
         "author_id_idx",
         500,
-        50,
-        "demo/temp/author_id_hash_map.yaml",
-        mode="train",
         embed={"vocab_size": 500, "embed_dim": 8},
     )
     sch(
         "title_hash",
         "title",
-        "const_dummy",
         "title_idx",
         500,
-        50,
-        "demo/temp/title_hash_map.yaml",
-        mode="train",
         embed={"vocab_size": 500, "embed_dim": 8},
     )
     sch(
         "author_hash",
         "author",
-        "const_dummy",
         "author_idx",
         200,
-        20,
-        "demo/temp/author_hash_map.yaml",
-        mode="train",
         embed={"vocab_size": 200, "embed_dim": 8},
     )
 
@@ -812,10 +822,10 @@ def _build_operators() -> list[dict]:
         10,
         "",
     )
-    lsp("hist_a_extract", "hist_items_raw", "hist_a_list", ",", 0)
+    fls("hist_a_extract", "hist_items_raw", "hist_semantic_ids", ",", max_len=40)
     dm(
         "hist_a_map",
-        "hist_a_list",
+        "hist_semantic_ids",
         "hist_a_ids",
         _make_mapping(ENTITY_CODES_A),
         embed={"vocab_size": 51, "embed_dim": 4},
@@ -875,7 +885,7 @@ def _build_operators() -> list[dict]:
     lo(
         "entity_overlap",
         "entities_v3_list",
-        "hist_a_list",
+        "hist_semantic_ids",
         "entity_overlap_flag",
         embed={"vocab_size": 2, "embed_dim": 4},
     )
@@ -892,6 +902,30 @@ def _build_operators() -> list[dict]:
         "recent_stocks_raw",
         "stock_overlap_recent_flag",
         embed={"vocab_size": 2, "embed_dim": 4},
+    )
+
+    # ═══════════════════════════════════════════
+    # Section 10: 特征哈希 — 无状态多种子 DJB2, Python/Rust 一致
+    # ═══════════════════════════════════════════
+    # 单哈希: user_id + author_id → 1 个索引
+    fh(
+        "user_author_hash",
+        ["user_id", "author_id"],
+        "user_author_hash_idx",
+        vocab_size=5000,
+        num_hashes=1,
+        separator="|",
+        embed={"vocab_size": 5000, "embed_dim": 8},
+    )
+    # 多哈希 (k=4 降低碰撞): item_type + source_name → 4 个索引
+    fh(
+        "item_type_source_hash",
+        ["item_type", "source_name"],
+        "item_type_source_hash_ids",
+        vocab_size=1000,
+        num_hashes=4,
+        separator="|",
+        embed={"vocab_size": 1000, "embed_dim": 4},
     )
 
     return ops

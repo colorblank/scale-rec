@@ -129,12 +129,6 @@ def main():
     features = dag.feature_tuples()
     print(f"[DAG] {len(features)} embeddable features")
 
-    # ── Save StringConcatHash mappings after training ──
-    hash_ops = []
-    for name, op in dag.nodes.items():
-        if hasattr(op, "save_mapping"):
-            hash_ops.append((name, op))
-
     # ── Build model ──
     model_config = ModelConfig.from_yaml(args.model_config)
     print(f"[Model] type={model_config.type}")
@@ -165,11 +159,6 @@ def main():
         print("  " + "  ".join(parts))
 
     print(f"[Best] AUC={best_auc:.4f}")
-
-    # ── Save hash mappings ──
-    for name, op in hash_ops:
-        op.save_mapping()
-        print(f"[HashMap] {name} saved")
 
     # ── Export ──
     export_path = os.path.join(DEMO_DIR, "temp", "model_discover_esmm.safetensors")

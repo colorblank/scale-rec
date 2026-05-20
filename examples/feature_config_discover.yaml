@@ -161,10 +161,6 @@ sources:
   source: User
   dtype: string
   default_val: ''
-- name: const_dummy
-  source: Context
-  dtype: string
-  default_val: _
 operators:
 - name: item_type_map
   op_type: DictMapper
@@ -938,51 +934,68 @@ operators:
   embed:
     vocab_size: 201
     embed_dim: 4
-- name: author_id_hash
-  op_type: StringConcatHash
+- name: author_id_concat
+  op_type: StringConcat
   inputs:
   - author_id
-  - const_dummy
+  outputs:
+  - author_id_str
+  params:
+    separator: _
+
+- name: author_id_hash
+  op_type: FeatureHash
+  inputs:
+  - author_id_str
   outputs:
   - author_id_idx
   params:
     vocab_size: 500
-    oov_reserve: 50
-    hash_map_path: demo/temp/author_id_hash_map.yaml
-    mode: train
-    separator: _
+    num_hashes: 1
   embed:
     vocab_size: 500
     embed_dim: 8
-- name: title_hash
-  op_type: StringConcatHash
+
+- name: title_concat
+  op_type: StringConcat
   inputs:
   - title
-  - const_dummy
+  outputs:
+  - title_str
+  params:
+    separator: _
+
+- name: title_hash
+  op_type: FeatureHash
+  inputs:
+  - title_str
   outputs:
   - title_idx
   params:
     vocab_size: 500
-    oov_reserve: 50
-    hash_map_path: demo/temp/title_hash_map.yaml
-    mode: train
-    separator: _
+    num_hashes: 1
   embed:
     vocab_size: 500
     embed_dim: 8
-- name: author_hash
-  op_type: StringConcatHash
+
+- name: author_concat
+  op_type: StringConcat
   inputs:
   - author
-  - const_dummy
+  outputs:
+  - author_str
+  params:
+    separator: _
+
+- name: author_hash
+  op_type: FeatureHash
+  inputs:
+  - author_str
   outputs:
   - author_idx
   params:
     vocab_size: 200
-    oov_reserve: 20
-    hash_map_path: demo/temp/author_hash_map.yaml
-    mode: train
-    separator: _
+    num_hashes: 1
   embed:
     vocab_size: 200
     embed_dim: 8
@@ -1486,18 +1499,19 @@ operators:
     pad_len: 10
     pad_val: ''
 - name: hist_a_extract
-  op_type: ListStringParser
+  op_type: FlatSplit
   inputs:
   - hist_items_raw
   outputs:
-  - hist_a_list
+  - hist_semantic_ids
   params:
     sep: ','
-    key_index: 0
+    max_len: 40
+    pad_val: ''
 - name: hist_a_map
   op_type: DictMapper
   inputs:
-  - hist_a_list
+  - hist_semantic_ids
   outputs:
   - hist_a_ids
   params:
@@ -1654,7 +1668,7 @@ operators:
   op_type: ListOverlap
   inputs:
   - entities_v3_list
-  - hist_a_list
+  - hist_semantic_ids
   outputs:
   - entity_overlap_flag
   params: {}
@@ -1682,4 +1696,32 @@ operators:
   params: {}
   embed:
     vocab_size: 2
+    embed_dim: 4
+- name: user_author_hash
+  op_type: FeatureHash
+  inputs:
+  - user_id
+  - author_id
+  outputs:
+  - user_author_hash_idx
+  params:
+    vocab_size: 5000
+    num_hashes: 1
+    separator: '|'
+  embed:
+    vocab_size: 5000
+    embed_dim: 8
+- name: item_type_source_hash
+  op_type: FeatureHash
+  inputs:
+  - item_type
+  - source_name
+  outputs:
+  - item_type_source_hash_ids
+  params:
+    vocab_size: 1000
+    num_hashes: 4
+    separator: '|'
+  embed:
+    vocab_size: 1000
     embed_dim: 4

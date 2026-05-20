@@ -107,17 +107,21 @@ operators:
     outputs: ["tag_overlap_demo"]
     params: {}
 
-  # StringConcatHash: user_id x category cross (train mode generates map)
-  - name: "user_category_hash_op"
-    op_type: "StringConcatHash"
+  # Chain: StringConcat → FeatureHash (user_id x category cross)
+  - name: "user_category_concat"
+    op_type: "StringConcat"
     inputs: ["user_id", "item_category"]
+    outputs: ["user_category_cross_str"]
+    params:
+      separator: "_"
+
+  - name: "user_category_hash_op"
+    op_type: "FeatureHash"
+    inputs: ["user_category_cross_str"]
     outputs: ["user_category_cross"]
     params:
       vocab_size: 500
-      oov_reserve: 50
-      hash_map_path: "demo/temp/user_category_hash_map.yaml"
-      mode: "train"
-      separator: "_"
+      num_hashes: 1
     embed:
       vocab_size: 500
       embed_dim: 8

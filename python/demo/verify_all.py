@@ -7,7 +7,6 @@ import sys
 
 import numpy as np
 import polars as pl
-import yaml
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 PYTHON_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -18,23 +17,8 @@ MODEL_TYPES = ["lr", "deepfm", "mmoe", "esmm", "unimixer"]
 
 
 def _make_inference_config(base_path: str) -> str:
-    """Create a temp feature config with StringConcatHash operators in inference mode."""
-    with open(base_path, encoding="utf-8") as f:
-        config = yaml.safe_load(f)
-    modified = False
-    for op in config.get("operators", []):
-        if op.get("op_type") == "StringConcatHash":
-            params = op.setdefault("params", {})
-            if params.get("mode", "train") == "train":
-                params["mode"] = "inference"
-                modified = True
-    if not modified:
-        return base_path
-    out_path = os.path.join(DEMO_DIR, "temp", "_feature_config_infer.yaml")
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    with open(out_path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(config, f, default_flow_style=False)
-    return out_path
+    """Feature config is stateless — no inference-mode switching needed."""
+    return base_path
 
 
 def compare_arrays(py_arr: np.ndarray, rust_arr: np.ndarray) -> dict:
