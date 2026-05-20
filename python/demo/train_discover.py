@@ -500,6 +500,7 @@ def train_on_prod(
         item_files,
         item_src_names,
         separator=args.separator,
+        has_header=not args.item_no_header,
         null_markers=set(args.null_markers),
     )
     print(f"[ItemIndex] {len(item_idx)} items from {len(item_files)} files")
@@ -568,7 +569,8 @@ def main() -> None:
     p.add_argument("--batch-size", type=int, default=64)
     p.add_argument("--lr", type=float, default=0.005)
     p.add_argument("--weight-decay", type=float, default=1e-4)
-    p.add_argument("--no-header", action="store_true")
+    p.add_argument("--no-header", action="store_true", help="用户行为文件无 header")
+    p.add_argument("--item-no-header", action="store_true", help="物品文件无 header")
     p.add_argument("--null-markers", nargs="*", default=list(NULL_MARKERS))
     p.add_argument("--separator", default="\t")
     p.add_argument("--skip-missing-item", action="store_true")

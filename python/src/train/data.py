@@ -23,6 +23,7 @@ def build_item_index(
     item_files: list[str],
     item_source_names: list[str],
     separator: str = "\t",
+    has_header: bool = True,
     null_markers: set[str] | None = None,
 ) -> dict[str, dict[str, str]]:
     """从多日物品特征文件构建 item_id → features 索引。
@@ -32,8 +33,9 @@ def build_item_index(
 
     Args:
         item_files: 物品特征文件路径列表，从旧到新排列。
-        item_source_names: FlowConfig 中 source="Item" 的特征名列表，含 item_id。
+        item_source_names: FlowConfig 中 source="Item" 的特征名列表，item_id 必须在首位。
         separator: 字段分隔符。
+        has_header: 文件是否含 header 行。False 时按 item_source_names 顺序按位置读取。
         null_markers: NULL 字符串集合。
 
     Returns:
@@ -51,15 +53,18 @@ def build_item_index(
             continue
 
         with open(path, encoding="utf-8") as f:
-            header_line = f.readline()
-            if not header_line:
-                continue
-            header = header_line.strip("\n").split(separator)
-            # 确定哪些列名在 item_source_names 中
-            col_indices: dict[str, int] = {}
-            for i, h in enumerate(header):
-                if h in item_source_names:
-                    col_indices[h] = i
+            if has_header:
+                header_line = f.readline()
+                if not header_line:
+                    continue
+                header = header_line.strip("\n").split(separator)
+                col_indices: dict[str, int] = {}
+                for i, h in enumerate(header):
+                    if h in item_source_names:
+                        col_indices[h] = i
+            else:
+                # 无 header：按 item_source_names 顺序按位置读取
+                col_indices = {name: i for i, name in enumerate(item_source_names)}
 
             if "item_id" not in col_indices:
                 raise ValueError(f"[ItemIndex] item_id column not found in {path}")
