@@ -62,34 +62,42 @@ LABEL_COLUMNS = [
 # ═══════════════════════════════════════════════
 
 
-def time_weighted_bce(
+def weighted_bce_stay(
     logits: torch.Tensor,
-    labels: torch.Tensor,
     stay_times: torch.Tensor,
 ) -> torch.Tensor:
-    """Time-weighted binary cross entropy for click prediction.
+    """Weighted Cross Entropy for stay_time prediction.
 
-    正样本权重 = log(1 + stay_time)，阅读越久信号越强。
-    负样本权重 = 1。
-    stay_time < 0 视为缺失，权重 0（不参与损失）。
+    p = σ(z), t = observed stay_time
+    Loss = -(t/(1+t))·log(p) - (1/(1+t))·log(1-p)
+
+    t < 0 视为缺失，不参与损失。
 
     Args:
-        logits: [N, 1].
-        labels: [N, 1] 0/1.
-        stay_times: [N, 1] reading duration in seconds, -1 = missing.
+        logits: [N, 1] 模型输出 logits。
+        stay_times: [N, 1] 实际停留时长（秒），-1 表示缺失。
     """
-    bce = F.binary_cross_entropy_with_logits(logits, labels, reduction="none")
-    weights = torch.where(
-        stay_times < 0,
-        torch.zeros_like(stay_times),
-        torch.where(
-            labels > 0.5,
-            torch.log1p(stay_times.float()),
-            torch.ones_like(stay_times).float(),
-        ),
-    )
-    total = weights.sum().clamp(min=1)
-    return (bce * weights).sum() / total
+    t = stay_times.float()
+    valid = (t >= 0).squeeze(-1)
+    if not valid.any():
+        return torch.tensor(0.0, device=logits.device, requires_grad=True)
+
+    logits_v = logits[valid]
+    t_v = t[valid]
+
+    log_p = -F.softplus(-logits_v)
+    log_one_minus_p = -F.softplus(logits_v)
+
+    w_pos = t_v / (1.0 + t_v)
+    w_neg = 1.0 / (1.0 + t_v)
+
+    loss = -(w_pos * log_p + w_neg * log_one_minus_p)
+    return loss.mean()
+
+
+def standard_bce(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+    """Standard binary cross entropy for classification tasks."""
+    return F.binary_cross_entropy_with_logits(logits, labels)
 
 
 # ═══════════════════════════════════════════════
@@ -227,16 +235,19 @@ def compute_loss(
     outputs: dict[str, torch.Tensor],
     batch_labels: dict[str, list],
     label_col_map: dict[str, str],
-    has_stay_time: bool,
-    no_time_weight: bool,
 ) -> torch.Tensor | None:
-    """计算多任务 loss。is_click 任务可选用 time-weighted BCE。"""
+    """计算 5 任务 loss。
+
+    click/cvr/detail/stock → standard BCE
+    stay → weighted BCE: -(t/(1+t))·log(p) - (1/(1+t))·log(1-p)
+    """
     total_loss = None
     for task_name, logits in outputs.items():
+        if task_name.startswith("ct"):  # skip ESMM product keys (ctcvr, ctdetail, ctstock, ctstay)
+            continue
         label_col = label_col_map.get(task_name)
         if label_col is None:
             continue
-        # 支持新旧标签列名
         raw = _get_label_vals(batch_labels, label_col, task_name)
         if not raw:
             continue
@@ -246,17 +257,12 @@ def compute_loss(
         if not valid.any():
             continue
 
-        labels = torch.tensor(arr[valid], dtype=torch.float32).view(-1, 1)
-
-        if task_name == "ctr" and has_stay_time and not no_time_weight:
-            stay_raw = _get_label_vals(batch_labels, "stay_time")
-            stay_arr = np.array(
-                [float(v) if v is not None else -1 for v in stay_raw], dtype=np.float32
-            )
-            stay_t = torch.tensor(stay_arr[valid], dtype=torch.float32).view(-1, 1)
-            task_loss = time_weighted_bce(logits[valid], labels, stay_t)
+        if task_name == "stay":
+            stay_t = torch.tensor(arr[valid], dtype=torch.float32).view(-1, 1)
+            task_loss = weighted_bce_stay(logits[valid], stay_t)
         else:
-            task_loss = F.binary_cross_entropy_with_logits(logits[valid], labels)
+            labels = torch.tensor(arr[valid], dtype=torch.float32).view(-1, 1)
+            task_loss = standard_bce(logits[valid], labels)
 
         total_loss = task_loss if total_loss is None else total_loss + task_loss
     return total_loss
@@ -328,7 +334,6 @@ def train_single_file(
     print(f"[Data] single-file mode: train={len(train_df)} test={len(test_df)}")
 
     source_names = set(dag.sources.keys())
-    has_stay = "stay_time" in df.columns
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     best_auc = 0.0
 
@@ -348,7 +353,7 @@ def train_single_file(
                 if c in batch_df.columns:
                     b_labels[c] = batch_df[c].to_list()
 
-            loss = compute_loss(outputs, b_labels, label_col_map, has_stay, args.no_time_weight)
+            loss = compute_loss(outputs, b_labels, label_col_map)
             if loss is None:
                 continue
             optimizer.zero_grad()
@@ -456,8 +461,6 @@ def train_prod(
                 model(dag.preprocess_batch(batch["features"])),
                 batch["labels"],
                 label_col_map,
-                has_stay,
-                args.no_time_weight,
             )
             if loss is not None:
                 optimizer.zero_grad()
@@ -483,7 +486,7 @@ def train_prod(
 def _log_epoch(epoch, total_epochs, loss, aucs, task_names):
     parts = [f"epoch {epoch:3d}/{total_epochs}  loss={loss:.6f}"]
     for t in sorted(task_names):
-        if t in aucs:
+        if t in aucs and t != "stay":  # stay 为连续值，不计算 AUC
             parts.append(f"{t}: auc={aucs[t]:.4f}")
     print("  " + "  ".join(parts))
 
@@ -530,8 +533,6 @@ def main():
     task_names = spec.get("task_names", ["ctr", "cvr"])
     label_col_map = spec.get("label_col_map", {"ctr": "is_click", "cvr": "is_cvr"})
     print(f"[Model] type={model_config.type}, tasks={task_names}, label_map={label_col_map}")
-    if args.no_time_weight:
-        print("[Model] time-weighted BCE disabled")
 
     model = model_config.build(features)
     n_params = sum(p.numel() for p in model.parameters())
