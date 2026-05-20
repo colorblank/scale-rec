@@ -1,7 +1,6 @@
 //! demo_inference：加载 Python 训练的权重，对 CSV 测试数据做推理，输出 logits。
 //! 支持所有 5 种模型：LR, DeepFM, MMoE, ESMM, UniMixer。
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use candle_core::{DType, Device, Tensor};

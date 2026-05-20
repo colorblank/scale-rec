@@ -1,6 +1,5 @@
 //! DebugTracer：记录特征 DAG 管道中每个阶段的 I/O 值和异常。
 use serde::Serialize;
-use std::any::Any;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;

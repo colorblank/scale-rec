@@ -13,7 +13,6 @@ use layers::towers::{Activation, MultiTaskConfig, TowerConfig};
 use models::unimixer::model::UniMixerModel;
 use models::unimixer::tokenizer::FeatureTokenizer;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 fn main() -> Result<()> {
     println!("=== scale-rec: FeatFlow + UniMixer ===");

@@ -147,7 +147,7 @@ fn build_esmm(
 
 fn build_unimixer(
     vb: VarBuilder,
-    features: &[(String, usize, usize)],
+    _features: &[(String, usize, usize)],
     tokenizer: Option<FeatureTokenizer>,
     params: &serde_yaml::Value,
 ) -> Result<Box<dyn Model>> {

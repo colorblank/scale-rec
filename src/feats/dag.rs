@@ -8,7 +8,6 @@ use crate::feats::debug::DebugTracer;
 use petgraph::algo::toposort;
 use petgraph::prelude::DiGraph;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 pub type FeatureValue = Fv;
 
