@@ -7,10 +7,9 @@
 物品有最长 7 天有效期，需按 item_id 跨文件合并。
 
 用法：
-  item_index = build_item_index(item_files, item_source_names, separator, null_markers)
-  for batch in stream_join(user_file, item_index, source_names, label_names, batch_size, ...):
+  item_index = build_item_index(item_files, item_source_names, null_markers)
+  for batch in stream_join(user_file, item_index, source_names, label_names, ...):
       tensors = dag.preprocess_batch(batch["features"])
-      # batch["labels"] → train step
 """
 
 from __future__ import annotations
@@ -18,84 +17,65 @@ from __future__ import annotations
 import os
 from typing import Any, Iterator
 
+import polars as pl
+
+NULL_MARKERS = {"NULL", "\\N", "null", "None", ""}
+
 
 def build_item_index(
     item_files: list[str],
     item_source_names: list[str],
-    separator: str = "\t",
     has_header: bool = True,
+    separator: str = "\t",
     null_markers: set[str] | None = None,
 ) -> dict[str, dict[str, str]]:
-    """从多日物品特征文件构建 item_id → features 索引。
+    """用 Polars 读取多日物品文件，按 item_id 去重后构建索引。
 
-    逐文件读取，后读文件覆盖先读文件中同 item_id 的记录（保留最新特征）。
-    仅提取 item_source_names 中声明的列，其余列忽略。
+    后读文件覆盖先读文件中同 item_id 的记录（keep="last"）。
+    仅提取 item_source_names 中声明的列。
 
     Args:
         item_files: 物品特征文件路径列表，从旧到新排列。
-        item_source_names: FlowConfig 中 source="Item" 的特征名列表，item_id 必须在首位。
+        item_source_names: FlowConfig 中 source="Item" 的特征名列表。
+        has_header: 文件是否含 header 行。
         separator: 字段分隔符。
-        has_header: 文件是否含 header 行。False 时按 item_source_names 顺序按位置读取。
         null_markers: NULL 字符串集合。
 
     Returns:
         item_id → {feature_name: value} 映射表。
     """
     if null_markers is None:
-        null_markers = {"NULL", "\\N", "null", "None", ""}
+        null_markers = NULL_MARKERS
 
-    index: dict[str, dict[str, str]] = {}
-    n_files = len(item_files)
-
-    for fi, path in enumerate(item_files):
+    dfs = []
+    for path in item_files:
         if not os.path.exists(path):
             print(f"[ItemIndex] skip missing: {path}")
             continue
+        df = pl.read_csv(
+            path, separator=separator, has_header=has_header,
+            null_values=list(null_markers),
+            truncate_ragged_lines=True, ignore_errors=True,
+        )
+        if not has_header:
+            df.columns = item_source_names[: len(df.columns)]
+        # 仅保留 item_source_names 中存在的列
+        keep = [c for c in item_source_names if c in df.columns]
+        dfs.append(df.select(keep))
 
-        with open(path, encoding="utf-8") as f:
-            if has_header:
-                header_line = f.readline()
-                if not header_line:
-                    continue
-                header = header_line.strip("\n").split(separator)
-                col_indices: dict[str, int] = {}
-                for i, h in enumerate(header):
-                    if h in item_source_names:
-                        col_indices[h] = i
-            else:
-                # 无 header：按 item_source_names 顺序按位置读取
-                col_indices = {name: i for i, name in enumerate(item_source_names)}
+    if not dfs:
+        return {}
 
-            if "item_id" not in col_indices:
-                raise ValueError(f"[ItemIndex] item_id column not found in {path}")
+    merged = pl.concat(dfs).unique(subset=["item_id"], keep="last")
+    print(f"[ItemIndex] {len(dfs)} files → {len(merged)} unique items")
 
-            added, updated = 0, 0
-            for line in f:
-                line = line.strip("\n")
-                if not line:
-                    continue
-                parts = line.split(separator)
-                item_id = parts[col_indices["item_id"]].strip()
-                if not item_id:
-                    continue
-
-                row: dict[str, str] = {}
-                for name, idx in col_indices.items():
-                    val = parts[idx] if idx < len(parts) else ""
-                    row[name] = "" if val in null_markers else val
-
-                existed = item_id in index
-                index[item_id] = row
-                if existed:
-                    updated += 1
-                else:
-                    added += 1
-
-            print(
-                f"[ItemIndex] file {fi + 1}/{n_files}: {path} "
-                f"(+{added} new, ~{updated} updated, total={len(index)})"
-            )
-
+    index: dict[str, dict[str, str]] = {}
+    for row in merged.iter_rows():
+        d = {col: (str(row[i]) if row[i] is not None else "")
+             for i, col in enumerate(merged.columns)}
+        item_id = d.pop("item_id")
+        if item_id:
+            index[item_id] = d
     return index
 
 
@@ -111,7 +91,7 @@ def _parse_val(raw: str, dtype_tag: str) -> Any:
             return float(raw)
         except (ValueError, TypeError):
             return 0.0
-    return raw  # string / list
+    return raw
 
 
 def stream_join(
@@ -124,7 +104,7 @@ def stream_join(
     separator: str = "\t",
     null_markers: set[str] | None = None,
     skip_missing_item: bool = False,
-) -> Iterator[dict[str, list[dict]]]:
+) -> Iterator[dict[str, Any]]:
     """流式读取用户行为文件，按 item_id 关联物品特征，分批产出。
 
     内存中仅保留当前 batch，50GB 文件可安全处理。
@@ -134,7 +114,7 @@ def stream_join(
         user_file: 用户行为文件路径。
         item_index: build_item_index 构建的物品特征索引。
         source_names: FlowConfig 中所有 source name 列表。
-        source_dtypes: {source_name: dtype_tag}，dtype_tag 为 int/float/string/list。
+        source_dtypes: {source_name: dtype_tag}。
         label_names: 标签列名列表。
         batch_size: 批大小。
         separator: 字段分隔符。
@@ -145,7 +125,7 @@ def stream_join(
         {"features": [dict, ...], "labels": {label_name: [value, ...]}}
     """
     if null_markers is None:
-        null_markers = {"NULL", "\\N", "null", "None", ""}
+        null_markers = NULL_MARKERS
 
     with open(user_file, encoding="utf-8") as f:
         header_line = f.readline()
@@ -163,8 +143,8 @@ def stream_join(
             if ln not in col_indices:
                 print(f"[StreamJoin] WARNING: label '{ln}' not in user file header")
 
-        feature_batch: list[dict] = []
-        label_batch: dict[str, list] = {ln: [] for ln in label_names}
+        feature_batch: list[dict[str, Any]] = []
+        label_batch: dict[str, list[Any]] = {ln: [] for ln in label_names}
         n_joined, n_missed, n_total = 0, 0, 0
         item_id_idx = col_indices["item_id"]
 
@@ -177,7 +157,7 @@ def stream_join(
 
             item_id = parts[item_id_idx].strip() if item_id_idx < len(parts) else ""
 
-            # 1. 物品特征：从索引查找（索引中值均为字符串，需解析类型）
+            # 物品特征从索引查找
             item_features = item_index.get(item_id)
             if item_features is None:
                 if skip_missing_item:
@@ -188,7 +168,7 @@ def stream_join(
             else:
                 n_joined += 1
 
-            # 2. 合并行：物品特征优先，用户/上下文从行提取
+            # 合并行
             row: dict[str, Any] = {}
             for name in source_names:
                 dtype_tag = source_dtypes.get(name, "string")
@@ -198,15 +178,15 @@ def stream_join(
                     idx = col_indices[name]
                     raw = parts[idx] if idx < len(parts) else ""
                 else:
-                    continue  # 不设 key，DAG 用 default_val 回填
+                    continue
 
                 if raw in null_markers:
-                    continue  # NULL → 不设 key
+                    continue
                 row[name] = _parse_val(raw, dtype_tag)
 
             feature_batch.append(row)
 
-            # 3. 标签列
+            # 标签列
             for ln in label_names:
                 if ln in col_indices:
                     idx = col_indices[ln]
