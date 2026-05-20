@@ -99,7 +99,7 @@ class ModelConfig:
 
 
 def _spec_pred(model=None):
-    return {"task_names": ["pred"], "label_col_map": {"pred": "ctr"}}
+    return {"task_names": ["pred"], "label_col_map": {"pred": "is_click"}}
 
 
 def _build_lr(features, tokenizer=None, **params):
@@ -137,7 +137,7 @@ def _build_esmm(features, tokenizer=None, **params):
 
 
 def _spec_esmm(model=None):
-    return {"task_names": ["ctr", "cvr"], "label_col_map": {"ctr": "ctr", "cvr": "cvr"}}
+    return {"task_names": ["ctr", "cvr"], "label_col_map": {"ctr": "is_click", "cvr": "is_cvr"}}
 
 
 def _build_unimixer(features, tokenizer=None, **params):

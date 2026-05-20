@@ -1,12 +1,26 @@
 from __future__ import annotations
 
-"""discover-main-sort 训练脚本：ESMM 多任务 CTR+CVR 训练 → 导出 safetensors。"""
+"""discover-main-sort 统一训练脚本。
+
+支持两种数据模式：
+  1. 单文件模式（demo/测试）: --data single_file.txt
+     所有列（Item+User+标签）在一个 TSV 中，Polars 全量读入。
+
+  2. 生产模式: --user-data user.txt --item-files items1.txt,items2.txt,...
+     用户行为文件 + 多日物品特征文件，流式按 item_id Join，50GB 安全处理。
+
+标签定义：
+  is_click = is_click_detail OR is_click_stock
+  is_cvr  = 转赞评
+  stay_time = 阅读时长（秒），上限截断 360s
+
+CTR 损失采用 time-weighted BCE：正样本权重=log(1+stay_time)，stay_time=-1 忽略。
+"""
 
 import argparse
 import os
 import sys
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import polars as pl
@@ -19,29 +33,71 @@ if str(_src) not in sys.path:
 
 from train.config import FlowConfig, DType  # noqa: E402
 from train.dag import FeatureDag  # noqa: E402
+from train.data import build_item_index, stream_join  # noqa: E402
 from train.export import export_to_safetensors  # noqa: E402
 from train.models import ModelConfig, get_output_spec  # noqa: E402
 
 DEMO_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJ_ROOT = os.path.dirname(os.path.dirname(DEMO_DIR))
-FEATURE_CONFIG = os.path.join(_PROJ_ROOT, "examples", "feature_config_discover.yaml")
-DATA_PATH = os.path.join(DEMO_DIR, "temp", "discover_train_data.txt")
-MODEL_CONFIG = os.path.join(DEMO_DIR, "model_discover_esmm.yaml")
+DEFAULT_FEATURE_CONFIG = os.path.join(_PROJ_ROOT, "examples", "feature_config_discover.yaml")
+DEFAULT_MODEL_CONFIG = os.path.join(DEMO_DIR, "model_discover_esmm.yaml")
+DEFAULT_DATA = os.path.join(DEMO_DIR, "temp", "discover_train_data.txt")
 
-# ── 标签列定义（不在 FlowConfig.sources 中，需单独声明）──
-LABEL_COLUMNS: dict[str, pl.DataType] = {
-    "ctr": pl.Int64,
-    "cvr": pl.Int64,
-    "is_click_detail": pl.Int64,
-    "is_click_stock": pl.Int64,
-}
-
-# NULL 字符串表示（生产数据中缺失值常以这些字符串出现）
 NULL_MARKERS = {"NULL", "\\N", "null", "None", ""}
+
+# 标签列：新名+旧名别名，确保生产/测试数据兼容
+LABEL_COLUMNS = [
+    "is_click",
+    "is_cvr",
+    "ctr",
+    "cvr",
+    "is_click_detail",
+    "is_click_stock",
+    "stay_time",
+]
+
+
+# ═══════════════════════════════════════════════
+# 损失函数
+# ═══════════════════════════════════════════════
+
+
+def time_weighted_bce(
+    logits: torch.Tensor,
+    labels: torch.Tensor,
+    stay_times: torch.Tensor,
+) -> torch.Tensor:
+    """Time-weighted binary cross entropy for click prediction.
+
+    正样本权重 = log(1 + stay_time)，阅读越久信号越强。
+    负样本权重 = 1。
+    stay_time < 0 视为缺失，权重 0（不参与损失）。
+
+    Args:
+        logits: [N, 1].
+        labels: [N, 1] 0/1.
+        stay_times: [N, 1] reading duration in seconds, -1 = missing.
+    """
+    bce = F.binary_cross_entropy_with_logits(logits, labels, reduction="none")
+    weights = torch.where(
+        stay_times < 0,
+        torch.zeros_like(stay_times),
+        torch.where(
+            labels > 0.5,
+            torch.log1p(stay_times.float()),
+            torch.ones_like(stay_times).float(),
+        ),
+    )
+    total = weights.sum().clamp(min=1)
+    return (bce * weights).sum() / total
+
+
+# ═══════════════════════════════════════════════
+# 数据加载
+# ═══════════════════════════════════════════════
 
 
 def _dtype_to_polars(dt: DType) -> pl.DataType:
-    """将 FlowConfig DType 映射为 Polars 类型。"""
     tag = dt.tag if hasattr(dt, "tag") else dt
     if tag == "int":
         return pl.Int64
@@ -49,59 +105,30 @@ def _dtype_to_polars(dt: DType) -> pl.DataType:
         return pl.Float64
     elif tag == "string":
         return pl.Utf8
-    elif tag == "list":
-        return pl.Utf8  # list 类型以 JSON/分隔字符串存储
     return pl.Utf8
 
 
-def build_schema(flow_config: FlowConfig, has_header: bool) -> dict[str, pl.DataType]:
-    """从 FlowConfig.sources + LABEL_COLUMNS 构建 Polars schema。
-
-    无论 TSV 是否有 header，都按 name → dtype 映射读取，确保类型正确。
-    """
-    schema: dict[str, pl.DataType] = {}
-    for s in flow_config.sources:
-        schema[s.name] = _dtype_to_polars(s.dtype)
-    for label_name, label_dtype in LABEL_COLUMNS.items():
-        schema[label_name] = label_dtype
-    return schema
-
-
-def load_data(
+def load_single_file(
     path: str,
     flow_config: FlowConfig,
     has_header: bool = True,
     separator: str = "\t",
     null_markers: set[str] | None = None,
 ) -> pl.DataFrame:
-    """加载训练数据，处理无 header TSV、NULL 值、混合类型。
-
-    读取流程：
-    1. 从 FlowConfig.sources + LABEL_COLUMNS 构建 schema
-    2. 有 header → 按名读取 + schema_overrides 强制类型
-       无 header → 全列按 Utf8 读入，再按位置重命名 schema 列，其余丢弃
-    3. 将 NULL 标记字符串替换为 Python None
-    4. DAG 处理前过滤掉值为 None 的 key（让 DAG 用 parse_default 填默认值）
-
-    Args:
-        path: 数据文件路径。
-        flow_config: 特征编排配置。
-        has_header: TSV 是否含 header 行。
-        separator: 字段分隔符。
-        null_markers: NULL 字符串集合。
-
-    Returns:
-        DataFrame，仅含 schema 列 + 标签列。
-    """
+    """单文件模式：Polars 全量读入 TSV，按 FlowConfig schema 强制类型。"""
     if null_markers is None:
         null_markers = NULL_MARKERS
 
-    schema = build_schema(flow_config, has_header)
-    column_names = list(schema.keys())
-    n_expected = len(column_names)
+    schema: dict[str, pl.DataType] = {}
+    for s in flow_config.sources:
+        schema[s.name] = _dtype_to_polars(s.dtype)
+    # 标签列也声明类型
+    for ln in LABEL_COLUMNS:
+        schema[ln] = pl.Int64
+
+    col_names = list(schema.keys())
 
     if has_header:
-        # 有 header：Polars 按名读取，schema_overrides 强制类型
         df = pl.read_csv(
             path,
             separator=separator,
@@ -111,11 +138,9 @@ def load_data(
             truncate_ragged_lines=True,
             ignore_errors=True,
         )
-        # 只保留 schema 中定义的列（忽略数据中的额外列如 const_dummy）
-        keep_cols = [c for c in column_names if c in df.columns]
-        df = df.select(keep_cols)
+        keep = [c for c in col_names if c in df.columns]
+        df = df.select(keep)
     else:
-        # 无 header：全列读为 Utf8，按位置取前 n_expected 列
         df = pl.read_csv(
             path,
             separator=separator,
@@ -124,19 +149,52 @@ def load_data(
             truncate_ragged_lines=True,
             ignore_errors=True,
         )
-        # 取前 n_expected 列，多余列（const_dummy 等）丢弃
-        available = df.columns[:n_expected]
-        df = df.select(available)
-        df.columns = column_names
-        # 按 schema 强转类型
-        for col_name, dtype in schema.items():
-            if col_name in df.columns:
+        avail = df.columns[: len(col_names)]
+        df = df.select(avail)
+        df.columns = col_names
+        for cn, dt in schema.items():
+            if cn in df.columns:
                 try:
-                    df = df.with_columns(pl.col(col_name).cast(dtype, strict=False))
+                    df = df.with_columns(pl.col(cn).cast(dt, strict=False))
                 except Exception:
                     pass
-
     return df
+
+
+# ═══════════════════════════════════════════════
+# 标签处理
+# ═══════════════════════════════════════════════
+
+
+def prepare_labels(df: pl.DataFrame) -> pl.DataFrame:
+    """统一标签列名，处理缺失值。
+
+    - is_click: 优先用已有列，否则从 is_click_detail|is_click_stock 计算，再否则用 ctr
+    - is_cvr: 优先用已有列，否则用 cvr 别名
+    - stay_time: NULL → -1
+    """
+    # is_click
+    if "is_click" not in df.columns:
+        if "is_click_detail" in df.columns and "is_click_stock" in df.columns:
+            detail = df["is_click_detail"].fill_null(0)
+            stock = df["is_click_stock"].fill_null(0)
+            df = df.with_columns(((detail + stock) > 0).cast(pl.Int64).alias("is_click"))
+        elif "ctr" in df.columns:
+            df = df.with_columns(pl.col("ctr").cast(pl.Int64).alias("is_click"))
+
+    # is_cvr
+    if "is_cvr" not in df.columns and "cvr" in df.columns:
+        df = df.with_columns(pl.col("cvr").cast(pl.Int64).alias("is_cvr"))
+
+    # stay_time
+    if "stay_time" in df.columns:
+        df = df.with_columns(pl.col("stay_time").fill_null(-1))
+    return df
+
+
+# ═══════════════════════════════════════════════
+# 训练 / 评估
+# ═══════════════════════════════════════════════
 
 
 def sigmoid(x: np.ndarray) -> np.ndarray:
@@ -144,196 +202,369 @@ def sigmoid(x: np.ndarray) -> np.ndarray:
 
 
 def auc_score(labels: np.ndarray, probs: np.ndarray) -> float:
-    """Fast AUC."""
     order = np.argsort(probs)[::-1]
-    labels_sorted = labels[order]
-    n_pos = labels_sorted.sum()
-    n_neg = len(labels_sorted) - n_pos
+    ls = labels[order]
+    n_pos = ls.sum()
+    n_neg = len(ls) - n_pos
     if n_pos == 0 or n_neg == 0:
         return 0.5
-    cum_pos = np.cumsum(labels_sorted)
-    return float((cum_pos - labels_sorted).sum() / (n_pos * n_neg))
+    cum = np.cumsum(ls)
+    return float((cum - ls).sum() / (n_pos * n_neg))
 
 
-def evaluate(model, dag, df, task_names: list[str], batch_size: int, label_col_map: dict) -> dict:
+def _get_label_vals(batch_labels: dict[str, list], *names: str) -> list:
+    """从 batch labels 中按优先级取标签值，支持新旧列名别名。
+    跳过全为 None 的列（列存在但无有效数据）。
+    """
+    for n in names:
+        vals = batch_labels.get(n)
+        if vals and any(v is not None for v in vals):
+            return vals
+    return []
+
+
+def compute_loss(
+    outputs: dict[str, torch.Tensor],
+    batch_labels: dict[str, list],
+    label_col_map: dict[str, str],
+    has_stay_time: bool,
+    no_time_weight: bool,
+) -> torch.Tensor | None:
+    """计算多任务 loss。is_click 任务可选用 time-weighted BCE。"""
+    total_loss = None
+    for task_name, logits in outputs.items():
+        label_col = label_col_map.get(task_name)
+        if label_col is None:
+            continue
+        # 支持新旧标签列名
+        raw = _get_label_vals(batch_labels, label_col, task_name)
+        if not raw:
+            continue
+
+        arr = np.array([float(v) if v is not None else np.nan for v in raw], dtype=np.float32)
+        valid = ~np.isnan(arr)
+        if not valid.any():
+            continue
+
+        labels = torch.tensor(arr[valid], dtype=torch.float32).view(-1, 1)
+
+        if task_name == "ctr" and has_stay_time and not no_time_weight:
+            stay_raw = _get_label_vals(batch_labels, "stay_time")
+            stay_arr = np.array(
+                [float(v) if v is not None else -1 for v in stay_raw], dtype=np.float32
+            )
+            stay_t = torch.tensor(stay_arr[valid], dtype=torch.float32).view(-1, 1)
+            task_loss = time_weighted_bce(logits[valid], labels, stay_t)
+        else:
+            task_loss = F.binary_cross_entropy_with_logits(logits[valid], labels)
+
+        total_loss = task_loss if total_loss is None else total_loss + task_loss
+    return total_loss
+
+
+def evaluate_aucs(model, dag, batches, task_names, label_col_map) -> dict[str, float]:
     model.eval()
     all_logits: dict[str, list] = {t: [] for t in task_names}
     all_labels: dict[str, list] = {t: [] for t in task_names}
-    source_names = set(dag.sources.keys())
     with torch.no_grad():
-        for start in range(0, len(df), batch_size):
-            batch_df = df.slice(start, batch_size)
-            # 只传 source 列进入 DAG，标签列不进预处理
-            feature_rows = batch_df.select(list(source_names)).to_dicts()
-            # 将 None 替换为缺失 key（DAG 用 parse_default 填充）
-            feature_rows = [
-                {k: v for k, v in row.items() if v is not None} for row in feature_rows
-            ]
-            tensors = dag.preprocess_batch(feature_rows)
+        for batch in batches:
+            rows = [{k: v for k, v in row.items() if v is not None} for row in batch["features"]]
+            tensors = dag.preprocess_batch(rows)
             outputs = model(tensors)
             for t in task_names:
-                if t in outputs:
-                    all_logits[t].append(outputs[t].cpu().numpy().flatten())
-                    label_col = label_col_map.get(t, t)
-                    if label_col in batch_df.columns:
-                        vals = batch_df[label_col].to_numpy()
-                        # 过滤 NULL 标签（不参与评估）
-                        mask = ~np.isnan(vals.astype(np.float64))
-                        all_labels[t].append(vals[mask].astype(np.float32))
-    metrics = {}
+                if t not in outputs:
+                    continue
+                all_logits[t].append(outputs[t].cpu().numpy().flatten())
+                label_col = label_col_map.get(t, t)
+                raw = _get_label_vals(batch["labels"], label_col, t)
+                arr = np.array(
+                    [float(v) if v is not None else np.nan for v in raw], dtype=np.float32
+                )
+                valid = ~np.isnan(arr)
+                all_labels[t].append(arr[valid])
+    model.train()
+    aucs = {}
     for t in task_names:
         if all_logits[t] and all_labels[t]:
             logits = np.concatenate(all_logits[t])
             y = np.concatenate(all_labels[t])
             if len(y) == 0:
+                aucs[t] = 0.5
                 continue
-            p = sigmoid(logits)
-            acc = float(((p > 0.5).astype(np.float32) == y).mean())
-            metrics[t] = {"auc": auc_score(y, p), "accuracy": acc}
-    return metrics
+            aucs[t] = auc_score(y, sigmoid(logits))
+    return aucs
 
 
-def train_epoch(model, optimizer, dag, df, task_names, batch_size, label_col_map) -> float:
-    model.train()
-    total_loss = 0.0
-    n_batches = 0
-    source_names = set(dag.sources.keys())
-    for start in range(0, len(df), batch_size):
-        batch_df = df.slice(start, batch_size)
-        actual_bs = len(batch_df)
-        # 只传 source 列，过滤 None
-        feature_rows = batch_df.select(list(source_names)).to_dicts()
-        feature_rows = [
-            {k: v for k, v in row.items() if v is not None} for row in feature_rows
-        ]
-        tensors = dag.preprocess_batch(feature_rows)
-        outputs = model(tensors)
-        loss = None
-        for task_name, logits in outputs.items():
-            label_col = label_col_map.get(task_name)
-            if label_col is None or label_col not in batch_df.columns:
-                continue
-            label_vals = batch_df[label_col].to_numpy()
-            # 过滤 NULL 标签
-            valid = ~np.isnan(label_vals.astype(np.float64))
-            if not valid.any():
-                continue
-            labels = torch.tensor(
-                label_vals[valid], dtype=torch.float32
-            ).view(-1, 1)
-            task_loss = F.binary_cross_entropy_with_logits(
-                logits[valid], labels
-            )
-            loss = task_loss if loss is None else loss + task_loss
-        if loss is None:
-            continue
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        total_loss += loss.item()
-        n_batches += 1
-    return total_loss / max(n_batches, 1)
+# ═══════════════════════════════════════════════
+# 训练循环 — 单文件模式
+# ═══════════════════════════════════════════════
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--feature-config", default=FEATURE_CONFIG)
-    parser.add_argument("--model-config", default=MODEL_CONFIG)
-    parser.add_argument("--data", default=DATA_PATH)
-    parser.add_argument("--epochs", type=int, default=30)
-    parser.add_argument("--batch-size", type=int, default=64)
-    parser.add_argument("--lr", type=float, default=0.005)
-    parser.add_argument("--weight-decay", type=float, default=1e-4)
-    parser.add_argument("--no-header", action="store_true",
-                        help="TSV 无 header 行时使用 FlowConfig.sources 列名")
-    parser.add_argument("--null-markers", nargs="*",
-                        default=list(NULL_MARKERS),
-                        help="NULL 字符串标记列表")
-    parser.add_argument("--separator", default="\t", help="字段分隔符")
-    args = parser.parse_args()
-
-    # ── Build DAG ──
-    flow_config = FlowConfig.from_yaml(args.feature_config)
-    print(f"[Config] {len(flow_config.sources)} sources, {len(flow_config.operators)} operators")
-    dag = FeatureDag(flow_config)
-    features = dag.feature_tuples()
-    print(f"[DAG] {len(features)} embeddable features")
-
-    # ── Load data ──
-    df = load_data(
+def train_single_file(
+    args,
+    flow_config,
+    dag,
+    model,
+    features,
+    task_names,
+    label_col_map,
+):
+    df = load_single_file(
         args.data,
         flow_config,
         has_header=not args.no_header,
         separator=args.separator,
         null_markers=set(args.null_markers),
     )
-    # 过滤：至少有一个 label 不为 NULL 的样本才参与训练
-    label_cols = [c for c in LABEL_COLUMNS if c in df.columns]
-    has_label = pl.any_horizontal(
-        [pl.col(c).is_not_null() for c in label_cols]
-    )
+    df = prepare_labels(df)
+
+    label_cols_in_df = [c for c in ["is_click", "is_cvr"] if c in df.columns]
+    has_label = pl.any_horizontal([pl.col(c).is_not_null() for c in label_cols_in_df])
     df = df.filter(has_label)
     df = df.sample(fraction=1.0, seed=42)
     n_train = int(len(df) * 0.8)
     train_df = df.slice(0, n_train)
     test_df = df.slice(n_train, len(df) - n_train)
-    print(f"[Data] train={len(train_df)} test={len(test_df)} "
-          f"(header={not args.no_header}, null_markers={args.null_markers})")
+    print(f"[Data] single-file mode: train={len(train_df)} test={len(test_df)}")
+
+    source_names = set(dag.sources.keys())
+    has_stay = "stay_time" in df.columns
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    best_auc = 0.0
+
+    for epoch in range(1, args.epochs + 1):
+        model.train()
+        total_loss, n_batches = 0.0, 0
+        for start in range(0, len(train_df), args.batch_size):
+            batch_df = train_df.slice(start, args.batch_size)
+            rows = batch_df.select(list(source_names)).to_dicts()
+            rows = [{k: v for k, v in row.items() if v is not None} for row in rows]
+            tensors = dag.preprocess_batch(rows)
+            outputs = model(tensors)
+
+            # 构建 batch labels dict
+            b_labels: dict[str, list] = {}
+            for c in LABEL_COLUMNS:
+                if c in batch_df.columns:
+                    b_labels[c] = batch_df[c].to_list()
+
+            loss = compute_loss(outputs, b_labels, label_col_map, has_stay, args.no_time_weight)
+            if loss is None:
+                continue
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+            n_batches += 1
+
+        # 评估
+        aucs = _eval_single_file(
+            model, dag, test_df, source_names, task_names, label_col_map, args.batch_size
+        )
+        _log_epoch(epoch, args.epochs, total_loss / max(n_batches, 1), aucs, task_names)
+        for v in aucs.values():
+            if v > best_auc:
+                best_auc = v
+
+    return best_auc
+
+
+def _eval_single_file(model, dag, df, source_names, task_names, label_col_map, batch_size):
+    model.eval()
+    all_logits: dict[str, list] = {t: [] for t in task_names}
+    all_labels: dict[str, list] = {t: [] for t in task_names}
+    with torch.no_grad():
+        for start in range(0, len(df), batch_size):
+            bdf = df.slice(start, batch_size)
+            rows = bdf.select(list(source_names)).to_dicts()
+            rows = [{k: v for k, v in row.items() if v is not None} for row in rows]
+            outputs = model(dag.preprocess_batch(rows))
+            for t in task_names:
+                if t in outputs:
+                    all_logits[t].append(outputs[t].cpu().numpy().flatten())
+                    lc = label_col_map.get(t, t)
+                    if lc in bdf.columns:
+                        vals = bdf[lc].to_numpy()
+                        valid = ~np.isnan(vals.astype(np.float64))
+                        all_labels[t].append(vals[valid].astype(np.float32))
+    model.train()
+    aucs = {}
+    for t in task_names:
+        if all_logits[t] and all_labels[t]:
+            lg = np.concatenate(all_logits[t])
+            y = np.concatenate(all_labels[t])
+            if len(y):
+                aucs[t] = auc_score(y, sigmoid(lg))
+    return aucs
+
+
+# ═══════════════════════════════════════════════
+# 训练循环 — 生产流式模式
+# ═══════════════════════════════════════════════
+
+
+def train_prod(
+    args,
+    flow_config,
+    dag,
+    model,
+    features,
+    task_names,
+    label_col_map,
+):
+    item_files = [p.strip() for p in args.item_files.split(",") if p.strip()]
+    item_source_names = [s.name for s in flow_config.sources if s.source == "Item"]
+    all_source_names = [s.name for s in flow_config.sources]
+    source_dtypes = {
+        s.name: s.dtype.tag if hasattr(s.dtype, "tag") else str(s.dtype)
+        for s in flow_config.sources
+    }
+
+    # 构建物品索引
+    item_index = build_item_index(
+        item_files,
+        item_source_names,
+        separator=args.separator,
+        null_markers=set(args.null_markers),
+    )
+    print(f"[ItemIndex] {len(item_index)} unique items")
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    best_auc = 0.0
+    has_stay = "stay_time" in LABEL_COLUMNS
+
+    for epoch in range(1, args.epochs + 1):
+        total_loss, n_batches = 0.0, 0
+        eval_batches, eval_count = [], 0
+
+        for batch in stream_join(
+            args.user_data,
+            item_index,
+            all_source_names,
+            source_dtypes,
+            LABEL_COLUMNS,
+            batch_size=args.batch_size,
+            separator=args.separator,
+            null_markers=set(args.null_markers),
+            skip_missing_item=args.skip_missing_item,
+        ):
+            if eval_count < args.eval_samples:
+                eval_batches.append(batch)
+                eval_count += len(batch["features"])
+
+            loss = compute_loss(
+                model(dag.preprocess_batch(batch["features"])),
+                batch["labels"],
+                label_col_map,
+                has_stay,
+                args.no_time_weight,
+            )
+            if loss is not None:
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                total_loss += loss.item()
+                n_batches += 1
+
+        aucs = evaluate_aucs(model, dag, eval_batches, task_names, label_col_map)
+        _log_epoch(epoch, args.epochs, total_loss / max(n_batches, 1), aucs, task_names)
+        for v in aucs.values():
+            if v > best_auc:
+                best_auc = v
+
+    return best_auc
+
+
+# ═══════════════════════════════════════════════
+# 主流程
+# ═══════════════════════════════════════════════
+
+
+def _log_epoch(epoch, total_epochs, loss, aucs, task_names):
+    parts = [f"epoch {epoch:3d}/{total_epochs}  loss={loss:.6f}"]
+    for t in sorted(task_names):
+        if t in aucs:
+            parts.append(f"{t}: auc={aucs[t]:.4f}")
+    print("  " + "  ".join(parts))
+
+
+def main():
+    parser = argparse.ArgumentParser(description="discover-main-sort 统一训练脚本")
+    # 数据
+    g = parser.add_mutually_exclusive_group(required=True)
+    g.add_argument("--data", help="单文件路径（demo 模式）")
+    g.add_argument("--user-data", help="用户行为文件路径（生产模式）")
+    parser.add_argument("--item-files", help="物品特征文件，逗号分隔（生产模式）")
+    # 配置
+    parser.add_argument("--feature-config", default=DEFAULT_FEATURE_CONFIG)
+    parser.add_argument("--model-config", default=DEFAULT_MODEL_CONFIG)
+    parser.add_argument("--export-path")
+    # 训练
+    parser.add_argument("--epochs", type=int, default=30)
+    parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--lr", type=float, default=0.005)
+    parser.add_argument("--weight-decay", type=float, default=1e-4)
+    # 数据处理
+    parser.add_argument("--no-header", action="store_true")
+    parser.add_argument("--null-markers", nargs="*", default=list(NULL_MARKERS))
+    parser.add_argument("--separator", default="\t")
+    parser.add_argument("--skip-missing-item", action="store_true")
+    parser.add_argument("--no-time-weight", action="store_true")
+    parser.add_argument("--eval-samples", type=int, default=2000)
+    args = parser.parse_args()
+
+    # 生产模式校验
+    if args.user_data and not args.item_files:
+        parser.error("--item-files required with --user-data")
+
+    # ── Build DAG ──
+    flow_config = FlowConfig.from_yaml(args.feature_config)
+    print(f"[Config] {len(flow_config.sources)} sources, {len(flow_config.operators)} ops")
+    dag = FeatureDag(flow_config)
+    features = dag.feature_tuples()
+    print(f"[DAG] {len(features)} embeddable features")
 
     # ── Build model ──
     model_config = ModelConfig.from_yaml(args.model_config)
-    print(f"[Model] type={model_config.type}")
-
     spec = get_output_spec(model_config.type, None)
     task_names = spec.get("task_names", ["ctr", "cvr"])
-    label_col_map = spec.get("label_col_map", {})
-    print(f"[Model] tasks={task_names}, label_map={label_col_map}")
+    label_col_map = spec.get("label_col_map", {"ctr": "is_click", "cvr": "is_cvr"})
+    print(f"[Model] type={model_config.type}, tasks={task_names}, label_map={label_col_map}")
+    if args.no_time_weight:
+        print("[Model] time-weighted BCE disabled")
 
     model = model_config.build(features)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"[Model] params={n_params:,}")
 
     # ── Train ──
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    best_auc = 0.0
-    for epoch in range(1, args.epochs + 1):
-        train_loss = train_epoch(
-            model, optimizer, dag, train_df, task_names, args.batch_size, label_col_map
+    if args.user_data:
+        best_auc = train_prod(
+            args,
+            flow_config,
+            dag,
+            model,
+            features,
+            task_names,
+            label_col_map,
         )
-        metrics = evaluate(model, dag, test_df, task_names, args.batch_size, label_col_map)
-
-        parts = [f"epoch {epoch:3d}/{args.epochs}  loss={train_loss:.6f}"]
-        for t, m in metrics.items():
-            if m["auc"] > best_auc:
-                best_auc = m["auc"]
-            parts.append(f"{t}: auc={m['auc']:.4f} acc={m['accuracy']:.4f}")
-        print("  " + "  ".join(parts))
+    else:
+        best_auc = train_single_file(
+            args,
+            flow_config,
+            dag,
+            model,
+            features,
+            task_names,
+            label_col_map,
+        )
 
     print(f"[Best] AUC={best_auc:.4f}")
 
     # ── Export ──
-    export_path = os.path.join(DEMO_DIR, "temp", "model_discover_esmm.safetensors")
+    export_path = args.export_path or os.path.join(DEMO_DIR, "temp", "model.safetensors")
     export_to_safetensors(model, export_path)
     print(f"[Export] {export_path}")
-
-    # ── Inference demo ──
-    print("\n[Inference Demo] running on first 5 test samples (no labels)...")
-    demo_df = test_df.slice(0, 5).drop([c for c in label_cols if c in test_df.columns])
-    model.eval()
-    source_names = set(dag.sources.keys())
-    with torch.no_grad():
-        feature_rows = demo_df.select(list(source_names)).to_dicts()
-        feature_rows = [
-            {k: v for k, v in row.items() if v is not None} for row in feature_rows
-        ]
-        tensors = dag.preprocess_batch(feature_rows)
-        preds = model(tensors)
-        for task in task_names:
-            if task in preds:
-                logits = preds[task].cpu().numpy().flatten()
-                probs = sigmoid(logits)
-                print(f"  {task}: logits={logits.round(4)} probs={probs.round(4)}")
-
     print("Done.")
 
 

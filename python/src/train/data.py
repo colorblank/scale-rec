@@ -87,7 +87,7 @@ def build_item_index(
                     added += 1
 
             print(
-                f"[ItemIndex] file {fi+1}/{n_files}: {path} "
+                f"[ItemIndex] file {fi + 1}/{n_files}: {path} "
                 f"(+{added} new, ~{updated} updated, total={len(index)})"
             )
 
@@ -220,5 +220,5 @@ def stream_join(
 
         print(
             f"[StreamJoin] done: total={n_total} joined={n_joined} "
-            f"missed={n_missed} ({100*n_missed/max(n_total,1):.1f}%)"
+            f"missed={n_missed} ({100 * n_missed / max(n_total, 1):.1f}%)"
         )
