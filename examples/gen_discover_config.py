@@ -47,8 +47,7 @@ def generate_config() -> dict:
 def _build_sources() -> list[dict]:
     return [
         # ── Item (18 字段) ──
-        {"name": "item_id", "source": "Item", "dtype": "int", "default_val": "0",
-         "embed": {"vocab_size": 5000, "embed_dim": 16}},
+        {"name": "item_id", "source": "Item", "dtype": "int", "default_val": "0"},
         {"name": "item_type", "source": "Item", "dtype": "string", "default_val": "unknown"},
         {"name": "title", "source": "Item", "dtype": "string", "default_val": ""},
         {"name": "content", "source": "Item", "dtype": "string", "default_val": ""},
@@ -68,11 +67,9 @@ def _build_sources() -> list[dict]:
         {"name": "emb_id", "source": "Item", "dtype": "string", "default_val": "[]"},
 
         # ── User/Context（非标签字段）──
-        {"name": "user_id", "source": "User", "dtype": "int", "default_val": "0",
-         "embed": {"vocab_size": 5000, "embed_dim": 16}},
+        {"name": "user_id", "source": "User", "dtype": "int", "default_val": "0"},
         {"name": "rec_algo", "source": "Context", "dtype": "string", "default_val": "unknown"},
-        {"name": "scene", "source": "Context", "dtype": "int", "default_val": "0",
-         "embed": {"vocab_size": 2, "embed_dim": 4}},
+        {"name": "scene", "source": "Context", "dtype": "int", "default_val": "0"},
         {"name": "stay_time", "source": "Context", "dtype": "int", "default_val": "0"},
         {"name": "p_date", "source": "Context", "dtype": "string", "default_val": "20260331"},
         {"name": "fav_securities", "source": "User", "dtype": "string", "default_val": ""},
@@ -165,8 +162,14 @@ def _build_operators() -> list[dict]:
         add(op)
 
     # ═══════════════════════════════════════════════════
-    # Section 1: 单值特征 → FeatureHash（全量使用 FeatureHash，无 DictMapper）
+    # Section 1: 单值特征 → FeatureHash（全量 FeatureHash，sources 无 embed）
     # ═══════════════════════════════════════════════════
+    concat_hash("item_id_hash", "item_id", "item_id_idx", 5000,
+                embed={"vocab_size": 5000, "embed_dim": 16})
+    concat_hash("user_id_hash", "user_id", "user_id_idx", 5000,
+                embed={"vocab_size": 5000, "embed_dim": 16})
+    concat_hash("scene_hash", "scene", "scene_idx", 10,
+                embed={"vocab_size": 10, "embed_dim": 4})
     concat_hash("item_type_hash", "item_type", "item_type_idx", 20,
                 embed={"vocab_size": 20, "embed_dim": 4})
     concat_hash("source_name_hash", "source_name", "source_name_idx", 20,

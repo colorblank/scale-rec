@@ -4,9 +4,6 @@ sources:
   source: Item
   dtype: int
   default_val: '0'
-  embed:
-    vocab_size: 5000
-    embed_dim: 16
 - name: item_type
   source: Item
   dtype: string
@@ -79,9 +76,6 @@ sources:
   source: User
   dtype: int
   default_val: '0'
-  embed:
-    vocab_size: 5000
-    embed_dim: 16
 - name: rec_algo
   source: Context
   dtype: string
@@ -90,9 +84,6 @@ sources:
   source: Context
   dtype: int
   default_val: '0'
-  embed:
-    vocab_size: 2
-    embed_dim: 4
 - name: stay_time
   source: Context
   dtype: int
@@ -162,6 +153,66 @@ sources:
   dtype: string
   default_val: ''
 operators:
+- name: item_id_hash_concat
+  op_type: StringConcat
+  inputs:
+  - item_id
+  outputs:
+  - item_id_idx_str
+  params:
+    separator: ''
+- name: item_id_hash
+  op_type: FeatureHash
+  inputs:
+  - item_id_idx_str
+  outputs:
+  - item_id_idx
+  params:
+    vocab_size: 5000
+    num_hashes: 1
+  embed:
+    vocab_size: 5000
+    embed_dim: 16
+- name: user_id_hash_concat
+  op_type: StringConcat
+  inputs:
+  - user_id
+  outputs:
+  - user_id_idx_str
+  params:
+    separator: ''
+- name: user_id_hash
+  op_type: FeatureHash
+  inputs:
+  - user_id_idx_str
+  outputs:
+  - user_id_idx
+  params:
+    vocab_size: 5000
+    num_hashes: 1
+  embed:
+    vocab_size: 5000
+    embed_dim: 16
+- name: scene_hash_concat
+  op_type: StringConcat
+  inputs:
+  - scene
+  outputs:
+  - scene_idx_str
+  params:
+    separator: ''
+- name: scene_hash
+  op_type: FeatureHash
+  inputs:
+  - scene_idx_str
+  outputs:
+  - scene_idx
+  params:
+    vocab_size: 10
+    num_hashes: 1
+  embed:
+    vocab_size: 10
+    embed_dim: 4
 - name: item_type_hash_concat
   op_type: StringConcat
   inputs:
