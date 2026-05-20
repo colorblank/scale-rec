@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """discover-main-sort 训练脚本。
 
 支持两种数据模式：
@@ -11,10 +9,13 @@ from __future__ import annotations
   - P(detail|stock)=σ(click)·σ(X), P(cvr)=σ(click)·σ(cvr), P(stay)=σ(detail)·σ(stay)
 """
 
+from __future__ import annotations
+
 import argparse
 import os
 import sys
 from pathlib import Path
+from typing import Any, Iterator
 
 import numpy as np
 import polars as pl
@@ -25,7 +26,7 @@ _src = Path(__file__).resolve().parent.parent / "src"
 if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
 
-from train.config import FlowConfig, DType  # noqa: E402
+from train.config import DType, FlowConfig  # noqa: E402
 from train.dag import FeatureDag  # noqa: E402
 from train.data import build_item_index, stream_join  # noqa: E402
 from train.export import export_to_safetensors  # noqa: E402
@@ -38,17 +39,39 @@ DEFAULT_FEATURE_CONFIG = os.path.join(_PROJ_ROOT, "examples", "feature_config_di
 DEFAULT_MODEL_CONFIG = os.path.join(DEMO_DIR, "model_discover_esmm.yaml")
 DEFAULT_DATA = os.path.join(DEMO_DIR, "temp", "discover_train_data.txt")
 
-NULL_MARKERS = {"NULL", "\\N", "null", "None", ""}
-LABEL_COLUMNS = ["is_click", "is_cvr", "ctr", "cvr",
-                 "is_click_detail", "is_click_stock", "stay_time"]
+NULL_MARKERS: set[str] = {"NULL", "\\N", "null", "None", ""}
+LABEL_COLUMNS: list[str] = [
+    "is_click",
+    "is_cvr",
+    "ctr",
+    "cvr",
+    "is_click_detail",
+    "is_click_stock",
+    "stay_time",
+]
+
+# 模型 Batch 字典类型
+Batch = dict[str, Any]  # {"features": [dict, ...], "labels": {name: [value, ...]}}
 
 # ═══════════════════════════════════════════════════════════════════
 # Loss functions
 # ═══════════════════════════════════════════════════════════════════
 
-def _weighted_bce_stay(logits: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
-    """stay_time weighted BCE: -(t/(1+t))·log σ(z) - (1/(1+t))·log(1-σ(z)).  t<0 忽略."""
-    t = t.float()
+
+def _weighted_bce_stay(logits: torch.Tensor, stay_times: torch.Tensor) -> torch.Tensor:
+    """Weighted BCE for stay_time task.
+
+    p = σ(z), t = stay_time.  Loss = -(t/(1+t))·log p - (1/(1+t))·log(1-p).
+    t < 0 视为缺失，不参与损失。
+
+    Args:
+        logits: [N, 1] 模型输出 logits。
+        stay_times: [N, 1] 实际停留时长（秒），-1 表示缺失。
+
+    Returns:
+        标量损失值。若全部缺失则返回 0。
+    """
+    t = stay_times.float()
     mask = (t >= 0).squeeze(-1)
     if not mask.any():
         return torch.tensor(0.0, device=logits.device, requires_grad=True)
@@ -59,6 +82,7 @@ def _weighted_bce_stay(logits: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
 
 
 def _bce(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+    """Standard binary cross entropy (with logits)."""
     return F.binary_cross_entropy_with_logits(logits, labels)
 
 
@@ -66,10 +90,19 @@ def _bce(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
 # Loss computation
 # ═══════════════════════════════════════════════════════════════════
 
-def _pick_labels(batch: dict[str, list], *names: str) -> list:
-    """按优先级取标签值，跳过全 None 列."""
+
+def _pick_labels(batch_labels: dict[str, list[Any]], *names: str) -> list[Any]:
+    """按优先级从 batch 标签中取值，跳过全为 None 的列。
+
+    Args:
+        batch_labels: 标签字典 {列名: [值, ...]}。
+        *names: 列名优先级列表，先匹配到的有效列立即返回。
+
+    Returns:
+        第一个含有非 None 值的标签列，若无则返回空列表。
+    """
     for n in names:
-        vals = batch.get(n)
+        vals = batch_labels.get(n)
         if vals and any(v is not None for v in vals):
             return vals
     return []
@@ -77,13 +110,25 @@ def _pick_labels(batch: dict[str, list], *names: str) -> list:
 
 def compute_loss(
     outputs: dict[str, torch.Tensor],
-    batch_labels: dict[str, list],
+    batch_labels: dict[str, list[Any]],
     label_map: dict[str, str],
 ) -> torch.Tensor | None:
-    """5 任务 loss：click/cvr/detail/stock → BCE, stay → weighted BCE."""
-    total = None
+    """计算 5 任务多任务损失。
+
+    click / cvr / detail / stock → standard BCE
+    stay → weighted BCE
+
+    Args:
+        outputs: 模型前向输出 {task_name: logits_tensor}。
+        batch_labels: 批次标签字典。
+        label_map: {task_name: label_column_name} 映射。
+
+    Returns:
+        多任务损失总和，若所有任务均无有效标签则返回 None。
+    """
+    total: torch.Tensor | None = None
     for task, logits in outputs.items():
-        if task.startswith("ct"):  # skip ESMM products (ctcvr, ctdetail, ctstock, ctstay)
+        if task.startswith("ct"):  # 跳过 ESMM 乘积键 (ctcvr, ctdetail, ctstock, ctstay)
             continue
         col = label_map.get(task)
         if not col:
@@ -112,11 +157,13 @@ def compute_loss(
 # Metrics
 # ═══════════════════════════════════════════════════════════════════
 
+
 def _sigmoid(x: np.ndarray) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-x))
 
 
 def _auc(labels: np.ndarray, probs: np.ndarray) -> float:
+    """Fast AUC via sorting."""
     order = np.argsort(probs)[::-1]
     y = labels[order]
     n_pos = y.sum()
@@ -129,11 +176,22 @@ def _auc(labels: np.ndarray, probs: np.ndarray) -> float:
 def compute_aucs(
     model: torch.nn.Module,
     dag: FeatureDag,
-    batches: list[dict],
+    batches: list[Batch],
     task_names: list[str],
     label_map: dict[str, str],
 ) -> dict[str, float]:
-    """在多个 batch 上计算分类任务 AUC."""
+    """在多个 batch 上计算各分类任务的 AUC。
+
+    Args:
+        model: 训练中的模型（会在 eval 模式下运行后恢复 train）。
+        dag: 特征 DAG。
+        batches: 评估批次列表。
+        task_names: 需评估的任务名列表。
+        label_map: {task_name: label_column_name} 映射。
+
+    Returns:
+        {task_name: auc_value}，仅包含有有效标签的任务。
+    """
     model.eval()
     logits_buf: dict[str, list[np.ndarray]] = {t: [] for t in task_names}
     labels_buf: dict[str, list[np.ndarray]] = {t: [] for t in task_names}
@@ -147,10 +205,12 @@ def compute_aucs(
                 logits_buf[t].append(outputs[t].cpu().numpy().flatten())
                 col = label_map.get(t, t)
                 raw = _pick_labels(batch["labels"], col, t)
-                arr = np.array([float(v) if v is not None else np.nan for v in raw], dtype=np.float32)
+                arr = np.array(
+                    [float(v) if v is not None else np.nan for v in raw], dtype=np.float32
+                )
                 labels_buf[t].append(arr[~np.isnan(arr)])
     model.train()
-    aucs = {}
+    aucs: dict[str, float] = {}
     for t in task_names:
         if logits_buf[t] and labels_buf[t]:
             y = np.concatenate(labels_buf[t])
@@ -163,29 +223,60 @@ def compute_aucs(
 # Data loading
 # ═══════════════════════════════════════════════════════════════════
 
+
 def _dtype_to_polars(dt: DType) -> pl.DataType:
+    """将 FlowConfig DType 映射为 Polars 类型。"""
     t = dt.tag if hasattr(dt, "tag") else dt
     return {"int": pl.Int64, "float": pl.Float64, "string": pl.Utf8}.get(t, pl.Utf8)
 
 
-def load_single_file(path: str, flow_config: FlowConfig, *,
-                     has_header: bool = True, sep: str = "\t",
-                     null_markers: set[str] = NULL_MARKERS) -> pl.DataFrame:
-    """单文件模式：按 FlowConfig schema + LABEL_COLUMNS 类型化读入 TSV."""
-    schema = {s.name: _dtype_to_polars(s.dtype) for s in flow_config.sources}
+def load_single_file(
+    path: str,
+    flow_config: FlowConfig,
+    *,
+    has_header: bool = True,
+    sep: str = "\t",
+    null_markers: set[str] = NULL_MARKERS,
+) -> pl.DataFrame:
+    """单文件模式：按 FlowConfig schema + LABEL_COLUMNS 类型化读入 TSV。
+
+    Args:
+        path: 数据文件路径。
+        flow_config: 特征编排配置。
+        has_header: 文件是否含 header 行。
+        sep: 字段分隔符。
+        null_markers: NULL 字符串集合。
+
+    Returns:
+        仅包含 schema 列 + 标签列的 DataFrame。
+    """
+    schema: dict[str, pl.DataType] = {
+        s.name: _dtype_to_polars(s.dtype) for s in flow_config.sources
+    }
     schema.update({ln: pl.Int64 for ln in LABEL_COLUMNS})
     cols = list(schema)
 
     if has_header:
-        df = pl.read_csv(path, separator=sep, has_header=True,
-                         schema_overrides=schema, null_values=list(null_markers),
-                         truncate_ragged_lines=True, ignore_errors=True)
+        df = pl.read_csv(
+            path,
+            separator=sep,
+            has_header=True,
+            schema_overrides=schema,
+            null_values=list(null_markers),
+            truncate_ragged_lines=True,
+            ignore_errors=True,
+        )
         df = df.select([c for c in cols if c in df.columns])
     else:
-        df = pl.read_csv(path, separator=sep, has_header=False,
-                         null_values=list(null_markers),
-                         truncate_ragged_lines=True, ignore_errors=True)
-        df = df.select(df.columns[:len(cols)])
+        df = pl.read_csv(
+            path,
+            separator=sep,
+            has_header=False,
+            null_values=list(null_markers),
+            truncate_ragged_lines=True,
+            ignore_errors=True,
+        )
+        df = df.select(df.columns[: len(cols)])
         df.columns = cols
         for cn, dt in schema.items():
             if cn in df.columns:
@@ -197,12 +288,25 @@ def load_single_file(path: str, flow_config: FlowConfig, *,
 
 
 def prepare_labels(df: pl.DataFrame) -> pl.DataFrame:
-    """统一标签: is_click, is_cvr, stay_time(NULL→-1)."""
+    """统一标签列名并处理缺失值。
+
+    - is_click: 优先已有列，否则从 is_click_detail|is_click_stock 计算，再否则用 ctr
+    - is_cvr: 优先已有列，否则用 cvr 别名
+    - stay_time: NULL → -1
+
+    Args:
+        df: 输入 DataFrame。
+
+    Returns:
+        处理后的 DataFrame。
+    """
     if "is_click" not in df.columns:
         if "is_click_detail" in df.columns and "is_click_stock" in df.columns:
             df = df.with_columns(
                 ((df["is_click_detail"].fill_null(0) + df["is_click_stock"].fill_null(0)) > 0)
-                .cast(pl.Int64).alias("is_click"))
+                .cast(pl.Int64)
+                .alias("is_click")
+            )
         elif "ctr" in df.columns:
             df = df.with_columns(pl.col("ctr").cast(pl.Int64).alias("is_click"))
     if "is_cvr" not in df.columns and "cvr" in df.columns:
@@ -216,21 +320,49 @@ def prepare_labels(df: pl.DataFrame) -> pl.DataFrame:
 # Training loop
 # ═══════════════════════════════════════════════════════════════════
 
-def train_epoch(model, optimizer, dag, batch_iter, task_names, label_map,
-                eval_batches: list | None = None, eval_max: int = 0) -> tuple[float, list]:
-    """通用训练 epoch，batch_iter 是生成 batch dict 的迭代器."""
+
+def train_epoch(
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    dag: FeatureDag,
+    batch_iter: Iterator[Batch],
+    task_names: list[str],
+    label_map: dict[str, str],
+    *,
+    eval_batches: list[Batch] | None = None,
+    eval_max: int = 0,
+) -> tuple[float, list[Batch]]:
+    """通用训练 epoch，batch_iter 产出 batch dict。
+
+    生产模式下可同时收集前 eval_max 个样本用于评估。
+
+    Args:
+        model: 模型。
+        optimizer: 优化器。
+        dag: 特征 DAG。
+        batch_iter: batch 迭代器，每个 batch 含 "features" 和 "labels"。
+        task_names: 任务名列表。
+        label_map: {task_name: label_column} 映射。
+        eval_batches: 用于收集评估样本的列表（生产模式复用）。
+        eval_max: 最多收集的评估样本数。
+
+    Returns:
+        (平均损失, 评估批次列表)。
+    """
     model.train()
-    total_loss, n = 0.0, 0
-    eval_cap = []
-    collected = 0
+    total_loss: float = 0.0
+    n: int = 0
+    eval_cap: list[Batch] = eval_batches if eval_batches is not None else []
+    collected: int = 0
 
     for batch in batch_iter:
         if eval_max and collected < eval_max:
             eval_cap.append(batch)
             collected += len(batch["features"])
 
-        loss = compute_loss(model(dag.preprocess_batch(batch["features"])),
-                            batch["labels"], label_map)
+        loss = compute_loss(
+            model(dag.preprocess_batch(batch["features"])), batch["labels"], label_map
+        )
         if loss is None:
             continue
         optimizer.zero_grad()
@@ -244,7 +376,24 @@ def train_epoch(model, optimizer, dag, batch_iter, task_names, label_map,
 
 # ── 单文件模式 ──
 
-def _file_batches(df, source_names, batch_size, label_cols):
+
+def _file_batches(
+    df: pl.DataFrame,
+    source_names: set[str],
+    batch_size: int,
+    label_cols: list[str],
+) -> Iterator[Batch]:
+    """将 DataFrame 切片为 batch 迭代器。
+
+    Args:
+        df: 全量 DataFrame。
+        source_names: DAG source 列名集合。
+        batch_size: 批次大小。
+        label_cols: 需提取的标签列名。
+
+    Yields:
+        {"features": [row_dict, ...], "labels": {col: [val, ...]}}。
+    """
     for start in range(0, len(df), batch_size):
         bdf = df.slice(start, batch_size)
         rows = bdf.select(list(source_names)).to_dicts()
@@ -253,9 +402,34 @@ def _file_batches(df, source_names, batch_size, label_cols):
         yield {"features": rows, "labels": labels}
 
 
-def train_on_file(args, flow_config, dag, model, task_names, label_map):
-    df = load_single_file(args.data, flow_config, has_header=not args.no_header,
-                          sep=args.separator, null_markers=set(args.null_markers))
+def train_on_file(
+    args: argparse.Namespace,
+    flow_config: FlowConfig,
+    dag: FeatureDag,
+    model: torch.nn.Module,
+    task_names: list[str],
+    label_map: dict[str, str],
+) -> float:
+    """单文件模式训练。
+
+    Args:
+        args: 命令行参数。
+        flow_config: 特征配置。
+        dag: 特征 DAG。
+        model: 模型。
+        task_names: 任务名列表。
+        label_map: {task_name: label_column} 映射。
+
+    Returns:
+        最佳 AUC 值。
+    """
+    df = load_single_file(
+        args.data,
+        flow_config,
+        has_header=not args.no_header,
+        sep=args.separator,
+        null_markers=set(args.null_markers),
+    )
     df = prepare_labels(df)
     label_checks = [c for c in ["is_click", "is_cvr"] if c in df.columns]
     df = df.filter(pl.any_horizontal([pl.col(c).is_not_null() for c in label_checks]))
@@ -266,17 +440,24 @@ def train_on_file(args, flow_config, dag, model, task_names, label_map):
 
     source_set = set(dag.sources.keys())
     opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    best = 0.0
+    best: float = 0.0
 
     for epoch in range(1, args.epochs + 1):
-        avg_loss, _ = train_epoch(model, opt, dag,
-                                  _file_batches(train_df, source_set, args.batch_size, LABEL_COLUMNS),
-                                  task_names, label_map)
-
-        # eval on test set
-        aucs = compute_aucs(model, dag,
-                            list(_file_batches(test_df, source_set, args.batch_size, LABEL_COLUMNS)),
-                            task_names, label_map)
+        avg_loss, _ = train_epoch(
+            model,
+            opt,
+            dag,
+            _file_batches(train_df, source_set, args.batch_size, LABEL_COLUMNS),
+            task_names,
+            label_map,
+        )
+        aucs = compute_aucs(
+            model,
+            dag,
+            list(_file_batches(test_df, source_set, args.batch_size, LABEL_COLUMNS)),
+            task_names,
+            label_map,
+        )
         _log_epoch(epoch, args.epochs, avg_loss, aucs, task_names)
         best = max(best, max(aucs.values(), default=0))
 
@@ -285,29 +466,67 @@ def train_on_file(args, flow_config, dag, model, task_names, label_map):
 
 # ── 生产流式模式 ──
 
-def train_on_prod(args, flow_config, dag, model, task_names, label_map):
+
+def train_on_prod(
+    args: argparse.Namespace,
+    flow_config: FlowConfig,
+    dag: FeatureDag,
+    model: torch.nn.Module,
+    task_names: list[str],
+    label_map: dict[str, str],
+) -> float:
+    """生产流式模式训练：多日物品索引 + 流式 Join。
+
+    Args:
+        args: 命令行参数（需含 user_data, item_files）。
+        flow_config: 特征配置。
+        dag: 特征 DAG。
+        model: 模型。
+        task_names: 任务名列表。
+        label_map: {task_name: label_column} 映射。
+
+    Returns:
+        最佳 AUC 值。
+    """
     item_files = [p.strip() for p in args.item_files.split(",") if p.strip()]
     item_src_names = [s.name for s in flow_config.sources if s.source == "Item"]
     all_src_names = [s.name for s in flow_config.sources]
-    src_dtypes = {s.name: (s.dtype.tag if hasattr(s.dtype, "tag") else str(s.dtype))
-                  for s in flow_config.sources}
+    src_dtypes = {
+        s.name: (s.dtype.tag if hasattr(s.dtype, "tag") else str(s.dtype))
+        for s in flow_config.sources
+    }
 
-    item_idx = build_item_index(item_files, item_src_names,
-                                separator=args.separator, null_markers=set(args.null_markers))
+    item_idx = build_item_index(
+        item_files,
+        item_src_names,
+        separator=args.separator,
+        null_markers=set(args.null_markers),
+    )
     print(f"[ItemIndex] {len(item_idx)} items from {len(item_files)} files")
 
     opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    best = 0.0
+    best: float = 0.0
 
     for epoch in range(1, args.epochs + 1):
         avg_loss, eval_batches = train_epoch(
-            model, opt, dag,
-            stream_join(args.user_data, item_idx, all_src_names, src_dtypes,
-                        LABEL_COLUMNS, batch_size=args.batch_size,
-                        separator=args.separator, null_markers=set(args.null_markers),
-                        skip_missing_item=args.skip_missing_item),
-            task_names, label_map,
-            eval_batches=[], eval_max=args.eval_samples,
+            model,
+            opt,
+            dag,
+            stream_join(
+                args.user_data,
+                item_idx,
+                all_src_names,
+                src_dtypes,
+                LABEL_COLUMNS,
+                batch_size=args.batch_size,
+                separator=args.separator,
+                null_markers=set(args.null_markers),
+                skip_missing_item=args.skip_missing_item,
+            ),
+            task_names,
+            label_map,
+            eval_batches=[],
+            eval_max=args.eval_samples,
         )
         aucs = compute_aucs(model, dag, eval_batches, task_names, label_map)
         _log_epoch(epoch, args.epochs, avg_loss, aucs, task_names)
@@ -320,15 +539,23 @@ def train_on_prod(args, flow_config, dag, model, task_names, label_map):
 # Main
 # ═══════════════════════════════════════════════════════════════════
 
-def _log_epoch(epoch, total, loss, aucs, task_names):
-    parts = [f"epoch {epoch:3d}/{total}  loss={loss:.6f}"]
+
+def _log_epoch(
+    epoch: int,
+    total_epochs: int,
+    loss: float,
+    aucs: dict[str, float],
+    task_names: list[str],
+) -> None:
+    """打印 epoch 训练日志（stay 不计算 AUC，不输出）。"""
+    parts = [f"epoch {epoch:3d}/{total_epochs}  loss={loss:.6f}"]
     for t in sorted(task_names):
         if t in aucs and t != "stay":
             parts.append(f"{t}: auc={aucs[t]:.4f}")
     print("  " + "  ".join(parts))
 
 
-def main():
+def main() -> None:
     p = argparse.ArgumentParser(description="discover-main-sort 训练")
     g = p.add_mutually_exclusive_group(required=True)
     g.add_argument("--data")
@@ -359,16 +586,19 @@ def main():
 
     # Model
     mc = ModelConfig.from_yaml(args.model_config)
-    spec = get_output_spec(mc.type, None)
-    task_names = spec["task_names"]
-    label_map = spec.get("label_col_map", {"ctr": "is_click", "cvr": "is_cvr"})
+    spec: dict[str, Any] = get_output_spec(mc.type, None)
+    task_names: list[str] = spec["task_names"]
+    label_map: dict[str, str] = spec.get("label_col_map", {"ctr": "is_click", "cvr": "is_cvr"})
     model = mc.build(features)
     n = sum(p.numel() for p in model.parameters())
     print(f"[Model] {mc.type}  tasks={task_names}  params={n:,}")
 
     # Train
-    best = train_on_prod(args, fc, dag, model, task_names, label_map) if args.user_data \
+    best: float = (
+        train_on_prod(args, fc, dag, model, task_names, label_map)
+        if args.user_data
         else train_on_file(args, fc, dag, model, task_names, label_map)
+    )
     print(f"[Best] AUC={best:.4f}")
 
     # Export
