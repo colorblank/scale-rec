@@ -1,0 +1,4 @@
+type: esmm
+shared_bottom_dims: [32, 16]
+ctr_hidden_dims: [16, 8]
+cvr_hidden_dims: [16, 8]
