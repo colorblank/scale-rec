@@ -7,8 +7,8 @@
 物品有最长 7 天有效期，需按 item_id 跨文件合并。
 
 用法：
-  item_index = build_item_index(item_files, item_source_names, null_markers)
-  for batch in stream_join(user_file, item_index, source_names, label_names, ...):
+  item_index = build_item_index(item_files, item_sources)
+  for batch in stream_join(user_file, item_index, sources, label_sources, ...):
       tensors = dag.preprocess_batch(batch["features"])
 """
 
@@ -20,23 +20,87 @@ from typing import Any, Iterator
 import pandas as pd
 
 NULL_MARKERS = {"NULL", "\\N", "null", "None", ""}
+DTYPE_PANDAS = {"int": "Int64", "float": "float64", "string": "str"}
+
+
+def _build_reader_params(
+    sources: list[dict],
+    has_header: bool,
+    separator: str,
+    na_vals: list[str],
+) -> dict[str, Any]:
+    """从 source 配置构建 pandas read_csv 参数。
+
+    返回: {names, dtype, na_values, default_vals}
+      - names: 无 header 时的列名列表
+      - dtype: 列名→pandas dtype 映射
+      - na_values: NULL 字符串标记
+      - default_vals: {列名: 缺失填充值}（来自 config 的 default_val）
+    """
+    names = [s["name"] for s in sources]
+    dtype = {}
+    default_vals: dict[str, Any] = {}
+    for s in sources:
+        n = s["name"]
+        dt = s.get("dtype", "string")
+        dtype[n] = DTYPE_PANDAS.get(dt, "str")
+        default_val = s.get("default_val", "")
+        if dt == "int":
+            default_vals[n] = int(float(default_val)) if default_val else 0
+        elif dt == "float":
+            default_vals[n] = float(default_val) if default_val else 0.0
+        else:
+            default_vals[n] = str(default_val) if default_val else ""
+
+    params: dict[str, Any] = {
+        "sep": separator,
+        "na_values": na_vals,
+        "keep_default_na": False,
+        "dtype": dtype,
+    }
+    if has_header:
+        params["header"] = 0
+    else:
+        params["header"] = None
+        params["names"] = names
+    return params, names, dtype, default_vals
+
+
+def _read_file_compat(path: str, params: dict, names: list[str]) -> pd.DataFrame:
+    """兼容读取：如果列数不匹配（ragged lines），用宽松模式重试。"""
+    try:
+        df = pd.read_csv(path, **params)
+    except Exception:
+        # 宽松模式：读为单列再 split
+        df = pd.read_csv(
+            path, sep="\n", header=None if params.get("header") == 0 else 0,
+            na_values=params.get("na_values", []), keep_default_na=False,
+        )
+        df = df.iloc[:, 0].str.split(params["sep"], regex=False, expand=True)
+        df = df.iloc[:, :len(names)]
+        if params.get("header") is None:
+            df.columns = names
+        else:
+            df = df.iloc[1:]
+            df.columns = names[:len(df.columns)]
+    return df
 
 
 def build_item_index(
     item_files: list[str],
-    item_source_names: list[str],
+    item_sources: list[dict],
     has_header: bool = True,
     separator: str = "\t",
     null_markers: set[str] | None = None,
 ) -> dict[str, dict[str, str]]:
     """用 pandas 读取多日物品文件，按 item_id 去重后构建索引。
 
+    列名、类型、缺失填充值全部来自 item_sources 配置。
     后读文件覆盖先读文件中同 item_id 的记录（keep="last"）。
-    仅提取 item_source_names 中声明的列。
 
     Args:
-        item_files: 物品特征文件路径列表，从旧到新排列。
-        item_source_names: FlowConfig 中 source="Item" 的特征名列表。
+        item_files: 物品文件列表，从旧到新排列。
+        item_sources: 物品侧 source 定义列表 [{name, dtype, default_val}, ...]。
         has_header: 文件是否含 header 行。
         separator: 字段分隔符。
         null_markers: NULL 字符串集合。
@@ -47,28 +111,20 @@ def build_item_index(
     if null_markers is None:
         null_markers = NULL_MARKERS
     na_vals = list(null_markers)
+    params, names, dtype, default_vals = _build_reader_params(
+        item_sources, has_header, separator, na_vals)
 
     dfs = []
     for path in item_files:
         if not os.path.exists(path):
             print(f"[ItemIndex] skip missing: {path}")
             continue
-        if has_header:
-            df = pd.read_csv(
-                path, sep=separator, na_values=na_vals, dtype=str, keep_default_na=False
-            )
-        else:
-            df = pd.read_csv(
-                path,
-                sep=separator,
-                header=None,
-                na_values=na_vals,
-                dtype=str,
-                keep_default_na=False,
-            )
-            df.columns = item_source_names[: len(df.columns)]
-        # 仅保留 item_source_names 中存在的列
-        keep = [c for c in item_source_names if c in df.columns]
+        df = _read_file_compat(path, params, names)
+        # 按配置填充缺失值
+        for col, default in default_vals.items():
+            if col in df.columns:
+                df[col] = df[col].fillna(default)
+        keep = [c for c in names if c in df.columns]
         dfs.append(df[keep])
 
     if not dfs:
@@ -77,11 +133,10 @@ def build_item_index(
     merged = pd.concat(dfs).drop_duplicates(subset="item_id", keep="last")
     print(f"[ItemIndex] {len(dfs)} files → {len(merged)} unique items")
 
-    merged = merged.fillna("")
     index: dict[str, dict[str, str]] = {}
     for _, row in merged.iterrows():
-        d = {col: str(row[col]) for col in merged.columns}
-        item_id = d.pop("item_id")
+        d = {col: str(row[col]) if not pd.isna(row[col]) else "" for col in merged.columns}
+        item_id = d.pop("item_id", "")
         if item_id:
             index[item_id] = d
     return index
@@ -105,9 +160,8 @@ def _parse_val(raw: str, dtype_tag: str) -> Any:
 def stream_join(
     user_file: str,
     item_index: dict[str, dict[str, str]],
-    source_names: list[str],
-    source_dtypes: dict[str, str],
-    label_names: list[str],
+    all_sources: list[dict],
+    label_sources: list[dict],
     batch_size: int = 1024,
     separator: str = "\t",
     has_header: bool = True,
@@ -116,17 +170,16 @@ def stream_join(
 ) -> Iterator[dict[str, Any]]:
     """pandas chunk read 流式读取用户行为文件，按 item_id 关联物品特征。
 
-    内存中仅保留当前 chunk，50GB 文件可安全处理。
+    列名、类型、缺失填充值全部来自 all_sources + label_sources 配置。
 
     Args:
         user_file: 用户行为文件路径。
         item_index: build_item_index 构建的物品特征索引。
-        source_names: FlowConfig 中所有 source name 列表。
-        source_dtypes: {source_name: dtype_tag}。
-        label_names: 标签列名列表。
+        all_sources: 用户侧所有 source 定义 [{name, dtype, default_val}, ...]。
+        label_sources: 标签列定义 [{name, dtype, default_val}, ...]。
         batch_size: 批大小（chunk size）。
         separator: 字段分隔符。
-        has_header: 文件是否含 header 行。False 时按 source_names+label_names 顺序分配列名。
+        has_header: 文件是否含 header 行。
         null_markers: NULL 字符串集合。
         skip_missing_item: True 时跳过 item_id 不在索引中的行。
 
@@ -137,20 +190,22 @@ def stream_join(
         null_markers = NULL_MARKERS
     na_vals = list(null_markers)
 
-    all_cols = source_names + [ln for ln in label_names if ln not in source_names]
-    dtype_map = {c: "str" for c in all_cols}
+    sources = all_sources + label_sources
+    params, names, dtype, default_vals = _build_reader_params(
+        sources, has_header, separator, na_vals)
+    params["chunksize"] = batch_size
+
+    source_names = [s["name"] for s in all_sources]
+    src_dtype_map = {s["name"]: s.get("dtype", "string") for s in all_sources}
+    label_names = [s["name"] for s in label_sources]
 
     n_joined, n_missed, n_total = 0, 0, 0
-    for chunk in pd.read_csv(
-        user_file,
-        sep=separator,
-        header=0 if has_header else None,
-        names=None if has_header else all_cols,
-        dtype=dtype_map,
-        na_values=na_vals,
-        keep_default_na=False,
-        chunksize=batch_size,
-    ):
+    for chunk in pd.read_csv(user_file, **params):
+        # 按配置填充缺失值
+        for col, default in default_vals.items():
+            if col in chunk.columns:
+                chunk[col] = chunk[col].fillna(default)
+
         n_total += len(chunk)
         feature_rows: list[dict[str, Any]] = []
         labels: dict[str, list[Any]] = {ln: [] for ln in label_names}
@@ -169,10 +224,10 @@ def stream_join(
             else:
                 n_joined += 1
 
-            # 合并行：物品特征优先，用户/上下文从行提取
+            # 合并行：物品特征优先，否则从 chunk 行取
             frow: dict[str, Any] = {}
             for name in source_names:
-                dtype_tag = source_dtypes.get(name, "string")
+                dtype_tag = src_dtype_map.get(name, "string")
                 if name in item_features:
                     raw = item_features[name]
                 elif name in chunk.columns:
@@ -190,10 +245,7 @@ def stream_join(
             for ln in label_names:
                 if ln in chunk.columns:
                     raw = row[ln]
-                    if pd.isna(raw):
-                        labels[ln].append(None)
-                    else:
-                        labels[ln].append(raw)
+                    labels[ln].append(None if pd.isna(raw) else raw)
                 else:
                     labels[ln].append(None)
 

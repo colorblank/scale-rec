@@ -226,21 +226,7 @@ def compute_aucs(
 # ═══════════════════════════════════════════════════════════════════
 
 
-DTYPE_MAP = {"int": "Int64", "float": "float64", "string": "str"}
-
-
-def _build_schema(config_path: str, label_cols: list[str]) -> dict[str, str]:
-    """从 YAML 配置构建 pandas dtype 映射。"""
-    import yaml
-
-    with open(config_path) as f:
-        cfg = yaml.safe_load(f)
-    schema: dict[str, str] = {}
-    for s in cfg.get("sources", []):
-        schema[s["name"]] = DTYPE_MAP.get(s.get("dtype", "string"), "str")
-    for ln in label_cols:
-        schema[ln] = "Int64"
-    return schema
+_DTYPE_MAP = {"int": "Int64", "float": "float64", "string": "str"}
 
 
 def _read_tsv(
@@ -251,23 +237,19 @@ def _read_tsv(
     sep: str = "\t",
     null_markers: set[str] = NULL_MARKERS,
 ) -> pd.DataFrame:
-    """按 pandas dtype 映射读取 TSV 文件。"""
+    """按 pandas dtype 映射 + null 标记读取 TSV。"""
     cols = list(schema)
     na_vals = list(null_markers)
+    params: dict[str, Any] = {
+        "sep": sep, "dtype": schema, "na_values": na_vals, "keep_default_na": False,
+    }
     if has_header:
-        df = pd.read_csv(path, sep=sep, dtype=schema, na_values=na_vals, keep_default_na=False)
-        df = df[[c for c in cols if c in df.columns]]
+        params["header"] = 0
     else:
-        df = pd.read_csv(path, sep=sep, header=None, na_values=na_vals, keep_default_na=False)
-        df = df.iloc[:, : len(cols)]
-        df.columns = cols
-        for cn, dt in schema.items():
-            if cn in df.columns:
-                try:
-                    df[cn] = df[cn].astype(dt)
-                except Exception:
-                    pass
-    return df
+        params["header"] = None
+        params["names"] = cols
+    df = pd.read_csv(path, **params)
+    return df[[c for c in cols if c in df.columns]]
 
 
 def load_single_file(
@@ -280,22 +262,34 @@ def load_single_file(
 ) -> pd.DataFrame:
     """单文件模式：按 FlowConfig schema + LABEL_COLUMNS 类型化读入 TSV。
 
-    Args:
-        path: 数据文件路径。
-        flow_config: 特征编排配置。
-        has_header: 文件是否含 header 行。
-        sep: 字段分隔符。
-        null_markers: NULL 字符串集合。
-
-    Returns:
-        仅包含 schema 列 + 标签列的 DataFrame。
+    dtype/default_val 全部来自配置。
     """
-    schema = {
-        s.name: DTYPE_MAP.get(s.dtype.tag if hasattr(s.dtype, "tag") else str(s.dtype), "str")
-        for s in flow_config.sources
-    }
-    schema.update({ln: "Int64" for ln in LABEL_COLUMNS})
-    return _read_tsv(path, schema, has_header=has_header, sep=sep, null_markers=null_markers)
+    # 构建 schema 和默认值
+    schema: dict[str, str] = {}
+    defaults: dict[str, Any] = {}
+    for s in flow_config.sources:
+        dt = s.dtype.tag if hasattr(s.dtype, "tag") else str(s.dtype)
+        schema[s.name] = _DTYPE_MAP.get(dt, "str")
+        defaults[s.name] = _parse_default(s.default_val, dt)
+    for ln in LABEL_COLUMNS:
+        schema[ln] = "Int64"
+        defaults[ln] = 0
+
+    df = _read_tsv(path, schema, has_header=has_header, sep=sep, null_markers=null_markers)
+    # 按配置填充缺失值
+    for col, default in defaults.items():
+        if col in df.columns:
+            df[col] = df[col].fillna(default)
+    return df
+
+
+def _parse_default(val_str: str, dtype_tag: str) -> Any:
+    """按 dtype 解析配置中的 default_val。"""
+    if dtype_tag == "int":
+        return int(float(val_str)) if val_str else 0
+    elif dtype_tag == "float":
+        return float(val_str) if val_str else 0.0
+    return str(val_str)
 
 
 def prepare_labels(df: pd.DataFrame) -> pd.DataFrame:
@@ -501,22 +495,20 @@ def train_on_prod(
     """
     item_files = [p.strip() for p in args.item_files.split(",") if p.strip()]
 
-    # 从独立配置文件读取列定义（Polars schema）
-    item_schema = _build_schema(args.item_config, [])
-    item_src_names = list(item_schema.keys())
-    user_schema = _build_schema(args.user_config, LABEL_COLUMNS)
-    all_src_names = list(user_schema.keys())
+    # 从 YAML 配置文件读取 source 定义（name, dtype, default_val 全部来自配置）
+    import yaml
+    with open(args.item_config) as f:
+        item_sources: list[dict] = yaml.safe_load(f)["sources"]
+    with open(args.user_config) as f:
+        user_sources: list[dict] = yaml.safe_load(f)["sources"]
 
-    src_dtypes = {
-        s.name: (s.dtype.tag if hasattr(s.dtype, "tag") else str(s.dtype))
-        for s in flow_config.sources
-    }
+    # 分离 source 列和 label 列
+    all_sources = [s for s in user_sources if s["name"] in {src.name for src in flow_config.sources}]
+    label_sources = [s for s in user_sources if s["name"] not in {src.name for src in flow_config.sources}]
 
     item_idx = build_item_index(
-        item_files,
-        item_src_names,
-        separator=args.separator,
-        has_header=not args.item_no_header,
+        item_files, item_sources,
+        separator=args.separator, has_header=not args.item_no_header,
         null_markers=set(args.null_markers),
     )
     print(f"[ItemIndex] {len(item_idx)} items from {len(item_files)} files")
@@ -532,9 +524,8 @@ def train_on_prod(
             stream_join(
                 args.user_data,
                 item_idx,
-                all_src_names,
-                src_dtypes,
-                LABEL_COLUMNS,
+                all_sources,
+                label_sources,
                 batch_size=args.batch_size,
                 separator=args.separator,
                 has_header=not args.no_header,
