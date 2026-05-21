@@ -46,6 +46,10 @@ class TrainConfig:
     ema_decay: float = 0.999  # θ_ema = ema_decay * θ_ema + (1 - ema_decay) * θ
     ema_enabled: bool = True
 
+    # ── TensorBoard ──
+    tb_dir: str = ""  # TensorBoard 日志目录，空字符串=禁用
+    tb_grad_interval: int = 100  # 每隔 N batch 记录梯度直方图
+
 
 def _collect_batches(batches: Iterator[Batch], max_samples: int) -> list[Batch]:
     result: list[Batch] = []
@@ -149,6 +153,8 @@ class Trainer:
         self.ema: _EMA | None = None
         self._best_auc = 0.0
         self._stale_epochs = 0
+        self._tb_writer = None
+        self._global_step = 0
 
     # ── 公开 API ──
 
@@ -171,8 +177,19 @@ class Trainer:
         if self.cfg.ema_enabled:
             self.ema = _EMA(self.model, self.cfg.ema_decay)
 
+        if self.cfg.tb_dir:
+            try:
+                from torch.utils.tensorboard import SummaryWriter
+
+                self._tb_writer = SummaryWriter(self.cfg.tb_dir)
+                logger.info("tensorboard: %s", self.cfg.tb_dir)
+            except Exception as e:
+                logger.warning("tensorboard 初始化失败 (pip install tensorboard): %s", e)
+                self._tb_writer = None
+
         self._best_auc = 0.0
         self._stale_epochs = 0
+        self._global_step = 0
         best_epoch = 0
 
         for epoch in range(1, self.cfg.epochs + 1):
@@ -180,6 +197,13 @@ class Trainer:
             avg_loss = self._train_epoch(epoch)
             aucs = self._validate()
             self._log_epoch(epoch, avg_loss, aucs)
+
+            # TensorBoard scalars
+            if self._tb_writer is not None:
+                self._tb_writer.add_scalar("train/loss", avg_loss, epoch)
+                self._tb_writer.add_scalar("train/lr", self.lr_scheduler.current_lr(), epoch)
+                for t, v in aucs.items():
+                    self._tb_writer.add_scalar(f"val/auc_{t}", v, epoch)
 
             cur = max(aucs.values(), default=0)
             if cur > self._best_auc:
@@ -199,6 +223,9 @@ class Trainer:
                     best_epoch,
                 )
                 break
+
+        if self._tb_writer is not None:
+            self._tb_writer.close()
 
         # 最终导出 EMA 权重
         if self.ema is not None:
@@ -266,8 +293,11 @@ class Trainer:
             t0 = time.perf_counter()
             self.optimizer.zero_grad()
             loss.backward()
+            grad_pre = self._grad_global_norm() if self._tb_writer is not None else 0.0
             if self.cfg.grad_max_norm > 0:
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.grad_max_norm)
+            if self._tb_writer is not None:
+                self._tb_writer.add_scalar("grad/pre_clip_norm", grad_pre, self._global_step)
             self.optimizer.step()
             t_backward += time.perf_counter() - t0
 
@@ -276,6 +306,16 @@ class Trainer:
 
             total_loss += loss.item()
             n_batches += 1
+            self._global_step += 1
+
+            # TensorBoard: 梯度直方图（post-clip, 仅 weight/bias）
+            if self._tb_writer is not None and n_batches % self.cfg.tb_grad_interval == 0:
+                self._tb_writer.add_scalar(
+                    "grad/post_clip_norm", self._grad_global_norm(), self._global_step
+                )
+                for name, p in self.model.named_parameters():
+                    if p.grad is not None and ("weight" in name or "bias" in name):
+                        self._tb_writer.add_histogram(f"grad/{name}", p.grad, self._global_step)
 
             if n_batches % self.cfg.log_interval == 0:
                 logger.info(
@@ -327,6 +367,13 @@ class Trainer:
             if t in aucs and t != "stay":
                 parts.append(f"{t}: auc={aucs[t]:.4f}")
         logger.info("  " + "  ".join(parts))
+
+    def _grad_global_norm(self) -> float:
+        total = 0.0
+        for p in self.model.parameters():
+            if p.grad is not None:
+                total += p.grad.norm().item() ** 2
+        return total**0.5
 
     def _save_checkpoint(self, auc: float) -> None:
         export_to_safetensors(self.model, self.cfg.export_path)
