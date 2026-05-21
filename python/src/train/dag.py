@@ -307,7 +307,7 @@ class FeatureDag:
                 else:
                     val = 0
                 pooling = embed_infos[name].pooling
-                if pooling == "flatten" and isinstance(val, list):
+                if pooling == "first" and isinstance(val, list):
                     val = val[0] if val else 0
                 feature_lists[name].append(val)
 
@@ -318,8 +318,7 @@ class FeatureDag:
         tensors: dict[str, torch.Tensor] = {}
         for name, vals in feature_lists.items():
             pooling = embed_infos[name].pooling
-            if pooling != "flatten" and vals and isinstance(vals[0], list):
-                # Pad all rows to same length
+            if pooling != "first" and vals and isinstance(vals[0], list):
                 max_len = max(len(v) for v in vals)
                 padded = [v + [0] * (max_len - len(v)) for v in vals]
                 tensors[name] = torch.tensor(padded, dtype=torch.long)

@@ -27,6 +27,7 @@ pub enum DType {
 #[serde(rename_all = "lowercase")]
 pub enum PoolingStrategy {
     #[default]
+    First,
     Flatten,
     Mean,
     Sum,

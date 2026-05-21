@@ -31,13 +31,15 @@ class FeatureTokenizer(nn.Module):
         )
 
     def _pool(self, emb, name):
-        p = self.pooling_map.get(name, "flatten")
+        p = self.pooling_map.get(name, "first")
         if p == "mean":
             return emb.mean(dim=1)
         elif p == "sum":
             return emb.sum(dim=1)
         elif p == "max":
             return emb.max(dim=1).values
+        elif p == "flatten":
+            return emb.reshape(emb.shape[0], -1)
         return emb
 
     def forward(self, x_inputs):

@@ -32,14 +32,17 @@ class FeatureEmbeddings(nn.Module):
         self.total_dim = total_dim
 
     def _pool(self, emb: torch.Tensor, name: str) -> torch.Tensor:
-        p = self.pooling_map.get(name, "flatten")
+        """Pool (batch, seq, dim) → (batch, pooled_dim)."""
+        p = self.pooling_map.get(name, "first")
         if p == "mean":
             return emb.mean(dim=1)
         elif p == "sum":
             return emb.sum(dim=1)
         elif p == "max":
             return emb.max(dim=1).values
-        return emb  # flatten: already 2D, no-op
+        elif p == "flatten":
+            return emb.reshape(emb.shape[0], -1)  # (batch, seq, dim) → (batch, seq*dim)
+        return emb  # first: already 2D from single-element, no-op
 
     def forward(self, x_inputs):
         """Lookup + pool + concat → [batch, total_dim]."""
