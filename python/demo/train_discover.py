@@ -178,26 +178,19 @@ def compute_aucs(
     batches: list[Batch],
     task_names: list[str],
     label_map: dict[str, str],
+    device: torch.device | None = None,
 ) -> dict[str, float]:
-    """在多个 batch 上计算各分类任务的 AUC。
-
-    Args:
-        model: 训练中的模型（会在 eval 模式下运行后恢复 train）。
-        dag: 特征 DAG。
-        batches: 评估批次列表。
-        task_names: 需评估的任务名列表。
-        label_map: {task_name: label_column_name} 映射。
-
-    Returns:
-        {task_name: auc_value}，仅包含有有效标签的任务。
-    """
+    """在多个 batch 上计算各分类任务的 AUC。"""
+    if device is None:
+        device = next(model.parameters()).device
+    was_training = model.training
     model.eval()
     logits_buf: dict[str, list[np.ndarray]] = {t: [] for t in task_names}
     labels_buf: dict[str, list[np.ndarray]] = {t: [] for t in task_names}
     with torch.no_grad():
         for batch in batches:
             rows = [{k: v for k, v in r.items() if v is not None} for r in batch["features"]]
-            outputs = model(dag.preprocess_batch(rows))
+            outputs = model(_to_device(dag.preprocess_batch(rows), device))
             for t in task_names:
                 if t not in outputs:
                     continue
@@ -208,7 +201,8 @@ def compute_aucs(
                     [float(v) if v is not None else np.nan for v in raw], dtype=np.float32
                 )
                 labels_buf[t].append(arr[~np.isnan(arr)])
-    model.train()
+    if was_training:
+        model.train()
     aucs: dict[str, float] = {}
     for t in task_names:
         if logits_buf[t] and labels_buf[t]:
@@ -333,6 +327,7 @@ def train_epoch(
     batch_iter: Iterator[Batch],
     task_names: list[str],
     label_map: dict[str, str],
+    device: torch.device,
     *,
     eval_batches: list[Batch] | None = None,
     eval_max: int = 0,
@@ -368,7 +363,9 @@ def train_epoch(
             collected += len(batch["features"])
 
         loss = compute_loss(
-            model(dag.preprocess_batch(batch["features"])), batch["labels"], label_map
+            model(_to_device(dag.preprocess_batch(batch["features"]), device)),
+            batch["labels"],
+            label_map,
         )
         if loss is None:
             continue
@@ -406,6 +403,22 @@ def _df_batches(
         yield {"features": rows, "labels": labels}
 
 
+def _collect_batches(batches: Iterator[Batch], max_samples: int) -> list[Batch]:
+    """从 batch 流中收集最多 max_samples 个样本。"""
+    result: list[Batch] = []
+    collected = 0
+    for b in batches:
+        result.append(b)
+        collected += len(b["features"])
+        if collected >= max_samples:
+            break
+    return result
+
+
+def _to_device(d: dict[str, torch.Tensor], device: torch.device) -> dict[str, torch.Tensor]:
+    return {k: v.to(device) for k, v in d.items()}
+
+
 def train_on_file(
     args: argparse.Namespace,
     flow_config: FlowConfig,
@@ -413,65 +426,75 @@ def train_on_file(
     model: torch.nn.Module,
     task_names: list[str],
     label_map: dict[str, str],
+    device: torch.device,
 ) -> float:
-    """单文件模式训练：pandas chunk read 流式读取 → train/test split → 训练。"""
-    # pandas chunk read 读取全量数据
-    batches = list(
-        stream_file_batches(
-            args.data,
-            flow_config,
-            args.batch_size,
-            has_header=not args.no_header,
-            sep=args.separator,
-            null_markers=set(args.null_markers),
-        )
-    )
-    # 合并 batch 为 DataFrame
-    all_rows: list[dict] = []
-    all_labels: dict[str, list] = {}
-    for batch in batches:
-        all_rows.extend(batch["features"])
-        for k, v in batch["labels"].items():
-            all_labels.setdefault(k, []).extend(v)
-
-    df = pd.DataFrame(all_rows)
-    for k, v in all_labels.items():
-        df[k] = v
-
-    # 过滤无标签行 → 打乱 → 切分
-    label_checks = [c for c in ["is_click", "is_cvr"] if c in df.columns]
-    if label_checks:
-        mask = pd.concat([df[c].notna() for c in label_checks], axis=1).any(axis=1)
-        df = df[mask]
-    df = df.sample(frac=1.0, random_state=42).reset_index(drop=True)
-    n = int(len(df) * 0.8)
-    train_df = df.iloc[:n]
-    test_df = df.iloc[n:]
-    logger.info("single-file: train=%d test=%d", len(train_df), len(test_df))
-
-    source_set = set(dag.sources.keys())
+    """单文件模式：流式读取，首段作验证集，每 epoch 重读文件训练。"""
+    eval_samples = getattr(args, "eval_samples", 2000)
+    eval_interval = getattr(args, "eval_interval", 50)
     label_names = [s.name for s in flow_config.label_sources]
+
+    # ── 第一遍：收集验证集（文件头部 eval_samples 行）──
+    reader = stream_file_batches(
+        args.data, flow_config, args.batch_size,
+        has_header=not args.no_header, sep=args.separator,
+        null_markers=set(args.null_markers),
+    )
+    eval_batches = _collect_batches(reader, eval_samples)
+    n_eval_batches = len(eval_batches)
+    eval_rows = sum(len(b["features"]) for b in eval_batches)
+    logger.info("validation: %d samples (%d batches)", eval_rows, n_eval_batches)
+
+    # ── 训练 ──
     opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     best: float = 0.0
+    ckpt_path = getattr(args, "export_path", None) or os.path.join(DEMO_DIR, "temp", "model.safetensors")
 
     for epoch in range(1, args.epochs + 1):
-        avg_loss, _ = train_epoch(
-            model,
-            opt,
-            dag,
-            _df_batches(train_df, source_set, args.batch_size, label_names),
-            task_names,
-            label_map,
-        )
-        aucs = compute_aucs(
-            model,
-            dag,
-            list(_df_batches(test_df, source_set, args.batch_size, label_names)),
-            task_names,
-            label_map,
-        )
+        model.train()
+        total_loss: float = 0.0
+        n_batches: int = 0
+
+        for i, batch in enumerate(stream_file_batches(
+            args.data, flow_config, args.batch_size,
+            has_header=not args.no_header, sep=args.separator,
+            null_markers=set(args.null_markers),
+        )):
+            if i < n_eval_batches:
+                continue  # 跳过验证集，避免数据泄漏
+            feat = _to_device(dag.preprocess_batch(batch["features"]), device)
+            loss = compute_loss(model(feat), batch["labels"], label_map)
+            if loss is None:
+                continue
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+            total_loss += loss.item()
+            n_batches += 1
+
+            if n_batches % eval_interval == 0:
+                model.eval()
+                with torch.no_grad():
+                    aucs = compute_aucs(model, dag, eval_batches, task_names, label_map, device)
+                model.train()
+                parts = [f"batch {n_batches:4d}  loss={total_loss / n_batches:.6f}"]
+                for t in sorted(task_names):
+                    if t in aucs and t != "stay":
+                        parts.append(f"{t}: auc={aucs[t]:.4f}")
+                logger.info("  " + "  ".join(parts))
+
+        avg_loss = total_loss / max(n_batches, 1)
+
+        # epoch 结束：完整验证
+        model.eval()
+        with torch.no_grad():
+            aucs = compute_aucs(model, dag, eval_batches, task_names, label_map, device)
         _log_epoch(epoch, args.epochs, avg_loss, aucs, task_names)
-        best = max(best, max(aucs.values(), default=0))
+
+        cur = max(aucs.values(), default=0)
+        if cur > best:
+            best = cur
+            export_to_safetensors(model, ckpt_path)
+            logger.info("checkpoint saved to %s (best auc=%.4f)", ckpt_path, best)
 
     return best
 
@@ -486,6 +509,7 @@ def train_on_prod(
     model: torch.nn.Module,
     task_names: list[str],
     label_map: dict[str, str],
+    device: torch.device,
 ) -> float:
     """生产流式模式训练：多日物品索引 + 流式 Join。
 
@@ -553,10 +577,11 @@ def train_on_prod(
             ),
             task_names,
             label_map,
+            device,
             eval_batches=[],
             eval_max=args.eval_samples,
         )
-        aucs = compute_aucs(model, dag, eval_batches, task_names, label_map)
+        aucs = compute_aucs(model, dag, eval_batches, task_names, label_map, device)
         _log_epoch(epoch, args.epochs, avg_loss, aucs, task_names)
         best = max(best, max(aucs.values(), default=0))
 
@@ -604,6 +629,9 @@ def main() -> None:
     p.add_argument("--separator", default="\t")
     p.add_argument("--skip-missing-item", action="store_true")
     p.add_argument("--eval-samples", type=int, default=2000)
+    p.add_argument("--eval-interval", type=int, default=50, help="训练中每隔 N batch 验证")
+    p.add_argument("--log-interval", type=int, default=10, help="每隔 N batch 打印训练日志")
+    p.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda", "mps"])
     p.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     args = p.parse_args()
 
@@ -624,27 +652,35 @@ def main() -> None:
         "%d sources, %d ops → %d features", len(fc.sources), len(fc.operators), len(features)
     )
 
+    # Device
+    if args.device == "auto":
+        device = torch.device(
+            "cuda"
+            if torch.cuda.is_available()
+            else "mps"
+            if torch.backends.mps.is_available()
+            else "cpu"
+        )
+    else:
+        device = torch.device(args.device)
+    logger.info("device: %s", device)
+
     # Model
     mc = ModelConfig.from_yaml(args.model_config)
     spec: dict[str, Any] = get_output_spec(mc.type, None)
     task_names: list[str] = spec["task_names"]
     label_map: dict[str, str] = spec.get("label_col_map", {"ctr": "is_click", "cvr": "is_cvr"})
-    model = mc.build(features)
+    model = mc.build(features).to(device)
     n = sum(p.numel() for p in model.parameters())
     logger.info("%s  tasks=%s  params=%s", mc.type, task_names, f"{n:,}")
 
     # Train
     best: float = (
-        train_on_prod(args, fc, dag, model, task_names, label_map)
+        train_on_prod(args, fc, dag, model, task_names, label_map, device)
         if args.user_data
-        else train_on_file(args, fc, dag, model, task_names, label_map)
+        else train_on_file(args, fc, dag, model, task_names, label_map, device)
     )
     logger.info("best AUC=%.4f", best)
-
-    # Export
-    path = args.export_path or os.path.join(DEMO_DIR, "temp", "model.safetensors")
-    export_to_safetensors(model, path)
-    logger.info("exported to %s", path)
 
 
 if __name__ == "__main__":
