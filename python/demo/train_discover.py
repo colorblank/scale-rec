@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import argparse
 import logging
+import shutil
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import torch
@@ -92,6 +94,17 @@ def main() -> None:
     n = sum(p.numel() for p in model.parameters())
     logger.info("%s  tasks=%s  params=%s", mc.type, spec["task_names"], f"{n:,}")
 
+    # Export path: {model_type}_{YYYYMMDD_HHMMSS}.safetensors
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    export_dir = Path(args.export_path).parent if args.export_path else DEMO_DIR / "temp"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    export_path = str(export_dir / f"{mc.type}_{ts}.safetensors")
+
+    # 导出特征配置副本
+    config_copy = export_dir / f"feature_config_{ts}.yaml"
+    shutil.copy(args.feature_config, config_copy)
+    logger.info("config exported to %s", config_copy)
+
     # Train
     cfg = TrainConfig(
         epochs=args.epochs,
@@ -101,7 +114,7 @@ def main() -> None:
         eval_samples=args.eval_samples,
         eval_interval=args.eval_interval,
         log_interval=args.log_interval,
-        export_path=args.export_path or str(DEMO_DIR / "temp" / "model.safetensors"),
+        export_path=export_path,
         warmup_epochs=args.warmup_epochs,
         min_lr_ratio=args.min_lr_ratio,
         grad_max_norm=args.grad_max_norm,

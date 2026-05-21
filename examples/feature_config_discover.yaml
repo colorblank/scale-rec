@@ -195,7 +195,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 5000
-      embed_dim: 16
+      embed_dim: 8
   - name: user_id_hash
     op_type: FeatureHash
     inputs:
@@ -207,7 +207,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 5000
-      embed_dim: 16
+      embed_dim: 8
   - name: rec_algo_hash
     op_type: FeatureHash
     inputs:
@@ -219,7 +219,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 20
-      embed_dim: 4
+      embed_dim: 8
   - name: item_type_hash
     op_type: FeatureHash
     inputs:
@@ -231,7 +231,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 20
-      embed_dim: 4
+      embed_dim: 8
   - name: source_name_hash
     op_type: FeatureHash
     inputs:
@@ -243,7 +243,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 20
-      embed_dim: 4
+      embed_dim: 8
   - name: is_new_user_hash
     op_type: FeatureHash
     inputs:
@@ -255,7 +255,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 10
-      embed_dim: 4
+      embed_dim: 8
   - name: asset_level_hash
     op_type: FeatureHash
     inputs:
@@ -267,7 +267,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 20
-      embed_dim: 4
+      embed_dim: 8
   - name: city_hash
     op_type: FeatureHash
     inputs:
@@ -279,7 +279,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 50
-      embed_dim: 4
+      embed_dim: 8
   - name: investment_horizon_hash
     op_type: FeatureHash
     inputs:
@@ -291,7 +291,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 20
-      embed_dim: 4
+      embed_dim: 8
   - name: last_login_date_hash
     op_type: FeatureHash
     inputs:
@@ -303,7 +303,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 500
-      embed_dim: 4
+      embed_dim: 8
 
   - name: author_id_hash
     op_type: FeatureHash
@@ -341,7 +341,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 500
-      embed_dim: 4
+      embed_dim: 8
   - name: has_picture_hash
     op_type: FeatureHash
     inputs:
@@ -353,7 +353,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 4
-      embed_dim: 4
+      embed_dim: 8
   - name: has_video_hash
     op_type: FeatureHash
     inputs:
@@ -365,7 +365,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 4
-      embed_dim: 4
+      embed_dim: 8
   # ── 数值分桶 ──
   - name: quality_score_bucket
     op_type: Bucketing
@@ -380,10 +380,10 @@ operators:
         - 0.6
         - 0.8
     vocab_size: 5
-    embed_dim: 4
+    embed_dim: 8
     embed:
       vocab_size: 5
-      embed_dim: 4
+      embed_dim: 8
   - name: quality_score_log
     op_type: ExpressionOp
     inputs:
@@ -405,10 +405,10 @@ operators:
         - -1.0
         - 0.0
     vocab_size: 5
-    embed_dim: 4
+    embed_dim: 8
     embed:
       vocab_size: 5
-      embed_dim: 4
+      embed_dim: 8
   # ── JSON 解析 + 哈希链 ──
   - name: roleneeds_first_parse
     op_type: JsonExtractList
@@ -431,7 +431,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 100
-      embed_dim: 4
+      embed_dim: 8
   - name: roleneeds_second_parse
     op_type: JsonExtractList
     inputs:
@@ -453,7 +453,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 100
-      embed_dim: 4
+      embed_dim: 8
   - name: invest_label_parse
     op_type: JsonExtractList
     inputs:
@@ -475,7 +475,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 100
-      embed_dim: 4
+      embed_dim: 8
   - name: invest_label_second_parse
     op_type: JsonExtractList
     inputs:
@@ -497,7 +497,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 100
-      embed_dim: 4
+      embed_dim: 8
   - name: invest_label_third_parse
     op_type: JsonExtractList
     inputs:
@@ -519,7 +519,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 100
-      embed_dim: 4
+      embed_dim: 8
   - name: entity_words_parse
     op_type: JsonExtractList
     inputs:
@@ -541,7 +541,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 200
-      embed_dim: 4
+      embed_dim: 8
   - name: entities_v3_parse
     op_type: JsonExtractList
     inputs:
@@ -563,7 +563,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 1000
-      embed_dim: 4
+      embed_dim: 8
   - name: emb_id_parse
     op_type: JsonExtractList
     inputs:
@@ -585,7 +585,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 1000
-      embed_dim: 4
+      embed_dim: 8
   - name: stock_list_parse
     op_type: JsonExtractList
     inputs:
@@ -616,7 +616,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 500
-      embed_dim: 4
+      embed_dim: 8
   # ── StringParser 链 (User) ──
   - name: fav_stock_parse
     op_type: StringParser
@@ -650,7 +650,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 500
-      embed_dim: 4
+      embed_dim: 8
   - name: interest_kw_parse
     op_type: StringParser
     inputs:
@@ -674,7 +674,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 500
-      embed_dim: 4
+      embed_dim: 8
   - name: follow_authors_parse
     op_type: StringParser
     inputs:
@@ -698,7 +698,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 500
-      embed_dim: 4
+      embed_dim: 8
   - name: hold_stocks_parse
     op_type: StringParser
     inputs:
@@ -722,7 +722,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 500
-      embed_dim: 4
+      embed_dim: 8
   - name: hist_hold_stocks_parse
     op_type: StringParser
     inputs:
@@ -746,7 +746,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 500
-      embed_dim: 4
+      embed_dim: 8
   - name: invest_style_parse
     op_type: StringParser
     inputs:
@@ -770,7 +770,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 100
-      embed_dim: 4
+      embed_dim: 8
   - name: theme_interest_parse
     op_type: StringParser
     inputs:
@@ -794,7 +794,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 100
-      embed_dim: 4
+      embed_dim: 8
   - name: industry_interest_parse
     op_type: StringParser
     inputs:
@@ -818,7 +818,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 100
-      embed_dim: 4
+      embed_dim: 8
   - name: fund_favorites_parse
     op_type: StringParser
     inputs:
@@ -842,7 +842,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 100
-      embed_dim: 4
+      embed_dim: 8
   - name: recent_stocks_parse
     op_type: StringParser
     inputs:
@@ -866,7 +866,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 500
-      embed_dim: 4
+      embed_dim: 8
   - name: hist_items_parse
     op_type: StringParser
     inputs:
@@ -900,7 +900,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 2000
-      embed_dim: 4
+      embed_dim: 8
   # ── Cross Features ──
   - name: user_author_concat
     op_type: StringConcat
@@ -943,7 +943,7 @@ operators:
       num_hashes: 1
     embed:
       vocab_size: 100
-      embed_dim: 4
+      embed_dim: 8
   # ── Overlap Features ──
   - name: entity_overlap
     op_type: ListOverlap
@@ -955,7 +955,7 @@ operators:
     params: {}
     embed:
       vocab_size: 2
-      embed_dim: 4
+      embed_dim: 8
   - name: stock_overlap
     op_type: ListOverlap
     inputs:
@@ -966,7 +966,7 @@ operators:
     params: {}
     embed:
       vocab_size: 2
-      embed_dim: 4
+      embed_dim: 8
   - name: stock_overlap_recent
     op_type: ListOverlap
     inputs:
@@ -977,4 +977,4 @@ operators:
     params: {}
     embed:
       vocab_size: 2
-      embed_dim: 4
+      embed_dim: 8
