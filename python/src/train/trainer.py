@@ -14,7 +14,7 @@ from .config import FlowConfig
 from .dag import FeatureDag
 from .data import stream_file_batches
 from .export import export_to_safetensors
-from .metrics import Batch, compute_aucs, compute_loss, _to_device
+from .metrics import Batch, MultiTaskLoss, compute_aucs, _to_device
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +149,7 @@ class Trainer:
         self.eval_batches: list[Batch] = []
         self._n_eval_batches = 0
 
+        self.loss_fn = MultiTaskLoss(task_names, label_map)
         self.lr_scheduler: _LRScheduler | None = None
         self.ema: _EMA | None = None
         self._best_auc = 0.0
@@ -161,8 +162,9 @@ class Trainer:
     def fit(self) -> float:
         self._collect_eval()
 
+        self.loss_fn = self.loss_fn.to(self.device)
         opt = torch.optim.AdamW(
-            self.model.parameters(),
+            list(self.model.parameters()) + list(self.loss_fn.parameters()),
             lr=self.cfg.lr,
             weight_decay=self.cfg.weight_decay,
         )
@@ -284,7 +286,7 @@ class Trainer:
             t_forward += time.perf_counter() - t0
 
             t0 = time.perf_counter()
-            loss = compute_loss(outputs, batch["labels"], self.label_map)
+            loss = self.loss_fn(outputs, batch["labels"])
             t_loss += time.perf_counter() - t0
 
             if loss is None:
@@ -388,6 +390,9 @@ class Trainer:
             if t in aucs and t != "stay":
                 parts.append(f"{t}: auc={aucs[t]:.4f}")
         logger.info("  ".join(parts))
+        sigmas = self.loss_fn.task_uncertainties()
+        sigma_str = "  ".join(f"σ({t})={sigmas.get(t, 0):.3f}" for t in sorted(sigmas))
+        logger.info("  [uncertainty] %s", sigma_str)
 
     def _log_timing(
         self,
