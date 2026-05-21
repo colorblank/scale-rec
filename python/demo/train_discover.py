@@ -139,10 +139,10 @@ def compute_loss(
             continue
 
         if task == "stay":
-            t = torch.tensor(arr[valid], dtype=torch.float32).view(-1, 1)
+            t = torch.tensor(arr[valid], dtype=torch.float32, device=logits.device).view(-1, 1)
             loss = _weighted_bce_stay(logits[valid], t)
         else:
-            y = torch.tensor(arr[valid], dtype=torch.float32).view(-1, 1)
+            y = torch.tensor(arr[valid], dtype=torch.float32, device=logits.device).view(-1, 1)
             loss = _bce(logits[valid], y)
 
         total = loss if total is None else total + loss
