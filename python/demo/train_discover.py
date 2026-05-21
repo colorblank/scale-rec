@@ -336,6 +336,7 @@ def train_epoch(
     *,
     eval_batches: list[Batch] | None = None,
     eval_max: int = 0,
+    log_interval: int = 10,
 ) -> tuple[float, list[Batch]]:
     """通用训练 epoch，batch_iter 产出 batch dict。
 
@@ -359,6 +360,7 @@ def train_epoch(
     n: int = 0
     eval_cap: list[Batch] = eval_batches if eval_batches is not None else []
     collected: int = 0
+    log_interval = max(1, log_interval)
 
     for batch in batch_iter:
         if eval_max and collected < eval_max:
@@ -375,6 +377,9 @@ def train_epoch(
         optimizer.step()
         total_loss += loss.item()
         n += 1
+
+        if n % log_interval == 0:
+            logger.info("  batch %4d  avg_loss=%.6f  cur_loss=%.6f", n, total_loss / n, loss.item())
 
     return total_loss / max(n, 1), eval_cap
 

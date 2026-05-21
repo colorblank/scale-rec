@@ -7,8 +7,8 @@ sources:
     default_val: "0"
   - name: item_id
     source: Item
-    dtype: int
-    default_val: "0"
+    dtype: string
+    default_val: ""
   - name: rec_algo
     source: Context
     dtype: string
