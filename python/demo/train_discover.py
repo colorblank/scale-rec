@@ -13,6 +13,7 @@ import argparse
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -346,8 +347,11 @@ def train_on_file(
 
     # ── 第一遍：收集验证集（文件头部 eval_samples 行）──
     reader = stream_file_batches(
-        args.data, flow_config, args.batch_size,
-        has_header=not args.no_header, sep=args.separator,
+        args.data,
+        flow_config,
+        args.batch_size,
+        has_header=not args.no_header,
+        sep=args.separator,
         null_markers=set(args.null_markers),
     )
     eval_batches = _collect_batches(reader, eval_samples)
@@ -358,51 +362,89 @@ def train_on_file(
     # ── 训练 ──
     opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     best: float = 0.0
-    ckpt_path = getattr(args, "export_path", None) or os.path.join(DEMO_DIR, "temp", "model.safetensors")
+    ckpt_path = getattr(args, "export_path", None) or os.path.join(
+        DEMO_DIR, "temp", "model.safetensors"
+    )
 
     for epoch in range(1, args.epochs + 1):
         model.train()
         total_loss: float = 0.0
         n_batches: int = 0
+        t_data = t_preproc = t_forward = t_loss = t_backward = 0.0
+        t0_epoch = time.perf_counter()
 
-        for i, batch in enumerate(stream_file_batches(
-            args.data, flow_config, args.batch_size,
-            has_header=not args.no_header, sep=args.separator,
-            null_markers=set(args.null_markers),
-        )):
+        stream = enumerate(
+            stream_file_batches(
+                args.data, flow_config, args.batch_size,
+                has_header=not args.no_header, sep=args.separator,
+                null_markers=set(args.null_markers),
+            )
+        )
+        t0_iter = time.perf_counter()
+        for i, batch in stream:
+            t_data += time.perf_counter() - t0_iter
             if i < n_eval_batches:
-                continue  # 跳过验证集，避免数据泄漏
+                t0_iter = time.perf_counter()
+                continue
+
+            t0 = time.perf_counter()
             feat = _to_device(dag.preprocess_batch(batch["features"]), device)
-            loss = compute_loss(model(feat), batch["labels"], label_map)
+            t_preproc += time.perf_counter() - t0
+
+            t0 = time.perf_counter()
+            outputs = model(feat)
+            t_forward += time.perf_counter() - t0
+
+            t0 = time.perf_counter()
+            loss = compute_loss(outputs, batch["labels"], label_map)
+            t_loss += time.perf_counter() - t0
+
             if loss is None:
                 continue
+
+            t0 = time.perf_counter()
             opt.zero_grad()
             loss.backward()
             opt.step()
+            t_backward += time.perf_counter() - t0
+
             total_loss += loss.item()
             n_batches += 1
 
             if n_batches % log_interval == 0:
-                logger.info("  batch %4d  avg_loss=%.6f  cur_loss=%.6f", n_batches, total_loss / n_batches, loss.item())
+                logger.info(
+                    "  batch %4d  avg_loss=%.6f  cur_loss=%.6f",
+                    n_batches, total_loss / n_batches, loss.item(),
+                )
 
             if n_batches % eval_interval == 0:
+                t0 = time.perf_counter()
                 model.eval()
                 with torch.no_grad():
                     aucs = compute_aucs(model, dag, eval_batches, task_names, label_map, device)
                 model.train()
-                parts = [f"batch {n_batches:4d}  loss={total_loss / n_batches:.6f}"]
+                t_eval = (time.perf_counter() - t0) * 1000
+                parts = [f"batch {n_batches:4d}  loss={total_loss / n_batches:.6f}  eval={t_eval:.0f}ms"]
                 for t in sorted(task_names):
                     if t in aucs and t != "stay":
                         parts.append(f"{t}: auc={aucs[t]:.4f}")
                 logger.info("  " + "  ".join(parts))
 
+            t0_iter = time.perf_counter()
+
+        t_epoch = time.perf_counter() - t0_epoch
         avg_loss = total_loss / max(n_batches, 1)
 
         # epoch 结束：完整验证
+        t0 = time.perf_counter()
         model.eval()
         with torch.no_grad():
             aucs = compute_aucs(model, dag, eval_batches, task_names, label_map, device)
+        t_eval = (time.perf_counter() - t0) * 1000
         _log_epoch(epoch, args.epochs, avg_loss, aucs, task_names)
+
+        # 耗时统计
+        _log_timing(epoch, t_epoch, n_batches, t_data, t_preproc, t_forward, t_loss, t_backward, t_eval)
 
         cur = max(aucs.values(), default=0)
         if cur > best:
@@ -431,6 +473,34 @@ def _log_epoch(
         if t in aucs and t != "stay":
             parts.append(f"{t}: auc={aucs[t]:.4f}")
     logger.info("  ".join(parts))
+
+
+def _log_timing(
+    epoch: int,
+    t_epoch: float,
+    n_batches: int,
+    t_data: float,
+    t_preproc: float,
+    t_forward: float,
+    t_loss: float,
+    t_backward: float,
+    t_eval: float,
+) -> None:
+    """打印每 epoch 各阶段耗时分布。"""
+    if n_batches == 0:
+        return
+    t_total = t_data + t_preproc + t_forward + t_loss + t_backward
+    ms = lambda s: s * 1000 / n_batches  # noqa: E731
+    pct = lambda s: s / t_total * 100 if t_total > 0 else 0  # noqa: E731
+    logger.info(
+        "  [timing epoch %d] total=%.1fs  batches=%d  eval=%.0fms | "
+        "per_batch: data=%.1fms(%.0f%%) preproc=%.1fms(%.0f%%) "
+        "forward=%.1fms(%.0f%%) loss=%.1fms(%.0f%%) backward=%.1fms(%.0f%%)",
+        epoch, t_epoch, n_batches, t_eval,
+        ms(t_data), pct(t_data), ms(t_preproc), pct(t_preproc),
+        ms(t_forward), pct(t_forward), ms(t_loss), pct(t_loss),
+        ms(t_backward), pct(t_backward),
+    )
 
 
 def main() -> None:
