@@ -73,16 +73,19 @@ def _read_file_compat(path: str, params: dict, names: list[str]) -> pd.DataFrame
     except Exception:
         # 宽松模式：读为单列再 split
         df = pd.read_csv(
-            path, sep="\n", header=None if params.get("header") == 0 else 0,
-            na_values=params.get("na_values", []), keep_default_na=False,
+            path,
+            sep="\n",
+            header=None if params.get("header") == 0 else 0,
+            na_values=params.get("na_values", []),
+            keep_default_na=False,
         )
         df = df.iloc[:, 0].str.split(params["sep"], regex=False, expand=True)
-        df = df.iloc[:, :len(names)]
+        df = df.iloc[:, : len(names)]
         if params.get("header") is None:
             df.columns = names
         else:
             df = df.iloc[1:]
-            df.columns = names[:len(df.columns)]
+            df.columns = names[: len(df.columns)]
     return df
 
 
@@ -112,7 +115,8 @@ def build_item_index(
         null_markers = NULL_MARKERS
     na_vals = list(null_markers)
     params, names, dtype, default_vals = _build_reader_params(
-        item_sources, has_header, separator, na_vals)
+        item_sources, has_header, separator, na_vals
+    )
 
     dfs = []
     for path in item_files:
@@ -192,7 +196,8 @@ def stream_join(
 
     sources = all_sources + label_sources
     params, names, dtype, default_vals = _build_reader_params(
-        sources, has_header, separator, na_vals)
+        sources, has_header, separator, na_vals
+    )
     params["chunksize"] = batch_size
 
     source_names = [s["name"] for s in all_sources]

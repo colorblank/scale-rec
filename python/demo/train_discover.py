@@ -241,7 +241,10 @@ def _read_tsv(
     cols = list(schema)
     na_vals = list(null_markers)
     params: dict[str, Any] = {
-        "sep": sep, "dtype": schema, "na_values": na_vals, "keep_default_na": False,
+        "sep": sep,
+        "dtype": schema,
+        "na_values": na_vals,
+        "keep_default_na": False,
     }
     if has_header:
         params["header"] = 0
@@ -497,18 +500,25 @@ def train_on_prod(
 
     # 从 YAML 配置文件读取 source 定义（name, dtype, default_val 全部来自配置）
     import yaml
+
     with open(args.item_config) as f:
         item_sources: list[dict] = yaml.safe_load(f)["sources"]
     with open(args.user_config) as f:
         user_sources: list[dict] = yaml.safe_load(f)["sources"]
 
     # 分离 source 列和 label 列
-    all_sources = [s for s in user_sources if s["name"] in {src.name for src in flow_config.sources}]
-    label_sources = [s for s in user_sources if s["name"] not in {src.name for src in flow_config.sources}]
+    all_sources = [
+        s for s in user_sources if s["name"] in {src.name for src in flow_config.sources}
+    ]
+    label_sources = [
+        s for s in user_sources if s["name"] not in {src.name for src in flow_config.sources}
+    ]
 
     item_idx = build_item_index(
-        item_files, item_sources,
-        separator=args.separator, has_header=not args.item_no_header,
+        item_files,
+        item_sources,
+        separator=args.separator,
+        has_header=not args.item_no_header,
         null_markers=set(args.null_markers),
     )
     print(f"[ItemIndex] {len(item_idx)} items from {len(item_files)} files")
