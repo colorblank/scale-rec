@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 import numpy as np
-import polars as pl
+import pandas as pd
 import torch
 import torch.nn.functional as F
 
@@ -226,46 +226,41 @@ def compute_aucs(
 # ═══════════════════════════════════════════════════════════════════
 
 
-def _dtype_to_polars(dt: DType) -> pl.DataType:
-    """将 FlowConfig DType 映射为 Polars 类型。"""
-    t = dt.tag if hasattr(dt, "tag") else dt
-    return {"int": pl.Int64, "float": pl.Float64, "string": pl.Utf8}.get(t, pl.Utf8)
+DTYPE_MAP = {"int": "Int64", "float": "float64", "string": "str"}
 
 
-def _build_schema(config_path: str, label_cols: list[str]) -> dict[str, pl.DataType]:
-    """从 YAML 配置构建 Polars schema。"""
+def _build_schema(config_path: str, label_cols: list[str]) -> dict[str, str]:
+    """从 YAML 配置构建 pandas dtype 映射。"""
     import yaml
     with open(config_path) as f:
         cfg = yaml.safe_load(f)
-    schema: dict[str, pl.DataType] = {}
+    schema: dict[str, str] = {}
     for s in cfg.get("sources", []):
-        dt = s.get("dtype", "string")
-        schema[s["name"]] = {"int": pl.Int64, "float": pl.Float64, "string": pl.Utf8}.get(dt, pl.Utf8)
+        schema[s["name"]] = DTYPE_MAP.get(s.get("dtype", "string"), "str")
     for ln in label_cols:
-        schema[ln] = pl.Int64
+        schema[ln] = "Int64"
     return schema
 
 
-def _read_tsv(path: str, schema: dict[str, pl.DataType], *,
+def _read_tsv(path: str, schema: dict[str, str], *,
               has_header: bool = True, sep: str = "\t",
-              null_markers: set[str] = NULL_MARKERS) -> pl.DataFrame:
-    """按 Polars schema 读取 TSV 文件。"""
+              null_markers: set[str] = NULL_MARKERS) -> pd.DataFrame:
+    """按 pandas dtype 映射读取 TSV 文件。"""
     cols = list(schema)
+    na_vals = list(null_markers)
     if has_header:
-        df = pl.read_csv(path, separator=sep, has_header=True,
-                         schema_overrides=schema, null_values=list(null_markers),
-                         truncate_ragged_lines=True, ignore_errors=True)
-        df = df.select([c for c in cols if c in df.columns])
+        df = pd.read_csv(path, sep=sep, dtype=schema, na_values=na_vals,
+                         keep_default_na=False)
+        df = df[[c for c in cols if c in df.columns]]
     else:
-        df = pl.read_csv(path, separator=sep, has_header=False,
-                         null_values=list(null_markers),
-                         truncate_ragged_lines=True, ignore_errors=True)
-        df = df.select(df.columns[:len(cols)])
+        df = pd.read_csv(path, sep=sep, header=None, na_values=na_vals,
+                         keep_default_na=False)
+        df = df.iloc[:, :len(cols)]
         df.columns = cols
         for cn, dt in schema.items():
             if cn in df.columns:
                 try:
-                    df = df.with_columns(pl.col(cn).cast(dt, strict=False))
+                    df[cn] = df[cn].astype(dt)
                 except Exception:
                     pass
     return df
@@ -278,7 +273,7 @@ def load_single_file(
     has_header: bool = True,
     sep: str = "\t",
     null_markers: set[str] = NULL_MARKERS,
-) -> pl.DataFrame:
+) -> pd.DataFrame:
     """单文件模式：按 FlowConfig schema + LABEL_COLUMNS 类型化读入 TSV。
 
     Args:
@@ -291,12 +286,13 @@ def load_single_file(
     Returns:
         仅包含 schema 列 + 标签列的 DataFrame。
     """
-    schema = {s.name: _dtype_to_polars(s.dtype) for s in flow_config.sources}
-    schema.update({ln: pl.Int64 for ln in LABEL_COLUMNS})
+    schema = {s.name: DTYPE_MAP.get(s.dtype.tag if hasattr(s.dtype, "tag") else str(s.dtype), "str")
+              for s in flow_config.sources}
+    schema.update({ln: "Int64" for ln in LABEL_COLUMNS})
     return _read_tsv(path, schema, has_header=has_header, sep=sep, null_markers=null_markers)
 
 
-def prepare_labels(df: pl.DataFrame) -> pl.DataFrame:
+def prepare_labels(df: pd.DataFrame) -> pd.DataFrame:
     """统一标签列名并处理缺失值。
 
     - is_click: 优先已有列，否则从 is_click_detail|is_click_stock 计算，再否则用 ctr
@@ -311,17 +307,14 @@ def prepare_labels(df: pl.DataFrame) -> pl.DataFrame:
     """
     if "is_click" not in df.columns:
         if "is_click_detail" in df.columns and "is_click_stock" in df.columns:
-            df = df.with_columns(
-                ((df["is_click_detail"].fill_null(0) + df["is_click_stock"].fill_null(0)) > 0)
-                .cast(pl.Int64)
-                .alias("is_click")
-            )
+            df["is_click"] = ((df["is_click_detail"].fillna(0) +
+                               df["is_click_stock"].fillna(0)) > 0).astype("Int64")
         elif "ctr" in df.columns:
-            df = df.with_columns(pl.col("ctr").cast(pl.Int64).alias("is_click"))
+            df["is_click"] = df["ctr"].astype("Int64")
     if "is_cvr" not in df.columns and "cvr" in df.columns:
-        df = df.with_columns(pl.col("cvr").cast(pl.Int64).alias("is_cvr"))
+        df["is_cvr"] = df["cvr"].astype("Int64")
     if "stay_time" in df.columns:
-        df = df.with_columns(pl.col("stay_time").fill_null(-1))
+        df["stay_time"] = df["stay_time"].fillna(-1)
     return df
 
 
@@ -387,7 +380,7 @@ def train_epoch(
 
 
 def _file_batches(
-    df: pl.DataFrame,
+    df: pd.DataFrame,
     source_names: set[str],
     batch_size: int,
     label_cols: list[str],
@@ -404,10 +397,10 @@ def _file_batches(
         {"features": [row_dict, ...], "labels": {col: [val, ...]}}。
     """
     for start in range(0, len(df), batch_size):
-        bdf = df.slice(start, batch_size)
-        rows = bdf.select(list(source_names)).to_dicts()
-        rows = [{k: v for k, v in r.items() if v is not None} for r in rows]
-        labels = {c: bdf[c].to_list() for c in label_cols if c in bdf.columns}
+        bdf = df.iloc[start : start + batch_size]
+        rows = bdf[list(source_names)].to_dict("records")
+        rows = [{k: v for k, v in r.items() if not pd.isna(v)} for r in rows]
+        labels = {c: bdf[c].tolist() for c in label_cols if c in bdf.columns}
         yield {"features": rows, "labels": labels}
 
 
@@ -441,10 +434,12 @@ def train_on_file(
     )
     df = prepare_labels(df)
     label_checks = [c for c in ["is_click", "is_cvr"] if c in df.columns]
-    df = df.filter(pl.any_horizontal([pl.col(c).is_not_null() for c in label_checks]))
-    df = df.sample(fraction=1.0, seed=42)
-    train_df = df.slice(0, int(len(df) * 0.8))
-    test_df = df.slice(int(len(df) * 0.8), len(df))
+    mask = pd.concat([df[c].notna() for c in label_checks], axis=1).any(axis=1)
+    df = df[mask]
+    df = df.sample(frac=1.0, random_state=42)
+    n = int(len(df) * 0.8)
+    train_df = df.iloc[:n]
+    test_df = df.iloc[n:]
     print(f"[Data] single-file: train={len(train_df)} test={len(test_df)}")
 
     source_set = set(dag.sources.keys())

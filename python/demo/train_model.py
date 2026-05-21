@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import polars as pl
+import pandas as pd
 import torch
 import torch.nn.functional as F
 
@@ -26,16 +26,16 @@ from ._metrics import accuracy, auc, logloss, sigmoid  # noqa: E402
 LABEL_COL = "ctr"
 
 
-def evaluate(model, dag, df: pl.DataFrame, batch_size: int) -> dict[str, float]:
+def evaluate(model, dag, df: pd.DataFrame, batch_size: int) -> dict[str, float]:
     """Evaluate model on DataFrame; return logloss, auc, acc."""
     model.eval()
     all_logits = []
     all_labels = []
     with torch.no_grad():
         for start in range(0, len(df), batch_size):
-            batch_df = df.slice(start, batch_size)
+            batch_df = df.iloc[start : start + batch_size]
             actual_bs = len(batch_df)
-            feature_tensors = dag.preprocess_batch(batch_df.to_dicts())
+            feature_tensors = dag.preprocess_batch(batch_df.to_dict("records"))
             outputs = model(feature_tensors)
             logits = outputs["pred"].cpu().numpy().flatten()
             labels = batch_df[LABEL_COL].to_numpy().astype(np.float32)
@@ -53,28 +53,28 @@ def evaluate(model, dag, df: pl.DataFrame, batch_size: int) -> dict[str, float]:
     }
 
 
-def predict_logits(model, dag, df: pl.DataFrame, batch_size: int) -> np.ndarray:
+def predict_logits(model, dag, df: pd.DataFrame, batch_size: int) -> np.ndarray:
     """Return raw logits for all rows."""
     model.eval()
     all_logits = []
     with torch.no_grad():
         for start in range(0, len(df), batch_size):
-            batch_df = df.slice(start, batch_size)
-            feature_tensors = dag.preprocess_batch(batch_df.to_dicts())
+            batch_df = df.iloc[start : start + batch_size]
+            feature_tensors = dag.preprocess_batch(batch_df.to_dict("records"))
             outputs = model(feature_tensors)
             all_logits.append(outputs["pred"].cpu().numpy().flatten())
     return np.concatenate(all_logits)
 
 
-def train_epoch(model, optimizer, dag, df: pl.DataFrame, batch_size: int) -> float:
+def train_epoch(model, optimizer, dag, df: pd.DataFrame, batch_size: int) -> float:
     """Train one epoch, return average loss."""
     model.train()
     total_loss = 0.0
     n_batches = 0
     for start in range(0, len(df), batch_size):
-        batch_df = df.slice(start, batch_size)
+        batch_df = df.iloc[start : start + batch_size]
         actual_bs = len(batch_df)
-        feature_tensors = dag.preprocess_batch(batch_df.to_dicts())
+        feature_tensors = dag.preprocess_batch(batch_df.to_dict("records"))
         outputs = model(feature_tensors)
         labels = torch.tensor(batch_df[LABEL_COL].to_numpy(), dtype=torch.float32).view(
             actual_bs, 1
@@ -110,22 +110,18 @@ def main() -> None:
     parser.add_argument("--preds-out", default=os.path.join(temp_dir, "model_lr_py_preds.csv"))
     args = parser.parse_args()
 
-    df = pl.read_csv(args.data)
+    df = pd.read_csv(args.data)
     print(f"[Data] {len(df)} rows, columns={df.columns}")
 
     # Ensure correct dtypes for numeric columns
-    df = df.with_columns(
-        [
-            pl.col("user_id").cast(pl.Int64),
-            pl.col(LABEL_COL).cast(pl.Int64),
-        ]
-    )
+    df["user_id"] = df["user_id"].astype("Int64")
+    df[LABEL_COL] = df[LABEL_COL].astype("Int64")
 
     # Train/test split 80/20 (shuffled to mix user IDs)
-    df_shuffled = df.sample(fraction=1.0, seed=42)
+    df_shuffled = df.sample(frac=1.0, random_state=42)
     n_train = int(len(df_shuffled) * 0.8)
-    train_df = df_shuffled.slice(0, n_train)
-    test_df = df_shuffled.slice(n_train, len(df_shuffled) - n_train)
+    train_df = df_shuffled.iloc[:n_train]
+    test_df = df_shuffled.iloc[n_train:]
     print(f"[Split] train={len(train_df)}, test={len(test_df)}")
 
     flow_config = FlowConfig.from_yaml(args.feature_config)
@@ -162,16 +158,16 @@ def main() -> None:
     export_to_safetensors(model, args.export_path)
 
     # Save test data and PyTorch predictions for verification
-    test_df.write_csv(args.test_data_out)
+    test_df.to_csv(args.test_data_out)
     logits = predict_logits(model, dag, test_df, args.batch_size)
     labels_arr = test_df[LABEL_COL].to_numpy().astype(np.float32)
-    preds_df = pl.DataFrame(
+    preds_df = pd.DataFrame(
         {
             "label": labels_arr,
             "logit": logits.tolist(),
         }
     )
-    preds_df.write_csv(args.preds_out)
+    preds_df.to_csv(args.preds_out)
     print(f"[Export] test_data → {args.test_data_out}")
     print(f"[Export] predictions → {args.preds_out}")
     print("Done.")

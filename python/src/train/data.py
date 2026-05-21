@@ -17,7 +17,7 @@ from __future__ import annotations
 import os
 from typing import Any, Iterator
 
-import polars as pl
+import pandas as pd
 
 NULL_MARKERS = {"NULL", "\\N", "null", "None", ""}
 
@@ -29,7 +29,7 @@ def build_item_index(
     separator: str = "\t",
     null_markers: set[str] | None = None,
 ) -> dict[str, dict[str, str]]:
-    """用 Polars 读取多日物品文件，按 item_id 去重后构建索引。
+    """用 pandas 读取多日物品文件，按 item_id 去重后构建索引。
 
     后读文件覆盖先读文件中同 item_id 的记录（keep="last"）。
     仅提取 item_source_names 中声明的列。
@@ -46,33 +46,34 @@ def build_item_index(
     """
     if null_markers is None:
         null_markers = NULL_MARKERS
+    na_vals = list(null_markers)
 
     dfs = []
     for path in item_files:
         if not os.path.exists(path):
             print(f"[ItemIndex] skip missing: {path}")
             continue
-        df = pl.read_csv(
-            path, separator=separator, has_header=has_header,
-            null_values=list(null_markers),
-            truncate_ragged_lines=True, ignore_errors=True,
-        )
-        if not has_header:
-            df.columns = item_source_names[: len(df.columns)]
+        if has_header:
+            df = pd.read_csv(path, sep=separator, na_values=na_vals,
+                             dtype=str, keep_default_na=False)
+        else:
+            df = pd.read_csv(path, sep=separator, header=None, na_values=na_vals,
+                             dtype=str, keep_default_na=False)
+            df.columns = item_source_names[:len(df.columns)]
         # 仅保留 item_source_names 中存在的列
         keep = [c for c in item_source_names if c in df.columns]
-        dfs.append(df.select(keep))
+        dfs.append(df[keep])
 
     if not dfs:
         return {}
 
-    merged = pl.concat(dfs).unique(subset=["item_id"], keep="last")
+    merged = pd.concat(dfs).drop_duplicates(subset="item_id", keep="last")
     print(f"[ItemIndex] {len(dfs)} files → {len(merged)} unique items")
 
+    merged = merged.fillna("")
     index: dict[str, dict[str, str]] = {}
-    for row in merged.iter_rows():
-        d = {col: (str(row[i]) if row[i] is not None else "")
-             for i, col in enumerate(merged.columns)}
+    for _, row in merged.iterrows():
+        d = {col: str(row[col]) for col in merged.columns}
         item_id = d.pop("item_id")
         if item_id:
             index[item_id] = d

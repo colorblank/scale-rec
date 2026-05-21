@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 import numpy as np
-import polars as pl
+import pandas as pd
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 PYTHON_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -81,8 +81,8 @@ def verify_model(model_type: str, threshold: float = 1e-3) -> dict:
         return {"model_type": model_type, "status": "FAIL", "reason": result.stderr[:200]}
 
     # Load predictions
-    py_df = pl.read_csv(py_preds_csv)
-    rust_df = pl.read_csv(rust_preds_csv)
+    py_df = pd.read_csv(py_preds_csv)
+    rust_df = pd.read_csv(rust_preds_csv)
 
     # Find logit columns
     py_logit_cols = [c for c in py_df.columns if c.startswith("logit_")]

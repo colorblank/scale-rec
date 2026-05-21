@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 
-import polars as pl
+import pandas as pd
 import torch
 import torch.nn.functional as F
 
@@ -27,9 +27,9 @@ def train_epoch(model, optimizer, dag, df, batch_size, label_col_map=None):
     total_loss = 0.0
     n_batches = 0
     for start in range(0, len(df), batch_size):
-        batch_df = df.slice(start, batch_size)
+        batch_df = df.iloc[start : start + batch_size]
         actual_bs = len(batch_df)
-        feature_tensors = dag.preprocess_batch(batch_df.to_dicts())
+        feature_tensors = dag.preprocess_batch(batch_df.to_dict("records"))
         outputs = model(feature_tensors)
         loss = None
         for task_name, logits in outputs.items():
@@ -136,11 +136,11 @@ def main():
     spec = get_output_spec(model_config.type, model)
     label_col_map = spec.get("label_col_map", {})
 
-    df = pl.read_parquet(args.data) if args.data.endswith(".parquet") else pl.read_csv(args.data)
+    df = pd.read_parquet(args.data) if args.data.endswith(".parquet") else pd.read_csv(args.data)
     # Ensure label columns are int
     for col in ["ctr", "cvr", "pred"]:
         if col in df.columns:
-            df = df.with_columns(pl.col(col).cast(pl.Int64))
+            df[col] = df[col].astype("Int64")
     print(f"[Data] {len(df)} rows, cols={df.columns}")
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     print(f"[Train] {args.epochs} epochs, batch_size={args.batch_size}")

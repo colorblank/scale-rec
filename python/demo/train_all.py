@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import polars as pl
+import pandas as pd
 import torch
 import torch.nn.functional as F
 
@@ -97,8 +97,8 @@ def evaluate(model, dag, df, task_names: list[str], batch_size: int) -> dict[str
     all_labels: dict[str, list] = {t: [] for t in task_names}
     with torch.no_grad():
         for start in range(0, len(df), batch_size):
-            batch_df = df.slice(start, batch_size)
-            feature_tensors = dag.preprocess_batch(batch_df.to_dicts())
+            batch_df = df.iloc[start : start + batch_size]
+            feature_tensors = dag.preprocess_batch(batch_df.to_dict("records"))
             outputs = model(feature_tensors)
             for t in task_names:
                 if t in outputs:
@@ -129,8 +129,8 @@ def predict_all(model, dag, df, batch_size: int) -> dict[str, np.ndarray]:
     all_logits: dict[str, list] = {}
     with torch.no_grad():
         for start in range(0, len(df), batch_size):
-            batch_df = df.slice(start, batch_size)
-            feature_tensors = dag.preprocess_batch(batch_df.to_dicts())
+            batch_df = df.iloc[start : start + batch_size]
+            feature_tensors = dag.preprocess_batch(batch_df.to_dict("records"))
             outputs = model(feature_tensors)
             if all_keys is None:
                 all_keys = list(outputs.keys())
@@ -148,9 +148,9 @@ def train_epoch(
     total_loss = 0.0
     n_batches = 0
     for start in range(0, len(df), batch_size):
-        batch_df = df.slice(start, batch_size)
+        batch_df = df.iloc[start : start + batch_size]
         actual_bs = len(batch_df)
-        feature_tensors = dag.preprocess_batch(batch_df.to_dicts())
+        feature_tensors = dag.preprocess_batch(batch_df.to_dict("records"))
         outputs = model(feature_tensors)
         loss = None
         for task_name, logits in outputs.items():
@@ -179,17 +179,14 @@ def train_one_model(model_type: str, model_config_path: str, label_cols: list[st
     print(f"{'=' * 60}")
 
     # Load data
-    df = pl.read_csv(args.data).with_columns(
-        [
-            pl.col("user_id").cast(pl.Int64),
-            pl.col("ctr").cast(pl.Int64),
-            pl.col("cvr").cast(pl.Int64),
-        ]
-    )
-    df_shuffled = df.sample(fraction=1.0, seed=42)
+    df = pd.read_csv(args.data)
+    for c in ["user_id", "ctr", "cvr"]:
+        if c in df.columns:
+            df[c] = df[c].astype("Int64")
+    df_shuffled = df.sample(frac=1.0, random_state=42)
     n_train = int(len(df_shuffled) * 0.8)
-    train_df = df_shuffled.slice(0, n_train)
-    test_df = df_shuffled.slice(n_train, len(df_shuffled) - n_train)
+    train_df = df_shuffled.iloc[:n_train]
+    test_df = df_shuffled.iloc[n_train:]
     print(f"[Data] train={len(train_df)} test={len(test_df)}")
 
     # Build DAG（可选 debug tracer）
@@ -257,7 +254,7 @@ def train_one_model(model_type: str, model_config_path: str, label_cols: list[st
     preds_csv_path = prefix + "_py_preds.csv"
 
     export_to_safetensors(model, safetensors_path)
-    test_df.write_csv(test_csv_path)
+    test_df.to_csv(test_csv_path)
 
     all_preds = predict_all(model, dag, test_df, args.batch_size)
     preds_rows = {"label_ctr": test_df["ctr"].to_numpy().astype(np.float32)}
@@ -265,7 +262,7 @@ def train_one_model(model_type: str, model_config_path: str, label_cols: list[st
         preds_rows["label_cvr"] = test_df["cvr"].to_numpy().astype(np.float32)
     for k, v in all_preds.items():
         preds_rows[f"logit_{k}"] = v
-    pl.DataFrame(preds_rows).write_csv(preds_csv_path)
+    pd.DataFrame(preds_rows).to_csv(preds_csv_path)
 
     print(f"[Export] {safetensors_path}")
     print(f"[Export] {preds_csv_path}")
