@@ -1,16 +1,4 @@
-"""生产数据加载模块：多日物品特征索引 + 流式 Join + 批处理迭代。
-
-数据分为两类文件：
-  - 用户行为文件：日级，~50GB，Tab 分隔，含 user/item/context/标签
-  - 物品特征文件：日级，~100MB，Tab 分隔，含 item 所有特征字段
-
-物品有最长 7 天有效期，需按 item_id 跨文件合并。
-
-用法：
-  item_index = build_item_index(item_files, item_sources)
-  for batch in stream_join(user_file, item_index, sources, label_sources, ...):
-      tensors = dag.preprocess_batch(batch["features"])
-"""
+"""数据加载模块：多日物品特征索引 + 流式 Join + 单文件流式读取。"""
 
 from __future__ import annotations
 
@@ -20,10 +8,21 @@ from typing import Any, Iterator
 
 import pandas as pd
 
+from .config import FlowConfig
+
 logger = logging.getLogger(__name__)
 
 NULL_MARKERS = {"NULL", "\\N", "null", "None", ""}
 DTYPE_PANDAS = {"int": "Int64", "float": "float64", "string": "str"}
+
+
+def _parse_default(val_str: str, dtype_tag: str) -> Any:
+    """按 dtype 解析配置中的 default_val。"""
+    if dtype_tag == "int":
+        return int(float(val_str)) if val_str else 0
+    elif dtype_tag == "float":
+        return float(val_str) if val_str else 0.0
+    return str(val_str)
 
 
 def _build_reader_params(
@@ -281,3 +280,81 @@ def stream_join(
     logger.info(
         "stream join done: total=%d joined=%d missed=%d (%.1f%%)", n_total, n_joined, n_missed, pct
     )
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 单文件流式读取
+# ═══════════════════════════════════════════════════════════════════
+
+
+def stream_file_batches(
+    path: str,
+    flow_config: FlowConfig,
+    batch_size: int,
+    *,
+    has_header: bool = True,
+    sep: str = "\t",
+    null_markers: set[str] | None = None,
+) -> Iterator[dict[str, Any]]:
+    """pandas chunk read 流式读取单文件，按 role 分离 feature/label/discard。
+
+    列名、类型、缺失填充值全部来自 flow_config.sources 配置。
+
+    Yields:
+        {"features": [row_dict, ...], "labels": {label_name: [value, ...]}}
+    """
+    if null_markers is None:
+        null_markers = NULL_MARKERS
+    na_vals = list(null_markers)
+
+    feature_sources = flow_config.feature_sources
+    label_sources = flow_config.label_sources
+    discard_names = {s.name for s in flow_config.discard_sources}
+
+    seen: set[str] = set()
+    names: list[str] = []
+    dtype: dict[str, str] = {}
+    defaults: dict[str, Any] = {}
+    for s in flow_config.sources:
+        if s.name in seen:
+            continue
+        seen.add(s.name)
+        names.append(s.name)
+        dt = s.dtype.tag if hasattr(s.dtype, "tag") else str(s.dtype)
+        dtype[s.name] = DTYPE_PANDAS.get(dt, "str")
+        defaults[s.name] = _parse_default(s.default_val, dt)
+
+    params: dict[str, Any] = {
+        "sep": sep,
+        "dtype": dtype,
+        "na_values": na_vals,
+        "keep_default_na": False,
+        "chunksize": batch_size,
+    }
+    if has_header:
+        params["header"] = 0
+    else:
+        params["header"] = None
+        params["names"] = names
+
+    source_set = {s.name for s in feature_sources}
+    label_names = [s.name for s in label_sources]
+
+    for chunk in pd.read_csv(path, **params):
+        chunk = chunk.drop(
+            columns=[c for c in discard_names if c in chunk.columns], errors="ignore"
+        )
+        for col, default in defaults.items():
+            if col in chunk.columns:
+                chunk[col] = chunk[col].fillna(default)
+
+        rows = chunk[list(source_set & set(chunk.columns))].to_dict("records")
+        rows = [{k: v for k, v in r.items() if not pd.isna(v)} for r in rows]
+
+        labels = {
+            ln: [None if pd.isna(v) else v for v in chunk[ln].tolist()]
+            for ln in label_names
+            if ln in chunk.columns
+        }
+
+        yield {"features": rows, "labels": labels}
