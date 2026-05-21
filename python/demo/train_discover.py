@@ -56,6 +56,8 @@ def main() -> None:
     p.add_argument("--no-ema", action="store_true", help="禁用 EMA")
     p.add_argument("--ema-decay", type=float, default=0.999, help="EMA 衰减率")
     p.add_argument("--tb-dir", default="", help="TensorBoard 日志目录（空=禁用）")
+    p.add_argument("--loss-weighting", default="static", choices=["equal", "static", "uncertainty"],
+                   help="多任务损失加权模式")
     p.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda", "mps"])
     p.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     args = p.parse_args()
@@ -162,6 +164,7 @@ def main() -> None:
         ema_enabled=not args.no_ema,
         ema_decay=args.ema_decay,
         tb_dir=args.tb_dir,
+        loss_weighting=args.loss_weighting,
     )
     trainer = Trainer(
         model,

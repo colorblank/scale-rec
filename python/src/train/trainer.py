@@ -46,6 +46,9 @@ class TrainConfig:
     ema_decay: float = 0.999  # θ_ema = ema_decay * θ_ema + (1 - ema_decay) * θ
     ema_enabled: bool = True
 
+    # ── Multi-task loss ──
+    loss_weighting: str = "static"  # "static" | "equal" | "uncertainty"
+
     # ── TensorBoard ──
     tb_dir: str = ""  # TensorBoard 日志目录，空字符串=禁用
     tb_grad_interval: int = 100  # 每隔 N batch 记录梯度直方图
@@ -149,7 +152,7 @@ class Trainer:
         self.eval_batches: list[Batch] = []
         self._n_eval_batches = 0
 
-        self.loss_fn = MultiTaskLoss(task_names, label_map)
+        self.loss_fn = MultiTaskLoss(task_names, label_map, mode=self.cfg.loss_weighting)
         self.lr_scheduler: _LRScheduler | None = None
         self.ema: _EMA | None = None
         self._best_auc = 0.0
@@ -390,9 +393,10 @@ class Trainer:
             if t in aucs and t != "stay":
                 parts.append(f"{t}: auc={aucs[t]:.4f}")
         logger.info("  ".join(parts))
-        sigmas = self.loss_fn.task_uncertainties()
-        sigma_str = "  ".join(f"σ({t})={sigmas.get(t, 0):.3f}" for t in sorted(sigmas))
-        logger.info("  [uncertainty] %s", sigma_str)
+        weights = self.loss_fn.task_weights_info()
+        if self.cfg.loss_weighting != "equal":
+            w_str = "  ".join(f"w({t})={weights.get(t, 1):.3f}" for t in sorted(weights))
+            logger.info("  [%s] %s", self.cfg.loss_weighting, w_str)
 
     def _log_timing(
         self,
