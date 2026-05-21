@@ -159,14 +159,17 @@ def _sigmoid(x: np.ndarray) -> np.ndarray:
 
 
 def _auc(labels: np.ndarray, probs: np.ndarray) -> float:
-    """Fast AUC via sorting."""
+    """AUC via sorting: P(positive ranks above negative)."""
     order = np.argsort(probs)[::-1]
     y = labels[order]
-    n_pos = y.sum()
+    n_pos = int(y.sum())
     n_neg = len(y) - n_pos
     if n_pos == 0 or n_neg == 0:
         return 0.5
-    return float((np.cumsum(y) - y).sum() / (n_pos * n_neg))
+    # 每个正样本下方有多少负样本
+    cum_neg = np.cumsum(1 - y)
+    pos_mask = y == 1
+    return float(np.sum(n_neg - cum_neg[pos_mask]) / (n_pos * n_neg))
 
 
 def compute_aucs(
@@ -223,59 +226,6 @@ def compute_aucs(
 _DTYPE_MAP = {"int": "Int64", "float": "float64", "string": "str"}
 
 
-def _read_tsv(
-    path: str,
-    schema: dict[str, str],
-    *,
-    has_header: bool = True,
-    sep: str = "\t",
-    null_markers: set[str] = NULL_MARKERS,
-) -> pd.DataFrame:
-    """按 pandas dtype 映射 + null 标记读取 TSV。"""
-    cols = list(schema)
-    na_vals = list(null_markers)
-    params: dict[str, Any] = {
-        "sep": sep,
-        "dtype": schema,
-        "na_values": na_vals,
-        "keep_default_na": False,
-    }
-    if has_header:
-        params["header"] = 0
-    else:
-        params["header"] = None
-        params["names"] = cols
-    df = pd.read_csv(path, **params)
-    return df[[c for c in cols if c in df.columns]]
-
-
-def load_single_file(
-    path: str,
-    flow_config: FlowConfig,
-    *,
-    has_header: bool = True,
-    sep: str = "\t",
-    null_markers: set[str] = NULL_MARKERS,
-) -> pd.DataFrame:
-    """单文件模式：按 FlowConfig sources 类型化读入 TSV。
-
-    dtype/default_val 全部来自配置（含 feature + label + discard）。
-    """
-    schema: dict[str, str] = {}
-    defaults: dict[str, Any] = {}
-    for s in flow_config.sources:
-        dt = s.dtype.tag if hasattr(s.dtype, "tag") else str(s.dtype)
-        schema[s.name] = _DTYPE_MAP.get(dt, "str")
-        defaults[s.name] = _parse_default(s.default_val, dt)
-
-    df = _read_tsv(path, schema, has_header=has_header, sep=sep, null_markers=null_markers)
-    # 按配置填充缺失值
-    for col, default in defaults.items():
-        if col in df.columns:
-            df[col] = df[col].fillna(default)
-    return df
-
-
 def _parse_default(val_str: str, dtype_tag: str) -> Any:
     """按 dtype 解析配置中的 default_val。"""
     if dtype_tag == "int":
@@ -285,31 +235,90 @@ def _parse_default(val_str: str, dtype_tag: str) -> Any:
     return str(val_str)
 
 
-def prepare_labels(df: pd.DataFrame) -> pd.DataFrame:
-    """统一标签列名并处理缺失值。
+def stream_file_batches(
+    path: str,
+    flow_config: FlowConfig,
+    batch_size: int,
+    *,
+    has_header: bool = True,
+    sep: str = "\t",
+    null_markers: set[str] | None = None,
+) -> Iterator[Batch]:
+    """pandas chunk read 流式读取单文件，按 role 分离 feature/label。
 
-    - is_click: 优先已有列，否则从 is_click_detail|is_click_stock 计算，再否则用 ctr
-    - is_cvr: 优先已有列，否则用 cvr 别名
-    - stay_time: NULL → -1
+    列名、类型、缺失填充值全部来自 flow_config.sources 配置。
 
     Args:
-        df: 输入 DataFrame。
+        path: TSV 文件路径。
+        flow_config: 特征配置（含 feature + label + discard source）。
+        batch_size: 批大小（pandas chunksize）。
+        has_header: 文件是否含 header 行。
+        sep: 字段分隔符。
+        null_markers: NULL 字符串集合。
 
-    Returns:
-        处理后的 DataFrame。
+    Yields:
+        {"features": [row_dict, ...], "labels": {label_name: [value, ...]}}
     """
-    if "is_click" not in df.columns:
-        if "is_click_detail" in df.columns and "is_click_stock" in df.columns:
-            df["is_click"] = (
-                (df["is_click_detail"].fillna(0) + df["is_click_stock"].fillna(0)) > 0
-            ).astype("Int64")
-        elif "ctr" in df.columns:
-            df["is_click"] = df["ctr"].astype("Int64")
-    if "is_cvr" not in df.columns and "cvr" in df.columns:
-        df["is_cvr"] = df["cvr"].astype("Int64")
-    if "stay_time" in df.columns:
-        df["stay_time"] = df["stay_time"].fillna(-1)
-    return df
+    if null_markers is None:
+        null_markers = NULL_MARKERS
+    na_vals = list(null_markers)
+
+    feature_sources = flow_config.feature_sources
+    label_sources = flow_config.label_sources
+    discard_names = {s.name for s in flow_config.discard_sources}
+
+    # 构建 pandas 读取 schema（按 config 原始顺序，去重列名）
+    seen: set[str] = set()
+    names: list[str] = []
+    dtype: dict[str, str] = {}
+    defaults: dict[str, Any] = {}
+    for s in flow_config.sources:
+        if s.name in seen:
+            continue
+        seen.add(s.name)
+        names.append(s.name)
+        dt = s.dtype.tag if hasattr(s.dtype, "tag") else str(s.dtype)
+        dtype[s.name] = _DTYPE_MAP.get(dt, "str")
+        defaults[s.name] = _parse_default(s.default_val, dt)
+
+    params: dict[str, Any] = {
+        "sep": sep,
+        "dtype": dtype,
+        "na_values": na_vals,
+        "keep_default_na": False,
+        "chunksize": batch_size,
+    }
+    if has_header:
+        params["header"] = 0
+    else:
+        params["header"] = None
+        params["names"] = names
+
+    source_set = {s.name for s in feature_sources}
+    label_names = [s.name for s in label_sources]
+
+    for chunk in pd.read_csv(path, **params):
+        # 丢弃 discard 列
+        chunk = chunk.drop(
+            columns=[c for c in discard_names if c in chunk.columns], errors="ignore"
+        )
+        # 按配置填充缺失值
+        for col, default in defaults.items():
+            if col in chunk.columns:
+                chunk[col] = chunk[col].fillna(default)
+
+        # 特征行
+        rows = chunk[list(source_set & set(chunk.columns))].to_dict("records")
+        rows = [{k: v for k, v in r.items() if not pd.isna(v)} for r in rows]
+
+        # 标签
+        labels = {
+            ln: [None if pd.isna(v) else v for v in chunk[ln].tolist()]
+            for ln in label_names
+            if ln in chunk.columns
+        }
+
+        yield {"features": rows, "labels": labels}
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -373,28 +382,22 @@ def train_epoch(
 # ── 单文件模式 ──
 
 
-def _file_batches(
+def _df_batches(
     df: pd.DataFrame,
     source_names: set[str],
     batch_size: int,
-    label_cols: list[str],
+    label_names: list[str],
 ) -> Iterator[Batch]:
-    """将 DataFrame 切片为 batch 迭代器。
-
-    Args:
-        df: 全量 DataFrame。
-        source_names: DAG source 列名集合。
-        batch_size: 批次大小。
-        label_cols: 需提取的标签列名。
-
-    Yields:
-        {"features": [row_dict, ...], "labels": {col: [val, ...]}}。
-    """
+    """将 DataFrame 切片为 batch 迭代器。"""
     for start in range(0, len(df), batch_size):
         bdf = df.iloc[start : start + batch_size]
-        rows = bdf[list(source_names)].to_dict("records")
+        rows = bdf[list(source_names & set(bdf.columns))].to_dict("records")
         rows = [{k: v for k, v in r.items() if not pd.isna(v)} for r in rows]
-        labels = {c: bdf[c].tolist() for c in label_cols if c in bdf.columns}
+        labels = {
+            c: [None if pd.isna(v) else v for v in bdf[c].tolist()]
+            for c in label_names
+            if c in bdf.columns
+        }
         yield {"features": rows, "labels": labels}
 
 
@@ -406,38 +409,43 @@ def train_on_file(
     task_names: list[str],
     label_map: dict[str, str],
 ) -> float:
-    """单文件模式训练。
-
-    Args:
-        args: 命令行参数。
-        flow_config: 特征配置。
-        dag: 特征 DAG。
-        model: 模型。
-        task_names: 任务名列表。
-        label_map: {task_name: label_column} 映射。
-
-    Returns:
-        最佳 AUC 值。
-    """
-    df = load_single_file(
-        args.data,
-        flow_config,
-        has_header=not args.no_header,
-        sep=args.separator,
-        null_markers=set(args.null_markers),
+    """单文件模式训练：pandas chunk read 流式读取 → train/test split → 训练。"""
+    # pandas chunk read 读取全量数据
+    batches = list(
+        stream_file_batches(
+            args.data,
+            flow_config,
+            args.batch_size,
+            has_header=not args.no_header,
+            sep=args.separator,
+            null_markers=set(args.null_markers),
+        )
     )
-    df = prepare_labels(df)
+    # 合并 batch 为 DataFrame
+    all_rows: list[dict] = []
+    all_labels: dict[str, list] = {}
+    for batch in batches:
+        all_rows.extend(batch["features"])
+        for k, v in batch["labels"].items():
+            all_labels.setdefault(k, []).extend(v)
+
+    df = pd.DataFrame(all_rows)
+    for k, v in all_labels.items():
+        df[k] = v
+
+    # 过滤无标签行 → 打乱 → 切分
     label_checks = [c for c in ["is_click", "is_cvr"] if c in df.columns]
-    mask = pd.concat([df[c].notna() for c in label_checks], axis=1).any(axis=1)
-    df = df[mask]
-    df = df.sample(frac=1.0, random_state=42)
+    if label_checks:
+        mask = pd.concat([df[c].notna() for c in label_checks], axis=1).any(axis=1)
+        df = df[mask]
+    df = df.sample(frac=1.0, random_state=42).reset_index(drop=True)
     n = int(len(df) * 0.8)
     train_df = df.iloc[:n]
     test_df = df.iloc[n:]
     logger.info("single-file: train=%d test=%d", len(train_df), len(test_df))
 
     source_set = set(dag.sources.keys())
-    label_cols = [s.name for s in flow_config.label_sources]
+    label_names = [s.name for s in flow_config.label_sources]
     opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     best: float = 0.0
 
@@ -446,14 +454,14 @@ def train_on_file(
             model,
             opt,
             dag,
-            _file_batches(train_df, source_set, args.batch_size, label_cols),
+            _df_batches(train_df, source_set, args.batch_size, label_names),
             task_names,
             label_map,
         )
         aucs = compute_aucs(
             model,
             dag,
-            list(_file_batches(test_df, source_set, args.batch_size, label_cols)),
+            list(_df_batches(test_df, source_set, args.batch_size, label_names)),
             task_names,
             label_map,
         )
