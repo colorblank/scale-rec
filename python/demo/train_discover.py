@@ -26,7 +26,7 @@ _src = Path(__file__).resolve().parent.parent / "src"
 if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
 
-from train.config import DType, FlowConfig  # noqa: E402
+from train.config import FlowConfig  # noqa: E402
 from train.dag import FeatureDag  # noqa: E402
 from train.data import build_item_index, stream_join  # noqa: E402
 from train.export import export_to_safetensors  # noqa: E402
@@ -232,6 +232,7 @@ DTYPE_MAP = {"int": "Int64", "float": "float64", "string": "str"}
 def _build_schema(config_path: str, label_cols: list[str]) -> dict[str, str]:
     """从 YAML 配置构建 pandas dtype 映射。"""
     import yaml
+
     with open(config_path) as f:
         cfg = yaml.safe_load(f)
     schema: dict[str, str] = {}
@@ -242,20 +243,23 @@ def _build_schema(config_path: str, label_cols: list[str]) -> dict[str, str]:
     return schema
 
 
-def _read_tsv(path: str, schema: dict[str, str], *,
-              has_header: bool = True, sep: str = "\t",
-              null_markers: set[str] = NULL_MARKERS) -> pd.DataFrame:
+def _read_tsv(
+    path: str,
+    schema: dict[str, str],
+    *,
+    has_header: bool = True,
+    sep: str = "\t",
+    null_markers: set[str] = NULL_MARKERS,
+) -> pd.DataFrame:
     """按 pandas dtype 映射读取 TSV 文件。"""
     cols = list(schema)
     na_vals = list(null_markers)
     if has_header:
-        df = pd.read_csv(path, sep=sep, dtype=schema, na_values=na_vals,
-                         keep_default_na=False)
+        df = pd.read_csv(path, sep=sep, dtype=schema, na_values=na_vals, keep_default_na=False)
         df = df[[c for c in cols if c in df.columns]]
     else:
-        df = pd.read_csv(path, sep=sep, header=None, na_values=na_vals,
-                         keep_default_na=False)
-        df = df.iloc[:, :len(cols)]
+        df = pd.read_csv(path, sep=sep, header=None, na_values=na_vals, keep_default_na=False)
+        df = df.iloc[:, : len(cols)]
         df.columns = cols
         for cn, dt in schema.items():
             if cn in df.columns:
@@ -286,8 +290,10 @@ def load_single_file(
     Returns:
         仅包含 schema 列 + 标签列的 DataFrame。
     """
-    schema = {s.name: DTYPE_MAP.get(s.dtype.tag if hasattr(s.dtype, "tag") else str(s.dtype), "str")
-              for s in flow_config.sources}
+    schema = {
+        s.name: DTYPE_MAP.get(s.dtype.tag if hasattr(s.dtype, "tag") else str(s.dtype), "str")
+        for s in flow_config.sources
+    }
     schema.update({ln: "Int64" for ln in LABEL_COLUMNS})
     return _read_tsv(path, schema, has_header=has_header, sep=sep, null_markers=null_markers)
 
@@ -307,8 +313,9 @@ def prepare_labels(df: pd.DataFrame) -> pd.DataFrame:
     """
     if "is_click" not in df.columns:
         if "is_click_detail" in df.columns and "is_click_stock" in df.columns:
-            df["is_click"] = ((df["is_click_detail"].fillna(0) +
-                               df["is_click_stock"].fillna(0)) > 0).astype("Int64")
+            df["is_click"] = (
+                (df["is_click_detail"].fillna(0) + df["is_click_stock"].fillna(0)) > 0
+            ).astype("Int64")
         elif "ctr" in df.columns:
             df["is_click"] = df["ctr"].astype("Int64")
     if "is_cvr" not in df.columns and "cvr" in df.columns:
@@ -530,6 +537,7 @@ def train_on_prod(
                 LABEL_COLUMNS,
                 batch_size=args.batch_size,
                 separator=args.separator,
+                has_header=not args.no_header,
                 null_markers=set(args.null_markers),
                 skip_missing_item=args.skip_missing_item,
             ),

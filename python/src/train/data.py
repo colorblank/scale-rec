@@ -54,12 +54,19 @@ def build_item_index(
             print(f"[ItemIndex] skip missing: {path}")
             continue
         if has_header:
-            df = pd.read_csv(path, sep=separator, na_values=na_vals,
-                             dtype=str, keep_default_na=False)
+            df = pd.read_csv(
+                path, sep=separator, na_values=na_vals, dtype=str, keep_default_na=False
+            )
         else:
-            df = pd.read_csv(path, sep=separator, header=None, na_values=na_vals,
-                             dtype=str, keep_default_na=False)
-            df.columns = item_source_names[:len(df.columns)]
+            df = pd.read_csv(
+                path,
+                sep=separator,
+                header=None,
+                na_values=na_vals,
+                dtype=str,
+                keep_default_na=False,
+            )
+            df.columns = item_source_names[: len(df.columns)]
         # 仅保留 item_source_names 中存在的列
         keep = [c for c in item_source_names if c in df.columns]
         dfs.append(df[keep])
@@ -103,6 +110,7 @@ def stream_join(
     label_names: list[str],
     batch_size: int = 1024,
     separator: str = "\t",
+    has_header: bool = True,
     null_markers: set[str] | None = None,
     skip_missing_item: bool = False,
 ) -> Iterator[dict[str, Any]]:
@@ -118,6 +126,7 @@ def stream_join(
         label_names: 标签列名列表。
         batch_size: 批大小（chunk size）。
         separator: 字段分隔符。
+        has_header: 文件是否含 header 行。False 时按 source_names+label_names 顺序分配列名。
         null_markers: NULL 字符串集合。
         skip_missing_item: True 时跳过 item_id 不在索引中的行。
 
@@ -128,14 +137,19 @@ def stream_join(
         null_markers = NULL_MARKERS
     na_vals = list(null_markers)
 
-    # 构建 dtype 映射（所有列读为 str，后续按需解析）
     all_cols = source_names + [ln for ln in label_names if ln not in source_names]
     dtype_map = {c: "str" for c in all_cols}
 
     n_joined, n_missed, n_total = 0, 0, 0
     for chunk in pd.read_csv(
-        user_file, sep=separator, dtype=dtype_map, na_values=na_vals,
-        keep_default_na=False, chunksize=batch_size,
+        user_file,
+        sep=separator,
+        header=0 if has_header else None,
+        names=None if has_header else all_cols,
+        dtype=dtype_map,
+        na_values=na_vals,
+        keep_default_na=False,
+        chunksize=batch_size,
     ):
         n_total += len(chunk)
         feature_rows: list[dict[str, Any]] = []
