@@ -56,9 +56,10 @@ def _build_reader_params(
 
     params: dict[str, Any] = {
         "sep": separator,
-        "na_values": na_vals,
-        "keep_default_na": False,
+        # "na_values": na_vals, # 没有必要
+        # "keep_default_na": False,
         "dtype": dtype,
+        "on_bad_lines": "skip",
     }
     if has_header:
         params["header"] = 0

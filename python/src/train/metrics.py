@@ -74,7 +74,9 @@ class MultiTaskLoss(nn.Module):
             self.log_vars["stay"] = nn.Parameter(torch.zeros(1))
 
     def forward(
-        self, outputs: dict[str, torch.Tensor], batch_labels: dict[str, list[Any]],
+        self,
+        outputs: dict[str, torch.Tensor],
+        batch_labels: dict[str, list[Any]],
     ) -> torch.Tensor | None:
         total: torch.Tensor | None = None
         for task, logits in outputs.items():
@@ -100,7 +102,9 @@ class MultiTaskLoss(nn.Module):
                 pw = self.pos_weights.get(task)
                 if pw is not None:
                     raw_loss = F.binary_cross_entropy_with_logits(
-                        logits[valid], y, pos_weight=torch.tensor(pw, device=logits.device),
+                        logits[valid],
+                        y,
+                        pos_weight=torch.tensor(pw, device=logits.device),
                     )
                 else:
                     raw_loss = F.binary_cross_entropy_with_logits(logits[valid], y)

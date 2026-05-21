@@ -60,9 +60,7 @@ def main():
         "--feature-config",
         default=str(_pkg_root.parent / "examples" / "feature_config.yaml"),
     )
-    parser.add_argument(
-        "--model-config", default=str(_pkg_root / "config" / "model_lr.yaml")
-    )
+    parser.add_argument("--model-config", default=str(_pkg_root / "config" / "model_lr.yaml"))
     parser.add_argument("--data", default=str(_pkg_root / "data" / "train.parquet"))
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=64)

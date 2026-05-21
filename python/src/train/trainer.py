@@ -14,7 +14,7 @@ from .config import FlowConfig
 from .dag import FeatureDag
 from .data import stream_file_batches
 from .export import export_to_safetensors
-from .metrics import Batch, MultiTaskLoss, compute_aucs, _to_device
+from .metrics import Batch, MultiTaskLoss, _to_device, compute_aucs
 
 logger = logging.getLogger(__name__)
 

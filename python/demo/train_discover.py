@@ -21,7 +21,7 @@ if str(_src) not in sys.path:
 from train.config import FlowConfig  # noqa: E402
 from train.dag import FeatureDag  # noqa: E402
 from train.models import ModelConfig, get_output_spec  # noqa: E402
-from train.trainer import Trainer, TrainConfig  # noqa: E402
+from train.trainer import TrainConfig, Trainer  # noqa: E402
 
 DEMO_DIR = Path(__file__).resolve().parent
 _PROJ_ROOT = DEMO_DIR.parent.parent
@@ -94,6 +94,7 @@ def main() -> None:
     tokenizer = None
     if mc.type == "unimixer":
         from train.models.unimixer.tokenizer import FeatureTokenizer
+
         p = mc.params
         td = p.get("token_dim", 64)
         nt = p.get("num_tokens", 8)
@@ -105,6 +106,7 @@ def main() -> None:
     # UniMixer: 包装 state_dict 对齐 Rust vb.pp("unimixer") 命名
     if mc.type == "unimixer":
         import torch.nn as nn
+
         blocks = model.blocks
         task_towers = model.task_towers
         final_norm = model.final_norm
@@ -118,9 +120,12 @@ def main() -> None:
             inner.add_module("final_norm", final_norm)
         wrapper.add_module("unimixer", inner)
         _raw = model
+
         def _forward(self, x_inputs, temperature=None):
             return _raw(x_inputs, temperature)
+
         import types
+
         wrapper.forward = types.MethodType(_forward, wrapper)
         model = wrapper
 
