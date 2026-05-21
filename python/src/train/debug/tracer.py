@@ -3,10 +3,10 @@ from __future__ import annotations
 """Debug tracer: 逐阶段记录特征预处理管道的输入/输出值和异常。"""
 import json
 import math
-import os
 import time
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 
@@ -165,15 +165,15 @@ class DebugTracer:
     def save(self) -> None:
         if not self.config.output_dir:
             return
-        os.makedirs(self.config.output_dir, exist_ok=True)
+        Path(self.config.output_dir).mkdir(parents=True, exist_ok=True)
         ts = int(time.time() * 1_000_000)
         # Summary
         summary = self.build_summary()
-        sp = os.path.join(self.config.output_dir, f"summary_{ts}.json")
+        sp = Path(self.config.output_dir) / f"summary_{ts}.json"
         with open(sp, "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2, default=str)
         # Traces (JSONL)
-        tp = os.path.join(self.config.output_dir, f"traces_{ts}.jsonl")
+        tp = Path(self.config.output_dir) / f"traces_{ts}.jsonl"
         with open(tp, "w", encoding="utf-8") as f:
             for t in self.traces:
                 f.write(json.dumps(t.to_dict(), default=str) + "\n")

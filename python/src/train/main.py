@@ -52,22 +52,22 @@ def train_epoch(model, optimizer, dag, df, batch_size, label_col_map=None):
 
 def main():
     """CLI: load configs -> build DAG + model -> train -> export safetensors."""
-    import os as _os
+    from pathlib import Path
 
-    _pkg_root = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), "..", ".."))
+    _pkg_root = Path(__file__).resolve().parent.parent
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--feature-config",
-        default=_os.path.join(_pkg_root, "..", "examples", "feature_config.yaml"),
+        default=str(_pkg_root.parent / "examples" / "feature_config.yaml"),
     )
     parser.add_argument(
-        "--model-config", default=_os.path.join(_pkg_root, "config", "model_lr.yaml")
+        "--model-config", default=str(_pkg_root / "config" / "model_lr.yaml")
     )
-    parser.add_argument("--data", default=_os.path.join(_pkg_root, "data", "train.parquet"))
+    parser.add_argument("--data", default=str(_pkg_root / "data" / "train.parquet"))
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=0.001)
-    parser.add_argument("--export-path", default=_os.path.join(_pkg_root, "model.safetensors"))
+    parser.add_argument("--export-path", default=str(_pkg_root / "model.safetensors"))
     parser.add_argument("--debug", type=int, default=0)
     args = parser.parse_args()
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-import os
+from pathlib import Path
 from typing import Any, Iterator
 
 import pandas as pd
@@ -124,7 +124,7 @@ def build_item_index(
 
     dfs = []
     for path in item_files:
-        if not os.path.exists(path):
+        if not Path(path).exists():
             logger.warning("skip missing item file: %s", path)
             continue
         df = _read_file_compat(path, params, names)

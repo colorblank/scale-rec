@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -22,11 +21,11 @@ from train.dag import FeatureDag  # noqa: E402
 from train.models import ModelConfig, get_output_spec  # noqa: E402
 from train.trainer import Trainer, TrainConfig  # noqa: E402
 
-DEMO_DIR = os.path.dirname(os.path.abspath(__file__))
-_PROJ_ROOT = os.path.dirname(os.path.dirname(DEMO_DIR))
+DEMO_DIR = Path(__file__).resolve().parent
+_PROJ_ROOT = DEMO_DIR.parent.parent
 
-DEFAULT_FEATURE_CONFIG = os.path.join(_PROJ_ROOT, "examples", "feature_config_discover.yaml")
-DEFAULT_MODEL_CONFIG = os.path.join(DEMO_DIR, "model_discover_esmm.yaml")
+DEFAULT_FEATURE_CONFIG = str(_PROJ_ROOT / "examples" / "feature_config_discover.yaml")
+DEFAULT_MODEL_CONFIG = str(DEMO_DIR / "model_discover_esmm.yaml")
 
 NULL_MARKERS: set[str] = {"NULL", "\\N", "null", "None", ""}
 logger = logging.getLogger("train")
@@ -102,7 +101,7 @@ def main() -> None:
         eval_samples=args.eval_samples,
         eval_interval=args.eval_interval,
         log_interval=args.log_interval,
-        export_path=args.export_path or os.path.join(DEMO_DIR, "temp", "model.safetensors"),
+        export_path=args.export_path or str(DEMO_DIR / "temp" / "model.safetensors"),
         warmup_epochs=args.warmup_epochs,
         min_lr_ratio=args.min_lr_ratio,
         grad_max_norm=args.grad_max_norm,
