@@ -106,10 +106,9 @@ def stream_join(
     null_markers: set[str] | None = None,
     skip_missing_item: bool = False,
 ) -> Iterator[dict[str, Any]]:
-    """流式读取用户行为文件，按 item_id 关联物品特征，分批产出。
+    """pandas chunk read 流式读取用户行为文件，按 item_id 关联物品特征。
 
-    内存中仅保留当前 batch，50GB 文件可安全处理。
-    值按 source_dtypes 解析为 Python 原生类型（int/float/str），与 DAG 对齐。
+    内存中仅保留当前 chunk，50GB 文件可安全处理。
 
     Args:
         user_file: 用户行为文件路径。
@@ -117,7 +116,7 @@ def stream_join(
         source_names: FlowConfig 中所有 source name 列表。
         source_dtypes: {source_name: dtype_tag}。
         label_names: 标签列名列表。
-        batch_size: 批大小。
+        batch_size: 批大小（chunk size）。
         separator: 字段分隔符。
         null_markers: NULL 字符串集合。
         skip_missing_item: True 时跳过 item_id 不在索引中的行。
@@ -127,38 +126,25 @@ def stream_join(
     """
     if null_markers is None:
         null_markers = NULL_MARKERS
+    na_vals = list(null_markers)
 
-    with open(user_file, encoding="utf-8") as f:
-        header_line = f.readline()
-        if not header_line:
-            return
-        header = header_line.strip("\n").split(separator)
+    # 构建 dtype 映射（所有列读为 str，后续按需解析）
+    all_cols = source_names + [ln for ln in label_names if ln not in source_names]
+    dtype_map = {c: "str" for c in all_cols}
 
-        col_indices: dict[str, int] = {}
-        for i, h in enumerate(header):
-            col_indices[h] = i
+    n_joined, n_missed, n_total = 0, 0, 0
+    for chunk in pd.read_csv(
+        user_file, sep=separator, dtype=dtype_map, na_values=na_vals,
+        keep_default_na=False, chunksize=batch_size,
+    ):
+        n_total += len(chunk)
+        feature_rows: list[dict[str, Any]] = []
+        labels: dict[str, list[Any]] = {ln: [] for ln in label_names}
 
-        if "item_id" not in col_indices:
-            raise ValueError(f"[StreamJoin] item_id column not found in {user_file}")
-        for ln in label_names:
-            if ln not in col_indices:
-                print(f"[StreamJoin] WARNING: label '{ln}' not in user file header")
+        for _, row in chunk.iterrows():
+            item_id = str(row.get("item_id", "")) if not pd.isna(row.get("item_id")) else ""
 
-        feature_batch: list[dict[str, Any]] = []
-        label_batch: dict[str, list[Any]] = {ln: [] for ln in label_names}
-        n_joined, n_missed, n_total = 0, 0, 0
-        item_id_idx = col_indices["item_id"]
-
-        for line in f:
-            line = line.strip("\n")
-            if not line:
-                continue
-            n_total += 1
-            parts = line.split(separator)
-
-            item_id = parts[item_id_idx].strip() if item_id_idx < len(parts) else ""
-
-            # 物品特征从索引查找
+            # 物品特征查找
             item_features = item_index.get(item_id)
             if item_features is None:
                 if skip_missing_item:
@@ -169,42 +155,37 @@ def stream_join(
             else:
                 n_joined += 1
 
-            # 合并行
-            row: dict[str, Any] = {}
+            # 合并行：物品特征优先，用户/上下文从行提取
+            frow: dict[str, Any] = {}
             for name in source_names:
                 dtype_tag = source_dtypes.get(name, "string")
                 if name in item_features:
                     raw = item_features[name]
-                elif name in col_indices:
-                    idx = col_indices[name]
-                    raw = parts[idx] if idx < len(parts) else ""
+                elif name in chunk.columns:
+                    raw = str(row[name]) if not pd.isna(row.get(name)) else ""
                 else:
                     continue
 
                 if raw in null_markers:
                     continue
-                row[name] = _parse_val(raw, dtype_tag)
+                frow[name] = _parse_val(raw, dtype_tag)
 
-            feature_batch.append(row)
+            feature_rows.append(frow)
 
             # 标签列
             for ln in label_names:
-                if ln in col_indices:
-                    idx = col_indices[ln]
-                    raw = parts[idx] if idx < len(parts) else ""
-                    label_batch[ln].append(None if raw in null_markers else raw)
+                if ln in chunk.columns:
+                    raw = row[ln]
+                    if pd.isna(raw):
+                        labels[ln].append(None)
+                    else:
+                        labels[ln].append(raw)
                 else:
-                    label_batch[ln].append(None)
+                    labels[ln].append(None)
 
-            if len(feature_batch) >= batch_size:
-                yield {"features": feature_batch, "labels": label_batch}
-                feature_batch = []
-                label_batch = {ln: [] for ln in label_names}
+        yield {"features": feature_rows, "labels": labels}
 
-        if feature_batch:
-            yield {"features": feature_batch, "labels": label_batch}
-
-        print(
-            f"[StreamJoin] done: total={n_total} joined={n_joined} "
-            f"missed={n_missed} ({100 * n_missed / max(n_total, 1):.1f}%)"
-        )
+    print(
+        f"[StreamJoin] done: total={n_total} joined={n_joined} "
+        f"missed={n_missed} ({100 * n_missed / max(n_total, 1):.1f}%)"
+    )
