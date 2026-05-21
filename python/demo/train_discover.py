@@ -48,6 +48,12 @@ def main() -> None:
     p.add_argument("--eval-samples", type=int, default=2000)
     p.add_argument("--eval-interval", type=int, default=50)
     p.add_argument("--log-interval", type=int, default=10)
+    p.add_argument("--warmup-epochs", type=int, default=2, help="LR warmup epoch 数")
+    p.add_argument("--min-lr-ratio", type=float, default=0.01, help="cosine decay 最终 lr 比例")
+    p.add_argument("--grad-max-norm", type=float, default=1.0, help="梯度裁剪阈值 (0=禁用)")
+    p.add_argument("--early-stopping", type=int, default=5, help="early stopping patience (0=禁用)")
+    p.add_argument("--no-ema", action="store_true", help="禁用 EMA")
+    p.add_argument("--ema-decay", type=float, default=0.999, help="EMA 衰减率")
     p.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda", "mps"])
     p.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     args = p.parse_args()
@@ -61,8 +67,10 @@ def main() -> None:
     # Device
     if args.device == "auto":
         device = torch.device(
-            "cuda" if torch.cuda.is_available()
-            else "mps" if torch.backends.mps.is_available()
+            "cuda"
+            if torch.cuda.is_available()
+            else "mps"
+            if torch.backends.mps.is_available()
             else "cpu"
         )
     else:
@@ -73,7 +81,9 @@ def main() -> None:
     fc = FlowConfig.from_yaml(args.feature_config)
     dag = FeatureDag(fc)
     features = dag.feature_tuples()
-    logger.info("%d sources, %d ops → %d features", len(fc.sources), len(fc.operators), len(features))
+    logger.info(
+        "%d sources, %d ops → %d features", len(fc.sources), len(fc.operators), len(features)
+    )
 
     # Model
     mc = ModelConfig.from_yaml(args.model_config)
@@ -92,10 +102,20 @@ def main() -> None:
         eval_interval=args.eval_interval,
         log_interval=args.log_interval,
         export_path=args.export_path or os.path.join(DEMO_DIR, "temp", "model.safetensors"),
+        warmup_epochs=args.warmup_epochs,
+        min_lr_ratio=args.min_lr_ratio,
+        grad_max_norm=args.grad_max_norm,
+        early_stopping_patience=args.early_stopping,
+        ema_enabled=not args.no_ema,
+        ema_decay=args.ema_decay,
     )
     trainer = Trainer(
-        model, dag, spec["task_names"], spec["label_col_map"],
-        device, cfg,
+        model,
+        dag,
+        spec["task_names"],
+        spec["label_col_map"],
+        device,
+        cfg,
         data_path=args.data,
         flow_config=fc,
         has_header=not args.no_header,
