@@ -431,6 +431,7 @@ def train_on_file(
     """单文件模式：流式读取，首段作验证集，每 epoch 重读文件训练。"""
     eval_samples = getattr(args, "eval_samples", 2000)
     eval_interval = getattr(args, "eval_interval", 50)
+    log_interval = getattr(args, "log_interval", 10)
     label_names = [s.name for s in flow_config.label_sources]
 
     # ── 第一遍：收集验证集（文件头部 eval_samples 行）──
@@ -470,6 +471,9 @@ def train_on_file(
             opt.step()
             total_loss += loss.item()
             n_batches += 1
+
+            if n_batches % log_interval == 0:
+                logger.info("  batch %4d  avg_loss=%.6f  cur_loss=%.6f", n_batches, total_loss / n_batches, loss.item())
 
             if n_batches % eval_interval == 0:
                 model.eval()
