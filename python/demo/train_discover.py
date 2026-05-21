@@ -1,8 +1,6 @@
 """discover-main-sort 训练脚本。
 
-支持两种数据模式：
-  1. 单文件: --data file.txt（Item+User+标签合一，Polars 全量读入）
-  2. 生产流式: --user-data user.txt --item-files items1.txt,...（多日物品索引 + Join）
+pandas chunk read 流式读取单文件 TSV，头部取验证集，每 epoch 重读训练。
 
 5 任务 ESMM：click / cvr / detail / stock / stay
   - 分类任务 BCE，stay 用 weighted BCE: -(t/(1+t))·log p - (1/(1+t))·log(1-p)
@@ -29,7 +27,6 @@ if str(_src) not in sys.path:
 
 from train.config import FlowConfig  # noqa: E402
 from train.dag import FeatureDag  # noqa: E402
-from train.data import build_item_index, stream_join  # noqa: E402
 from train.export import export_to_safetensors  # noqa: E402
 from train.models import ModelConfig, get_output_spec  # noqa: E402
 
@@ -37,10 +34,7 @@ DEMO_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJ_ROOT = os.path.dirname(os.path.dirname(DEMO_DIR))
 
 DEFAULT_FEATURE_CONFIG = os.path.join(_PROJ_ROOT, "examples", "feature_config_discover.yaml")
-DEFAULT_ITEM_CONFIG = os.path.join(_PROJ_ROOT, "examples", "feature_config_item.yaml")
-DEFAULT_USER_CONFIG = os.path.join(_PROJ_ROOT, "examples", "feature_config_user.yaml")
 DEFAULT_MODEL_CONFIG = os.path.join(DEMO_DIR, "model_discover_esmm.yaml")
-DEFAULT_DATA = os.path.join(DEMO_DIR, "temp", "discover_train_data.txt")
 
 NULL_MARKERS: set[str] = {"NULL", "\\N", "null", "None", ""}
 
@@ -316,91 +310,8 @@ def stream_file_batches(
 
 
 # ═══════════════════════════════════════════════════════════════════
-# Training loop
+# Training
 # ═══════════════════════════════════════════════════════════════════
-
-
-def train_epoch(
-    model: torch.nn.Module,
-    optimizer: torch.optim.Optimizer,
-    dag: FeatureDag,
-    batch_iter: Iterator[Batch],
-    task_names: list[str],
-    label_map: dict[str, str],
-    device: torch.device,
-    *,
-    eval_batches: list[Batch] | None = None,
-    eval_max: int = 0,
-    log_interval: int = 10,
-) -> tuple[float, list[Batch]]:
-    """通用训练 epoch，batch_iter 产出 batch dict。
-
-    生产模式下可同时收集前 eval_max 个样本用于评估。
-
-    Args:
-        model: 模型。
-        optimizer: 优化器。
-        dag: 特征 DAG。
-        batch_iter: batch 迭代器，每个 batch 含 "features" 和 "labels"。
-        task_names: 任务名列表。
-        label_map: {task_name: label_column} 映射。
-        eval_batches: 用于收集评估样本的列表（生产模式复用）。
-        eval_max: 最多收集的评估样本数。
-
-    Returns:
-        (平均损失, 评估批次列表)。
-    """
-    model.train()
-    total_loss: float = 0.0
-    n: int = 0
-    eval_cap: list[Batch] = eval_batches if eval_batches is not None else []
-    collected: int = 0
-    log_interval = max(1, log_interval)
-
-    for batch in batch_iter:
-        if eval_max and collected < eval_max:
-            eval_cap.append(batch)
-            collected += len(batch["features"])
-
-        loss = compute_loss(
-            model(_to_device(dag.preprocess_batch(batch["features"]), device)),
-            batch["labels"],
-            label_map,
-        )
-        if loss is None:
-            continue
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        total_loss += loss.item()
-        n += 1
-
-        if n % log_interval == 0:
-            logger.info("  batch %4d  avg_loss=%.6f  cur_loss=%.6f", n, total_loss / n, loss.item())
-
-    return total_loss / max(n, 1), eval_cap
-
-
-# ── 单文件模式 ──
-
-
-def _df_batches(
-    df: pd.DataFrame,
-    source_names: set[str],
-    batch_size: int,
-    label_names: list[str],
-) -> Iterator[Batch]:
-    """将 DataFrame 切片为 batch 迭代器。"""
-    for start in range(0, len(df), batch_size):
-        bdf = df.iloc[start : start + batch_size]
-        rows = bdf[list(source_names & set(bdf.columns))].to_dict("records")
-        rows = [{k: v for k, v in r.items() if not pd.isna(v)} for r in rows]
-        labels = {
-            c: [None if pd.isna(v) else v for v in bdf[c].tolist()]
-            for c in label_names
-            if c in bdf.columns
-        }
-        yield {"features": rows, "labels": labels}
 
 
 def _collect_batches(batches: Iterator[Batch], max_samples: int) -> list[Batch]:
@@ -432,7 +343,6 @@ def train_on_file(
     eval_samples = getattr(args, "eval_samples", 2000)
     eval_interval = getattr(args, "eval_interval", 50)
     log_interval = getattr(args, "log_interval", 10)
-    label_names = [s.name for s in flow_config.label_sources]
 
     # ── 第一遍：收集验证集（文件头部 eval_samples 行）──
     reader = stream_file_batches(
@@ -503,95 +413,6 @@ def train_on_file(
     return best
 
 
-# ── 生产流式模式 ──
-
-
-def train_on_prod(
-    args: argparse.Namespace,
-    flow_config: FlowConfig,
-    dag: FeatureDag,
-    model: torch.nn.Module,
-    task_names: list[str],
-    label_map: dict[str, str],
-    device: torch.device,
-) -> float:
-    """生产流式模式训练：多日物品索引 + 流式 Join。
-
-    Args:
-        args: 命令行参数（需含 user_data, item_files）。
-        flow_config: 特征配置。
-        dag: 特征 DAG。
-        model: 模型。
-        task_names: 任务名列表。
-        label_map: {task_name: label_column} 映射。
-
-    Returns:
-        最佳 AUC 值。
-    """
-    item_files = [p.strip() for p in args.item_files.split(",") if p.strip()]
-
-    # 从 YAML 配置文件读取 source 定义（name, dtype, default_val, role 全部来自配置）
-    import yaml
-
-    with open(args.item_config) as f:
-        item_sources: list[dict] = yaml.safe_load(f)["sources"]
-    with open(args.user_config) as f:
-        user_sources: list[dict] = yaml.safe_load(f)["sources"]
-
-    # 按 role 字段分离（新式），无 role 时回退 set-difference 逻辑
-    has_role = any("role" in s for s in user_sources)
-    if has_role:
-        label_sources = None  # stream_join 从 role 自动推导
-        all_sources = user_sources
-    else:
-        all_sources = [
-            s for s in user_sources if s["name"] in {src.name for src in flow_config.sources}
-        ]
-        label_sources = [
-            s for s in user_sources if s["name"] not in {src.name for src in flow_config.sources}
-        ]
-
-    item_idx = build_item_index(
-        item_files,
-        item_sources,
-        separator=args.separator,
-        has_header=not args.item_no_header,
-        null_markers=set(args.null_markers),
-    )
-    logger.info("%d items from %d files", len(item_idx), len(item_files))
-
-    opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    best: float = 0.0
-
-    for epoch in range(1, args.epochs + 1):
-        avg_loss, eval_batches = train_epoch(
-            model,
-            opt,
-            dag,
-            stream_join(
-                args.user_data,
-                item_idx,
-                all_sources,
-                label_sources,
-                batch_size=args.batch_size,
-                separator=args.separator,
-                has_header=not args.no_header,
-                null_markers=set(args.null_markers),
-                skip_missing_item=args.skip_missing_item,
-            ),
-            task_names,
-            label_map,
-            device,
-            eval_batches=[],
-            eval_max=args.eval_samples,
-        )
-        aucs = compute_aucs(model, dag, eval_batches, task_names, label_map, device)
-        _log_epoch(epoch, args.epochs, avg_loss, aucs, task_names)
-        best = max(best, max(aucs.values(), default=0))
-
-    return best
-
-
 # ═══════════════════════════════════════════════════════════════════
 # Main
 # ═══════════════════════════════════════════════════════════════════
@@ -614,27 +435,20 @@ def _log_epoch(
 
 def main() -> None:
     p = argparse.ArgumentParser(description="discover-main-sort 训练")
-    g = p.add_mutually_exclusive_group(required=True)
-    g.add_argument("--data")
-    g.add_argument("--user-data")
-    p.add_argument("--item-files")
+    p.add_argument("--data", required=True, help="训练数据 TSV 路径")
     p.add_argument("--feature-config", default=DEFAULT_FEATURE_CONFIG, help="DAG 完整配置")
-    p.add_argument("--item-config", default=DEFAULT_ITEM_CONFIG, help="Item 侧读取配置")
-    p.add_argument("--user-config", default=DEFAULT_USER_CONFIG, help="User 侧读取配置")
     p.add_argument("--model-config", default=DEFAULT_MODEL_CONFIG)
     p.add_argument("--export-path")
     p.add_argument("--epochs", type=int, default=30)
     p.add_argument("--batch-size", type=int, default=64)
     p.add_argument("--lr", type=float, default=0.005)
     p.add_argument("--weight-decay", type=float, default=1e-4)
-    p.add_argument("--no-header", action="store_true", help="用户行为文件无 header")
-    p.add_argument("--item-no-header", action="store_true", help="物品文件无 header")
+    p.add_argument("--no-header", action="store_true", help="TSV 文件无 header 行")
     p.add_argument("--null-markers", nargs="*", default=list(NULL_MARKERS))
     p.add_argument("--separator", default="\t")
-    p.add_argument("--skip-missing-item", action="store_true")
-    p.add_argument("--eval-samples", type=int, default=2000)
+    p.add_argument("--eval-samples", type=int, default=2000, help="验证集样本数")
     p.add_argument("--eval-interval", type=int, default=50, help="训练中每隔 N batch 验证")
-    p.add_argument("--log-interval", type=int, default=10, help="每隔 N batch 打印训练日志")
+    p.add_argument("--log-interval", type=int, default=10, help="每隔 N batch 打印 loss")
     p.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda", "mps"])
     p.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     args = p.parse_args()
@@ -644,9 +458,6 @@ def main() -> None:
         format="%(asctime)s [%(levelname)-5s] %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
-
-    if args.user_data and not args.item_files:
-        p.error("--item-files required with --user-data")
 
     # DAG
     fc = FlowConfig.from_yaml(args.feature_config)
@@ -679,11 +490,7 @@ def main() -> None:
     logger.info("%s  tasks=%s  params=%s", mc.type, task_names, f"{n:,}")
 
     # Train
-    best: float = (
-        train_on_prod(args, fc, dag, model, task_names, label_map, device)
-        if args.user_data
-        else train_on_file(args, fc, dag, model, task_names, label_map, device)
-    )
+    best: float = train_on_file(args, fc, dag, model, task_names, label_map, device)
     logger.info("best AUC=%.4f", best)
 
 
