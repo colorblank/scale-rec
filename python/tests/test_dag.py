@@ -3,12 +3,12 @@ from train.dag import FeatureDag
 
 
 def test_dag_from_yaml():
-    config = FlowConfig.from_yaml("../examples/feature_config.yaml")
+    config = FlowConfig.from_yaml("examples/feature_config.yaml")
     dag = FeatureDag(config)
     features = dag.feature_tuples()
     assert len(features) == 5
     names = [f[0] for f in features]
-    assert "user_id" in names
+    assert "user_id_idx" in names
     assert "user_age_bucket" in names
     assert "item_category_idx" in names
     assert "user_tag_mapped" in names
@@ -16,7 +16,7 @@ def test_dag_from_yaml():
 
 
 def test_dag_execute():
-    config = FlowConfig.from_yaml("../examples/feature_config.yaml")
+    config = FlowConfig.from_yaml("examples/feature_config.yaml")
     dag = FeatureDag(config)
     raw = {
         "user_id": 42,
@@ -31,7 +31,7 @@ def test_dag_execute():
 
 
 def test_preprocess_batch():
-    config = FlowConfig.from_yaml("../examples/feature_config.yaml")
+    config = FlowConfig.from_yaml("examples/feature_config.yaml")
     dag = FeatureDag(config)
     rows = [
         {
@@ -50,6 +50,6 @@ def test_preprocess_batch():
         },
     ]
     tensors = dag.preprocess_batch(rows)
-    assert "user_id" in tensors
-    assert tensors["user_id"].shape == (2,)
-    assert str(tensors["user_id"].dtype) == "torch.int64"
+    assert "user_id_idx" in tensors
+    assert tensors["user_id_idx"].shape == (2,)
+    assert str(tensors["user_id_idx"].dtype) == "torch.int64"

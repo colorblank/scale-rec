@@ -35,9 +35,9 @@ def test_mmoe_forward():
 
 
 def test_esmm_forward():
-    model = ESMM(FEATURES, [8], [4], [4])
+    model = ESMM(FEATURES, [8], [4], [4], [4], [4], [4])
     out = model(_inputs(3))
-    assert out["ctr"].shape == (3, 1)
+    assert out["click"].shape == (3, 1)
     assert out["cvr"].shape == (3, 1)
     assert out["ctcvr"].shape == (3, 1)
 

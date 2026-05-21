@@ -5,9 +5,6 @@ sources:
     source: "User"
     dtype: "int"
     default_val: "0"
-    embed:
-      vocab_size: 10000
-      embed_dim: 16
 
   - name: "user_age"
     source: "User"
@@ -30,6 +27,17 @@ sources:
     default_val: "1.0"
 
 operators:
+  - name: "user_id_hash"
+    op_type: "FeatureHash"
+    inputs: ["user_id"]
+    outputs: ["user_id_idx"]
+    params:
+      vocab_size: 10000
+      num_hashes: 1
+    embed:
+      vocab_size: 10000
+      embed_dim: 16
+
   - name: "age_bucket_op"
     op_type: "Bucketing"
     inputs: ["user_age"]
