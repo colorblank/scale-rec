@@ -74,8 +74,14 @@ impl FeatureDag {
         debug_mode: bool,
         tracer: Option<DebugTracer>,
     ) -> Result<Self, String> {
+        use crate::feats::config::Role;
+
         let mut sources = HashMap::new();
         for s in config.sources {
+            if s.role != Role::Feature {
+                tracing::info!("source '{}' skipped (role={:?})", s.name, s.role);
+                continue;
+            }
             if sources.contains_key(&s.name) {
                 return Err(format!("Duplicate source name: '{}'", s.name));
             }
@@ -415,9 +421,9 @@ impl FeatureDag {
         // Classify sources by their `source` field (User/Context→broadcast, Item/ItemStats→item)
         let mut feat_kind: HashMap<String, &str> = HashMap::new();
         for (name, src) in &self.sources {
-            let k = match src.source.as_str() {
-                "User" | "Context" => "user",
-                _ => "item", // Item, ItemStats, and anything else
+            let k = match src.source.as_deref() {
+                Some("User") | Some("Context") => "user",
+                _ => "item", // Item, ItemStats, None, and anything else
             };
             feat_kind.insert(name.clone(), k);
         }

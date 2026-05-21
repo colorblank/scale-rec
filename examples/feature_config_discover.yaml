@@ -88,6 +88,7 @@ sources:
   source: Context
   dtype: int
   default_val: '0'
+  role: feature
 - name: p_date
   source: Context
   dtype: string
@@ -152,6 +153,40 @@ sources:
   source: User
   dtype: string
   default_val: ''
+- name: is_click
+  source: User
+  dtype: int
+  default_val: '0'
+  role: label
+- name: is_cvr
+  source: User
+  dtype: int
+  default_val: '0'
+  role: label
+- name: ctr
+  source: User
+  dtype: int
+  default_val: '0'
+  role: label
+- name: cvr
+  source: User
+  dtype: int
+  default_val: '0'
+  role: label
+- name: is_click_detail
+  source: User
+  dtype: int
+  default_val: '0'
+  role: label
+- name: is_click_stock
+  source: User
+  dtype: int
+  default_val: '0'
+  role: label
+- name: stay_time
+  dtype: int
+  default_val: '-1'
+  role: label
 operators:
 - name: item_id_hash
   op_type: FeatureHash

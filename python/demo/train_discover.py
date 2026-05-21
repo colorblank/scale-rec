@@ -43,15 +43,6 @@ DEFAULT_MODEL_CONFIG = os.path.join(DEMO_DIR, "model_discover_esmm.yaml")
 DEFAULT_DATA = os.path.join(DEMO_DIR, "temp", "discover_train_data.txt")
 
 NULL_MARKERS: set[str] = {"NULL", "\\N", "null", "None", ""}
-LABEL_COLUMNS: list[str] = [
-    "is_click",
-    "is_cvr",
-    "ctr",
-    "cvr",
-    "is_click_detail",
-    "is_click_stock",
-    "stay_time",
-]
 
 # 模型 Batch 字典类型
 Batch = dict[str, Any]  # {"features": [dict, ...], "labels": {name: [value, ...]}}
@@ -266,20 +257,16 @@ def load_single_file(
     sep: str = "\t",
     null_markers: set[str] = NULL_MARKERS,
 ) -> pd.DataFrame:
-    """单文件模式：按 FlowConfig schema + LABEL_COLUMNS 类型化读入 TSV。
+    """单文件模式：按 FlowConfig sources 类型化读入 TSV。
 
-    dtype/default_val 全部来自配置。
+    dtype/default_val 全部来自配置（含 feature + label + discard）。
     """
-    # 构建 schema 和默认值
     schema: dict[str, str] = {}
     defaults: dict[str, Any] = {}
     for s in flow_config.sources:
         dt = s.dtype.tag if hasattr(s.dtype, "tag") else str(s.dtype)
         schema[s.name] = _DTYPE_MAP.get(dt, "str")
         defaults[s.name] = _parse_default(s.default_val, dt)
-    for ln in LABEL_COLUMNS:
-        schema[ln] = "Int64"
-        defaults[ln] = 0
 
     df = _read_tsv(path, schema, has_header=has_header, sep=sep, null_markers=null_markers)
     # 按配置填充缺失值
@@ -450,6 +437,7 @@ def train_on_file(
     logger.info("single-file: train=%d test=%d", len(train_df), len(test_df))
 
     source_set = set(dag.sources.keys())
+    label_cols = [s.name for s in flow_config.label_sources]
     opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     best: float = 0.0
 
@@ -458,14 +446,14 @@ def train_on_file(
             model,
             opt,
             dag,
-            _file_batches(train_df, source_set, args.batch_size, LABEL_COLUMNS),
+            _file_batches(train_df, source_set, args.batch_size, label_cols),
             task_names,
             label_map,
         )
         aucs = compute_aucs(
             model,
             dag,
-            list(_file_batches(test_df, source_set, args.batch_size, LABEL_COLUMNS)),
+            list(_file_batches(test_df, source_set, args.batch_size, label_cols)),
             task_names,
             label_map,
         )
@@ -501,7 +489,7 @@ def train_on_prod(
     """
     item_files = [p.strip() for p in args.item_files.split(",") if p.strip()]
 
-    # 从 YAML 配置文件读取 source 定义（name, dtype, default_val 全部来自配置）
+    # 从 YAML 配置文件读取 source 定义（name, dtype, default_val, role 全部来自配置）
     import yaml
 
     with open(args.item_config) as f:
@@ -509,13 +497,18 @@ def train_on_prod(
     with open(args.user_config) as f:
         user_sources: list[dict] = yaml.safe_load(f)["sources"]
 
-    # 分离 source 列和 label 列
-    all_sources = [
-        s for s in user_sources if s["name"] in {src.name for src in flow_config.sources}
-    ]
-    label_sources = [
-        s for s in user_sources if s["name"] not in {src.name for src in flow_config.sources}
-    ]
+    # 按 role 字段分离（新式），无 role 时回退 set-difference 逻辑
+    has_role = any("role" in s for s in user_sources)
+    if has_role:
+        label_sources = None  # stream_join 从 role 自动推导
+        all_sources = user_sources
+    else:
+        all_sources = [
+            s for s in user_sources if s["name"] in {src.name for src in flow_config.sources}
+        ]
+        label_sources = [
+            s for s in user_sources if s["name"] not in {src.name for src in flow_config.sources}
+        ]
 
     item_idx = build_item_index(
         item_files,

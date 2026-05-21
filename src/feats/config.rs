@@ -2,6 +2,16 @@
 
 use serde::{Deserialize, Serialize};
 
+/// 列角色：特征入 DAG、训练标签、读入后丢弃。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Role {
+    #[default]
+    Feature,
+    Label,
+    Discard,
+}
+
 /// 数据类型：整数、浮点、字符串、列表。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -23,11 +33,16 @@ pub struct EmbedConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceDef {
     pub name: String,
-    pub source: String,
+    #[serde(default)]
+    pub source: Option<String>,
     pub dtype: DType,
     pub default_val: String,
     #[serde(default)]
     pub embed: Option<EmbedConfig>, // 已弃用：保留字段兼容旧配置
+    #[serde(default)]
+    pub role: Role,
+    #[serde(default)]
+    pub column_index: Option<usize>,
 }
 
 /// 算子节点定义。`params` 使用原生 YAML 值，由各算子自行解析。

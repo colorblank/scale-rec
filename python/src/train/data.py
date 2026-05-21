@@ -116,9 +116,11 @@ def build_item_index(
     """
     if null_markers is None:
         null_markers = NULL_MARKERS
+    # 只保留 feature-role 的 source（物品文件不应含标签）
+    feature_only = [s for s in item_sources if s.get("role", "feature") == "feature"]
     na_vals = list(null_markers)
     params, names, dtype, default_vals = _build_reader_params(
-        item_sources, has_header, separator, na_vals
+        feature_only, has_header, separator, na_vals
     )
 
     dfs = []
@@ -168,7 +170,7 @@ def stream_join(
     user_file: str,
     item_index: dict[str, dict[str, str]],
     all_sources: list[dict],
-    label_sources: list[dict],
+    label_sources: list[dict] | None = None,
     batch_size: int = 1024,
     separator: str = "\t",
     has_header: bool = True,
@@ -177,13 +179,16 @@ def stream_join(
 ) -> Iterator[dict[str, Any]]:
     """pandas chunk read 流式读取用户行为文件，按 item_id 关联物品特征。
 
-    列名、类型、缺失填充值全部来自 all_sources + label_sources 配置。
+    列名、类型、缺失填充值全部来自 all_sources 配置。
+    支持两种模式：
+      1. 新式（推荐）：all_sources 包含 role 字段，自动分离 feature/label/discard。
+      2. 旧式（兼容）：显式传入 label_sources 列表。
 
     Args:
         user_file: 用户行为文件路径。
         item_index: build_item_index 构建的物品特征索引。
-        all_sources: 用户侧所有 source 定义 [{name, dtype, default_val}, ...]。
-        label_sources: 标签列定义 [{name, dtype, default_val}, ...]。
+        all_sources: 用户侧所有 source 定义 [{name, dtype, default_val, role?}, ...]。
+        label_sources: 标签列定义（旧式兼容，新式可从 all_sources 的 role 派生）。
         batch_size: 批大小（chunk size）。
         separator: 字段分隔符。
         has_header: 文件是否含 header 行。
@@ -197,18 +202,31 @@ def stream_join(
         null_markers = NULL_MARKERS
     na_vals = list(null_markers)
 
-    sources = all_sources + label_sources
+    # 新式：从 role 字段分离
+    if label_sources is None:
+        feature_sources = [s for s in all_sources if s.get("role", "feature") == "feature"]
+        label_sources = [s for s in all_sources if s.get("role") == "label"]
+        discard_names = {s["name"] for s in all_sources if s.get("role") == "discard"}
+    else:
+        feature_sources = all_sources
+        discard_names: set[str] = set()
+
+    sources = feature_sources + label_sources
     params, names, dtype, default_vals = _build_reader_params(
         sources, has_header, separator, na_vals
     )
     params["chunksize"] = batch_size
 
-    source_names = [s["name"] for s in all_sources]
-    src_dtype_map = {s["name"]: s.get("dtype", "string") for s in all_sources}
+    source_names = [s["name"] for s in feature_sources]
+    src_dtype_map = {s["name"]: s.get("dtype", "string") for s in feature_sources}
     label_names = [s["name"] for s in label_sources]
 
     n_joined, n_missed, n_total = 0, 0, 0
     for chunk in pd.read_csv(user_file, **params):
+        # 丢弃 discard 列
+        chunk = chunk.drop(
+            columns=[c for c in discard_names if c in chunk.columns], errors="ignore"
+        )
         # 按配置填充缺失值
         for col, default in default_vals.items():
             if col in chunk.columns:

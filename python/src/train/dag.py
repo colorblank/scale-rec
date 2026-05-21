@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 import torch
 
-from .config import DType, EmbedConfig, FlowConfig, OperatorDef, SourceDef
+from .config import DType, EmbedConfig, FlowConfig, OperatorDef, Role, SourceDef
 from .ops import (
     Bucketing,
     CrossFeature,
@@ -43,6 +43,9 @@ class FeatureDag:
         self.sources: dict[str, SourceDef] = {}
         self.tracer = tracer  # Optional[DebugTracer] for per-stage I/O tracing
         for s in config.sources:
+            if s.role != Role.FEATURE:
+                logger.info("source '%s' skipped (role=%s)", s.name, s.role)
+                continue
             if s.name in self.sources:
                 raise ValueError(f"Duplicate source: '{s.name}'")
             self.sources[s.name] = s
@@ -102,6 +105,8 @@ class FeatureDag:
         intermediate = 0
 
         for s in config.sources:
+            if s.role != Role.FEATURE:
+                continue
             if s.name not in downstream_consumers and s.name not in embeddable:
                 orphan_sources.append(s.name)
 
@@ -114,10 +119,11 @@ class FeatureDag:
                     continue
                 orphan_outputs.append(f"{op.name} -> {out_name}")
 
+        total_features = sum(1 for s in config.sources if s.role == Role.FEATURE)
         logger.info(
             "sources: consumed=%d/%d orphan=%d",
-            len(config.sources) - len(orphan_sources),
-            len(config.sources),
+            total_features - len(orphan_sources),
+            total_features,
             len(orphan_sources),
         )
         logger.info(

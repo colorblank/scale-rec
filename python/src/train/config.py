@@ -8,6 +8,14 @@ from typing import Optional
 import yaml
 
 
+class Role:
+    """列角色常量 — mirrors src/feats/config.rs Role enum."""
+
+    FEATURE = "feature"
+    LABEL = "label"
+    DISCARD = "discard"
+
+
 @dataclass
 class DType:
     tag: str
@@ -33,10 +41,12 @@ class EmbedConfig:
 @dataclass
 class SourceDef:
     name: str
-    source: str
     dtype: DType
     default_val: str
+    source: Optional[str] = None
     embed: Optional[EmbedConfig] = None
+    role: str = Role.FEATURE
+    column_index: Optional[int] = None
 
 
 @dataclass
@@ -69,10 +79,12 @@ class FlowConfig:
             sources.append(
                 SourceDef(
                     name=s["name"],
-                    source=s["source"],
+                    source=s.get("source"),
                     dtype=DType.from_dict(s["dtype"]),
                     default_val=s["default_val"],
                     embed=embed,
+                    role=s.get("role", Role.FEATURE),
+                    column_index=s.get("column_index"),
                 )
             )
         operators = []
@@ -89,3 +101,18 @@ class FlowConfig:
                 )
             )
         return cls(version=raw["version"], sources=sources, operators=operators)
+
+    @property
+    def feature_sources(self) -> list[SourceDef]:
+        """返回 role==feature 的 source 列表。"""
+        return [s for s in self.sources if s.role == Role.FEATURE]
+
+    @property
+    def label_sources(self) -> list[SourceDef]:
+        """返回 role==label 的 source 列表。"""
+        return [s for s in self.sources if s.role == Role.LABEL]
+
+    @property
+    def discard_sources(self) -> list[SourceDef]:
+        """返回 role==discard 的 source 列表。"""
+        return [s for s in self.sources if s.role == Role.DISCARD]
