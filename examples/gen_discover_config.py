@@ -62,7 +62,12 @@ def generate_user_config() -> dict:
     """生成仅含 User/Context 侧 source + label 定义的配置（用于 Polars 读取用户文件）。"""
     user_sources = [s for s in _build_sources() if s["source"] in ("User", "Context")]
     # item_id 作为 Join 键也需出现在用户侧配置
-    item_id_src = {"name": "item_id", "source": "Item", "dtype": "int", "default_val": "0"}
+    item_id_src = {
+        "name": "item_id",
+        "source": "Item",
+        "dtype": "int",
+        "default_val": "0",
+    }
     # 标签列声明
     label_sources = [
         {"name": "is_click", "dtype": "int", "default_val": "0"},
@@ -840,8 +845,14 @@ def _write_yaml(data: dict, name: str) -> str:
     dir_ = os.path.dirname(__file__)
     path = os.path.join(dir_, name)
     with open(path, "w", encoding="utf-8") as f:
-        yaml.dump(data, f, allow_unicode=True, default_flow_style=False,
-                  sort_keys=False, width=120)
+        yaml.dump(
+            data,
+            f,
+            allow_unicode=True,
+            default_flow_style=False,
+            sort_keys=False,
+            width=120,
+        )
     return path
 
 
@@ -849,9 +860,13 @@ def main():
     # 统一配置（DAG + 模型）
     full = generate_config()
     path = _write_yaml(full, "feature_config_discover.yaml")
-    n_feat = sum(len(op.get("outputs", [])) for op in full["operators"] if "embed" in op)
-    print(f"[Config] {len(full['sources'])} sources, {len(full['operators'])} ops"
-          f" → {n_feat} features → {path}")
+    n_feat = sum(
+        len(op.get("outputs", [])) for op in full["operators"] if "embed" in op
+    )
+    print(
+        f"[Config] {len(full['sources'])} sources, {len(full['operators'])} ops"
+        f" → {n_feat} features → {path}"
+    )
 
     # Item 侧读取配置（Polars schema）
     item = generate_item_config()

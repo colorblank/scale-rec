@@ -264,7 +264,10 @@ impl FeatureDag {
             println!("[DAG] WARNING orphan sources: {:?}", orphan_src);
         }
         if orphan_out > 0 {
-            println!("[DAG] WARNING {} orphan outputs (no consumer, no embed)", orphan_out);
+            println!(
+                "[DAG] WARNING {} orphan outputs (no consumer, no embed)",
+                orphan_out
+            );
         }
     }
 

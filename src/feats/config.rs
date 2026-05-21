@@ -27,7 +27,7 @@ pub struct SourceDef {
     pub dtype: DType,
     pub default_val: String,
     #[serde(default)]
-    pub embed: Option<EmbedConfig>,  // 已弃用：保留字段兼容旧配置
+    pub embed: Option<EmbedConfig>, // 已弃用：保留字段兼容旧配置
 }
 
 /// 算子节点定义。`params` 使用原生 YAML 值，由各算子自行解析。
