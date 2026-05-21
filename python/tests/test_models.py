@@ -43,9 +43,9 @@ def test_esmm_forward():
 
 
 def test_unimixer_forward():
-    from train.models.unimixer.tokenizer import FeatureTokenizer
+    from train.layers.towers import Activation, MultiTaskConfig, TowerConfig
     from train.models.unimixer.model import UniMixerModel
-    from train.layers.towers import MultiTaskConfig, TowerConfig, Activation
+    from train.models.unimixer.tokenizer import FeatureTokenizer
 
     token_dim = 4
     num_tokens = 2

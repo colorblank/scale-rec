@@ -1,7 +1,8 @@
 """生成大规模特征配置文件（80 个可嵌入特征）。"""
 
-import yaml
 import os
+
+import yaml
 
 sources = []
 operators = []

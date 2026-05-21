@@ -2,15 +2,19 @@ from __future__ import annotations
 
 """safetensors 权重导出 — Candle VarMap 可直接加载。"""
 
+import logging
+
 import torch.nn as nn
 from safetensors.torch import save_file
+
+logger = logging.getLogger(__name__)
 
 
 def export_to_safetensors(model: nn.Module, path: str):
     """Export model state_dict to safetensors; keys must match Candle VarBuilder::pp() paths."""
     state_dict = model.state_dict()
     save_file(state_dict, path)
-    print(f"[Export] Saved {len(state_dict)} tensors to {path}")
+    logger.info("saved %d tensors to %s", len(state_dict), path)
 
 
 def print_state_dict_keys(model: nn.Module):

@@ -14,10 +14,13 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, Iterator
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 NULL_MARKERS = {"NULL", "\\N", "null", "None", ""}
 DTYPE_PANDAS = {"int": "Int64", "float": "float64", "string": "str"}
@@ -121,7 +124,7 @@ def build_item_index(
     dfs = []
     for path in item_files:
         if not os.path.exists(path):
-            print(f"[ItemIndex] skip missing: {path}")
+            logger.warning("skip missing item file: %s", path)
             continue
         df = _read_file_compat(path, params, names)
         # 按配置填充缺失值
@@ -135,7 +138,7 @@ def build_item_index(
         return {}
 
     merged = pd.concat(dfs).drop_duplicates(subset="item_id", keep="last")
-    print(f"[ItemIndex] {len(dfs)} files → {len(merged)} unique items")
+    logger.info("%d item files → %d unique items", len(dfs), len(merged))
 
     index: dict[str, dict[str, str]] = {}
     for _, row in merged.iterrows():
@@ -256,7 +259,7 @@ def stream_join(
 
         yield {"features": feature_rows, "labels": labels}
 
-    print(
-        f"[StreamJoin] done: total={n_total} joined={n_joined} "
-        f"missed={n_missed} ({100 * n_missed / max(n_total, 1):.1f}%)"
+    pct = 100 * n_missed / max(n_total, 1)
+    logger.info(
+        "stream join done: total=%d joined=%d missed=%d (%.1f%%)", n_total, n_joined, n_missed, pct
     )

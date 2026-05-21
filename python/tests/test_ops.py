@@ -2,12 +2,12 @@ from train.ops.bucketing import Bucketing
 from train.ops.cross_feature import CrossFeature
 from train.ops.dict_mapper import DictMapper
 from train.ops.expression import ExpressionOp
-from train.ops.sequence import SequenceOp
-from train.ops.string_parser import StringParser
+from train.ops.flat_split import FlatSplit
 from train.ops.json_extract_list import JsonExtractList
 from train.ops.list_string_parser import ListStringParser
-from train.ops.flat_split import FlatSplit
+from train.ops.sequence import SequenceOp
 from train.ops.split import Split
+from train.ops.string_parser import StringParser
 
 
 def test_bucketing():

@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 from pathlib import Path
@@ -54,6 +55,8 @@ LABEL_COLUMNS: list[str] = [
 
 # 模型 Batch 字典类型
 Batch = dict[str, Any]  # {"features": [dict, ...], "labels": {name: [value, ...]}}
+
+logger = logging.getLogger("train")
 
 # ═══════════════════════════════════════════════════════════════════
 # Loss functions
@@ -444,7 +447,7 @@ def train_on_file(
     n = int(len(df) * 0.8)
     train_df = df.iloc[:n]
     test_df = df.iloc[n:]
-    print(f"[Data] single-file: train={len(train_df)} test={len(test_df)}")
+    logger.info("single-file: train=%d test=%d", len(train_df), len(test_df))
 
     source_set = set(dag.sources.keys())
     opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -521,7 +524,7 @@ def train_on_prod(
         has_header=not args.item_no_header,
         null_markers=set(args.null_markers),
     )
-    print(f"[ItemIndex] {len(item_idx)} items from {len(item_files)} files")
+    logger.info("%d items from %d files", len(item_idx), len(item_files))
 
     opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     best: float = 0.0
@@ -571,7 +574,7 @@ def _log_epoch(
     for t in sorted(task_names):
         if t in aucs and t != "stay":
             parts.append(f"{t}: auc={aucs[t]:.4f}")
-    print("  " + "  ".join(parts))
+    logger.info("  ".join(parts))
 
 
 def main() -> None:
@@ -595,7 +598,14 @@ def main() -> None:
     p.add_argument("--separator", default="\t")
     p.add_argument("--skip-missing-item", action="store_true")
     p.add_argument("--eval-samples", type=int, default=2000)
+    p.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     args = p.parse_args()
+
+    logging.basicConfig(
+        level=getattr(logging, args.log_level),
+        format="%(asctime)s [%(levelname)-5s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
 
     if args.user_data and not args.item_files:
         p.error("--item-files required with --user-data")
@@ -604,7 +614,9 @@ def main() -> None:
     fc = FlowConfig.from_yaml(args.feature_config)
     dag = FeatureDag(fc)
     features = dag.feature_tuples()
-    print(f"[Config] {len(fc.sources)} sources, {len(fc.operators)} ops → {len(features)} features")
+    logger.info(
+        "%d sources, %d ops → %d features", len(fc.sources), len(fc.operators), len(features)
+    )
 
     # Model
     mc = ModelConfig.from_yaml(args.model_config)
@@ -613,7 +625,7 @@ def main() -> None:
     label_map: dict[str, str] = spec.get("label_col_map", {"ctr": "is_click", "cvr": "is_cvr"})
     model = mc.build(features)
     n = sum(p.numel() for p in model.parameters())
-    print(f"[Model] {mc.type}  tasks={task_names}  params={n:,}")
+    logger.info("%s  tasks=%s  params=%s", mc.type, task_names, f"{n:,}")
 
     # Train
     best: float = (
@@ -621,12 +633,12 @@ def main() -> None:
         if args.user_data
         else train_on_file(args, fc, dag, model, task_names, label_map)
     )
-    print(f"[Best] AUC={best:.4f}")
+    logger.info("best AUC=%.4f", best)
 
     # Export
     path = args.export_path or os.path.join(DEMO_DIR, "temp", "model.safetensors")
     export_to_safetensors(model, path)
-    print(f"[Export] {path}\nDone.")
+    logger.info("exported to %s", path)
 
 
 if __name__ == "__main__":

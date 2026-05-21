@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 """特征 DAG 执行器 — mirrors src/feats/dag.rs."""
-from dataclasses import dataclass
+import logging
 from collections import deque
+from dataclasses import dataclass
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 import torch
 
@@ -16,13 +19,13 @@ from .ops import (
     ExpressionOp,
     FeatureHash,
     FlatSplit,
+    JsonExtractList,
     ListOverlap,
+    ListStringParser,
     SequenceOp,
     Split,
     StringConcat,
     StringParser,
-    JsonExtractList,
-    ListStringParser,
 )
 
 FeatureValue = Any
@@ -111,18 +114,22 @@ class FeatureDag:
                     continue
                 orphan_outputs.append(f"{op.name} -> {out_name}")
 
-        print(
-            f"[DAG] sources: consumed={len(config.sources) - len(orphan_sources)}/"
-            f"{len(config.sources)} orphan={len(orphan_sources)}"
+        logger.info(
+            "sources: consumed=%d/%d orphan=%d",
+            len(config.sources) - len(orphan_sources),
+            len(config.sources),
+            len(orphan_sources),
         )
-        print(
-            f"[DAG] outputs: embeddable={len(embeddable)}"
-            f" intermediate={intermediate} orphan={len(orphan_outputs)}"
+        logger.info(
+            "outputs: embeddable=%d intermediate=%d orphan=%d",
+            len(embeddable),
+            intermediate,
+            len(orphan_outputs),
         )
         if orphan_sources:
-            print(f"[DAG] WARNING orphan sources: {orphan_sources}")
+            logger.warning("orphan sources: %s", orphan_sources)
         if orphan_outputs:
-            print(f"[DAG] WARNING orphan outputs: {orphan_outputs}")
+            logger.warning("orphan outputs: %s", orphan_outputs)
 
     @staticmethod
     def _parse_default(val_str: str, dtype: DType) -> FeatureValue:
@@ -342,7 +349,7 @@ class FeatureDag:
         )
 
     def _dump_snapshot(self, context, source_names, computed_names):
-        print("[Feature Snapshot]")
+        logger.debug("[Feature Snapshot]")
         for name, val in sorted(context.items()):
             origin = (
                 "computed"
@@ -351,4 +358,4 @@ class FeatureDag:
                 if name in source_names
                 else "raw"
             )
-            print(f" -> [{origin}] {name:<20} | value={val}")
+            logger.debug(" -> [%s] %-20s | value=%s", origin, name, val)
