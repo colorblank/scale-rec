@@ -34,11 +34,15 @@ def build_model(model_type: str, features, tokenizer=None, **params):
     return _registry[model_type]["build"](features, tokenizer, **params)
 
 
-def get_output_spec(model_type: str, model_instance=None):
+def get_output_spec(model_type: str, model_instance=None, params: dict | None = None):
     """Get output spec dict {task_names, label_col_map} for a model type."""
     if model_type not in _registry:
         return {"task_names": [], "label_col_map": {}}
-    return _registry[model_type]["output_spec"](model_instance)
+    fn = _registry[model_type]["output_spec"]
+    try:
+        return fn(model_instance, params=params)
+    except TypeError:
+        return fn(model_instance)
 
 
 # ── backward-compat config types ──
@@ -152,6 +156,16 @@ def _spec_esmm(model=None):
     }
 
 
+def _spec_unimixer(model=None, params=None):
+    if model is not None:
+        tt = getattr(model, "task_towers", None) or model.unimixer.task_towers
+        names = list(tt._tower_names) if hasattr(tt, "_tower_names") else []
+    else:
+        names = []
+    label_col_map = (params or {}).get("label_col_map", {n: n for n in names} if names else {})
+    return {"task_names": names, "label_col_map": label_col_map}
+
+
 def _build_unimixer(features, tokenizer=None, **params):
     if tokenizer is None:
         raise ValueError("UniMixer requires external FeatureTokenizer")
@@ -171,15 +185,6 @@ def _build_unimixer(features, tokenizer=None, **params):
         task_config=tc,
         use_siamese=params.get("use_siamese", False),
     )
-
-
-def _spec_unimixer(model=None):
-    if model is not None:
-        tt = getattr(model, "task_towers", None) or model.unimixer.task_towers
-        names = list(tt._tower_names) if hasattr(tt, "_tower_names") else []
-    else:
-        names = []
-    return {"task_names": names, "label_col_map": {n: n for n in names}}
 
 
 register_model("lr", _spec_pred, _build_lr)

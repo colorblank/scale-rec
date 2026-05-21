@@ -89,8 +89,43 @@ def main() -> None:
 
     # Model
     mc = ModelConfig.from_yaml(args.model_config)
-    spec = get_output_spec(mc.type, None)
-    model = mc.build(features).to(device)
+
+    # UniMixer 需要预构建 FeatureTokenizer
+    tokenizer = None
+    if mc.type == "unimixer":
+        from train.models.unimixer.tokenizer import FeatureTokenizer
+        p = mc.params
+        td = p.get("token_dim", 64)
+        nt = p.get("num_tokens", 8)
+        tokenizer = FeatureTokenizer(features, td, nt)
+        logger.info("tokenizer: %d features → %d tokens × %dd", len(features), nt, td)
+
+    model = mc.build(features, tokenizer=tokenizer)
+
+    # UniMixer: 包装 state_dict 对齐 Rust vb.pp("unimixer") 命名
+    if mc.type == "unimixer":
+        import torch.nn as nn
+        blocks = model.blocks
+        task_towers = model.task_towers
+        final_norm = model.final_norm
+        tokenizer_mod = model.tokenizer
+        wrapper = nn.Module()
+        wrapper.add_module("tokenizer", tokenizer_mod)
+        inner = nn.Module()
+        inner.add_module("blocks", blocks)
+        inner.add_module("task_towers", task_towers)
+        if final_norm is not None:
+            inner.add_module("final_norm", final_norm)
+        wrapper.add_module("unimixer", inner)
+        _raw = model
+        def _forward(self, x_inputs, temperature=None):
+            return _raw(x_inputs, temperature)
+        import types
+        wrapper.forward = types.MethodType(_forward, wrapper)
+        model = wrapper
+
+    model = model.to(device)
+    spec = get_output_spec(mc.type, model, mc.params)
     n = sum(p.numel() for p in model.parameters())
     logger.info("%s  tasks=%s  params=%s", mc.type, spec["task_names"], f"{n:,}")
 
