@@ -1,103 +1,107 @@
 version: 1.0.0
 sources:
-- name: user_id
-  source: User
-  dtype: int
-  default_val: '0'
-- name: rec_algo
-  source: Context
-  dtype: string
-  default_val: unknown
-- name: scene
-  source: Context
-  dtype: int
-  default_val: '0'
-- name: stay_time
-  source: Context
-  dtype: int
-  default_val: '0'
-- name: p_date
-  source: Context
-  dtype: string
-  default_val: '20260331'
-- name: fav_securities
-  source: User
-  dtype: string
-  default_val: ''
-- name: recent_stocks
-  source: User
-  dtype: string
-  default_val: ''
-- name: interest_keywords
-  source: User
-  dtype: string
-  default_val: ''
-- name: follow_authors
-  source: User
-  dtype: string
-  default_val: ''
-- name: is_new_user
-  source: User
-  dtype: string
-  default_val: 老用户
-- name: hold_stocks
-  source: User
-  dtype: string
-  default_val: ''
-- name: hist_hold_stocks
-  source: User
-  dtype: string
-  default_val: ''
-- name: historical_click_items
-  source: User
-  dtype: string
-  default_val: ''
-- name: asset_level
-  source: User
-  dtype: string
-  default_val: 未知
-- name: last_trade_date
-  source: User
-  dtype: string
-  default_val: ''
-- name: city
-  source: User
-  dtype: string
-  default_val: 未知
-- name: investment_horizon
-  source: User
-  dtype: string
-  default_val: ''
-- name: invest_style
-  source: User
-  dtype: string
-  default_val: ''
-- name: theme_interest
-  source: User
-  dtype: string
-  default_val: ''
-- name: industry_interest
-  source: User
-  dtype: string
-  default_val: ''
-- name: is_click
-  dtype: int
-  default_val: '0'
-- name: is_cvr
-  dtype: int
-  default_val: '0'
-- name: is_click_detail
-  dtype: int
-  default_val: '0'
-- name: is_click_stock
-  dtype: int
-  default_val: '0'
-- name: stay_time
-  dtype: int
-  default_val: '-1'
-- name: ctr
-  dtype: int
-  default_val: '0'
-- name: cvr
-  dtype: int
-  default_val: '0'
+  - name: user_id
+    source: User
+    dtype: int
+    default_val: "0"
+  - name: item_id
+    source: Item
+    dtype: int
+    default_val: "0"
+  - name: rec_algo
+    source: Context
+    dtype: string
+    default_val: unknown
+  - name: scene
+    source: Context
+    dtype: int
+    default_val: "0"
+  - name: stay_time
+    source: Context
+    dtype: int
+    default_val: "0"
+  - name: p_date
+    source: Context
+    dtype: string
+    default_val: "20260331"
+  - name: fav_securities
+    source: User
+    dtype: string
+    default_val: ""
+  - name: recent_stocks
+    source: User
+    dtype: string
+    default_val: ""
+  - name: interest_keywords
+    source: User
+    dtype: string
+    default_val: ""
+  - name: follow_authors
+    source: User
+    dtype: string
+    default_val: ""
+  - name: is_new_user
+    source: User
+    dtype: string
+    default_val: 老用户
+  - name: hold_stocks
+    source: User
+    dtype: string
+    default_val: ""
+  - name: hist_hold_stocks
+    source: User
+    dtype: string
+    default_val: ""
+  - name: historical_click_items
+    source: User
+    dtype: string
+    default_val: ""
+  - name: asset_level
+    source: User
+    dtype: string
+    default_val: 未知
+  - name: last_trade_date
+    source: User
+    dtype: string
+    default_val: ""
+  - name: city
+    source: User
+    dtype: string
+    default_val: 未知
+  - name: investment_horizon
+    source: User
+    dtype: string
+    default_val: ""
+  - name: invest_style
+    source: User
+    dtype: string
+    default_val: ""
+  - name: theme_interest
+    source: User
+    dtype: string
+    default_val: ""
+  - name: industry_interest
+    source: User
+    dtype: string
+    default_val: ""
+  - name: is_click
+    dtype: int
+    default_val: "0"
+  - name: is_cvr
+    dtype: int
+    default_val: "0"
+  - name: is_click_detail
+    dtype: int
+    default_val: "0"
+  - name: is_click_stock
+    dtype: int
+    default_val: "0"
+  - name: stay_time
+    dtype: int
+    default_val: "-1"
+  - name: ctr
+    dtype: int
+    default_val: "0"
+  - name: cvr
+    dtype: int
+    default_val: "0"

@@ -61,6 +61,8 @@ def generate_item_config() -> dict:
 def generate_user_config() -> dict:
     """生成仅含 User/Context 侧 source + label 定义的配置（用于 Polars 读取用户文件）。"""
     user_sources = [s for s in _build_sources() if s["source"] in ("User", "Context")]
+    # item_id 作为 Join 键也需出现在用户侧配置
+    item_id_src = {"name": "item_id", "source": "Item", "dtype": "int", "default_val": "0"}
     # 标签列声明
     label_sources = [
         {"name": "is_click", "dtype": "int", "default_val": "0"},
@@ -71,7 +73,7 @@ def generate_user_config() -> dict:
         {"name": "ctr", "dtype": "int", "default_val": "0"},
         {"name": "cvr", "dtype": "int", "default_val": "0"},
     ]
-    return {"version": "1.0.0", "sources": user_sources + label_sources}
+    return {"version": "1.0.0", "sources": [item_id_src] + user_sources + label_sources}
 
 
 # ═══════════════════════════════════════════════════════
