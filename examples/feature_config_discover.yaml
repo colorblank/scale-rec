@@ -432,6 +432,7 @@ operators:
     embed:
       vocab_size: 100
       embed_dim: 8
+      pooling: mean
   - name: roleneeds_second_parse
     op_type: JsonExtractList
     inputs:
@@ -454,6 +455,7 @@ operators:
     embed:
       vocab_size: 100
       embed_dim: 8
+      pooling: mean
   - name: invest_label_parse
     op_type: JsonExtractList
     inputs:
@@ -476,6 +478,7 @@ operators:
     embed:
       vocab_size: 100
       embed_dim: 8
+      pooling: mean
   - name: invest_label_second_parse
     op_type: JsonExtractList
     inputs:
@@ -498,6 +501,7 @@ operators:
     embed:
       vocab_size: 100
       embed_dim: 8
+      pooling: mean
   - name: invest_label_third_parse
     op_type: JsonExtractList
     inputs:
@@ -520,6 +524,7 @@ operators:
     embed:
       vocab_size: 100
       embed_dim: 8
+      pooling: mean
   - name: entity_words_parse
     op_type: JsonExtractList
     inputs:
@@ -542,6 +547,7 @@ operators:
     embed:
       vocab_size: 200
       embed_dim: 8
+      pooling: mean
   - name: entities_v3_parse
     op_type: JsonExtractList
     inputs:
@@ -564,6 +570,7 @@ operators:
     embed:
       vocab_size: 1000
       embed_dim: 8
+      pooling: mean
   - name: emb_id_parse
     op_type: JsonExtractList
     inputs:
@@ -586,6 +593,7 @@ operators:
     embed:
       vocab_size: 1000
       embed_dim: 8
+      pooling: mean
   - name: stock_list_parse
     op_type: JsonExtractList
     inputs:
@@ -617,6 +625,7 @@ operators:
     embed:
       vocab_size: 500
       embed_dim: 8
+      pooling: mean
   # ── StringParser 链 (User) ──
   - name: fav_stock_parse
     op_type: StringParser
@@ -651,6 +660,7 @@ operators:
     embed:
       vocab_size: 500
       embed_dim: 8
+      pooling: mean
   - name: interest_kw_parse
     op_type: StringParser
     inputs:
@@ -675,6 +685,7 @@ operators:
     embed:
       vocab_size: 500
       embed_dim: 8
+      pooling: mean
   - name: follow_authors_parse
     op_type: StringParser
     inputs:
@@ -699,6 +710,7 @@ operators:
     embed:
       vocab_size: 500
       embed_dim: 8
+      pooling: mean
   - name: hold_stocks_parse
     op_type: StringParser
     inputs:
@@ -723,6 +735,7 @@ operators:
     embed:
       vocab_size: 500
       embed_dim: 8
+      pooling: mean
   - name: hist_hold_stocks_parse
     op_type: StringParser
     inputs:
@@ -747,6 +760,7 @@ operators:
     embed:
       vocab_size: 500
       embed_dim: 8
+      pooling: mean
   - name: invest_style_parse
     op_type: StringParser
     inputs:
@@ -771,6 +785,7 @@ operators:
     embed:
       vocab_size: 100
       embed_dim: 8
+      pooling: mean
   - name: theme_interest_parse
     op_type: StringParser
     inputs:
@@ -795,6 +810,7 @@ operators:
     embed:
       vocab_size: 100
       embed_dim: 8
+      pooling: mean
   - name: industry_interest_parse
     op_type: StringParser
     inputs:
@@ -819,6 +835,7 @@ operators:
     embed:
       vocab_size: 100
       embed_dim: 8
+      pooling: mean
   - name: fund_favorites_parse
     op_type: StringParser
     inputs:
@@ -843,6 +860,7 @@ operators:
     embed:
       vocab_size: 100
       embed_dim: 8
+      pooling: mean
   - name: recent_stocks_parse
     op_type: StringParser
     inputs:
@@ -867,6 +885,7 @@ operators:
     embed:
       vocab_size: 500
       embed_dim: 8
+      pooling: mean
   - name: hist_items_parse
     op_type: StringParser
     inputs:
@@ -901,6 +920,7 @@ operators:
     embed:
       vocab_size: 2000
       embed_dim: 8
+      pooling: mean
   # ── Cross Features ──
   - name: user_author_concat
     op_type: StringConcat

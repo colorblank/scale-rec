@@ -11,10 +11,9 @@ from ..layers.towers import Activation
 class LogisticRegression(nn.Module):
     """LR baseline: Embedding + Linear, no feature interaction."""
 
-    def __init__(self, features):
-        """Build LR: FeatureEmbeddings + Mlp([], 1, NONE)."""
+    def __init__(self, features, pooling_map=None):
         super().__init__()
-        self.embeddings = FeatureEmbeddings(features)
+        self.embeddings = FeatureEmbeddings(features, pooling_map)
         self.mlp = Mlp(self.embeddings.total_dim, [], 1, Activation.NONE)
 
     def forward(self, x_inputs):

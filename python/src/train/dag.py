@@ -228,6 +228,10 @@ class FeatureDag:
     def feature_tuples(self) -> list[tuple[str, int, int]]:
         return [(name, emb.vocab_size, emb.embed_dim) for name, emb in self.embeddable_features()]
 
+    def feature_pooling(self) -> dict[str, str]:
+        """返回 {feature_name: pooling_strategy} 映射。"""
+        return {name: emb.pooling for name, emb in self.embeddable_features()}
+
     def execute_batch(self, columns: dict[str, list]) -> dict[str, list]:
         """Execute DAG on columnar batch data. Each value in `columns` is a list of N elements.
 
@@ -275,12 +279,9 @@ class FeatureDag:
         return context
 
     def preprocess_batch(self, rows: list[dict]) -> dict[str, torch.Tensor]:
-        """Execute DAG on each row and stack embeddable features into tensors.
-
-        Uses columnar execute_batch() for performance when possible.
-        Handles both scalar (int) and single-element list ([int]) feature values.
+        """Execute DAG and build feature tensors. List-valued features with
+        pooling!=flatten are stacked as 2D (batch, seq_len) tensors.
         """
-        # Build columnar input from rows
         columns: dict[str, list] = {}
         for row in rows:
             for k, v in row.items():
@@ -293,7 +294,10 @@ class FeatureDag:
 
         result = self.execute_batch(columns)
 
-        embed_names = [name for name, _ in self.embeddable_features()]
+        # Build pooling lookup from embed configs
+        embed_infos = {name: emb for name, emb in self.embeddable_features()}
+        embed_names = list(embed_infos)
+
         feature_lists: dict[str, list] = {name: [] for name in embed_names}
         for i in range(len(rows)):
             for name in embed_names:
@@ -302,7 +306,8 @@ class FeatureDag:
                     val = col[i]
                 else:
                     val = 0
-                if isinstance(val, list):
+                pooling = embed_infos[name].pooling
+                if pooling == "flatten" and isinstance(val, list):
                     val = val[0] if val else 0
                 feature_lists[name].append(val)
 
@@ -310,7 +315,17 @@ class FeatureDag:
             for _ in range(len(rows)):
                 self.tracer.end_sample()
 
-        return {name: torch.tensor(vals, dtype=torch.long) for name, vals in feature_lists.items()}
+        tensors: dict[str, torch.Tensor] = {}
+        for name, vals in feature_lists.items():
+            pooling = embed_infos[name].pooling
+            if pooling != "flatten" and vals and isinstance(vals[0], list):
+                # Pad all rows to same length
+                max_len = max(len(v) for v in vals)
+                padded = [v + [0] * (max_len - len(v)) for v in vals]
+                tensors[name] = torch.tensor(padded, dtype=torch.long)
+            else:
+                tensors[name] = torch.tensor(vals, dtype=torch.long)
+        return tensors
 
     def execute(self, raw_inputs: dict[str, FeatureValue], sample_id: int = 0) -> FeatureResult:
         context: dict[str, FeatureValue] = {}

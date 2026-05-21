@@ -22,11 +22,24 @@ pub enum DType {
     List { dtype: Box<DType>, length: usize },
 }
 
-/// 嵌入层配置：词表大小和嵌入维度。
+/// 变长特征池化策略。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum PoolingStrategy {
+    #[default]
+    Flatten,
+    Mean,
+    Sum,
+    Max,
+}
+
+/// 嵌入层配置：词表大小、嵌入维度、池化策略。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbedConfig {
     pub vocab_size: usize,
     pub embed_dim: usize,
+    #[serde(default)]
+    pub pooling: PoolingStrategy,
 }
 
 /// 原始输入源定义。`embed` 已弃用，全部 embedding 由算子输出配置。

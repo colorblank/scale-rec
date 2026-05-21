@@ -100,10 +100,10 @@ def main() -> None:
         p = mc.params
         td = p.get("token_dim", 64)
         nt = p.get("num_tokens", 8)
-        tokenizer = FeatureTokenizer(features, td, nt)
+        tokenizer = FeatureTokenizer(features, td, nt, pooling_map=dag.feature_pooling())
         logger.info("tokenizer: %d features → %d tokens × %dd", len(features), nt, td)
 
-    model = mc.build(features, tokenizer=tokenizer)
+    model = mc.build(features, tokenizer=tokenizer, pooling_map=dag.feature_pooling())
 
     # UniMixer: 包装 state_dict 对齐 Rust vb.pp("unimixer") 命名
     if mc.type == "unimixer":

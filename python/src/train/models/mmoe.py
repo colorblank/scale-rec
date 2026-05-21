@@ -21,10 +21,11 @@ class MMoE(nn.Module):
         expert_hidden_dims,
         expert_output_dim,
         task_configs,
+        pooling_map=None,
     ):
         """Build MMoE: embeddings + optional shared_bottom + N experts + K gates + K towers."""
         super().__init__()
-        self.embeddings = FeatureEmbeddings(features)
+        self.embeddings = FeatureEmbeddings(features, pooling_map)
         if shared_bottom_dims:
             self.shared_bottom = Mlp(
                 self.embeddings.total_dim,

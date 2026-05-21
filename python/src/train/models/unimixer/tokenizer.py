@@ -6,13 +6,13 @@ import torch.nn as nn
 
 
 class FeatureTokenizer(nn.Module):
-    """Grouped Conv1d projection: sparse features -> unified token sequence."""
+    """Grouped Conv1d projection: sparse features → pooled → unified token sequence."""
 
-    def __init__(self, features, token_dim, num_tokens):
-        """Build tokenizer with grouped Conv1d (groups=num_tokens)."""
+    def __init__(self, features, token_dim, num_tokens, pooling_map=None):
         super().__init__()
         self.ordered_names = []
         self.feature_to_idx = {}
+        self.pooling_map = pooling_map or {}
         total = 0
         for i, (name, vocab_size, embed_dim) in enumerate(features):
             self.feature_to_idx[name] = i
@@ -30,9 +30,25 @@ class FeatureTokenizer(nn.Module):
             total, num_tokens * token_dim, kernel_size=1, groups=num_tokens
         )
 
+    def _pool(self, emb, name):
+        p = self.pooling_map.get(name, "flatten")
+        if p == "mean":
+            return emb.mean(dim=1)
+        elif p == "sum":
+            return emb.sum(dim=1)
+        elif p == "max":
+            return emb.max(dim=1).values
+        return emb
+
     def forward(self, x_inputs):
-        """Forward: embed -> concat -> grouped Conv1d -> [batch, num_tokens, token_dim]."""
-        embeds = [getattr(self, f"emb_{n}")(x_inputs[n]) for n in self.ordered_names]
+        """Embed → pool(if 2D) → concat → Conv1d → [batch, num_tokens, token_dim]."""
+        embeds = []
+        for n in self.ordered_names:
+            idx = x_inputs[n]
+            emb = getattr(self, f"emb_{n}")(idx)
+            if idx.dim() == 2:
+                emb = self._pool(emb, n)
+            embeds.append(emb)
         concat = torch.cat(embeds, dim=1)
         conv_in = concat.unsqueeze(2)
         conv_out = self.token_projections(conv_in)

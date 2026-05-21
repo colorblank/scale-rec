@@ -36,6 +36,7 @@ class DType:
 class EmbedConfig:
     vocab_size: int
     embed_dim: int
+    pooling: str = "flatten"  # flatten | mean | sum | max
 
 
 @dataclass
