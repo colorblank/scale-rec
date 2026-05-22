@@ -34,13 +34,15 @@ pub enum PoolingStrategy {
     Max,
 }
 
-/// 嵌入层配置：词表大小、嵌入维度、池化策略。
+/// 嵌入层配置：词表大小、嵌入维度、池化策略、序列长度。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbedConfig {
     pub vocab_size: usize,
     pub embed_dim: usize,
     #[serde(default)]
     pub pooling: PoolingStrategy,
+    #[serde(default)]
+    pub seq_len: Option<usize>,
 }
 
 /// 原始输入源定义。`embed` 已弃用，全部 embedding 由算子输出配置。

@@ -226,7 +226,13 @@ class FeatureDag:
         return result
 
     def feature_tuples(self) -> list[tuple[str, int, int]]:
-        return [(name, emb.vocab_size, emb.embed_dim) for name, emb in self.embeddable_features()]
+        result = []
+        for name, emb in self.embeddable_features():
+            dim = emb.embed_dim
+            if emb.pooling == "flatten" and emb.seq_len:
+                dim *= emb.seq_len
+            result.append((name, emb.vocab_size, dim))
+        return result
 
     def feature_pooling(self) -> dict[str, str]:
         """返回 {feature_name: pooling_strategy} 映射。"""
