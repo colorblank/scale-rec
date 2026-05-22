@@ -191,10 +191,10 @@ operators:
     outputs:
       - item_id_idx
     params:
-      vocab_size: 5000
+      vocab_size: 50000
       num_hashes: 1
     embed:
-      vocab_size: 5000
+      vocab_size: 50000
       embed_dim: 8
   - name: user_id_hash
     op_type: FeatureHash
@@ -203,10 +203,10 @@ operators:
     outputs:
       - user_id_idx
     params:
-      vocab_size: 5000
+      vocab_size: 50000
       num_hashes: 1
     embed:
-      vocab_size: 5000
+      vocab_size: 50000
       embed_dim: 8
   - name: rec_algo_hash
     op_type: FeatureHash
@@ -275,10 +275,10 @@ operators:
     outputs:
       - city_idx
     params:
-      vocab_size: 50
+      vocab_size: 500
       num_hashes: 1
     embed:
-      vocab_size: 50
+      vocab_size: 500
       embed_dim: 8
   - name: investment_horizon_hash
     op_type: FeatureHash
@@ -299,10 +299,10 @@ operators:
     outputs:
       - last_login_date_idx
     params:
-      vocab_size: 500
+      vocab_size: 1000
       num_hashes: 1
     embed:
-      vocab_size: 500
+      vocab_size: 1000
       embed_dim: 8
 
   - name: author_id_hash
@@ -312,10 +312,10 @@ operators:
     outputs:
       - author_id_idx
     params:
-      vocab_size: 1000
+      vocab_size: 10000
       num_hashes: 1
     embed:
-      vocab_size: 1000
+      vocab_size: 10000
       embed_dim: 8
   - name: author_hash
     op_type: FeatureHash
@@ -324,23 +324,35 @@ operators:
     outputs:
       - author_idx
     params:
-      vocab_size: 1000
+      vocab_size: 10000
       num_hashes: 1
     embed:
-      vocab_size: 1000
+      vocab_size: 10000
       embed_dim: 8
   # ── 新增简单哈希 ──
-  - name: wordnum_hash
-    op_type: FeatureHash
+  - name: wordnum_bucket
+    op_type: Bucketing
     inputs:
       - wordnum
     outputs:
+      - wordnum_bucket
+    params:
+      boundaries:
+        - 100
+        - 300
+        - 600
+        - 1000
+  - name: wordnum_hash
+    op_type: FeatureHash
+    inputs:
+      - wordnum_bucket
+    outputs:
       - wordnum_idx
     params:
-      vocab_size: 500
+      vocab_size: 10
       num_hashes: 1
     embed:
-      vocab_size: 500
+      vocab_size: 10
       embed_dim: 8
   - name: has_picture_hash
     op_type: FeatureHash
@@ -542,10 +554,10 @@ operators:
     outputs:
       - entity_words_ids
     params:
-      vocab_size: 200
+      vocab_size: 500
       num_hashes: 1
     embed:
-      vocab_size: 200
+      vocab_size: 500
       embed_dim: 8
       pooling: mean
   - name: entities_v3_parse
@@ -565,10 +577,10 @@ operators:
     outputs:
       - entities_v3_ids
     params:
-      vocab_size: 1000
+      vocab_size: 2000
       num_hashes: 1
     embed:
-      vocab_size: 1000
+      vocab_size: 2000
       embed_dim: 8
       pooling: mean
   - name: emb_id_parse
@@ -588,10 +600,10 @@ operators:
     outputs:
       - emb_id_ids
     params:
-      vocab_size: 1000
+      vocab_size: 2000
       num_hashes: 1
     embed:
-      vocab_size: 1000
+      vocab_size: 2000
       embed_dim: 8
       pooling: mean
   - name: stock_list_parse
@@ -620,10 +632,10 @@ operators:
     outputs:
       - stock_code_ids
     params:
-      vocab_size: 500
+      vocab_size: 1000
       num_hashes: 1
     embed:
-      vocab_size: 500
+      vocab_size: 1000
       embed_dim: 8
       pooling: mean
   # ── StringParser 链 (User) ──
@@ -637,7 +649,7 @@ operators:
       sep1: "|"
       sep2: "#"
       key_index: 0
-      pad_len: 5
+      pad_len: 8
       pad_val: ""
   - name: fav_stock_code_extract
     op_type: ListStringParser
@@ -655,10 +667,10 @@ operators:
     outputs:
       - fav_stock_ids
     params:
-      vocab_size: 500
+      vocab_size: 1000
       num_hashes: 1
     embed:
-      vocab_size: 500
+      vocab_size: 1000
       embed_dim: 8
       pooling: mean
   - name: interest_kw_parse
@@ -671,7 +683,7 @@ operators:
       sep1: "|"
       sep2: "#"
       key_index: 0
-      pad_len: 10
+      pad_len: 8
       pad_val: ""
   - name: interest_kw_hash
     op_type: FeatureHash
@@ -680,10 +692,10 @@ operators:
     outputs:
       - interest_kw_ids
     params:
-      vocab_size: 500
+      vocab_size: 1000
       num_hashes: 1
     embed:
-      vocab_size: 500
+      vocab_size: 1000
       embed_dim: 8
       pooling: mean
   - name: follow_authors_parse
@@ -696,7 +708,7 @@ operators:
       sep1: "|"
       sep2: "#"
       key_index: 0
-      pad_len: 10
+      pad_len: 5
       pad_val: ""
   - name: follow_authors_hash
     op_type: FeatureHash
@@ -705,10 +717,10 @@ operators:
     outputs:
       - follow_authors_ids
     params:
-      vocab_size: 500
+      vocab_size: 1000
       num_hashes: 1
     embed:
-      vocab_size: 500
+      vocab_size: 1000
       embed_dim: 8
       pooling: mean
   - name: hold_stocks_parse
@@ -730,10 +742,10 @@ operators:
     outputs:
       - hold_stocks_ids
     params:
-      vocab_size: 500
+      vocab_size: 1000
       num_hashes: 1
     embed:
-      vocab_size: 500
+      vocab_size: 1000
       embed_dim: 8
       pooling: mean
   - name: hist_hold_stocks_parse
@@ -755,10 +767,10 @@ operators:
     outputs:
       - hist_hold_stocks_ids
     params:
-      vocab_size: 500
+      vocab_size: 1000
       num_hashes: 1
     embed:
-      vocab_size: 500
+      vocab_size: 1000
       embed_dim: 8
       pooling: mean
   - name: invest_style_parse
@@ -771,7 +783,7 @@ operators:
       sep1: "|"
       sep2: "#"
       key_index: 0
-      pad_len: 5
+      pad_len: 3
       pad_val: ""
   - name: invest_style_hash
     op_type: FeatureHash
@@ -805,10 +817,10 @@ operators:
     outputs:
       - theme_interest_ids
     params:
-      vocab_size: 100
+      vocab_size: 200
       num_hashes: 1
     embed:
-      vocab_size: 100
+      vocab_size: 200
       embed_dim: 8
       pooling: mean
   - name: industry_interest_parse
@@ -830,10 +842,10 @@ operators:
     outputs:
       - industry_interest_ids
     params:
-      vocab_size: 100
+      vocab_size: 200
       num_hashes: 1
     embed:
-      vocab_size: 100
+      vocab_size: 200
       embed_dim: 8
       pooling: mean
   - name: fund_favorites_parse
@@ -871,7 +883,7 @@ operators:
       sep1: "|"
       sep2: ","
       key_index: 0
-      pad_len: 10
+      pad_len: 8
       pad_val: ""
   - name: recent_stocks_hash
     op_type: FeatureHash
@@ -880,10 +892,10 @@ operators:
     outputs:
       - recent_stocks_ids
     params:
-      vocab_size: 500
+      vocab_size: 1000
       num_hashes: 1
     embed:
-      vocab_size: 500
+      vocab_size: 1000
       embed_dim: 8
       pooling: mean
   - name: hist_items_parse
@@ -896,7 +908,7 @@ operators:
       sep1: "|"
       sep2: "#"
       key_index: 0
-      pad_len: 10
+      pad_len: 5
       pad_val: ""
   - name: hist_semantic_flat
     op_type: FlatSplit
@@ -906,7 +918,7 @@ operators:
       - hist_semantic_ids
     params:
       sep: ","
-      max_len: 40
+      max_len: 20
       pad_val: ""
   - name: hist_semantic_hash
     op_type: FeatureHash
@@ -915,10 +927,10 @@ operators:
     outputs:
       - hist_semantic_mapped
     params:
-      vocab_size: 2000
+      vocab_size: 5000
       num_hashes: 1
     embed:
-      vocab_size: 2000
+      vocab_size: 5000
       embed_dim: 8
       pooling: mean
   # ── Cross Features ──
@@ -938,10 +950,10 @@ operators:
     outputs:
       - user_author_hash_idx
     params:
-      vocab_size: 5000
+      vocab_size: 10000
       num_hashes: 1
     embed:
-      vocab_size: 5000
+      vocab_size: 10000
       embed_dim: 8
   - name: type_source_concat
     op_type: StringConcat
