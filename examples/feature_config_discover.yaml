@@ -330,18 +330,26 @@ operators:
       vocab_size: 10000
       embed_dim: 8
   # ── 新增简单哈希 ──
+  - name: wordnum_log
+    op_type: ExpressionOp
+    inputs:
+      - wordnum
+    outputs:
+      - wordnum_log
+    params:
+      script: log(v0 + 1)
   - name: wordnum_bucket
     op_type: Bucketing
     inputs:
-      - wordnum
+      - wordnum_log
     outputs:
       - wordnum_bucket
     params:
       boundaries:
-        - 100
-        - 300
-        - 600
-        - 1000
+        - 4.0
+        - 5.0
+        - 6.0
+        - 7.0
   - name: wordnum_hash
     op_type: FeatureHash
     inputs:
