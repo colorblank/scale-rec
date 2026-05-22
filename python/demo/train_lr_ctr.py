@@ -1,4 +1,5 @@
 """纯 LR 单任务 CTR 预估训练脚本。"""
+
 from __future__ import annotations
 
 import argparse
@@ -26,7 +27,9 @@ logger = logging.getLogger("train")
 def main():
     p = argparse.ArgumentParser(description="纯 LR 单任务 CTR 训练")
     p.add_argument("--data", required=True)
-    p.add_argument("--feature-config", default=str(_PROJ_ROOT / "examples" / "feature_config_discover.yaml"))
+    p.add_argument(
+        "--feature-config", default=str(_PROJ_ROOT / "examples" / "feature_config_discover.yaml")
+    )
     p.add_argument("--model-config", default=str(DEMO_DIR / "model_lr_ctr.yaml"))
     p.add_argument("--epochs", type=int, default=10)
     p.add_argument("--batch-size", type=int, default=128)
@@ -40,12 +43,21 @@ def main():
     p.add_argument("--log-level", default="INFO")
     args = p.parse_args()
 
-    logging.basicConfig(level=getattr(logging, args.log_level),
-                        format="%(asctime)s [%(levelname)-5s] %(name)s: %(message)s", datefmt="%H:%M:%S")
+    logging.basicConfig(
+        level=getattr(logging, args.log_level),
+        format="%(asctime)s [%(levelname)-5s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
 
-    device = torch.device(args.device if args.device != "auto"
-                          else "cuda" if torch.cuda.is_available()
-                          else "mps" if torch.backends.mps.is_available() else "cpu")
+    device = torch.device(
+        args.device
+        if args.device != "auto"
+        else "cuda"
+        if torch.cuda.is_available()
+        else "mps"
+        if torch.backends.mps.is_available()
+        else "cpu"
+    )
     logger.info("device: %s", device)
 
     fc = FlowConfig.from_yaml(args.feature_config)
@@ -54,20 +66,37 @@ def main():
     logger.info("%d features, %d ops", len(features), len(fc.operators))
 
     mc = ModelConfig.from_yaml(args.model_config)
-    model = mc.build(features, pooling_map=dag.feature_pooling(),
-                     total_dim=dag.feature_total_dim()).to(device)
+    model = mc.build(
+        features, pooling_map=dag.feature_pooling(), total_dim=dag.feature_total_dim()
+    ).to(device)
     spec = get_output_spec(mc.type, model)
-    logger.info("LR params=%s  task=%s", f"{sum(p.numel() for p in model.parameters()):,}", spec["task_names"])
+    logger.info(
+        "LR params=%s  task=%s",
+        f"{sum(p.numel() for p in model.parameters()):,}",
+        spec["task_names"],
+    )
 
     cfg = TrainConfig(
-        epochs=args.epochs, batch_size=args.batch_size, lr=args.lr,
-        eval_samples=args.eval_samples, eval_interval=args.eval_interval,
-        log_interval=args.log_interval, warmup_steps=args.warmup_steps,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        eval_samples=args.eval_samples,
+        eval_interval=args.eval_interval,
+        log_interval=args.log_interval,
+        warmup_steps=args.warmup_steps,
         export_path=str(DEMO_DIR / "temp" / "lr_ctr.safetensors"),
     )
-    trainer = Trainer(model, dag, spec["task_names"], spec["label_col_map"],
-                      device, cfg, data_path=args.data, flow_config=fc,
-                      has_header=not args.no_header)
+    trainer = Trainer(
+        model,
+        dag,
+        spec["task_names"],
+        spec["label_col_map"],
+        device,
+        cfg,
+        data_path=args.data,
+        flow_config=fc,
+        has_header=not args.no_header,
+    )
     best = trainer.fit()
     logger.info("best AUC=%.4f", best)
 

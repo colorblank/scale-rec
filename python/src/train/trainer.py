@@ -83,7 +83,9 @@ class _LRScheduler:
             lr = self.base_lr * step / max(self.warmup, 1)
         else:
             progress = min((step - self.warmup) / max(self.total - self.warmup, 1), 1.0)
-            lr = self.min_lr + 0.5 * (self.base_lr - self.min_lr) * (1 + math.cos(math.pi * progress))
+            lr = self.min_lr + 0.5 * (self.base_lr - self.min_lr) * (
+                1 + math.cos(math.pi * progress)
+            )
         for opt in self.optimizers:
             for pg in opt.param_groups:
                 pg["lr"] = lr
@@ -171,10 +173,12 @@ class Trainer:
 
         dense_opt = torch.optim.AdamW(
             dense_params + list(self.loss_fn.parameters()),
-            lr=self.cfg.lr, weight_decay=self.cfg.weight_decay,
+            lr=self.cfg.lr,
+            weight_decay=self.cfg.weight_decay,
         )
         emb_opt = torch.optim.AdamW(
-            emb_params, lr=self.cfg.lr,
+            emb_params,
+            lr=self.cfg.lr,
             weight_decay=self.cfg.embedding_weight_decay,
         )
         self.optimizers = [emb_opt, dense_opt]
@@ -182,19 +186,33 @@ class Trainer:
         # Step-based scheduler: estimate total steps from first epoch
         n_eval = self._n_eval_batches
         reader = stream_file_batches(
-            self._data_path, self._flow_config, self.cfg.batch_size,
-            has_header=self._has_header, sep=self._sep, null_markers=self._null_markers,
+            self._data_path,
+            self._flow_config,
+            self.cfg.batch_size,
+            has_header=self._has_header,
+            sep=self._sep,
+            null_markers=self._null_markers,
         )
         n_total = sum(1 for _ in reader)
         batches_per_epoch = max(n_total - n_eval, 1)
         total_steps = self.cfg.epochs * batches_per_epoch
         warmup = min(self.cfg.warmup_steps, max(1, total_steps // 10))
         self.lr_scheduler = _LRScheduler(
-            [emb_opt, dense_opt], self.cfg.lr, warmup, total_steps, self.cfg.min_lr_ratio,
+            [emb_opt, dense_opt],
+            self.cfg.lr,
+            warmup,
+            total_steps,
+            self.cfg.min_lr_ratio,
         )
-        logger.info("optimizer: AdamW(%d emb wd=%.0e) + AdamW(%d dense wd=%.0e), warmup=%d/%d steps",
-                     len(emb_params), self.cfg.embedding_weight_decay, len(dense_params),
-                     self.cfg.weight_decay, warmup, total_steps)
+        logger.info(
+            "optimizer: AdamW(%d emb wd=%.0e) + AdamW(%d dense wd=%.0e), warmup=%d/%d steps",
+            len(emb_params),
+            self.cfg.embedding_weight_decay,
+            len(dense_params),
+            self.cfg.weight_decay,
+            warmup,
+            total_steps,
+        )
 
         if self.cfg.ema_enabled:
             self.ema = _EMA(self.model, self.cfg.ema_decay)
