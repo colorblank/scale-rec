@@ -324,11 +324,14 @@ class Trainer:
 
             if n_batches % self.cfg.log_interval == 0:
                 task_losses = self.loss_fn.last_losses()
+                pos_rates = self.loss_fn.last_pos_rates()
                 parts = [
                     f"batch {n_batches:4d}  avg_loss={total_loss / n_batches:.6f}  cur_loss={loss.item():.6f}",
                     f"lr={self.lr_scheduler.current_lr() if self.lr_scheduler else self.cfg.lr:.2e}",
                 ]
-                parts += [f"{t}={task_losses[t]:.4f}" for t in sorted(task_losses)]
+                for t in sorted(task_losses):
+                    pr = pos_rates.get(t, 0)
+                    parts.append(f"{t}={task_losses[t]:.4f}(pr={pr:.2f})")
                 logger.info("  " + "  ".join(parts))
 
             if n_batches % self.cfg.eval_interval == 0:
