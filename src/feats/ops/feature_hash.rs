@@ -53,61 +53,98 @@ impl CustomOp for FeatureHash {
     }
 
     fn process(&self, inputs: &[Fv]) -> Result<Fv, String> {
-        let key = build_key(inputs, &self.separator);
-        // 读锁查缓存
-        {
-            let cache = self.cache.read().unwrap();
-            if let Some(cached) = cache.get(&key) {
-                self.hits.fetch_add(1, Ordering::Relaxed);
-                return Ok(cached.clone());
+        // 检测 list 输入 → 逐元素 hash
+        for v in inputs {
+            match v {
+                Fv::StrList(list) => {
+                    let indices: Vec<i32> = list
+                        .iter()
+                        .map(|s| (djb2_seeded(s, 0) % self.vocab_size) as i32)
+                        .collect();
+                    return Ok(Fv::IntList(indices));
+                }
+                Fv::IntList(list) => {
+                    let indices: Vec<i32> = list
+                        .iter()
+                        .map(|i| (djb2_seeded(&i.to_string(), 0) % self.vocab_size) as i32)
+                        .collect();
+                    return Ok(Fv::IntList(indices));
+                }
+                _ => {}
             }
         }
-        // 未命中：计算并写入缓存
-        let result = hash_multi(&key, self.num_hashes, self.vocab_size);
-        {
-            let mut cache = self.cache.write().unwrap();
-            cache.insert(key, result.clone());
-        }
-        self.misses.fetch_add(1, Ordering::Relaxed);
-        Ok(result)
+        let key = build_key(inputs, &self.separator);
+        self.cached_or_compute(&key)
     }
 
     fn process_batch(&self, inputs: &[&[Fv]], n_rows: usize) -> Result<Vec<Fv>, String> {
         if inputs.is_empty() || n_rows == 0 {
             return Ok(vec![]);
         }
+        // 检测 list 列 → 逐元素 hash → IntList 列
+        let has_list_col = inputs.iter().any(|col| {
+            col.iter()
+                .take(3)
+                .any(|v| matches!(v, Fv::StrList(_) | Fv::IntList(_)))
+        });
+
         let mut results: Vec<Fv> = Vec::with_capacity(n_rows);
-        // 读锁：先尽可能从缓存中取
-        {
-            let cache = self.cache.read().unwrap();
+        if has_list_col {
             for row in 0..n_rows {
-                let key = build_row_key(inputs, row, &self.separator);
-                if let Some(cached) = cache.get(&key) {
-                    self.hits.fetch_add(1, Ordering::Relaxed);
-                    results.push(cached.clone());
-                } else {
-                    results.push(Fv::Int(-1)); // 哨兵标记需要计算
+                let mut elems: Vec<String> = Vec::new();
+                for col in inputs.iter() {
+                    if row < col.len() {
+                        match &col[row] {
+                            Fv::StrList(list) => elems.extend(list.iter().cloned()),
+                            Fv::IntList(list) => elems.extend(list.iter().map(|i| i.to_string())),
+                            other => {
+                                elems.push(other.to_string());
+                            }
+                        }
+                    }
                 }
+                let indices: Vec<i32> = elems
+                    .iter()
+                    .map(|s| (djb2_seeded(s, 0) % self.vocab_size) as i32)
+                    .collect();
+                results.push(Fv::IntList(indices));
             }
+            return Ok(results);
         }
-        // 写锁：对未命中的 key 批量计算并回填
+        // 标准路径：join → hash
         let mut cache = self.cache.write().unwrap();
         for row in 0..n_rows {
-            if results[row] == Fv::Int(-1) {
-                let key = build_row_key(inputs, row, &self.separator);
-                // 二次检查（可能在等写锁时被其他线程填充）
-                if let Some(cached) = cache.get(&key) {
-                    self.hits.fetch_add(1, Ordering::Relaxed);
-                    results[row] = cached.clone();
-                } else {
-                    let val = hash_multi(&key, self.num_hashes, self.vocab_size);
-                    cache.insert(key, val.clone());
-                    self.misses.fetch_add(1, Ordering::Relaxed);
-                    results[row] = val;
-                }
+            let key = build_row_key(inputs, row, &self.separator);
+            if let Some(cached) = cache.get(&key) {
+                self.hits.fetch_add(1, Ordering::Relaxed);
+                results.push(cached.clone());
+            } else {
+                let val = hash_multi(&key, self.num_hashes, self.vocab_size);
+                cache.insert(key, val.clone());
+                self.misses.fetch_add(1, Ordering::Relaxed);
+                results.push(val);
             }
         }
         Ok(results)
+    }
+}
+
+impl FeatureHash {
+    fn cached_or_compute(&self, key: &str) -> Result<Fv, String> {
+        {
+            let cache = self.cache.read().unwrap();
+            if let Some(cached) = cache.get(key) {
+                self.hits.fetch_add(1, Ordering::Relaxed);
+                return Ok(cached.clone());
+            }
+        }
+        let result = hash_multi(key, self.num_hashes, self.vocab_size);
+        {
+            let mut cache = self.cache.write().unwrap();
+            cache.insert(key.to_string(), result.clone());
+        }
+        self.misses.fetch_add(1, Ordering::Relaxed);
+        Ok(result)
     }
 }
 
