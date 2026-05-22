@@ -101,7 +101,8 @@ class MultiTaskLoss(nn.Module):
                 pw = self.pos_weights.get(task)
                 if pw is not None:
                     raw_loss = F.binary_cross_entropy_with_logits(
-                        logits[valid], y,
+                        logits[valid],
+                        y,
                         pos_weight=torch.tensor(pw, device=logits.device),
                     )
                 else:
