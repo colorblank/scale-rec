@@ -323,13 +323,13 @@ class Trainer:
                         self._tb_writer.add_histogram(f"grad/{name}", p.grad, self._global_step)
 
             if n_batches % self.cfg.log_interval == 0:
-                logger.info(
-                    "  batch %4d  avg_loss=%.6f  cur_loss=%.6f  lr=%.2e",
-                    n_batches,
-                    total_loss / n_batches,
-                    loss.item(),
-                    self.lr_scheduler.current_lr() if self.lr_scheduler else self.cfg.lr,
-                )
+                task_losses = self.loss_fn.last_losses()
+                parts = [
+                    f"batch {n_batches:4d}  avg_loss={total_loss / n_batches:.6f}  cur_loss={loss.item():.6f}",
+                    f"lr={self.lr_scheduler.current_lr() if self.lr_scheduler else self.cfg.lr:.2e}",
+                ]
+                parts += [f"{t}={task_losses[t]:.4f}" for t in sorted(task_losses)]
+                logger.info("  " + "  ".join(parts))
 
             if n_batches % self.cfg.eval_interval == 0:
                 self._eval_during_training(n_batches, total_loss)

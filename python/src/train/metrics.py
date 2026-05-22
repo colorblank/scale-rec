@@ -77,6 +77,7 @@ class MultiTaskLoss(nn.Module):
         batch_labels: dict[str, list[Any]],
     ) -> torch.Tensor | None:
         total: torch.Tensor | None = None
+        self._last_raw_losses: dict[str, float] = {}
         for task, logits in outputs.items():
             if task.startswith("ct"):
                 continue
@@ -106,7 +107,8 @@ class MultiTaskLoss(nn.Module):
                 else:
                     raw_loss = F.binary_cross_entropy_with_logits(logits[valid], y)
 
-            # 加权
+            self._last_raw_losses[task] = float(raw_loss.detach().item())
+
             weight = self.task_weights.get(task, 1.0)
             if self.mode == "uncertainty":
                 log_var = self.log_vars.get(task)
@@ -122,10 +124,17 @@ class MultiTaskLoss(nn.Module):
             total = loss if total is None else total + loss
         return total
 
+    def last_losses(self) -> dict[str, float]:
+        """返回最近一次 forward 各任务的原始 loss 值，用于 debug。"""
+        return getattr(self, "_last_raw_losses", {})
+
     def task_weights_info(self) -> dict[str, float]:
         """返回各任务当前有效权重。"""
         if self.mode == "uncertainty":
-            return {t: float(torch.exp(-torch.clamp(self.log_vars[t], -3.0, 3.0)).item()) for t in self.log_vars}
+            return {
+                t: float(torch.exp(-torch.clamp(self.log_vars[t], -3.0, 3.0)).item())
+                for t in self.log_vars
+            }
         return {t: self.task_weights.get(t, 1.0) for t in self.task_names}
 
 
