@@ -34,9 +34,10 @@ class ESMM(nn.Module):
         stock_hidden_dims,
         stay_hidden_dims,
         pooling_map=None,
+        total_dim=None,
     ):
         super().__init__()
-        self.embeddings = FeatureEmbeddings(features, pooling_map)
+        self.embeddings = FeatureEmbeddings(features, pooling_map, total_dim=total_dim)
         if shared_bottom_dims:
             self.shared_bottom = Mlp(
                 self.embeddings.total_dim,

@@ -95,9 +95,11 @@ class ModelConfig:
         params = {k: v for k, v in raw.items() if k != "type"}
         return cls(type=mtype, params=params)
 
-    def build(self, features, tokenizer=None, pooling_map=None):
+    def build(self, features, tokenizer=None, pooling_map=None, total_dim=None):
         if pooling_map:
             self.params["_pooling_map"] = pooling_map
+        if total_dim is not None:
+            self.params["_total_dim"] = total_dim
         return build_model(self.type, features, tokenizer=tokenizer, **self.params)
 
 
@@ -109,26 +111,22 @@ def _spec_pred(model=None):
 
 
 def _build_lr(features, tokenizer=None, **params):
-    return LogisticRegression(features, pooling_map=params.get("_pooling_map"))
+    return LogisticRegression(features, pooling_map=params.get("_pooling_map"),
+                              total_dim=params.get("_total_dim"))
 
 
 def _build_deepfm(features, tokenizer=None, **params):
-    pm = params.get("_pooling_map")
-    return DeepFM(
-        features, params.get("fm_k", 16), params.get("deep_hidden_dims", []), pooling_map=pm
-    )
+    return DeepFM(features, params.get("fm_k", 16), params.get("deep_hidden_dims", []),
+                  pooling_map=params.get("_pooling_map"), total_dim=params.get("_total_dim"))
 
 
 def _build_mmoe(features, tokenizer=None, **params):
     tcs = [(t.name, t.tower_dims) for t in _parse_mmoe_task_configs(params)]
     return MMoE(
-        features,
-        params.get("shared_bottom_dims", []),
-        params.get("num_experts", 4),
-        params.get("expert_hidden_dims", []),
-        params.get("expert_output_dim", 32),
-        tcs,
-        pooling_map=params.get("_pooling_map"),
+        features, params.get("shared_bottom_dims", []),
+        params.get("num_experts", 4), params.get("expert_hidden_dims", []),
+        params.get("expert_output_dim", 32), tcs,
+        pooling_map=params.get("_pooling_map"), total_dim=params.get("_total_dim"),
     )
 
 
@@ -141,12 +139,10 @@ def _build_esmm(features, tokenizer=None, **params):
     return ESMM(
         features,
         params.get("shared_bottom_dims", []),
-        params.get("click_hidden_dims", [8]),
-        params.get("cvr_hidden_dims", [8]),
-        params.get("detail_hidden_dims", [8]),
-        params.get("stock_hidden_dims", [8]),
+        params.get("click_hidden_dims", [8]), params.get("cvr_hidden_dims", [8]),
+        params.get("detail_hidden_dims", [8]), params.get("stock_hidden_dims", [8]),
         params.get("stay_hidden_dims", [8]),
-        pooling_map=params.get("_pooling_map"),
+        pooling_map=params.get("_pooling_map"), total_dim=params.get("_total_dim"),
     )
 
 

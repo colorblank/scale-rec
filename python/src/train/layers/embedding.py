@@ -17,19 +17,20 @@ class FeatureEmbeddings(nn.Module):
         self,
         features: list[tuple[str, int, int]],
         pooling_map: dict[str, str] | None = None,
+        total_dim: int | None = None,
     ):
         super().__init__()
         self.ordered_names = []
         self.feature_to_idx = {}
         self.pooling_map = pooling_map or {}
-        total_dim = 0
+        total = 0
         for i, (name, vocab_size, embed_dim) in enumerate(features):
             self.feature_to_idx[name] = i
             self.ordered_names.append(name)
             setattr(self, f"emb_{name}", nn.Embedding(vocab_size, embed_dim))
-            total_dim += embed_dim
+            total += embed_dim
         self.num_features = len(features)
-        self.total_dim = total_dim
+        self.total_dim = total_dim if total_dim is not None else total
 
     def _pool(self, emb: torch.Tensor, name: str) -> torch.Tensor:
         """Pool (batch, seq, dim) → (batch, pooled_dim)."""
