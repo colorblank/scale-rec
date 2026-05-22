@@ -32,9 +32,12 @@ class TrainConfig:
     log_interval: int = 10
     export_path: str = ""
 
-    # ── LR warmup + cosine decay ──
-    warmup_epochs: int = 2
-    min_lr_ratio: float = 0.01  # 最终 lr = lr * min_lr_ratio
+    # ── LR warmup + cosine decay (step-based) ──
+    warmup_steps: int = 200
+    min_lr_ratio: float = 0.01
+
+    # ── Embedding 正则化 (0=禁用, SparseAdam 当前不支持) ──
+    embedding_weight_decay: float = 0
 
     # ── Gradient clipping ──
     grad_max_norm: float = 1.0
@@ -66,35 +69,27 @@ def _collect_batches(batches: Iterator[Batch], max_samples: int) -> list[Batch]:
 
 
 class _LRScheduler:
-    """Warmup → Cosine decay learning rate scheduler (step-wise)."""
+    """Step-based warmup → cosine decay。warmup_steps 内线性升温，之后 cosine 衰减。"""
 
-    def __init__(
-        self,
-        optimizer: torch.optim.Optimizer,
-        base_lr: float,
-        warmup_epochs: int,
-        total_epochs: int,
-        min_lr_ratio: float,
-    ):
-        self.optimizer = optimizer
+    def __init__(self, optimizers, base_lr, warmup_steps, total_steps, min_lr_ratio):
+        self.optimizers = optimizers if isinstance(optimizers, list) else [optimizers]
         self.base_lr = base_lr
-        self.warmup = warmup_epochs
-        self.total = total_epochs
+        self.warmup = warmup_steps
+        self.total = max(total_steps, warmup_steps + 1)
         self.min_lr = base_lr * min_lr_ratio
 
-    def step(self, epoch: int) -> None:
-        if epoch <= self.warmup:
-            lr = self.base_lr * epoch / max(self.warmup, 1)
+    def step(self, step: int) -> None:
+        if step <= self.warmup:
+            lr = self.base_lr * step / max(self.warmup, 1)
         else:
-            progress = (epoch - self.warmup) / max(self.total - self.warmup, 1)
-            lr = self.min_lr + 0.5 * (self.base_lr - self.min_lr) * (
-                1 + math.cos(math.pi * progress)
-            )
-        for pg in self.optimizer.param_groups:
-            pg["lr"] = lr
+            progress = min((step - self.warmup) / max(self.total - self.warmup, 1), 1.0)
+            lr = self.min_lr + 0.5 * (self.base_lr - self.min_lr) * (1 + math.cos(math.pi * progress))
+        for opt in self.optimizers:
+            for pg in opt.param_groups:
+                pg["lr"] = lr
 
     def current_lr(self) -> float:
-        return self.optimizer.param_groups[0]["lr"]
+        return self.optimizers[0].param_groups[0]["lr"]
 
 
 class _EMA:
@@ -166,19 +161,41 @@ class Trainer:
         self._collect_eval()
 
         self.loss_fn = self.loss_fn.to(self.device)
-        opt = torch.optim.AdamW(
-            list(self.model.parameters()) + list(self.loss_fn.parameters()),
-            lr=self.cfg.lr,
-            weight_decay=self.cfg.weight_decay,
+
+        # 参数分组：embedding 用独立 weight_decay, dense 用基础 weight_decay
+        emb_params = []
+        dense_params = []
+        for name, p in self.model.named_parameters():
+            if p.requires_grad:
+                (emb_params if "emb_" in name else dense_params).append(p)
+
+        dense_opt = torch.optim.AdamW(
+            dense_params + list(self.loss_fn.parameters()),
+            lr=self.cfg.lr, weight_decay=self.cfg.weight_decay,
         )
-        self.optimizer = opt
+        emb_opt = torch.optim.AdamW(
+            emb_params, lr=self.cfg.lr,
+            weight_decay=self.cfg.embedding_weight_decay,
+        )
+        self.optimizers = [emb_opt, dense_opt]
+
+        # Step-based scheduler: estimate total steps from first epoch
+        n_eval = self._n_eval_batches
+        reader = stream_file_batches(
+            self._data_path, self._flow_config, self.cfg.batch_size,
+            has_header=self._has_header, sep=self._sep, null_markers=self._null_markers,
+        )
+        n_total = sum(1 for _ in reader)
+        batches_per_epoch = max(n_total - n_eval, 1)
+        total_steps = self.cfg.epochs * batches_per_epoch
+        warmup = min(self.cfg.warmup_steps, max(1, total_steps // 10))
         self.lr_scheduler = _LRScheduler(
-            opt,
-            self.cfg.lr,
-            self.cfg.warmup_epochs,
-            self.cfg.epochs,
-            self.cfg.min_lr_ratio,
+            [emb_opt, dense_opt], self.cfg.lr, warmup, total_steps, self.cfg.min_lr_ratio,
         )
+        logger.info("optimizer: AdamW(%d emb wd=%.0e) + AdamW(%d dense wd=%.0e), warmup=%d/%d steps",
+                     len(emb_params), self.cfg.embedding_weight_decay, len(dense_params),
+                     self.cfg.weight_decay, warmup, total_steps)
+
         if self.cfg.ema_enabled:
             self.ema = _EMA(self.model, self.cfg.ema_decay)
 
@@ -198,7 +215,6 @@ class Trainer:
         best_epoch = 0
 
         for epoch in range(1, self.cfg.epochs + 1):
-            self.lr_scheduler.step(epoch)
             avg_loss = self._train_epoch(epoch)
             aucs = self._validate()
             self._log_epoch(epoch, avg_loss, aucs)
@@ -296,14 +312,17 @@ class Trainer:
                 continue
 
             t0 = time.perf_counter()
-            self.optimizer.zero_grad()
+            for opt in self.optimizers:
+                opt.zero_grad()
             loss.backward()
             grad_pre = self._grad_global_norm() if self._tb_writer is not None else 0.0
             if self.cfg.grad_max_norm > 0:
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.grad_max_norm)
             if self._tb_writer is not None:
                 self._tb_writer.add_scalar("grad/pre_clip_norm", grad_pre, self._global_step)
-            self.optimizer.step()
+            for opt in self.optimizers:
+                opt.step()
+            self.lr_scheduler.step(self._global_step)
             t_backward += time.perf_counter() - t0
 
             if self.ema is not None:

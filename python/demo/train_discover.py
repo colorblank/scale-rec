@@ -49,7 +49,7 @@ def main() -> None:
     p.add_argument("--eval-samples", type=int, default=2000)
     p.add_argument("--eval-interval", type=int, default=50)
     p.add_argument("--log-interval", type=int, default=10)
-    p.add_argument("--warmup-epochs", type=int, default=2, help="LR warmup epoch 数")
+    p.add_argument("--warmup-steps", type=int, default=200, help="LR warmup steps 数")
     p.add_argument("--min-lr-ratio", type=float, default=0.01, help="cosine decay 最终 lr 比例")
     p.add_argument("--grad-max-norm", type=float, default=1.0, help="梯度裁剪阈值 (0=禁用)")
     p.add_argument("--early-stopping", type=int, default=5, help="early stopping patience (0=禁用)")
@@ -166,7 +166,7 @@ def main() -> None:
         eval_interval=args.eval_interval,
         log_interval=args.log_interval,
         export_path=export_path,
-        warmup_epochs=args.warmup_epochs,
+        warmup_steps=args.warmup_steps,
         min_lr_ratio=args.min_lr_ratio,
         grad_max_norm=args.grad_max_norm,
         early_stopping_patience=args.early_stopping,

@@ -35,7 +35,7 @@ def main():
     p.add_argument("--eval-samples", type=int, default=1000)
     p.add_argument("--log-interval", type=int, default=10)
     p.add_argument("--eval-interval", type=int, default=200)
-    p.add_argument("--warmup-epochs", type=int, default=1)
+    p.add_argument("--warmup-steps", type=int, default=100)
     p.add_argument("--device", default="auto")
     p.add_argument("--log-level", default="INFO")
     args = p.parse_args()
@@ -62,7 +62,7 @@ def main():
     cfg = TrainConfig(
         epochs=args.epochs, batch_size=args.batch_size, lr=args.lr,
         eval_samples=args.eval_samples, eval_interval=args.eval_interval,
-        log_interval=args.log_interval, warmup_epochs=args.warmup_epochs,
+        log_interval=args.log_interval, warmup_steps=args.warmup_steps,
         export_path=str(DEMO_DIR / "temp" / "lr_ctr.safetensors"),
     )
     trainer = Trainer(model, dag, spec["task_names"], spec["label_col_map"],
