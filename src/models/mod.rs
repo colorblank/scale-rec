@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+use crate::layers::embedding::FeatureSpec;
 use crate::layers::towers::MultiTaskConfig;
 use crate::models::unimixer::tokenizer::FeatureTokenizer;
 
@@ -37,7 +38,7 @@ pub struct ModelConfig {
 /// Build function signature: (vb, features, tokenizer, params) -> Box<dyn Model>
 type BuildFn = fn(
     VarBuilder,
-    &[(String, usize, usize)],
+    &[FeatureSpec],
     Option<FeatureTokenizer>,
     &serde_yaml::Value,
 ) -> Result<Box<dyn Model>>;
@@ -56,7 +57,7 @@ impl ModelConfig {
     pub fn build(
         &self,
         vb: VarBuilder,
-        features: &[(String, usize, usize)],
+        features: &[FeatureSpec],
         tokenizer: Option<FeatureTokenizer>,
     ) -> Result<Box<dyn Model>> {
         match REGISTRY.get(self.model_type.as_str()) {
@@ -78,7 +79,7 @@ impl ModelConfig {
 
 fn build_lr(
     vb: VarBuilder,
-    features: &[(String, usize, usize)],
+    features: &[FeatureSpec],
     _tokenizer: Option<FeatureTokenizer>,
     _params: &serde_yaml::Value,
 ) -> Result<Box<dyn Model>> {
@@ -87,7 +88,7 @@ fn build_lr(
 
 fn build_deepfm(
     vb: VarBuilder,
-    features: &[(String, usize, usize)],
+    features: &[FeatureSpec],
     _tokenizer: Option<FeatureTokenizer>,
     params: &serde_yaml::Value,
 ) -> Result<Box<dyn Model>> {
@@ -103,7 +104,7 @@ fn build_deepfm(
 
 fn build_mmoe(
     vb: VarBuilder,
-    features: &[(String, usize, usize)],
+    features: &[FeatureSpec],
     _tokenizer: Option<FeatureTokenizer>,
     params: &serde_yaml::Value,
 ) -> Result<Box<dyn Model>> {
@@ -129,7 +130,7 @@ fn build_mmoe(
 
 fn build_esmm(
     vb: VarBuilder,
-    features: &[(String, usize, usize)],
+    features: &[FeatureSpec],
     _tokenizer: Option<FeatureTokenizer>,
     params: &serde_yaml::Value,
 ) -> Result<Box<dyn Model>> {
@@ -153,7 +154,7 @@ fn build_esmm(
 
 fn build_unimixer(
     vb: VarBuilder,
-    _features: &[(String, usize, usize)],
+    _features: &[FeatureSpec],
     tokenizer: Option<FeatureTokenizer>,
     params: &serde_yaml::Value,
 ) -> Result<Box<dyn Model>> {

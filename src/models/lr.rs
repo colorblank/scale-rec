@@ -1,6 +1,6 @@
 //! 逻辑回归基线：Embedding + Linear，无特征交互。
 use super::Model;
-use crate::layers::embedding::FeatureEmbeddings;
+use crate::layers::embedding::{FeatureEmbeddings, FeatureSpec};
 use crate::layers::mlp::Mlp;
 use crate::layers::towers::Activation;
 use candle_core::{Result, Tensor};
@@ -17,7 +17,7 @@ pub struct LogisticRegression {
 }
 
 impl LogisticRegression {
-    pub fn new(vb: VarBuilder, features: &[(String, usize, usize)]) -> Result<Self> {
+    pub fn new(vb: VarBuilder, features: &[FeatureSpec]) -> Result<Self> {
         let embeddings = FeatureEmbeddings::new(vb.pp("embeddings"), features)?;
         let mlp = Mlp::new(
             vb.pp("mlp"),

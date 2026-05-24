@@ -6,7 +6,7 @@ import logging
 import math
 import time
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Callable, Iterator
 
 import torch
 
@@ -135,6 +135,7 @@ class Trainer:
         has_header: bool = True,
         sep: str = "\t",
         null_markers: set[str] | None = None,
+        batch_factory: Callable[[], Iterator[Batch]] | None = None,
     ):
         self.model = model
         self.dag = dag
@@ -148,6 +149,7 @@ class Trainer:
         self._has_header = has_header
         self._sep = sep
         self._null_markers = null_markers
+        self._batch_factory = batch_factory
 
         self.eval_batches: list[Batch] = []
         self._n_eval_batches = 0
@@ -243,14 +245,7 @@ class Trainer:
     # ── 内部 ──
 
     def _collect_eval(self) -> None:
-        reader = stream_file_batches(
-            self._data_path,
-            self._flow_config,
-            self.cfg.batch_size,
-            has_header=self._has_header,
-            sep=self._sep,
-            null_markers=self._null_markers,
-        )
+        reader = self._iter_batches()
         self.eval_batches = _collect_batches(reader, self.cfg.eval_samples)
         self._n_eval_batches = len(self.eval_batches)
         n = sum(len(b["features"]) for b in self.eval_batches)
@@ -263,16 +258,7 @@ class Trainer:
         t_data = t_preproc = t_forward = t_loss = t_backward = 0.0
         t0_epoch = time.perf_counter()
 
-        stream = enumerate(
-            stream_file_batches(
-                self._data_path,
-                self._flow_config,
-                self.cfg.batch_size,
-                has_header=self._has_header,
-                sep=self._sep,
-                null_markers=self._null_markers,
-            )
-        )
+        stream = enumerate(self._iter_batches())
         t0_iter = time.perf_counter()
         for i, batch in stream:
             t_data += time.perf_counter() - t0_iter
@@ -351,6 +337,18 @@ class Trainer:
             t_backward,
         )
         return avg_loss
+
+    def _iter_batches(self) -> Iterator[Batch]:
+        if self._batch_factory is not None:
+            return self._batch_factory()
+        return stream_file_batches(
+            self._data_path,
+            self._flow_config,
+            self.cfg.batch_size,
+            has_header=self._has_header,
+            sep=self._sep,
+            null_markers=self._null_markers,
+        )
 
     def _validate(self) -> dict[str, float]:
         self.model.eval()

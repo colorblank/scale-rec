@@ -1,6 +1,6 @@
 //! ESMM：全量空间多任务模型（5 塔），点击条件乘积链消除 SSB。
 use super::Model;
-use crate::layers::embedding::FeatureEmbeddings;
+use crate::layers::embedding::{FeatureEmbeddings, FeatureSpec};
 use crate::layers::mlp::Mlp;
 use crate::layers::towers::{Activation, TaskTower, TowerConfig};
 use candle_core::{Result, Tensor};
@@ -31,7 +31,7 @@ pub struct ESMM {
 impl ESMM {
     pub fn new(
         vb: VarBuilder,
-        features: &[(String, usize, usize)],
+        features: &[FeatureSpec],
         shared_bottom_dims: &[usize],
         click_hidden_dims: &[usize],
         cvr_hidden_dims: &[usize],

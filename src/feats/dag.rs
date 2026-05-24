@@ -25,6 +25,7 @@ pub struct ExecutionPlan {
     pub ops: Vec<Box<dyn CustomOp>>,
     source_cols: Vec<usize>,
     source_names: Vec<String>,
+    source_defaults: Vec<Fv>,
     col_count: usize,
     embed_ids: Vec<usize>,
 }
@@ -40,7 +41,6 @@ pub struct ExecStep {
 /// 根据 FlowConfig 构建算子图，拓扑排序后按序执行单样本处理。
 pub struct FeatureDag {
     sources: HashMap<String, SourceDef>,
-    nodes: HashMap<String, Box<dyn CustomOp>>,
     node_defs: HashMap<String, OperatorDef>,
     pub execution_order: Vec<String>,
     debug_mode: bool,
@@ -59,10 +59,7 @@ impl FeatureDag {
                 length,
             } => match inner.as_ref() {
                 DType::Int => Fv::IntList(vec![val_str.parse::<i32>().unwrap_or(0); *length]),
-                DType::Float => {
-                    let v = val_str.parse::<f32>().unwrap_or(0.0) as i32;
-                    Fv::IntList(vec![v; *length])
-                }
+                DType::Float => Fv::FloatList(vec![val_str.parse::<f32>().unwrap_or(0.0); *length]),
                 DType::String => Fv::StrList(vec![val_str.to_string(); *length]),
                 _ => Fv::Int(0),
             },
@@ -142,10 +139,16 @@ impl FeatureDag {
         let mut col_id: HashMap<String, usize> = HashMap::new();
         let mut source_cols: Vec<usize> = Vec::new();
         let mut source_names: Vec<String> = Vec::new();
+        let mut source_defaults: Vec<Fv> = Vec::new();
         for (i, s) in sources.keys().enumerate() {
             col_id.insert(s.clone(), i);
             source_cols.push(i);
             source_names.push(s.clone());
+            let source_def = sources.get(s).unwrap();
+            source_defaults.push(Self::parse_default(
+                &source_def.default_val,
+                &source_def.dtype,
+            ));
         }
         let mut col_count = sources.len();
         // Assign IDs to operator outputs
@@ -205,13 +208,13 @@ impl FeatureDag {
             ops: plan_ops,
             source_cols,
             source_names,
+            source_defaults,
             col_count,
             embed_ids,
         };
 
         Ok(Self {
             sources,
-            nodes,
             node_defs,
             execution_order,
             debug_mode,
@@ -512,8 +515,8 @@ impl FeatureDag {
 
         let source_names: HashSet<String> = self.sources.keys().cloned().collect();
         let mut computed_names = HashSet::new();
-        for node_name in &self.execution_order {
-            let op = &self.nodes[node_name];
+        for (op_idx, node_name) in self.execution_order.iter().enumerate() {
+            let op = &self.plan.ops[op_idx];
             let def = &self.node_defs[node_name];
             let op_inputs: Vec<Fv> = def
                 .inputs
@@ -590,11 +593,11 @@ impl FeatureDag {
 
         // Stage 3: execute operators in topological order (bulk, zero-copy refs)
         let default_col: Vec<FeatureValue> = vec![Fv::Int(0); n_rows];
-        for node_name in &self.execution_order {
+        for (op_idx, node_name) in self.execution_order.iter().enumerate() {
             if skip_ops.contains(node_name) {
                 continue;
             }
-            let op = &self.nodes[node_name];
+            let op = &self.plan.ops[op_idx];
             let def = &self.node_defs[node_name];
 
             let input_slices: Vec<&[FeatureValue]> = def
@@ -660,10 +663,20 @@ impl ExecutionPlan {
         // Stage 1: fill sources from input
         for i in 0..self.source_cols.len() {
             let name = &self.source_names[i];
+            let cid = self.source_cols[i];
+            let source_default = self.source_defaults.get(i).cloned().unwrap_or(Fv::Int(0));
             if let Some(col) = columns.get(name) {
-                context[i] = col.clone();
+                if col.len() == n_rows {
+                    context[cid] = col.clone();
+                } else {
+                    let mut fixed = vec![source_default; n_rows];
+                    for (row, val) in col.iter().take(n_rows).enumerate() {
+                        fixed[row] = val.clone();
+                    }
+                    context[cid] = fixed;
+                }
             } else {
-                context[i] = default.clone();
+                context[cid] = vec![source_default; n_rows];
             }
         }
         // Stage 2: inject precomputed (broadcast mode)

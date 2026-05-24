@@ -1,6 +1,6 @@
 //! MMoE：多门控专家混合，每个任务独立门控组合专家输出。
 use super::Model;
-use crate::layers::embedding::FeatureEmbeddings;
+use crate::layers::embedding::{FeatureEmbeddings, FeatureSpec};
 use crate::layers::mlp::Mlp;
 use crate::layers::towers::Activation;
 use candle_core::{Result, Tensor};
@@ -25,7 +25,7 @@ impl MMoE {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         vb: VarBuilder,
-        features: &[(String, usize, usize)],
+        features: &[FeatureSpec],
         shared_bottom_dims: &[usize],
         num_experts: usize,
         expert_hidden_dims: &[usize],

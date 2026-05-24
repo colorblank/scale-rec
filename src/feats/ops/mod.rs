@@ -37,6 +37,7 @@ pub enum Fv {
     Float(f32),
     Str(String),
     IntList(Vec<i32>),
+    FloatList(Vec<f32>),
     StrList(Vec<String>),
 }
 
@@ -47,6 +48,7 @@ impl Fv {
             Fv::Float(_) => "float",
             Fv::Str(_) => "str",
             Fv::IntList(_) => "list[int]",
+            Fv::FloatList(_) => "list[float]",
             Fv::StrList(_) => "list[str]",
         }
     }
@@ -59,6 +61,7 @@ impl std::fmt::Display for Fv {
             Fv::Float(v) => write!(f, "{}", v),
             Fv::Str(v) => write!(f, "{}", v),
             Fv::IntList(v) => write!(f, "{:?}", v),
+            Fv::FloatList(v) => write!(f, "{:?}", v),
             Fv::StrList(v) => write!(f, "{:?}", v),
         }
     }
