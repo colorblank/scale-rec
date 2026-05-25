@@ -27,14 +27,20 @@ def test_demo_model_configs_exist_and_are_current():
 
     esmm = yaml.safe_load(configs["esmm"].read_text(encoding="utf-8"))
     assert "ctr_hidden_dims" not in esmm
-    for key in [
-        "click_hidden_dims",
-        "cvr_hidden_dims",
-        "detail_hidden_dims",
-        "stock_hidden_dims",
-        "stay_hidden_dims",
-    ]:
-        assert key in esmm
+    task_config = esmm["task_config"]
+    assert [tower["name"] for tower in task_config["towers"]] == [
+        "click",
+        "cvr",
+        "detail",
+        "stock",
+        "stay",
+    ]
+    assert {relation["target"] for relation in task_config["relations"]} == {
+        "ctcvr",
+        "ctdetail",
+        "ctstock",
+        "ctstay",
+    }
 
 
 def test_lr_ctr_duplicate_config_was_removed():

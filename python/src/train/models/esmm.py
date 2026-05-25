@@ -1,28 +1,41 @@
 from __future__ import annotations
 
-"""ESMM：全量空间多任务（5 塔），点击条件乘积消除 SSB。"""
+"""Configurable ESMM: shared bottom + task towers + probability relations."""
 
 import torch
 import torch.nn as nn
 
 from ..layers.embedding import FeatureEmbeddings
 from ..layers.mlp import Mlp
-from ..layers.towers import Activation, TaskTower, TowerConfig
+from ..layers.towers import Activation, MultiTaskConfig, TaskRelation, TaskTower, TowerConfig
+
+
+def default_task_config(
+    click_hidden_dims,
+    cvr_hidden_dims,
+    detail_hidden_dims,
+    stock_hidden_dims,
+    stay_hidden_dims,
+) -> MultiTaskConfig:
+    return MultiTaskConfig(
+        towers=[
+            TowerConfig("click", click_hidden_dims, 1, Activation.RELU),
+            TowerConfig("cvr", cvr_hidden_dims, 1, Activation.RELU),
+            TowerConfig("detail", detail_hidden_dims, 1, Activation.RELU),
+            TowerConfig("stock", stock_hidden_dims, 1, Activation.RELU),
+            TowerConfig("stay", stay_hidden_dims, 1, Activation.RELU),
+        ],
+        relations=[
+            TaskRelation("ctcvr", ["click", "cvr"], "multiply"),
+            TaskRelation("ctdetail", ["click", "detail"], "multiply"),
+            TaskRelation("ctstock", ["click", "stock"], "multiply"),
+            TaskRelation("ctstay", ["detail", "stay"], "multiply"),
+        ],
+    )
 
 
 class ESMM(nn.Module):
-    """Entire-space multi-task with 5 towers.
-
-    概率关系:
-      is_click = is_click_detail ∨ is_click_stock (点击包含详情点击和股票点击)
-      is_cvr ← is_click (转化在点击后发生)
-      stay_time ← is_click_detail (阅读仅在点详情后发生)
-
-      P(detail)  = σ(click) × σ(detail)
-      P(stock)   = σ(click) × σ(stock)
-      P(cvr)     = σ(click) × σ(cvr)
-      P(stay)    = σ(detail) × σ(stay)
-    """
+    """Entire-space multi-task model with configurable towers and relations."""
 
     def __init__(
         self,
@@ -33,6 +46,7 @@ class ESMM(nn.Module):
         detail_hidden_dims,
         stock_hidden_dims,
         stay_hidden_dims,
+        task_config: MultiTaskConfig | None = None,
         pooling_map=None,
         total_dim=None,
     ):
@@ -49,40 +63,48 @@ class ESMM(nn.Module):
         else:
             sd = self.embeddings.total_dim
 
-        self.click_tower = TaskTower(
-            TowerConfig("click", click_hidden_dims, 1, Activation.RELU), sd
+        self.task_config = task_config or default_task_config(
+            click_hidden_dims,
+            cvr_hidden_dims,
+            detail_hidden_dims,
+            stock_hidden_dims,
+            stay_hidden_dims,
         )
-        self.cvr_tower = TaskTower(TowerConfig("cvr", cvr_hidden_dims, 1, Activation.RELU), sd)
-        self.detail_tower = TaskTower(
-            TowerConfig("detail", detail_hidden_dims, 1, Activation.RELU), sd
-        )
-        self.stock_tower = TaskTower(
-            TowerConfig("stock", stock_hidden_dims, 1, Activation.RELU), sd
-        )
-        self.stay_tower = TaskTower(TowerConfig("stay", stay_hidden_dims, 1, Activation.RELU), sd)
+        self.task_names = [tower.name for tower in self.task_config.towers]
+        self.relation_names = [relation.target for relation in self.task_config.relations]
+        for tower in self.task_config.towers:
+            setattr(self, f"{tower.name}_tower", TaskTower(tower, sd))
 
     def forward(self, x_inputs):
         concat = self.embeddings(x_inputs)
         shared = self.shared_bottom(concat) if hasattr(self, "shared_bottom") else concat
 
-        click_logits = self.click_tower(shared)
-        cvr_logits = self.cvr_tower(shared)
-        detail_logits = self.detail_tower(shared)
-        stock_logits = self.stock_tower(shared)
-        stay_logits = self.stay_tower(shared)
+        outputs = {name: getattr(self, f"{name}_tower")(shared) for name in self.task_names}
+        for relation in self.task_config.relations:
+            outputs[relation.target] = self._apply_relation(relation, outputs)
+        return outputs
 
-        click_prob = torch.sigmoid(click_logits)
-        detail_prob = torch.sigmoid(detail_logits)
-
-        return {
-            "click": click_logits,
-            "cvr": cvr_logits,
-            "detail": detail_logits,
-            "stock": stock_logits,
-            "stay": stay_logits,
-            # ESMM 条件概率乘积
-            "ctcvr": click_prob * torch.sigmoid(cvr_logits),
-            "ctdetail": click_prob * detail_prob,
-            "ctstock": click_prob * torch.sigmoid(stock_logits),
-            "ctstay": detail_prob * torch.sigmoid(stay_logits),  # stay 条件于 detail
-        }
+    @staticmethod
+    def _apply_relation(relation: TaskRelation, outputs: dict[str, torch.Tensor]) -> torch.Tensor:
+        if not relation.sources:
+            raise ValueError(f"Relation '{relation.target}' has no sources")
+        probs = [torch.sigmoid(outputs[source]) for source in relation.sources]
+        if relation.op == "multiply":
+            result = probs[0]
+            for value in probs[1:]:
+                result = result * value
+            return result
+        if relation.op == "add":
+            result = probs[0]
+            for value in probs[1:]:
+                result = result + value
+            return result
+        if relation.op == "subtract":
+            if len(probs) != 2:
+                raise ValueError(f"Relation '{relation.target}' subtract requires 2 sources")
+            return probs[0] - probs[1]
+        if relation.op == "divide":
+            if len(probs) != 2:
+                raise ValueError(f"Relation '{relation.target}' divide requires 2 sources")
+            return probs[0] / (probs[1] + 1e-8)
+        raise ValueError(f"Unknown relation op: {relation.op}")

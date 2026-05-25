@@ -1,34 +1,89 @@
-//! ESMM：全量空间多任务模型（5 塔），点击条件乘积链消除 SSB。
+//! Configurable ESMM: shared bottom + task towers + probability relations.
 use super::Model;
 use crate::layers::embedding::{FeatureEmbeddings, FeatureSpec};
 use crate::layers::mlp::Mlp;
-use crate::layers::towers::{Activation, TaskTower, TowerConfig};
+use crate::layers::towers::{
+    Activation, MultiTaskConfig, RelationOp, TaskRelation, TaskTower, TowerConfig,
+};
 use candle_core::{Result, Tensor};
 use candle_nn::VarBuilder;
 use std::collections::HashMap;
 
-/// ESMM 5-tower model.
-///
-/// 概率关系:
-///   is_click = is_click_detail ∨ is_click_stock
-///   is_cvr ← is_click (转化在点击后发生)
-///   stay_time ← is_click_detail (阅读仅在点详情后发生)
-///
-///   P(detail) = σ(click) × σ(detail)
-///   P(stock)  = σ(click) × σ(stock)
-///   P(cvr)    = σ(click) × σ(cvr)
-///   P(stay)   = σ(detail) × σ(stay)
+pub fn default_task_config(
+    click_hidden_dims: &[usize],
+    cvr_hidden_dims: &[usize],
+    detail_hidden_dims: &[usize],
+    stock_hidden_dims: &[usize],
+    stay_hidden_dims: &[usize],
+) -> MultiTaskConfig {
+    MultiTaskConfig {
+        towers: vec![
+            TowerConfig {
+                name: "click".into(),
+                hidden_dims: click_hidden_dims.to_vec(),
+                output_dim: 1,
+                activation: Activation::Relu,
+            },
+            TowerConfig {
+                name: "cvr".into(),
+                hidden_dims: cvr_hidden_dims.to_vec(),
+                output_dim: 1,
+                activation: Activation::Relu,
+            },
+            TowerConfig {
+                name: "detail".into(),
+                hidden_dims: detail_hidden_dims.to_vec(),
+                output_dim: 1,
+                activation: Activation::Relu,
+            },
+            TowerConfig {
+                name: "stock".into(),
+                hidden_dims: stock_hidden_dims.to_vec(),
+                output_dim: 1,
+                activation: Activation::Relu,
+            },
+            TowerConfig {
+                name: "stay".into(),
+                hidden_dims: stay_hidden_dims.to_vec(),
+                output_dim: 1,
+                activation: Activation::Relu,
+            },
+        ],
+        relations: vec![
+            TaskRelation {
+                target: "ctcvr".into(),
+                sources: vec!["click".into(), "cvr".into()],
+                op: RelationOp::Multiply,
+            },
+            TaskRelation {
+                target: "ctdetail".into(),
+                sources: vec!["click".into(), "detail".into()],
+                op: RelationOp::Multiply,
+            },
+            TaskRelation {
+                target: "ctstock".into(),
+                sources: vec!["click".into(), "stock".into()],
+                op: RelationOp::Multiply,
+            },
+            TaskRelation {
+                target: "ctstay".into(),
+                sources: vec!["detail".into(), "stay".into()],
+                op: RelationOp::Multiply,
+            },
+        ],
+    }
+}
+
+/// Entire-space multi-task model with configurable towers and relations.
 pub struct ESMM {
     embeddings: FeatureEmbeddings,
     shared_bottom: Option<Mlp>,
-    click_tower: TaskTower,
-    cvr_tower: TaskTower,
-    detail_tower: TaskTower,
-    stock_tower: TaskTower,
-    stay_tower: TaskTower,
+    towers: Vec<(String, TaskTower)>,
+    relations: Vec<TaskRelation>,
 }
 
 impl ESMM {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         vb: VarBuilder,
         features: &[FeatureSpec],
@@ -38,6 +93,22 @@ impl ESMM {
         detail_hidden_dims: &[usize],
         stock_hidden_dims: &[usize],
         stay_hidden_dims: &[usize],
+    ) -> Result<Self> {
+        let task_config = default_task_config(
+            click_hidden_dims,
+            cvr_hidden_dims,
+            detail_hidden_dims,
+            stock_hidden_dims,
+            stay_hidden_dims,
+        );
+        Self::with_task_config(vb, features, shared_bottom_dims, &task_config)
+    }
+
+    pub fn with_task_config(
+        vb: VarBuilder,
+        features: &[FeatureSpec],
+        shared_bottom_dims: &[usize],
+        task_config: &MultiTaskConfig,
     ) -> Result<Self> {
         let embeddings = FeatureEmbeddings::new(vb.pp("embeddings"), features)?;
         let (shared_bottom, shared_output_dim) = if shared_bottom_dims.is_empty() {
@@ -53,31 +124,22 @@ impl ESMM {
             )?;
             (Some(mlp), output_dim)
         };
-        let mk_tower = |name: &str, dims: &[usize], vb: VarBuilder| -> Result<TaskTower> {
-            TaskTower::new(
-                &TowerConfig {
-                    name: name.into(),
-                    hidden_dims: dims.to_vec(),
-                    output_dim: 1,
-                    activation: Activation::Relu,
-                },
-                shared_output_dim,
-                vb,
-            )
-        };
-        let click_tower = mk_tower("click", click_hidden_dims, vb.pp("click_tower"))?;
-        let cvr_tower = mk_tower("cvr", cvr_hidden_dims, vb.pp("cvr_tower"))?;
-        let detail_tower = mk_tower("detail", detail_hidden_dims, vb.pp("detail_tower"))?;
-        let stock_tower = mk_tower("stock", stock_hidden_dims, vb.pp("stock_tower"))?;
-        let stay_tower = mk_tower("stay", stay_hidden_dims, vb.pp("stay_tower"))?;
+        let mut towers = Vec::with_capacity(task_config.towers.len());
+        for tower_config in &task_config.towers {
+            towers.push((
+                tower_config.name.clone(),
+                TaskTower::new(
+                    tower_config,
+                    shared_output_dim,
+                    vb.pp(format!("{}_tower", tower_config.name)),
+                )?,
+            ));
+        }
         Ok(Self {
             embeddings,
             shared_bottom,
-            click_tower,
-            cvr_tower,
-            detail_tower,
-            stock_tower,
-            stay_tower,
+            towers,
+            relations: task_config.relations.clone(),
         })
     }
 }
@@ -89,30 +151,62 @@ impl Model for ESMM {
             Some(b) => b.forward(&concat)?,
             None => concat,
         };
-        let click_logits = self.click_tower.forward(&shared_output)?;
-        let cvr_logits = self.cvr_tower.forward(&shared_output)?;
-        let detail_logits = self.detail_tower.forward(&shared_output)?;
-        let stock_logits = self.stock_tower.forward(&shared_output)?;
-        let stay_logits = self.stay_tower.forward(&shared_output)?;
-
-        let click_prob = candle_nn::ops::sigmoid(&click_logits)?;
-        let detail_prob = candle_nn::ops::sigmoid(&detail_logits)?;
-
         let mut outputs = HashMap::new();
-        let ctcvr = click_prob.mul(&candle_nn::ops::sigmoid(&cvr_logits)?)?;
-        let ctdetail = click_prob.mul(&detail_prob)?;
-        let ctstock = click_prob.mul(&candle_nn::ops::sigmoid(&stock_logits)?)?;
-        let ctstay = detail_prob.mul(&candle_nn::ops::sigmoid(&stay_logits)?)?;
-
-        outputs.insert("click".into(), click_logits);
-        outputs.insert("cvr".into(), cvr_logits);
-        outputs.insert("detail".into(), detail_logits);
-        outputs.insert("stock".into(), stock_logits);
-        outputs.insert("stay".into(), stay_logits);
-        outputs.insert("ctcvr".into(), ctcvr);
-        outputs.insert("ctdetail".into(), ctdetail);
-        outputs.insert("ctstock".into(), ctstock);
-        outputs.insert("ctstay".into(), ctstay);
+        for (name, tower) in &self.towers {
+            outputs.insert(name.clone(), tower.forward(&shared_output)?);
+        }
+        for relation in &self.relations {
+            outputs.insert(relation.target.clone(), apply_relation(relation, &outputs)?);
+        }
         Ok(outputs)
+    }
+}
+
+fn apply_relation(relation: &TaskRelation, outputs: &HashMap<String, Tensor>) -> Result<Tensor> {
+    if relation.sources.is_empty() {
+        return Err(candle_core::Error::Msg(format!(
+            "relation '{}' has no sources",
+            relation.target
+        )));
+    }
+    let get_prob = |name: &str| -> Result<Tensor> {
+        let logit = outputs
+            .get(name)
+            .ok_or_else(|| candle_core::Error::Msg(format!("task '{}' not found", name)))?;
+        candle_nn::ops::sigmoid(logit)
+    };
+    match relation.op {
+        RelationOp::Multiply => {
+            let mut result = get_prob(&relation.sources[0])?;
+            for source in &relation.sources[1..] {
+                result = result.mul(&get_prob(source)?)?;
+            }
+            Ok(result)
+        }
+        RelationOp::Add => {
+            let mut result = get_prob(&relation.sources[0])?;
+            for source in &relation.sources[1..] {
+                result = result.broadcast_add(&get_prob(source)?)?;
+            }
+            Ok(result)
+        }
+        RelationOp::Subtract => {
+            if relation.sources.len() != 2 {
+                return Err(candle_core::Error::Msg(format!(
+                    "relation '{}' subtract requires 2 sources",
+                    relation.target
+                )));
+            }
+            get_prob(&relation.sources[0])?.broadcast_sub(&get_prob(&relation.sources[1])?)
+        }
+        RelationOp::Divide => {
+            if relation.sources.len() != 2 {
+                return Err(candle_core::Error::Msg(format!(
+                    "relation '{}' divide requires 2 sources",
+                    relation.target
+                )));
+            }
+            get_prob(&relation.sources[0])?.broadcast_div(&get_prob(&relation.sources[1])?)
+        }
     }
 }

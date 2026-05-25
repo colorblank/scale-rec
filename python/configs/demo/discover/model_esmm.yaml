@@ -1,7 +1,20 @@
 type: esmm
 shared_bottom_dims: [32, 16]
-click_hidden_dims: [16, 8]
-cvr_hidden_dims: [16, 8]
-detail_hidden_dims: [8]
-stock_hidden_dims: [8]
-stay_hidden_dims: [8]
+label_col_map:
+  click: is_click
+  cvr: is_cvr
+  detail: is_click_detail
+  stock: is_click_stock
+  stay: stay_time
+task_config:
+  towers:
+    - {name: click, hidden_dims: [16, 8], output_dim: 1, activation: relu}
+    - {name: cvr, hidden_dims: [16, 8], output_dim: 1, activation: relu}
+    - {name: detail, hidden_dims: [8], output_dim: 1, activation: relu}
+    - {name: stock, hidden_dims: [8], output_dim: 1, activation: relu}
+    - {name: stay, hidden_dims: [8], output_dim: 1, activation: relu}
+  relations:
+    - {target: ctcvr, sources: [click, cvr], op: multiply}
+    - {target: ctdetail, sources: [click, detail], op: multiply}
+    - {target: ctstock, sources: [click, stock], op: multiply}
+    - {target: ctstay, sources: [detail, stay], op: multiply}

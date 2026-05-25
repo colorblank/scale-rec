@@ -13,7 +13,7 @@ import yaml
 
 from ..layers.towers import Activation, MultiTaskConfig, TaskRelation, TowerConfig
 from .deepfm import DeepFM
-from .esmm import ESMM
+from .esmm import ESMM, default_task_config
 from .lr import LogisticRegression
 from .mmoe import MMoE
 from .unimixer.model import UniMixerModel
@@ -68,6 +68,16 @@ def _parse_task_config(raw):
     ]
     relations = [TaskRelation(r["target"], r["sources"], r["op"]) for r in raw.get("relations", [])]
     return MultiTaskConfig(towers=towers, relations=relations)
+
+
+def _default_esmm_task_config(params):
+    return default_task_config(
+        params.get("click_hidden_dims", [8]),
+        params.get("cvr_hidden_dims", [8]),
+        params.get("detail_hidden_dims", [8]),
+        params.get("stock_hidden_dims", [8]),
+        params.get("stay_hidden_dims", [8]),
+    )
 
 
 def _parse_mmoe_task_configs(raw):
@@ -146,6 +156,7 @@ def _spec_mmoe(model=None):
 
 
 def _build_esmm(features, tokenizer=None, **params):
+    task_config = _parse_task_config(params.get("task_config")) or _default_esmm_task_config(params)
     return ESMM(
         features,
         params.get("shared_bottom_dims", []),
@@ -154,22 +165,32 @@ def _build_esmm(features, tokenizer=None, **params):
         params.get("detail_hidden_dims", [8]),
         params.get("stock_hidden_dims", [8]),
         params.get("stay_hidden_dims", [8]),
+        task_config=task_config,
         pooling_map=params.get("_pooling_map"),
         total_dim=params.get("_total_dim"),
     )
 
 
-def _spec_esmm(model=None):
-    return {
-        "task_names": ["click", "cvr", "detail", "stock", "stay"],
-        "label_col_map": {
+def _spec_esmm(model=None, params=None):
+    params = params or {}
+    if model is not None:
+        task_names = list(getattr(model, "task_names", []))
+    else:
+        task_config = _parse_task_config(params.get("task_config")) or _default_esmm_task_config(
+            params
+        )
+        task_names = [tower.name for tower in task_config.towers]
+    label_col_map = params.get(
+        "label_col_map",
+        {
             "click": "is_click",
             "cvr": "is_cvr",
             "detail": "is_click_detail",
             "stock": "is_click_stock",
             "stay": "stay_time",
         },
-    }
+    )
+    return {"task_names": task_names, "label_col_map": label_col_map}
 
 
 def _spec_unimixer(model=None, params=None):

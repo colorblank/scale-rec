@@ -140,16 +140,27 @@ fn build_esmm(
     let detail_hidden_dims: Vec<usize> = yaml_usize_seq(params, "detail_hidden_dims");
     let stock_hidden_dims: Vec<usize> = yaml_usize_seq(params, "stock_hidden_dims");
     let stay_hidden_dims: Vec<usize> = yaml_usize_seq(params, "stay_hidden_dims");
-    Ok(Box::new(esmm::ESMM::new(
-        vb,
-        features,
-        &shared_bottom_dims,
-        &click_hidden_dims,
-        &cvr_hidden_dims,
-        &detail_hidden_dims,
-        &stock_hidden_dims,
-        &stay_hidden_dims,
-    )?))
+    if let Some(task_config) = params.get("task_config") {
+        let task_config = serde_yaml::from_value(task_config.clone())
+            .map_err(|e| candle_core::Error::Msg(format!("parse esmm task_config: {}", e)))?;
+        Ok(Box::new(esmm::ESMM::with_task_config(
+            vb,
+            features,
+            &shared_bottom_dims,
+            &task_config,
+        )?))
+    } else {
+        Ok(Box::new(esmm::ESMM::new(
+            vb,
+            features,
+            &shared_bottom_dims,
+            &click_hidden_dims,
+            &cvr_hidden_dims,
+            &detail_hidden_dims,
+            &stock_hidden_dims,
+            &stay_hidden_dims,
+        )?))
+    }
 }
 
 fn build_unimixer(

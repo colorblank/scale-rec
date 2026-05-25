@@ -1,5 +1,6 @@
 import torch
 
+from train.layers.towers import Activation, MultiTaskConfig, TaskRelation, TowerConfig
 from train.models.deepfm import DeepFM
 from train.models.esmm import ESMM
 from train.models.lr import LogisticRegression
@@ -42,8 +43,23 @@ def test_esmm_forward():
     assert out["ctcvr"].shape == (3, 1)
 
 
+def test_esmm_forward_with_configurable_tasks_and_relations():
+    task_config = MultiTaskConfig(
+        towers=[
+            TowerConfig("view", [4], 1, Activation.RELU),
+            TowerConfig("buy", [4], 1, Activation.RELU),
+        ],
+        relations=[TaskRelation("ctbuy", ["view", "buy"], "multiply")],
+    )
+    model = ESMM(FEATURES, [8], [], [], [], [], [], task_config=task_config)
+    out = model(_inputs(3))
+
+    assert model.task_names == ["view", "buy"]
+    assert set(out) == {"view", "buy", "ctbuy"}
+    assert out["ctbuy"].shape == (3, 1)
+
+
 def test_unimixer_forward():
-    from train.layers.towers import Activation, MultiTaskConfig, TowerConfig
     from train.models.unimixer.model import UniMixerModel
     from train.models.unimixer.tokenizer import FeatureTokenizer
 

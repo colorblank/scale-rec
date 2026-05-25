@@ -3,7 +3,9 @@ use candle_nn::{VarBuilder, VarMap};
 use std::collections::HashMap;
 
 use scale_rec::layers::embedding::FeatureSpec;
-use scale_rec::layers::towers::{Activation, MultiTaskConfig, TowerConfig};
+use scale_rec::layers::towers::{
+    Activation, MultiTaskConfig, RelationOp, TaskRelation, TowerConfig,
+};
 use scale_rec::models::{deepfm, esmm, lr, mmoe, Model, ModelConfig};
 
 fn dummy_features() -> Vec<FeatureSpec> {
@@ -68,6 +70,37 @@ fn test_esmm_forward_shape() {
     assert_eq!(out["click"].dims(), &[3, 1]);
     assert_eq!(out["cvr"].dims(), &[3, 1]);
     assert_eq!(out["ctcvr"].dims(), &[3, 1]);
+}
+
+#[test]
+fn test_esmm_forward_with_configurable_tasks_and_relations() {
+    let task_config = MultiTaskConfig {
+        towers: vec![
+            TowerConfig {
+                name: "view".into(),
+                hidden_dims: vec![4],
+                output_dim: 1,
+                activation: Activation::Relu,
+            },
+            TowerConfig {
+                name: "buy".into(),
+                hidden_dims: vec![4],
+                output_dim: 1,
+                activation: Activation::Relu,
+            },
+        ],
+        relations: vec![TaskRelation {
+            target: "ctbuy".into(),
+            sources: vec!["view".into(), "buy".into()],
+            op: RelationOp::Multiply,
+        }],
+    };
+    let model = esmm::ESMM::with_task_config(vb(), &dummy_features(), &[8], &task_config).unwrap();
+    let out = model.forward(&dummy_inputs(3)).unwrap();
+    assert_eq!(out.len(), 3);
+    assert_eq!(out["view"].dims(), &[3, 1]);
+    assert_eq!(out["buy"].dims(), &[3, 1]);
+    assert_eq!(out["ctbuy"].dims(), &[3, 1]);
 }
 
 #[test]
