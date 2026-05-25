@@ -3,9 +3,12 @@ from __future__ import annotations
 import torch
 
 from train.config_train import TrainConfig
+from train.config import FlowConfig
+from train.dag import FeatureDag
 from train.eval.evaluator import EvalConfig, Evaluator
 from train.loss.multi_task import MultiTaskLoss
 from train.optim.scheduler import LRScheduler
+from train.quality import summarize_feature_quality
 from train.task import TaskSpec, parse_task_specs
 from train.trainer import Trainer
 
@@ -138,3 +141,54 @@ def test_trainer_monitor_score_falls_back_to_configured_metric():
     )
 
     assert trainer._monitor_score({"click": {"gauc": 0.7}}) == 0.7
+
+
+def test_feature_quality_report_tracks_missing_defaults_and_buckets():
+    config = FlowConfig.from_dict(
+        {
+            "version": "1.0.0",
+            "sources": [
+                {"name": "user_id", "dtype": "string", "default_val": ""},
+                {"name": "age", "dtype": "float", "default_val": "0.0"},
+            ],
+            "operators": [
+                {
+                    "name": "user_hash",
+                    "op_type": "FeatureHash",
+                    "inputs": ["user_id"],
+                    "outputs": ["user_id_idx"],
+                    "params": {"vocab_size": 16, "num_hashes": 1},
+                    "embed": {"vocab_size": 16, "embed_dim": 4},
+                },
+                {
+                    "name": "age_bucket",
+                    "op_type": "Bucketing",
+                    "inputs": ["age"],
+                    "outputs": ["age_bucket"],
+                    "params": {"boundaries": [18.0, 30.0]},
+                    "embed": {"vocab_size": 4, "embed_dim": 4},
+                },
+            ],
+        }
+    )
+    dag = FeatureDag(config)
+    report = summarize_feature_quality(
+        dag,
+        [
+            {
+                "features": [
+                    {"user_id": "u1", "age": 20.0},
+                    {"age": 0.0},
+                ],
+                "labels": {},
+            }
+        ],
+    )
+
+    assert report.rows == 2
+    assert report.sources["user_id"].missing_rate == 0.5
+    assert report.sources["age"].default_rate == 0.5
+    assert report.embeddables["user_id_idx"].unique_buckets >= 1
+    metrics = report.to_metrics()
+    assert metrics["feature_quality.source.user_id.missing_rate"] == 0.5
+    assert "feature_quality.emb.age_bucket.bucket_utilization" in metrics

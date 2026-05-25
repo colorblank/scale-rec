@@ -18,6 +18,10 @@ from .eval.evaluator import EvalConfig
 from .manifest import write_model_manifest
 from .models import ModelConfig, get_output_spec
 
+LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
+CONSOLE_LOG_FORMAT = "%(asctime)s [%(levelname)-5s] %(name)s: %(message)s"
+FILE_LOG_FORMAT = "%(asctime)s [%(levelname)-5s] %(process)d %(name)s:%(lineno)d: %(message)s"
+
 
 @dataclass
 class BuiltModel:
@@ -65,17 +69,72 @@ def add_training_args(parser: argparse.ArgumentParser, *, lr: float, batch_size:
 
 def add_runtime_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda", "mps"])
+    parser.add_argument("--log-level", default="INFO", choices=LOG_LEVELS)
+    parser.add_argument("--file-log-level", default="DEBUG", choices=LOG_LEVELS)
+    parser.add_argument("--log-dir", default="", help="directory for timestamped training logs")
     parser.add_argument(
-        "--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"]
+        "--log-file", default="", help="explicit log file path; overrides --log-dir"
     )
 
 
-def configure_logging(level: str) -> None:
-    logging.basicConfig(
-        level=getattr(logging, level),
-        format="%(asctime)s [%(levelname)-5s] %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-    )
+def configure_logging(
+    level: str,
+    *,
+    file_level: str = "DEBUG",
+    log_dir: str | Path | None = None,
+    log_file: str | Path | None = None,
+    run_name: str = "train",
+) -> Path | None:
+    """Configure console and optional file logging for training commands."""
+
+    root = logging.getLogger()
+    for handler in list(root.handlers):
+        root.removeHandler(handler)
+        handler.close()
+    root.setLevel(logging.DEBUG)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(_parse_log_level(level))
+    console_handler.setFormatter(logging.Formatter(CONSOLE_LOG_FORMAT, datefmt="%H:%M:%S"))
+    root.addHandler(console_handler)
+
+    resolved_log_file = _resolve_log_file(log_file=log_file, log_dir=log_dir, run_name=run_name)
+    if resolved_log_file is not None:
+        resolved_log_file.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(resolved_log_file, encoding="utf-8")
+        file_handler.setLevel(_parse_log_level(file_level))
+        file_handler.setFormatter(logging.Formatter(FILE_LOG_FORMAT, datefmt="%Y-%m-%d %H:%M:%S"))
+        root.addHandler(file_handler)
+
+    logging.captureWarnings(True)
+    for logger_name in ("matplotlib", "PIL", "urllib3"):
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+    if resolved_log_file is not None:
+        logging.getLogger(__name__).info("log file: %s", resolved_log_file)
+    return resolved_log_file
+
+
+def _parse_log_level(level: str) -> int:
+    try:
+        return getattr(logging, level.upper())
+    except AttributeError as exc:
+        raise ValueError(f"unknown log level: {level}") from exc
+
+
+def _resolve_log_file(
+    *,
+    log_file: str | Path | None,
+    log_dir: str | Path | None,
+    run_name: str,
+) -> Path | None:
+    if log_file:
+        return Path(log_file)
+    if not log_dir:
+        return None
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    safe_name = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in run_name)
+    return Path(log_dir) / f"{safe_name}_{timestamp}.log"
 
 
 def resolve_device(name: str) -> torch.device:
@@ -224,7 +283,11 @@ def write_training_manifest(
     spec: dict[str, Any],
     best_score: float,
     repo_root: str | Path,
+    extra_metrics: dict[str, float] | None = None,
 ) -> Path:
+    metrics = {"best_score": float(best_score)}
+    if extra_metrics:
+        metrics.update(extra_metrics)
     return write_model_manifest(
         manifest_path=bundle.manifest_path,
         model_id=model_id,
@@ -235,6 +298,6 @@ def write_training_manifest(
         model_config_path=bundle.model_config_path,
         tasks=spec["task_names"],
         label_col_map=spec["label_col_map"],
-        metrics={"best_score": float(best_score)},
+        metrics=metrics,
         repo_root=repo_root,
     )

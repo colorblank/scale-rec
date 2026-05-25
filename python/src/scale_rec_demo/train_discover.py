@@ -72,7 +72,13 @@ def main() -> None:
     if args.user_data and not args.item_files:
         p.error("--item-files is required with --user-data")
 
-    configure_logging(args.log_level)
+    configure_logging(
+        args.log_level,
+        file_level=args.file_log_level,
+        log_dir=args.log_dir or DEMO_ARTIFACT_DIR / "logs",
+        log_file=args.log_file,
+        run_name="discover_train",
+    )
     device = resolve_device(args.device)
     logger.info("device: %s", device)
 
@@ -153,6 +159,7 @@ def main() -> None:
         model_type=built.config.type,
         spec=built.spec,
         best_score=best,
+        extra_metrics=trainer.feature_quality_metrics(),
         repo_root=REPO_ROOT,
     )
     logger.info("manifest exported to %s", manifest_path)

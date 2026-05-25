@@ -16,6 +16,7 @@ from .eval.evaluator import Evaluator
 from .export import export_to_safetensors
 from .loss.multi_task import MultiTaskLoss, _to_device
 from .optim.scheduler import LRScheduler, build_optimizer
+from .quality import FeatureQualityReport, summarize_feature_quality
 from .task import TaskSpec, legacy_task_specs
 
 logger = logging.getLogger(__name__)
@@ -91,6 +92,7 @@ class Trainer:
 
         self.eval_batches: list[Batch] = []
         self._n_eval_batches = 0
+        self.feature_quality: FeatureQualityReport | None = None
         self.loss_fn = MultiTaskLoss(
             self.task_names,
             self.label_map,
@@ -207,6 +209,13 @@ class Trainer:
         self._n_eval_batches = len(self.eval_batches)
         n_samples = sum(len(batch["features"]) for batch in self.eval_batches)
         logger.info("validation: %d samples (%d batches)", n_samples, self._n_eval_batches)
+        self.feature_quality = summarize_feature_quality(self.dag, self.eval_batches)
+        logger.info("feature quality: rows=%d", self.feature_quality.rows)
+
+    def feature_quality_metrics(self) -> dict[str, float]:
+        if self.feature_quality is None:
+            return {}
+        return self.feature_quality.to_metrics()
 
     def _train_epoch(self, epoch: int) -> float:
         if self.optimizer is None or self.lr_scheduler is None:
