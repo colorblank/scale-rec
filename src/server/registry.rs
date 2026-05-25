@@ -84,7 +84,7 @@ impl ModelRegistry {
             _ => self.find_model_config(model_name)?,
         };
         if let Some(m) = &manifest {
-            self.validate_manifest_files(m, &model_config_path)?;
+            self.validate_manifest_files(m, &model_config_path, &safetensors_path)?;
         }
         let model_yaml = std::fs::read_to_string(&model_config_path)
             .map_err(|e| format!("read model config: {}", e))?;
@@ -174,6 +174,7 @@ impl ModelRegistry {
         &self,
         manifest: &ModelManifest,
         model_config_path: &Path,
+        safetensors_path: &Path,
     ) -> Result<(), String> {
         let feature_sha = sha256_file(&self.feature_config_path)?;
         if feature_sha != manifest.feature_config_sha256 {
@@ -188,6 +189,15 @@ impl ModelRegistry {
                 "model config sha256 mismatch: runtime={} manifest={}",
                 model_sha, manifest.model_config_sha256
             ));
+        }
+        if let Some(expected_weights_sha) = &manifest.weights_sha256 {
+            let weights_sha = sha256_file(safetensors_path)?;
+            if &weights_sha != expected_weights_sha {
+                return Err(format!(
+                    "weights sha256 mismatch: runtime={} manifest={}",
+                    weights_sha, expected_weights_sha
+                ));
+            }
         }
         if manifest.schema_version != 1 {
             return Err(format!(
@@ -478,6 +488,49 @@ mod tests {
             registry.find_model_config("model_discover_esmm").unwrap(),
             discover_esmm
         );
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn validate_manifest_files_checks_optional_weights_sha256() {
+        let root = std::env::temp_dir().join(format!(
+            "scale-rec-manifest-sha-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let feature_config = root.join("feature.yaml");
+        let model_config = root.join("model.yaml");
+        let weights = root.join("model.safetensors");
+        fs::write(&feature_config, "feature").unwrap();
+        fs::write(&model_config, "model").unwrap();
+        fs::write(&weights, "weights").unwrap();
+
+        let registry = empty_registry(feature_config.clone(), root.clone());
+        let manifest = ModelManifest {
+            schema_version: 1,
+            model_id: "m".into(),
+            model_version: "v".into(),
+            model_type: "lr".into(),
+            code_commit: None,
+            weights_file: "model.safetensors".into(),
+            weights_sha256: Some(hex(sha256_bytes(b"different"))),
+            feature_config_file: "feature.yaml".into(),
+            feature_config_sha256: hex(sha256_bytes(b"feature")),
+            model_config_file: "model.yaml".into(),
+            model_config_sha256: hex(sha256_bytes(b"model")),
+            tasks: vec![],
+            label_col_map: HashMap::new(),
+            metrics: HashMap::new(),
+        };
+
+        let err = registry
+            .validate_manifest_files(&manifest, &model_config, &weights)
+            .unwrap_err();
+        assert!(err.contains("weights sha256 mismatch"));
 
         fs::remove_dir_all(root).unwrap();
     }

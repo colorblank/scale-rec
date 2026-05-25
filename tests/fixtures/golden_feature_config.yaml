@@ -1,0 +1,104 @@
+version: 1.0.0
+sources:
+  - name: user_age
+    dtype: float
+    default_val: "0"
+  - name: item_category
+    dtype: string
+    default_val: unknown
+  - name: user_tags
+    dtype: string
+    default_val: ""
+  - name: item_tags
+    dtype: string
+    default_val: ""
+  - name: session_id
+    dtype: string
+    default_val: unknown
+operators:
+  - name: age_bucket_op
+    op_type: Bucketing
+    inputs: [user_age]
+    outputs: [age_bucket]
+    params:
+      boundaries: [18.0, 25.0, 35.0]
+    embed:
+      vocab_size: 5
+      embed_dim: 4
+  - name: category_map_op
+    op_type: DictMapper
+    inputs: [item_category]
+    outputs: [category_idx]
+    params:
+      default_idx: 0
+      mapping:
+        electronics: 1
+        books: 2
+    embed:
+      vocab_size: 3
+      embed_dim: 4
+  - name: user_tag_parse_op
+    op_type: StringParser
+    inputs: [user_tags]
+    outputs: [user_tag_keys]
+    params:
+      sep1: "#"
+      sep2: "|"
+      key_index: 0
+      pad_len: 3
+      pad_val: unknown
+  - name: item_tag_parse_op
+    op_type: StringParser
+    inputs: [item_tags]
+    outputs: [item_tag_keys]
+    params:
+      sep1: "#"
+      sep2: "|"
+      key_index: 0
+      pad_len: 2
+      pad_val: unknown
+  - name: user_tag_map_op
+    op_type: DictMapper
+    inputs: [user_tag_keys]
+    outputs: [user_tag_idx]
+    params:
+      default_idx: 0
+      mapping:
+        sports: 1
+        gaming: 2
+        music: 3
+    embed:
+      vocab_size: 4
+      embed_dim: 4
+      pooling: mean
+  - name: tag_overlap_op
+    op_type: ListOverlap
+    inputs: [user_tag_keys, item_tag_keys]
+    outputs: [tag_overlap]
+  - name: tag_cross_op
+    op_type: CrossFeature
+    inputs: [user_tag_keys, item_tag_keys]
+    outputs: [tag_cross]
+    params:
+      cross_type: cartesian
+  - name: tag_cross_hash_op
+    op_type: FeatureHash
+    inputs: [tag_cross]
+    outputs: [tag_cross_idx]
+    params:
+      vocab_size: 128
+      num_hashes: 1
+    embed:
+      vocab_size: 128
+      embed_dim: 4
+      pooling: mean
+  - name: session_hash_op
+    op_type: FeatureHash
+    inputs: [session_id]
+    outputs: [session_idx]
+    params:
+      vocab_size: 64
+      num_hashes: 1
+    embed:
+      vocab_size: 64
+      embed_dim: 4

@@ -75,6 +75,12 @@ class TestFeatureHashSingle:
         assert batch[1] == op.process(["b", "2"])
         assert batch[2] == op.process(["c", "3"])
 
+    def test_hash_scope_changes_output_without_affecting_default(self):
+        default_op = FeatureHash(1_000_000, 1)
+        scoped_op = FeatureHash(1_000_000, 1, namespace="user_id", salt="salt", version="v2")
+        assert default_op.process(["abc"]) == FeatureHash(1_000_000, 1).process(["abc"])
+        assert default_op.process(["abc"]) != scoped_op.process(["abc"])
+
 
 class TestFeatureHashMulti:
     """多哈希 (num_hashes>1) 测试。"""

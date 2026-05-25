@@ -7,12 +7,22 @@ from typing import Any
 class FeatureHash:
     """Stateless feature hashing. List inputs → per-element hash → IntList."""
 
-    def __init__(self, vocab_size: int, num_hashes: int = 1, separator: str = "|"):
+    def __init__(
+        self,
+        vocab_size: int,
+        num_hashes: int = 1,
+        separator: str = "|",
+        namespace: str = "",
+        salt: str = "",
+        version: str = "",
+    ):
         if vocab_size <= 0:
             raise ValueError("vocab_size must be positive")
         self.vocab_size = vocab_size
         self.num_hashes = num_hashes
         self.separator = separator
+        scope_parts = [str(part) for part in (namespace, salt, version) if str(part)]
+        self.hash_prefix = "::".join(scope_parts) + "::" if scope_parts else ""
 
     # ── single-row ──
 
@@ -57,13 +67,12 @@ class FeatureHash:
     # ── internal ──
 
     def _hash_one(self, key: str, seed: int = 0) -> int:
-        return _djb2_seeded(key, seed) % self.vocab_size
+        return _djb2_seeded(f"{self.hash_prefix}{key}", seed) % self.vocab_size
 
     def _hash_multi(self, key: str) -> int | list[int]:
-        v = self.vocab_size
         if self.num_hashes == 1:
-            return _djb2_seeded(key, 0) % v
-        return [_djb2_seeded(key, s) % v for s in range(self.num_hashes)]
+            return self._hash_one(key, 0)
+        return [self._hash_one(key, s) for s in range(self.num_hashes)]
 
 
 def _djb2_seeded(key: str, seed: int) -> int:

@@ -1,3 +1,5 @@
+import pytest
+
 from train.config import FlowConfig
 from train.dag import FeatureDag
 
@@ -13,6 +15,11 @@ def test_dag_from_yaml():
     assert "item_category_idx" in names
     assert "user_tag_mapped" in names
     assert "user_category_cross" in names
+    assert dag.feature_schemas["user_id_idx"].dtype.tag == "int"
+    assert dag.feature_schemas["user_tag_mapped"].dtype.tag == "list"
+    assert dag.feature_schemas["user_tag_mapped"].cardinality == 6
+    assert dag.validation_report.source_count == 5
+    assert any(issue.code == "orphan_output" for issue in dag.validation_report.warnings)
 
 
 def test_dag_execute():
@@ -53,3 +60,44 @@ def test_preprocess_batch():
     assert "user_id_idx" in tensors
     assert tensors["user_id_idx"].shape == (2,)
     assert str(tensors["user_id_idx"].dtype) == "torch.int64"
+
+
+def test_dag_rejects_non_integer_embeddable_feature():
+    raw = {
+        "version": "1.0.0",
+        "sources": [
+            {
+                "name": "category",
+                "dtype": "string",
+                "default_val": "unknown",
+            }
+        ],
+        "operators": [
+            {
+                "name": "concat",
+                "op_type": "StringConcat",
+                "inputs": ["category"],
+                "outputs": ["category_text"],
+                "params": {"separator": "_"},
+                "embed": {"vocab_size": 10, "embed_dim": 4},
+            }
+        ],
+    }
+    with pytest.raises(ValueError, match=r"must be int or list\[int\]"):
+        FeatureDag(FlowConfig.from_dict(raw))
+
+
+def test_strict_validation_rejects_warning_level_issues():
+    raw = {
+        "version": "1.0.0",
+        "sources": [
+            {
+                "name": "unused",
+                "dtype": "string",
+                "default_val": "",
+            }
+        ],
+        "operators": [],
+    }
+    with pytest.raises(ValueError, match="strict validation failed"):
+        FeatureDag(FlowConfig.from_dict(raw), strict_validation=True)

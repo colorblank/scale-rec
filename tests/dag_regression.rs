@@ -5,6 +5,7 @@ use candle_nn::{VarBuilder, VarMap};
 use scale_rec::feats::config::{FlowConfig, PoolingStrategy};
 use scale_rec::feats::dag::{FeatureDag, FeatureValue};
 use scale_rec::feats::ops::Fv;
+use scale_rec::feats::schema::FeatureDType;
 use scale_rec::layers::embedding::FeatureSpec;
 use scale_rec::models::{lr, Model};
 
@@ -34,6 +35,55 @@ operators:
         .execute(&HashMap::<String, FeatureValue>::new())
         .unwrap();
     assert!(matches!(out.features.get("user_id_idx"), Some(Fv::Int(_))));
+    assert!(matches!(
+        dag.feature_schemas.get("user_id_idx").unwrap().dtype,
+        FeatureDType::Int
+    ));
+    assert_eq!(dag.validation_report.errors().count(), 0);
+}
+
+#[test]
+fn dag_rejects_non_integer_embeddable_feature() {
+    let yaml = r#"
+version: 1.0.0
+sources:
+  - name: category
+    dtype: string
+    default_val: unknown
+operators:
+  - name: concat
+    op_type: StringConcat
+    inputs: [category]
+    outputs: [category_text]
+    params:
+      separator: "_"
+    embed:
+      vocab_size: 10
+      embed_dim: 4
+"#;
+    let config = FlowConfig::from_yaml(yaml).unwrap();
+    let err = match FeatureDag::from_config(config, false, None) {
+        Ok(_) => panic!("expected non-integer embeddable feature to be rejected"),
+        Err(err) => err,
+    };
+    assert!(err.contains("must be int or list"));
+}
+
+#[test]
+fn dag_records_warning_level_validation_issues() {
+    let yaml = r#"
+version: 1.0.0
+sources:
+  - name: unused
+    dtype: string
+    default_val: ""
+operators: []
+"#;
+    let config = FlowConfig::from_yaml(yaml).unwrap();
+    let dag = FeatureDag::from_config(config, false, None).unwrap();
+    let warnings: Vec<_> = dag.validation_report.warnings().collect();
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0].code, "orphan_source");
 }
 
 #[test]

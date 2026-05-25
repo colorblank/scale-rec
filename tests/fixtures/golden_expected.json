@@ -1,0 +1,38 @@
+[
+  {
+    "age_bucket": 2,
+    "category_idx": 1,
+    "item_tag_keys": ["sports", "1"],
+    "session_idx": 24,
+    "tag_cross": [
+      "sports_sports",
+      "sports_1",
+      "1_sports",
+      "1_1",
+      "0.8_sports",
+      "0.8_1"
+    ],
+    "tag_cross_idx": [105, 47, 47, 53, 52, 26],
+    "tag_overlap": 1,
+    "user_tag_idx": [1, 0, 0],
+    "user_tag_keys": ["sports", "1", "0.8"]
+  },
+  {
+    "age_bucket": 0,
+    "category_idx": 2,
+    "item_tag_keys": ["gaming", "1"],
+    "session_idx": 25,
+    "tag_cross": [
+      "music_gaming",
+      "music_1",
+      "1_gaming",
+      "1_1",
+      "unknown_gaming",
+      "unknown_1"
+    ],
+    "tag_cross_idx": [103, 101, 55, 53, 22, 52],
+    "tag_overlap": 1,
+    "user_tag_idx": [3, 0, 0],
+    "user_tag_keys": ["music", "1", "unknown"]
+  }
+]

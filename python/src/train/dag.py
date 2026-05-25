@@ -27,6 +27,7 @@ from .ops import (
     StringConcat,
     StringParser,
 )
+from .schema import FeatureSchema, infer_feature_schemas
 
 FeatureValue = Any
 
@@ -38,8 +39,38 @@ class FeatureResult:
     computed_names: set[str]
 
 
+@dataclass(frozen=True)
+class ValidationIssue:
+    severity: str
+    code: str
+    message: str
+    feature: str | None = None
+
+
+@dataclass(frozen=True)
+class ValidationReport:
+    issues: tuple[ValidationIssue, ...]
+    source_count: int
+    embeddable_count: int
+    intermediate_count: int
+
+    @property
+    def warnings(self) -> tuple[ValidationIssue, ...]:
+        return tuple(issue for issue in self.issues if issue.severity == "warning")
+
+    @property
+    def errors(self) -> tuple[ValidationIssue, ...]:
+        return tuple(issue for issue in self.issues if issue.severity == "error")
+
+
 class FeatureDag:
-    def __init__(self, config: FlowConfig, debug_mode: bool = False, tracer=None):
+    def __init__(
+        self,
+        config: FlowConfig,
+        debug_mode: bool = False,
+        tracer=None,
+        strict_validation: bool = False,
+    ):
         self.sources: dict[str, SourceDef] = {}
         self.tracer = tracer  # Optional[DebugTracer] for per-stage I/O tracing
         for s in config.sources:
@@ -89,9 +120,13 @@ class FeatureDag:
             raise ValueError("Cycle detected in feature DAG")
         self.execution_order = execution_order
         self.debug_mode = debug_mode
-        self._validate(config)
+        self.feature_schemas: dict[str, FeatureSchema] = infer_feature_schemas(config)
+        self.validation_report = self._validate(config)
+        if strict_validation and self.validation_report.warnings:
+            details = ", ".join(issue.message for issue in self.validation_report.warnings)
+            raise ValueError(f"strict validation failed: {details}")
 
-    def _validate(self, config: FlowConfig) -> None:
+    def _validate(self, config: FlowConfig) -> ValidationReport:
         """校验 DAG 完整性：source 消费率、输出利用率、推理跳过算子。"""
         # 下游消费者集合
         downstream_consumers: set[str] = set()
@@ -103,12 +138,21 @@ class FeatureDag:
         orphan_sources = []
         orphan_outputs = []
         intermediate = 0
+        issues = []
 
         for s in config.sources:
             if s.role != Role.FEATURE:
                 continue
             if s.name not in downstream_consumers and s.name not in embeddable:
                 orphan_sources.append(s.name)
+                issues.append(
+                    ValidationIssue(
+                        severity="warning",
+                        code="orphan_source",
+                        message=f"source '{s.name}' is not consumed and not embeddable",
+                        feature=s.name,
+                    )
+                )
 
         for op in config.operators:
             for out_name in op.outputs:
@@ -118,6 +162,14 @@ class FeatureDag:
                     intermediate += 1  # 被下游算子消费
                     continue
                 orphan_outputs.append(f"{op.name} -> {out_name}")
+                issues.append(
+                    ValidationIssue(
+                        severity="warning",
+                        code="orphan_output",
+                        message=f"operator '{op.name}' output '{out_name}' has no consumer and no embed",
+                        feature=out_name,
+                    )
+                )
 
         total_features = sum(1 for s in config.sources if s.role == Role.FEATURE)
         logger.info(
@@ -136,6 +188,12 @@ class FeatureDag:
             logger.warning("orphan sources: %s", orphan_sources)
         if orphan_outputs:
             logger.warning("orphan outputs: %s", orphan_outputs)
+        return ValidationReport(
+            issues=tuple(issues),
+            source_count=total_features,
+            embeddable_count=len(embeddable),
+            intermediate_count=intermediate,
+        )
 
     @staticmethod
     def _parse_default(val_str: str, dtype: DType) -> FeatureValue:
@@ -212,6 +270,9 @@ class FeatureDag:
                 vocab_size=int(p.get("vocab_size", 1000)),
                 num_hashes=int(p.get("num_hashes", 1)),
                 separator=str(p.get("separator", "|")),
+                namespace=str(p.get("namespace", "")),
+                salt=str(p.get("salt", "")),
+                version=str(p.get("version", "")),
             )
         else:
             raise ValueError(f"Unsupported operator: {op_type}")

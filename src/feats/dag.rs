@@ -6,6 +6,7 @@ use super::ops::{
 };
 use crate::feats::config::{DType, FlowConfig, OperatorDef, SourceDef};
 use crate::feats::debug::DebugTracer;
+use crate::feats::schema::{infer_feature_schemas, FeatureSchema};
 use petgraph::algo::toposort;
 use petgraph::prelude::DiGraph;
 use std::collections::{HashMap, HashSet};
@@ -17,6 +18,34 @@ pub struct FeatureResult {
     pub features: HashMap<String, FeatureValue>,
     pub source_names: HashSet<String>,
     pub computed_names: HashSet<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidationIssue {
+    pub severity: &'static str,
+    pub code: &'static str,
+    pub message: String,
+    pub feature: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidationReport {
+    pub issues: Vec<ValidationIssue>,
+    pub source_count: usize,
+    pub embeddable_count: usize,
+    pub intermediate_count: usize,
+}
+
+impl ValidationReport {
+    pub fn warnings(&self) -> impl Iterator<Item = &ValidationIssue> {
+        self.issues
+            .iter()
+            .filter(|issue| issue.severity == "warning")
+    }
+
+    pub fn errors(&self) -> impl Iterator<Item = &ValidationIssue> {
+        self.issues.iter().filter(|issue| issue.severity == "error")
+    }
 }
 
 /// 预编译执行计划：运算符 + 整数索引列，运行时零 HashMap 查找。
@@ -46,6 +75,8 @@ pub struct FeatureDag {
     debug_mode: bool,
     pub tracer: Option<DebugTracer>,
     pub plan: ExecutionPlan,
+    pub feature_schemas: HashMap<String, FeatureSchema>,
+    pub validation_report: ValidationReport,
 }
 
 impl FeatureDag {
@@ -72,6 +103,8 @@ impl FeatureDag {
         tracer: Option<DebugTracer>,
     ) -> Result<Self, String> {
         use crate::feats::config::Role;
+
+        let feature_schemas = infer_feature_schemas(&config.sources, &config.operators)?;
 
         let mut sources = HashMap::new();
         for s in config.sources {
@@ -200,7 +233,7 @@ impl FeatureDag {
         }
         embed_pairs.sort_by_key(|(name, _)| *name);
 
-        Self::validate(&sources, &config.operators, &embed_pairs);
+        let validation_report = Self::validate(&sources, &config.operators, &embed_pairs);
 
         let embed_ids: Vec<usize> = embed_pairs.into_iter().map(|(_, id)| id).collect();
         let plan = ExecutionPlan {
@@ -220,6 +253,8 @@ impl FeatureDag {
             debug_mode,
             tracer,
             plan,
+            feature_schemas,
+            validation_report,
         })
     }
 
@@ -227,7 +262,7 @@ impl FeatureDag {
         sources: &HashMap<String, SourceDef>,
         operators: &[OperatorDef],
         embed_pairs: &[(&str, usize)],
-    ) {
+    ) -> ValidationReport {
         let embeddable: HashSet<&str> = embed_pairs.iter().map(|(n, _)| *n).collect();
         let mut downstream: HashSet<&str> = HashSet::new();
         for op in operators {
@@ -242,7 +277,7 @@ impl FeatureDag {
             .map(|s| s.as_str())
             .collect();
 
-        let mut orphan_out = 0usize;
+        let mut orphan_out: Vec<(&str, &str)> = Vec::new();
         let mut intermediate = 0usize;
         for op in operators {
             for out in &op.outputs {
@@ -253,8 +288,29 @@ impl FeatureDag {
                     intermediate += 1;
                     continue;
                 }
-                orphan_out += 1;
+                orphan_out.push((op.name.as_str(), out.as_str()));
             }
+        }
+
+        let mut issues = Vec::new();
+        for source in &orphan_src {
+            issues.push(ValidationIssue {
+                severity: "warning",
+                code: "orphan_source",
+                message: format!("source '{}' is not consumed and not embeddable", source),
+                feature: Some((*source).to_string()),
+            });
+        }
+        for (op_name, output) in &orphan_out {
+            issues.push(ValidationIssue {
+                severity: "warning",
+                code: "orphan_output",
+                message: format!(
+                    "operator '{}' output '{}' has no consumer and no embed",
+                    op_name, output
+                ),
+                feature: Some((*output).to_string()),
+            });
         }
 
         println!(
@@ -267,16 +323,22 @@ impl FeatureDag {
             "[DAG] outputs: embeddable={} intermediate={} orphan={}",
             embeddable.len(),
             intermediate,
-            orphan_out
+            orphan_out.len()
         );
         if !orphan_src.is_empty() {
             println!("[DAG] WARNING orphan sources: {:?}", orphan_src);
         }
-        if orphan_out > 0 {
+        if !orphan_out.is_empty() {
             println!(
                 "[DAG] WARNING {} orphan outputs (no consumer, no embed)",
-                orphan_out
+                orphan_out.len()
             );
+        }
+        ValidationReport {
+            issues,
+            source_count: sources.len(),
+            embeddable_count: embeddable.len(),
+            intermediate_count: intermediate,
         }
     }
 
@@ -290,6 +352,14 @@ impl FeatureDag {
     }
     fn yaml_i64(params: &serde_yaml::Value, key: &str) -> Option<i64> {
         Self::yaml_get(params, key)?.as_i64()
+    }
+    fn yaml_stringish(params: &serde_yaml::Value, key: &str) -> Option<String> {
+        let value = Self::yaml_get(params, key)?;
+        value
+            .as_str()
+            .map(ToOwned::to_owned)
+            .or_else(|| value.as_i64().map(|v| v.to_string()))
+            .or_else(|| value.as_u64().map(|v| v.to_string()))
     }
     fn yaml_f32_seq(params: &serde_yaml::Value, key: &str) -> Vec<f32> {
         Self::yaml_get(params, key)
@@ -391,8 +461,11 @@ impl FeatureDag {
                 let vocab_size = Self::yaml_i64(p, "vocab_size").unwrap_or(1000) as u32;
                 let num_hashes = Self::yaml_i64(p, "num_hashes").unwrap_or(1) as u32;
                 let separator = Self::yaml_str(p, "separator").unwrap_or("|").to_string();
-                Ok(Box::new(FeatureHash::new(
-                    vocab_size, num_hashes, separator,
+                let namespace = Self::yaml_stringish(p, "namespace").unwrap_or_default();
+                let salt = Self::yaml_stringish(p, "salt").unwrap_or_default();
+                let version = Self::yaml_stringish(p, "version").unwrap_or_default();
+                Ok(Box::new(FeatureHash::with_scope(
+                    vocab_size, num_hashes, separator, &namespace, &salt, &version,
                 )))
             }
             _ => Err(format!("Unsupported operator type: {}", def.op_type)),

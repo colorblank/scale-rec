@@ -5,3 +5,4 @@ pub mod dag;
 pub mod debug;
 pub mod metrics;
 pub mod ops;
+pub mod schema;

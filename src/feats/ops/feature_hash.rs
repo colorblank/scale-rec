@@ -1,6 +1,7 @@
 //! 特征哈希算子：DJB2 多种子哈希，带缓存加速，与 Python 实现逐位一致。
 
 use crate::feats::ops::{CustomOp, Fv};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
@@ -13,6 +14,7 @@ pub struct FeatureHash {
     vocab_size: u32,
     num_hashes: u32,
     separator: String,
+    hash_prefix: Option<String>,
     cache: RwLock<HashMap<String, Fv>>,
     hits: AtomicU64,
     misses: AtomicU64,
@@ -20,11 +22,24 @@ pub struct FeatureHash {
 
 impl FeatureHash {
     pub fn new(vocab_size: u32, num_hashes: u32, separator: String) -> Self {
+        Self::with_scope(vocab_size, num_hashes, separator, "", "", "")
+    }
+
+    pub fn with_scope(
+        vocab_size: u32,
+        num_hashes: u32,
+        separator: String,
+        namespace: &str,
+        salt: &str,
+        version: &str,
+    ) -> Self {
         assert!(vocab_size > 0, "vocab_size must be positive");
+        let hash_prefix = build_hash_prefix(namespace, salt, version);
         Self {
             vocab_size,
             num_hashes,
             separator,
+            hash_prefix,
             cache: RwLock::new(HashMap::new()),
             hits: AtomicU64::new(0),
             misses: AtomicU64::new(0),
@@ -57,23 +72,20 @@ impl CustomOp for FeatureHash {
         for v in inputs {
             match v {
                 Fv::StrList(list) => {
-                    let indices: Vec<i32> = list
-                        .iter()
-                        .map(|s| (djb2_seeded(s, 0) % self.vocab_size) as i32)
-                        .collect();
+                    let indices: Vec<i32> = list.iter().map(|s| self.hash_one(s, 0)).collect();
                     return Ok(Fv::IntList(indices));
                 }
                 Fv::IntList(list) => {
                     let indices: Vec<i32> = list
                         .iter()
-                        .map(|i| (djb2_seeded(&i.to_string(), 0) % self.vocab_size) as i32)
+                        .map(|i| self.hash_one(&i.to_string(), 0))
                         .collect();
                     return Ok(Fv::IntList(indices));
                 }
                 Fv::FloatList(list) => {
                     let indices: Vec<i32> = list
                         .iter()
-                        .map(|f| (djb2_seeded(&f.to_string(), 0) % self.vocab_size) as i32)
+                        .map(|f| self.hash_one(&f.to_string(), 0))
                         .collect();
                     return Ok(Fv::IntList(indices));
                 }
@@ -111,10 +123,7 @@ impl CustomOp for FeatureHash {
                         }
                     }
                 }
-                let indices: Vec<i32> = elems
-                    .iter()
-                    .map(|s| (djb2_seeded(s, 0) % self.vocab_size) as i32)
-                    .collect();
+                let indices: Vec<i32> = elems.iter().map(|s| self.hash_one(s, 0)).collect();
                 results.push(Fv::IntList(indices));
             }
             return Ok(results);
@@ -127,7 +136,7 @@ impl CustomOp for FeatureHash {
                 self.hits.fetch_add(1, Ordering::Relaxed);
                 results.push(cached.clone());
             } else {
-                let val = hash_multi(&key, self.num_hashes, self.vocab_size);
+                let val = self.hash_multi(&key);
                 cache.insert(key, val.clone());
                 self.misses.fetch_add(1, Ordering::Relaxed);
                 results.push(val);
@@ -146,13 +155,36 @@ impl FeatureHash {
                 return Ok(cached.clone());
             }
         }
-        let result = hash_multi(key, self.num_hashes, self.vocab_size);
+        let result = self.hash_multi(key);
         {
             let mut cache = self.cache.write().unwrap();
             cache.insert(key.to_string(), result.clone());
         }
         self.misses.fetch_add(1, Ordering::Relaxed);
         Ok(result)
+    }
+
+    fn hash_one(&self, key: &str, seed: u32) -> i32 {
+        let key = self.scoped_key(key);
+        (djb2_seeded(&key, seed) % self.vocab_size) as i32
+    }
+
+    fn hash_multi(&self, key: &str) -> Fv {
+        if self.num_hashes == 1 {
+            Fv::Int(self.hash_one(key, 0))
+        } else {
+            let indices: Vec<i32> = (0..self.num_hashes)
+                .map(|seed| self.hash_one(key, seed))
+                .collect();
+            Fv::IntList(indices)
+        }
+    }
+
+    fn scoped_key<'a>(&'a self, key: &'a str) -> Cow<'a, str> {
+        match &self.hash_prefix {
+            Some(prefix) => Cow::Owned(format!("{}{}", prefix, key)),
+            None => Cow::Borrowed(key),
+        }
     }
 }
 
@@ -178,6 +210,18 @@ fn build_key(inputs: &[Fv], sep: &str) -> String {
     parts.join(sep)
 }
 
+fn build_hash_prefix(namespace: &str, salt: &str, version: &str) -> Option<String> {
+    let parts: Vec<&str> = [namespace, salt, version]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect();
+    if parts.is_empty() {
+        None
+    } else {
+        Some(format!("{}::", parts.join("::")))
+    }
+}
+
 /// 按行构建 key，避免为每行分配 Vec<String>。
 fn build_row_key(inputs: &[&[Fv]], row: usize, sep: &str) -> String {
     let mut key = String::new();
@@ -190,17 +234,6 @@ fn build_row_key(inputs: &[&[Fv]], row: usize, sep: &str) -> String {
         }
     }
     key
-}
-
-fn hash_multi(key: &str, num_hashes: u32, vocab_size: u32) -> Fv {
-    if num_hashes == 1 {
-        Fv::Int((djb2_seeded(key, 0) % vocab_size) as i32)
-    } else {
-        let indices: Vec<i32> = (0..num_hashes)
-            .map(|s| (djb2_seeded(key, s) % vocab_size) as i32)
-            .collect();
-        Fv::IntList(indices)
-    }
 }
 
 // ── 测试 ──
@@ -262,6 +295,22 @@ mod tests {
         let a = op.process(&[Fv::Str("abc".into())]).unwrap();
         let b = op.process(&[Fv::Str("abd".into())]).unwrap();
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn test_hash_scope_changes_output_without_affecting_default() {
+        let default_op = FeatureHash::new(1_000_000, 1, "|".into());
+        let scoped_op = FeatureHash::with_scope(1_000_000, 1, "|".into(), "user_id", "salt", "v2");
+        assert_eq!(
+            default_op.process(&[Fv::Str("abc".into())]).unwrap(),
+            FeatureHash::with_scope(1_000_000, 1, "|".into(), "", "", "")
+                .process(&[Fv::Str("abc".into())])
+                .unwrap()
+        );
+        assert_ne!(
+            default_op.process(&[Fv::Str("abc".into())]).unwrap(),
+            scoped_op.process(&[Fv::Str("abc".into())]).unwrap()
+        );
     }
 
     #[test]
