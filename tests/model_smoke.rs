@@ -2,11 +2,15 @@ use candle_core::{DType, Device, Tensor};
 use candle_nn::{VarBuilder, VarMap};
 use std::collections::HashMap;
 
+use scale_rec::layers::embedding::FeatureSpec;
 use scale_rec::layers::towers::{Activation, MultiTaskConfig, TowerConfig};
 use scale_rec::models::{deepfm, esmm, lr, mmoe, Model, ModelConfig};
 
-fn dummy_features() -> Vec<(String, usize, usize)> {
-    vec![("a".into(), 10, 4), ("b".into(), 5, 4)]
+fn dummy_features() -> Vec<FeatureSpec> {
+    vec![
+        FeatureSpec::new("a".into(), 10, 4),
+        FeatureSpec::new("b".into(), 5, 4),
+    ]
 }
 
 fn dummy_inputs(batch: usize) -> HashMap<String, Tensor> {

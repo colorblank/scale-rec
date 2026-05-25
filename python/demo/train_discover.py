@@ -20,6 +20,7 @@ if str(_src) not in sys.path:
 
 from train.config import FlowConfig  # noqa: E402
 from train.dag import FeatureDag  # noqa: E402
+from train.data import build_item_index, stream_join  # noqa: E402
 from train.models import ModelConfig, get_output_spec  # noqa: E402
 from train.trainer import TrainConfig, Trainer  # noqa: E402
 
@@ -33,9 +34,28 @@ NULL_MARKERS: set[str] = {"NULL", "\\N", "null", "None", ""}
 logger = logging.getLogger("train")
 
 
+def _dtype_to_raw(dtype):
+    if dtype.tag == "list":
+        return {"list": {"dtype": _dtype_to_raw(dtype.inner), "length": dtype.length}}
+    return dtype.tag
+
+
+def _source_to_dict(source):
+    return {
+        "name": source.name,
+        "source": source.source,
+        "dtype": _dtype_to_raw(source.dtype),
+        "default_val": source.default_val,
+        "role": source.role,
+        "column_index": source.column_index,
+    }
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="discover-main-sort 训练")
-    p.add_argument("--data", required=True, help="训练数据 TSV 路径")
+    p.add_argument("--data", help="single training TSV path")
+    p.add_argument("--user-data", help="user behavior TSV path for streaming join mode")
+    p.add_argument("--item-files", help="comma-separated item TSV paths for streaming join mode")
     p.add_argument("--feature-config", default=DEFAULT_FEATURE_CONFIG)
     p.add_argument("--model-config", default=DEFAULT_MODEL_CONFIG)
     p.add_argument("--export-path")
@@ -46,6 +66,7 @@ def main() -> None:
     p.add_argument("--no-header", action="store_true", help="TSV 文件无 header 行")
     p.add_argument("--null-markers", nargs="*", default=list(NULL_MARKERS))
     p.add_argument("--separator", default="\t")
+    p.add_argument("--skip-missing-item", action="store_true")
     p.add_argument("--eval-samples", type=int, default=2000)
     p.add_argument("--eval-interval", type=int, default=50)
     p.add_argument("--log-interval", type=int, default=10)
@@ -65,6 +86,10 @@ def main() -> None:
     p.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda", "mps"])
     p.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     args = p.parse_args()
+    if bool(args.data) == bool(args.user_data):
+        p.error("--data and --user-data are mutually exclusive; provide exactly one")
+    if args.user_data and not args.item_files:
+        p.error("--item-files is required with --user-data")
 
     logging.basicConfig(
         level=getattr(logging, args.log_level),
@@ -92,6 +117,31 @@ def main() -> None:
     logger.info(
         "%d sources, %d ops → %d features", len(fc.sources), len(fc.operators), len(features)
     )
+
+    data_path = args.data or args.user_data
+    batch_factory = None
+    if args.user_data:
+        all_sources = [_source_to_dict(s) for s in fc.sources]
+        item_sources = [s for s in all_sources if s.get("source") in {"Item", "ItemStats"}]
+        item_index = build_item_index(
+            [x for x in args.item_files.split(",") if x],
+            item_sources,
+            has_header=not args.no_header,
+            separator=args.separator,
+            null_markers=set(args.null_markers),
+        )
+
+        def batch_factory():
+            return stream_join(
+                args.user_data,
+                item_index,
+                all_sources,
+                batch_size=args.batch_size,
+                separator=args.separator,
+                has_header=not args.no_header,
+                null_markers=set(args.null_markers),
+                skip_missing_item=args.skip_missing_item,
+            )
 
     # Model
     mc = ModelConfig.from_yaml(args.model_config)
@@ -182,11 +232,12 @@ def main() -> None:
         spec["label_col_map"],
         device,
         cfg,
-        data_path=args.data,
+        data_path=data_path,
         flow_config=fc,
         has_header=not args.no_header,
         sep=args.separator,
         null_markers=set(args.null_markers),
+        batch_factory=batch_factory,
     )
     best = trainer.fit()
     logger.info("best AUC=%.4f", best)

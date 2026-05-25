@@ -26,6 +26,7 @@ fn fv_to_any(v: &Fv) -> Box<dyn Any + Send + Sync> {
         Fv::Float(f) => Box::new(*f),
         Fv::Str(s) => Box::new(s.clone()),
         Fv::IntList(l) => Box::new(l.clone()),
+        Fv::FloatList(l) => Box::new(l.clone()),
         Fv::StrList(l) => Box::new(l.clone()),
     }
 }
@@ -36,6 +37,7 @@ fn any_to_fv(a: Box<dyn Any + Send + Sync>) -> Fv {
         .or_else(|a| a.downcast::<f32>().map(|v| Fv::Float(*v)))
         .or_else(|a| a.downcast::<String>().map(|v| Fv::Str(*v)))
         .or_else(|a| a.downcast::<Vec<i32>>().map(|v| Fv::IntList(*v)))
+        .or_else(|a| a.downcast::<Vec<f32>>().map(|v| Fv::FloatList(*v)))
         .or_else(|a| a.downcast::<Vec<String>>().map(|v| Fv::StrList(*v)))
         .unwrap_or(Fv::Int(0))
 }

@@ -12,6 +12,7 @@ use tracing::info;
 use super::engine::InferenceEngine;
 use crate::feats::config::FlowConfig;
 use crate::feats::dag::FeatureDag;
+use crate::layers::embedding::FeatureSpec;
 use crate::models::unimixer::tokenizer::FeatureTokenizer;
 use crate::models::ModelConfig;
 
@@ -26,7 +27,7 @@ pub struct ModelRegistry {
     engines: RwLock<HashMap<String, Arc<InferenceEngine>>>,
     feature_config_path: PathBuf,
     model_dir: PathBuf,
-    embed_features_cache: RwLock<Vec<(String, usize, usize)>>,
+    embed_features_cache: RwLock<Vec<FeatureSpec>>,
 }
 
 impl ModelRegistry {
@@ -37,9 +38,15 @@ impl ModelRegistry {
         let dag =
             FeatureDag::from_config(flow_config, false, None).map_err(|e| format!("dag: {}", e))?;
         let embed_features = dag.embeddable_features();
-        let features: Vec<(String, usize, usize)> = embed_features
+        let features: Vec<FeatureSpec> = embed_features
             .iter()
-            .map(|(n, e)| (n.to_string(), e.vocab_size, e.embed_dim))
+            .map(|(n, e)| FeatureSpec {
+                name: n.to_string(),
+                vocab_size: e.vocab_size,
+                embed_dim: e.embed_dim,
+                pooling: e.pooling,
+                seq_len: e.seq_len,
+            })
             .collect();
         Ok(Self {
             engines: RwLock::new(HashMap::new()),
@@ -71,10 +78,16 @@ impl ModelRegistry {
         let flow_config = FlowConfig::from_yaml(&yaml).map_err(|e| format!("parse: {}", e))?;
         let dag =
             FeatureDag::from_config(flow_config, false, None).map_err(|e| format!("dag: {}", e))?;
-        let embed_names: Vec<String> = dag
+        let embed_features: Vec<FeatureSpec> = dag
             .embeddable_features()
             .iter()
-            .map(|(n, _)| n.to_string())
+            .map(|(n, e)| FeatureSpec {
+                name: n.to_string(),
+                vocab_size: e.vocab_size,
+                embed_dim: e.embed_dim,
+                pooling: e.pooling,
+                seq_len: e.seq_len,
+            })
             .collect();
 
         let cached_features = self.embed_features_cache.read().unwrap();
@@ -109,7 +122,7 @@ impl ModelRegistry {
             .load(safetensors_path.to_str().unwrap_or(""))
             .map_err(|e| format!("load weights: {}", e))?;
 
-        let engine = Arc::new(InferenceEngine::new(dag, model, embed_names));
+        let engine = Arc::new(InferenceEngine::new(dag, model, embed_features));
 
         let mut engines = self.engines.write().unwrap();
         engines.insert(model_name.to_string(), engine);

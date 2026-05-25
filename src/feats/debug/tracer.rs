@@ -49,6 +49,10 @@ impl ValueSnapshot {
                 value: serde_json::json!(l),
                 type_name: "list[int]".into(),
             },
+            Fv::FloatList(l) => ValueSnapshot {
+                value: serde_json::json!(l),
+                type_name: "list[float]".into(),
+            },
         }
     }
 }

@@ -8,6 +8,7 @@ use candle_nn::{VarBuilder, VarMap};
 use scale_rec::feats::config::FlowConfig;
 use scale_rec::feats::dag::{FeatureDag, FeatureValue};
 use scale_rec::feats::ops::Fv;
+use scale_rec::layers::embedding::FeatureSpec;
 use scale_rec::models::unimixer::tokenizer::FeatureTokenizer;
 use scale_rec::models::ModelConfig;
 
@@ -35,17 +36,20 @@ fn main() -> Result<()> {
 
     // 2. 获取 embeddable features
     let embed_features = dag.embeddable_features();
-    let features: Vec<(String, usize, usize)> = embed_features
+    let features: Vec<FeatureSpec> = embed_features
         .iter()
-        .map(|(name, emb)| (name.to_string(), emb.vocab_size, emb.embed_dim))
+        .map(|(name, emb)| FeatureSpec {
+            name: name.to_string(),
+            vocab_size: emb.vocab_size,
+            embed_dim: emb.embed_dim,
+            pooling: emb.pooling,
+            seq_len: emb.seq_len,
+        })
         .collect();
     println!(
         "[Rust] {} embeddable features: {:?}",
         features.len(),
-        features
-            .iter()
-            .map(|(n, _, _)| n.as_str())
-            .collect::<Vec<_>>()
+        features.iter().map(|f| f.name.as_str()).collect::<Vec<_>>()
     );
 
     // 3. 加载 model config
@@ -108,7 +112,7 @@ fn main() -> Result<()> {
 
     // Read source names from feature config to dynamically match CSV columns
     let source_names: Vec<String> = dag.source_defs().keys().cloned().collect();
-    let embed_names: Vec<String> = features.iter().map(|(n, _, _)| n.clone()).collect();
+    let embed_names: Vec<String> = features.iter().map(|f| f.name.clone()).collect();
     let mut all_indices: HashMap<String, Vec<u32>> = embed_names
         .iter()
         .map(|n| (n.clone(), Vec::new()))

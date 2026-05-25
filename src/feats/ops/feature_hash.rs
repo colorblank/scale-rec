@@ -70,6 +70,13 @@ impl CustomOp for FeatureHash {
                         .collect();
                     return Ok(Fv::IntList(indices));
                 }
+                Fv::FloatList(list) => {
+                    let indices: Vec<i32> = list
+                        .iter()
+                        .map(|f| (djb2_seeded(&f.to_string(), 0) % self.vocab_size) as i32)
+                        .collect();
+                    return Ok(Fv::IntList(indices));
+                }
                 _ => {}
             }
         }
@@ -85,7 +92,7 @@ impl CustomOp for FeatureHash {
         let has_list_col = inputs.iter().any(|col| {
             col.iter()
                 .take(3)
-                .any(|v| matches!(v, Fv::StrList(_) | Fv::IntList(_)))
+                .any(|v| matches!(v, Fv::StrList(_) | Fv::IntList(_) | Fv::FloatList(_)))
         });
 
         let mut results: Vec<Fv> = Vec::with_capacity(n_rows);
@@ -97,6 +104,7 @@ impl CustomOp for FeatureHash {
                         match &col[row] {
                             Fv::StrList(list) => elems.extend(list.iter().cloned()),
                             Fv::IntList(list) => elems.extend(list.iter().map(|i| i.to_string())),
+                            Fv::FloatList(list) => elems.extend(list.iter().map(|f| f.to_string())),
                             other => {
                                 elems.push(other.to_string());
                             }

@@ -9,6 +9,7 @@ use candle_nn::{VarBuilder, VarMap};
 use feats::config::FlowConfig;
 use feats::dag::{FeatureDag, FeatureValue};
 use feats::ops::Fv;
+use layers::embedding::FeatureSpec;
 use layers::towers::{Activation, MultiTaskConfig, TowerConfig};
 use models::unimixer::model::UniMixerModel;
 use models::unimixer::tokenizer::FeatureTokenizer;
@@ -25,14 +26,20 @@ fn main() -> Result<()> {
         FeatureDag::from_config(flow_config, true, None).map_err(|e| candle_core::Error::Msg(e))?;
     let embed_features = dag.embeddable_features();
     println!("\n[Embed] {} embeddable features:", embed_features.len());
-    let tokenizer_features: Vec<(String, usize, usize)> = embed_features
+    let tokenizer_features: Vec<FeatureSpec> = embed_features
         .iter()
         .map(|(name, emb)| {
             println!(
                 "  {} -> vocab={}, dim={}",
                 name, emb.vocab_size, emb.embed_dim
             );
-            (name.to_string(), emb.vocab_size, emb.embed_dim)
+            FeatureSpec {
+                name: name.to_string(),
+                vocab_size: emb.vocab_size,
+                embed_dim: emb.embed_dim,
+                pooling: emb.pooling,
+                seq_len: emb.seq_len,
+            }
         })
         .collect();
 
@@ -55,15 +62,15 @@ fn main() -> Result<()> {
     let batch_size = 1usize;
     let feature_tensors: HashMap<String, Tensor> = tokenizer_features
         .iter()
-        .map(|(name, _, _)| {
-            let val = pre_result.features.get(name).unwrap();
+        .map(|spec| {
+            let val = pre_result.features.get(&spec.name).unwrap();
             let idx: i32 = match val.clone() {
                 Fv::Int(i) => i,
                 Fv::IntList(ref list) => list.first().copied().unwrap_or(0),
-                _ => panic!("Feature '{}' has unsupported type", name),
+                _ => panic!("Feature '{}' has unsupported type", spec.name),
             };
             let tensor = Tensor::from_slice(&[idx as u32], batch_size, &Device::Cpu).unwrap();
-            (name.clone(), tensor)
+            (spec.name.clone(), tensor)
         })
         .collect();
 

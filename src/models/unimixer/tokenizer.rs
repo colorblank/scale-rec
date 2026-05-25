@@ -3,6 +3,8 @@ use candle_core::{Result, Tensor};
 use candle_nn::{conv1d, embedding, Conv1d, Conv1dConfig, Embedding, Module, VarBuilder};
 use std::collections::HashMap;
 
+use crate::layers::embedding::FeatureSpec;
+
 pub struct FeatureTokenizer {
     feature_to_emb_idx: HashMap<String, usize>,
     ordered_feature_names: Vec<String>,
@@ -15,7 +17,7 @@ pub struct FeatureTokenizer {
 impl FeatureTokenizer {
     pub fn new(
         vb: VarBuilder,
-        features: &[(String, usize, usize)],
+        features: &[FeatureSpec],
         token_dim: usize,
         num_tokens: usize,
     ) -> Result<Self> {
@@ -23,12 +25,16 @@ impl FeatureTokenizer {
         let mut ordered_feature_names = Vec::with_capacity(features.len());
         let mut embeddings = Vec::with_capacity(features.len());
         let mut total_embed_dim = 0;
-        for (i, (name, vocab_size, embed_dim)) in features.iter().enumerate() {
-            feature_to_emb_idx.insert(name.clone(), i);
-            ordered_feature_names.push(name.clone());
-            let emb = embedding(*vocab_size, *embed_dim, vb.pp(format!("emb_{}", name)))?;
+        for (i, spec) in features.iter().enumerate() {
+            feature_to_emb_idx.insert(spec.name.clone(), i);
+            ordered_feature_names.push(spec.name.clone());
+            let emb = embedding(
+                spec.vocab_size,
+                spec.embed_dim,
+                vb.pp(format!("emb_{}", spec.name)),
+            )?;
             embeddings.push(emb);
-            total_embed_dim += embed_dim;
+            total_embed_dim += spec.embed_dim;
         }
         if total_embed_dim % num_tokens != 0 {
             candle_core::bail!(
@@ -65,7 +71,11 @@ impl FeatureTokenizer {
                 .get(name)
                 .ok_or_else(|| candle_core::Error::Msg(format!("Feature '{}' not found", name)))?;
             let emb_idx = *self.feature_to_emb_idx.get(name).unwrap();
-            let emb_out = self.embeddings[emb_idx].forward(input_tensor)?;
+            let mut emb_out = self.embeddings[emb_idx].forward(input_tensor)?;
+            if emb_out.rank() == 3 {
+                let seq_len = emb_out.dim(1)? as f64;
+                emb_out = emb_out.sum(1)?.affine(1.0 / seq_len, 0.0)?;
+            }
             embeds.push(emb_out);
         }
         let concat_embeds = Tensor::cat(&embeds, 1)?;

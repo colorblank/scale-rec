@@ -1,6 +1,6 @@
 //! DeepFM：FM 一阶 + FM 二阶 + Deep MLP 的联合模型。
 use super::Model;
-use crate::layers::embedding::FeatureEmbeddings;
+use crate::layers::embedding::{FeatureEmbeddings, FeatureSpec};
 use crate::layers::fm::fm_interaction;
 use crate::layers::mlp::Mlp;
 use crate::layers::towers::Activation;
@@ -25,19 +25,13 @@ pub struct DeepFM {
 impl DeepFM {
     pub fn new(
         vb: VarBuilder,
-        features: &[(String, usize, usize)],
+        features: &[FeatureSpec],
         fm_k: usize,
         deep_hidden_dims: &[usize],
     ) -> Result<Self> {
-        let fm_first_cfg: Vec<(String, usize, usize)> = features
-            .iter()
-            .map(|(n, v, _)| (n.clone(), *v, 1))
-            .collect();
+        let fm_first_cfg: Vec<FeatureSpec> = features.iter().map(|f| f.with_dim(1)).collect();
         let fm_first_embeddings = FeatureEmbeddings::new(vb.pp("fm_first"), &fm_first_cfg)?;
-        let fm_second_cfg: Vec<(String, usize, usize)> = features
-            .iter()
-            .map(|(n, v, _)| (n.clone(), *v, fm_k))
-            .collect();
+        let fm_second_cfg: Vec<FeatureSpec> = features.iter().map(|f| f.with_dim(fm_k)).collect();
         let fm_second_embeddings = FeatureEmbeddings::new(vb.pp("fm_second"), &fm_second_cfg)?;
         let deep_embeddings = FeatureEmbeddings::new(vb.pp("deep"), features)?;
         let deep_mlp = Mlp::new(
@@ -48,12 +42,13 @@ impl DeepFM {
             Activation::Relu,
         )?;
         let global_bias = vb.get_with_hints((1,), "global_bias", candle_nn::Init::Const(0.0))?;
+        let deep_total_dim = deep_embeddings.total_dim;
         Ok(Self {
             fm_first_embeddings,
             fm_second_embeddings,
             fm_k,
             deep_embeddings,
-            deep_total_dim: features.iter().map(|(_, _, d)| d).sum(),
+            deep_total_dim,
             deep_mlp,
             global_bias,
         })

@@ -3,28 +3,27 @@ use std::collections::{HashMap, HashSet};
 
 use candle_core::{Device, Tensor};
 
+use crate::feats::config::{DType, PoolingStrategy, SourceDef};
 use crate::feats::dag::{FeatureDag, FeatureValue};
 use crate::feats::ops::Fv;
+use crate::layers::embedding::FeatureSpec;
 use crate::models::Model;
 
 pub struct InferenceEngine {
     pub dag: FeatureDag,
     pub model: Box<dyn Model>,
-    pub embed_names: Vec<String>,
+    pub embed_features: Vec<FeatureSpec>,
     // Pre-cached plan data
     embed_ids: Vec<usize>,
-    source_col_map: HashMap<String, usize>,
     user_op_indices: HashSet<usize>,
-    op_source_kind: HashMap<String, String>,
 }
 
 pub type FeatureRow = HashMap<String, serde_json::Value>;
 pub type PredictionRow = HashMap<String, f32>;
 
 impl InferenceEngine {
-    pub fn new(dag: FeatureDag, model: Box<dyn Model>, embed_names: Vec<String>) -> Self {
+    pub fn new(dag: FeatureDag, model: Box<dyn Model>, embed_features: Vec<FeatureSpec>) -> Self {
         let embed_ids = dag.plan.embed_ids().to_vec();
-        let source_col_map = dag.plan.source_col_map();
         let op_kind = dag.op_source_kind();
         let user_ops: HashSet<String> = op_kind
             .iter()
@@ -38,18 +37,12 @@ impl InferenceEngine {
             .filter(|s| user_ops.contains(&dag.execution_order[s.op_idx]))
             .map(|s| s.op_idx)
             .collect();
-        let op_source_kind: HashMap<String, String> = op_kind
-            .into_iter()
-            .map(|(k, v)| (k, v.to_string()))
-            .collect();
         Self {
             dag,
             model,
-            embed_names,
+            embed_features,
             embed_ids,
-            source_col_map,
             user_op_indices,
-            op_source_kind,
         }
     }
 
@@ -59,16 +52,7 @@ impl InferenceEngine {
         }
         let n = features.len();
 
-        // Build columns from rows
-        let mut columns: HashMap<String, Vec<FeatureValue>> = HashMap::new();
-        for row in features {
-            for (key, val) in row {
-                columns
-                    .entry(key.clone())
-                    .or_insert_with(|| Vec::with_capacity(n))
-                    .push(json_to_feature(val));
-            }
-        }
+        let columns = self.rows_to_columns(features);
 
         // Plan-based execution: zero HashMap during operator loop
         let context = self
@@ -78,6 +62,25 @@ impl InferenceEngine {
             .map_err(|e| format!("DAG: {}", e))?;
 
         self.extract_predictions(&context, n)
+    }
+
+    fn rows_to_columns(&self, rows: &[FeatureRow]) -> HashMap<String, Vec<FeatureValue>> {
+        let n = rows.len();
+        let mut columns: HashMap<String, Vec<FeatureValue>> = self
+            .dag
+            .source_defs()
+            .iter()
+            .map(|(name, source)| (name.clone(), vec![source_default(source); n]))
+            .collect();
+
+        for (row_idx, row) in rows.iter().enumerate() {
+            for (key, val) in row {
+                if let Some(col) = columns.get_mut(key) {
+                    col[row_idx] = json_to_feature(val);
+                }
+            }
+        }
+        columns
     }
 
     pub fn predict_broadcast(
@@ -120,18 +123,15 @@ impl InferenceEngine {
 
         // Step 2: Build batch columns
         let n = items.len();
-        let mut columns: HashMap<String, Vec<FeatureValue>> = HashMap::new();
-        for (k, v) in user {
-            columns.insert(k.clone(), vec![json_to_feature(v); n]);
-        }
-        for item in items {
-            for (k, v) in item {
-                columns
-                    .entry(k.clone())
-                    .or_insert_with(|| Vec::with_capacity(n))
-                    .push(json_to_feature(v));
-            }
-        }
+        let merged_rows: Vec<FeatureRow> = items
+            .iter()
+            .map(|item| {
+                let mut row = user.clone();
+                row.extend(item.clone());
+                row
+            })
+            .collect();
+        let columns = self.rows_to_columns(&merged_rows);
 
         let context = self
             .dag
@@ -147,36 +147,16 @@ impl InferenceEngine {
         context: &[Vec<Fv>],
         n: usize,
     ) -> Result<Vec<PredictionRow>, String> {
-        let mut all_indices: HashMap<String, Vec<u32>> = self
-            .embed_names
-            .iter()
-            .map(|name| (name.clone(), Vec::with_capacity(n)))
-            .collect();
-        for (i, name) in self.embed_names.iter().enumerate() {
+        let mut tensor_inputs: HashMap<String, Tensor> =
+            HashMap::with_capacity(self.embed_features.len());
+        for (i, spec) in self.embed_features.iter().enumerate() {
             let cid = self.embed_ids[i];
             let col = context
                 .get(cid)
-                .ok_or_else(|| format!("Feature '{}' missing", name))?;
-            all_indices.insert(
-                name.clone(),
-                col.iter()
-                    .map(|val| match val {
-                        Fv::Int(i) => *i as u32,
-                        Fv::IntList(l) => l.first().copied().unwrap_or(0) as u32,
-                        _ => 0,
-                    })
-                    .collect(),
-            );
+                .ok_or_else(|| format!("Feature '{}' missing", spec.name))?;
+            let tensor = feature_column_to_tensor(spec, col, n)?;
+            tensor_inputs.insert(spec.name.clone(), tensor);
         }
-        let tensor_inputs: HashMap<String, Tensor> = all_indices
-            .iter()
-            .map(|(n, indices)| {
-                (
-                    n.clone(),
-                    Tensor::from_slice(indices, indices.len(), &Device::Cpu).unwrap(),
-                )
-            })
-            .collect();
         let outputs = self
             .model
             .forward(&tensor_inputs)
@@ -201,6 +181,52 @@ impl InferenceEngine {
     }
 }
 
+fn feature_column_to_tensor(spec: &FeatureSpec, col: &[Fv], n: usize) -> Result<Tensor, String> {
+    let use_sequence =
+        spec.pooling != PoolingStrategy::First && col.iter().any(|v| matches!(v, Fv::IntList(_)));
+
+    if use_sequence {
+        let observed_max = col
+            .iter()
+            .filter_map(|v| match v {
+                Fv::IntList(values) => Some(values.len()),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(1);
+        let seq_len = spec.seq_len.unwrap_or(observed_max).max(1);
+        let mut flat = Vec::with_capacity(n * seq_len);
+        for val in col.iter().take(n) {
+            match val {
+                Fv::IntList(values) => {
+                    for idx in 0..seq_len {
+                        flat.push(values.get(idx).copied().unwrap_or(0).max(0) as u32);
+                    }
+                }
+                Fv::Int(i) => {
+                    flat.push((*i).max(0) as u32);
+                    flat.extend(std::iter::repeat(0).take(seq_len - 1));
+                }
+                _ => flat.extend(std::iter::repeat(0).take(seq_len)),
+            }
+        }
+        return Tensor::from_slice(flat.as_slice(), (n, seq_len), &Device::Cpu)
+            .map_err(|e| format!("tensor '{}': {}", spec.name, e));
+    }
+
+    let indices: Vec<u32> = col
+        .iter()
+        .take(n)
+        .map(|val| match val {
+            Fv::Int(i) => (*i).max(0) as u32,
+            Fv::IntList(values) => values.first().copied().unwrap_or(0).max(0) as u32,
+            _ => 0,
+        })
+        .collect();
+    Tensor::from_slice(indices.as_slice(), indices.len(), &Device::Cpu)
+        .map_err(|e| format!("tensor '{}': {}", spec.name, e))
+}
+
 fn json_to_feature(val: &serde_json::Value) -> FeatureValue {
     match val {
         serde_json::Value::Number(n) => {
@@ -220,5 +246,25 @@ fn json_to_feature(val: &serde_json::Value) -> FeatureValue {
                 .collect(),
         ),
         _ => Fv::Int(0),
+    }
+}
+
+fn source_default(source: &SourceDef) -> FeatureValue {
+    match &source.dtype {
+        DType::Int => Fv::Int(source.default_val.parse::<i32>().unwrap_or(0)),
+        DType::Float => Fv::Float(source.default_val.parse::<f32>().unwrap_or(0.0)),
+        DType::String => Fv::Str(source.default_val.clone()),
+        DType::List { dtype, length } => match dtype.as_ref() {
+            DType::Int => Fv::IntList(vec![
+                source.default_val.parse::<i32>().unwrap_or(0);
+                *length
+            ]),
+            DType::Float => Fv::FloatList(vec![
+                source.default_val.parse::<f32>().unwrap_or(0.0);
+                *length
+            ]),
+            DType::String => Fv::StrList(vec![source.default_val.clone(); *length]),
+            _ => Fv::Int(0),
+        },
     }
 }
