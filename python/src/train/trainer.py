@@ -16,6 +16,7 @@ from .eval.evaluator import Evaluator
 from .export import export_to_safetensors
 from .loss.multi_task import MultiTaskLoss, _to_device
 from .optim.scheduler import LRScheduler, build_optimizer
+from .task import TaskSpec, legacy_task_specs
 
 logger = logging.getLogger(__name__)
 
@@ -67,11 +68,17 @@ class Trainer:
         sep: str = "\t",
         null_markers: set[str] | None = None,
         batch_factory: Callable[[], Iterator[Batch]] | None = None,
+        task_specs: list[TaskSpec] | None = None,
     ):
         self.model = model
         self.dag = dag
-        self.task_names = task_names
-        self.label_map = label_map
+        self.task_specs = (
+            task_specs
+            or config.tasks
+            or legacy_task_specs(task_names, label_map, config.task_weights)
+        )
+        self.task_names = [spec.name for spec in self.task_specs]
+        self.label_map = {spec.name: spec.label for spec in self.task_specs}
         self.device = device
         self.cfg = config
 
@@ -85,10 +92,11 @@ class Trainer:
         self.eval_batches: list[Batch] = []
         self._n_eval_batches = 0
         self.loss_fn = MultiTaskLoss(
-            task_names,
-            label_map,
+            self.task_names,
+            self.label_map,
             mode=config.loss_weighting,
             task_weights=config.task_weights,
+            task_specs=self.task_specs,
         )
         self.lr_scheduler: LRScheduler | None = None
         self.optimizer: torch.optim.Optimizer | None = None

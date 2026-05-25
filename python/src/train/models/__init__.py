@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 import yaml
 
 from ..layers.towers import Activation, MultiTaskConfig, TaskRelation, TowerConfig
+from ..task import label_map as task_label_map
+from ..task import parse_task_specs, task_names
 from .deepfm import DeepFM
 from .esmm import ESMM, default_task_config
 from .lr import LogisticRegression
@@ -116,7 +118,14 @@ class ModelConfig:
 # ── register built-in models ──
 
 
-def _spec_pred(model=None):
+def _spec_pred(model=None, params=None):
+    specs = parse_task_specs((params or {}).get("tasks"))
+    if specs:
+        return {
+            "tasks": specs,
+            "task_names": task_names(specs),
+            "label_col_map": task_label_map(specs),
+        }
     return {"task_names": ["pred"], "label_col_map": {"pred": "is_click"}}
 
 
@@ -150,7 +159,14 @@ def _build_mmoe(features, tokenizer=None, **params):
     )
 
 
-def _spec_mmoe(model=None):
+def _spec_mmoe(model=None, params=None):
+    specs = parse_task_specs((params or {}).get("tasks"))
+    if specs:
+        return {
+            "tasks": specs,
+            "task_names": task_names(specs),
+            "label_col_map": task_label_map(specs),
+        }
     names = model.task_names if model else []
     return {"task_names": names, "label_col_map": {n: n for n in names}}
 
@@ -173,6 +189,13 @@ def _build_esmm(features, tokenizer=None, **params):
 
 def _spec_esmm(model=None, params=None):
     params = params or {}
+    specs = parse_task_specs(params.get("tasks"))
+    if specs:
+        return {
+            "tasks": specs,
+            "task_names": task_names(specs),
+            "label_col_map": task_label_map(specs),
+        }
     if model is not None:
         task_names = list(getattr(model, "task_names", []))
     else:
@@ -194,6 +217,13 @@ def _spec_esmm(model=None, params=None):
 
 
 def _spec_unimixer(model=None, params=None):
+    specs = parse_task_specs((params or {}).get("tasks"))
+    if specs:
+        return {
+            "tasks": specs,
+            "task_names": task_names(specs),
+            "label_col_map": task_label_map(specs),
+        }
     if model is not None:
         tt = getattr(model, "task_towers", None) or model.unimixer.task_towers
         names = list(tt._tower_names) if hasattr(tt, "_tower_names") else []

@@ -6,6 +6,7 @@ from train.config_train import TrainConfig
 from train.eval.evaluator import EvalConfig, Evaluator
 from train.loss.multi_task import MultiTaskLoss
 from train.optim.scheduler import LRScheduler
+from train.task import TaskSpec, parse_task_specs
 from train.trainer import Trainer
 
 
@@ -100,6 +101,29 @@ def test_equal_loss_ignores_static_task_weights():
     assert loss_fn.task_weights_info() == {"click": 1.0}
 
 
+def test_task_spec_drives_loss_label_weight_and_mask():
+    specs = parse_task_specs(
+        [
+            {
+                "name": "click",
+                "label": "is_click",
+                "loss": "bce",
+                "weight": 2.0,
+                "mask": "is_click >= 0",
+            }
+        ]
+    )
+    loss_fn = MultiTaskLoss(["click"], {"click": "wrong"}, task_specs=specs)
+    outputs = {"click": torch.zeros(3, 1)}
+    labels = {"is_click": [0, -1, 1]}
+
+    loss = loss_fn(outputs, labels)
+
+    assert loss is not None
+    assert torch.isclose(loss, torch.tensor(1.3862944))
+    assert loss_fn.task_weights_info() == {"click": 2.0}
+
+
 def test_trainer_monitor_score_falls_back_to_configured_metric():
     trainer = Trainer(
         torch.nn.Linear(1, 1),
@@ -108,6 +132,7 @@ def test_trainer_monitor_score_falls_back_to_configured_metric():
         label_map={"click": "click"},
         device=torch.device("cpu"),
         config=TrainConfig(eval={"metrics": ["gauc"]}),
+        task_specs=[TaskSpec(name="click", label="click")],
         data_path="unused",
         flow_config=None,
     )

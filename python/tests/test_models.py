@@ -5,6 +5,7 @@ from train.models.deepfm import DeepFM
 from train.models.esmm import ESMM
 from train.models.lr import LogisticRegression
 from train.models.mmoe import MMoE
+from train.models import get_output_spec
 
 FEATURES = [("a", 10, 4), ("b", 5, 4)]
 
@@ -20,6 +21,27 @@ def test_lr_forward():
     model = LogisticRegression(FEATURES)
     out = model(_inputs(3))
     assert out["pred"].shape == (3, 1)
+
+
+def test_output_spec_accepts_task_specs():
+    spec = get_output_spec(
+        "lr",
+        params={
+            "tasks": [
+                {
+                    "name": "pred",
+                    "label": "clicked",
+                    "loss": "bce",
+                    "weight": 0.5,
+                    "metrics": ["auc", "logloss"],
+                }
+            ]
+        },
+    )
+
+    assert spec["task_names"] == ["pred"]
+    assert spec["label_col_map"] == {"pred": "clicked"}
+    assert spec["tasks"][0].weight == 0.5
 
 
 def test_deepfm_forward():

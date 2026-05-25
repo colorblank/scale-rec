@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .eval.evaluator import EvalConfig
+from .task import TaskSpec, parse_task_specs
 
 
 @dataclass
@@ -48,6 +49,7 @@ class TrainConfig:
     # 损失
     loss_weighting: str = "static"  # static | equal | uncertainty
     task_weights: dict[str, float] | None = None
+    tasks: list[TaskSpec] = field(default_factory=list)
 
     # 正则化
     grad_max_norm: float = 1.0
@@ -71,6 +73,7 @@ class TrainConfig:
         log_interval: int = 10,
         loss_weighting: str = "static",
         task_weights: dict[str, float] | None = None,
+        tasks: list[TaskSpec] | list[dict[str, Any]] | None = None,
         grad_max_norm: float = 1.0,
         ema_decay: float = 0.999,
         early_stopping_patience: int = 5,
@@ -110,6 +113,7 @@ class TrainConfig:
         self.log_interval = log_interval
         self.loss_weighting = loss_weighting
         self.task_weights = task_weights
+        self.tasks = self._normalize_tasks(tasks)
         self.grad_max_norm = grad_max_norm
         self.ema_decay = ema_decay
         self.early_stopping_patience = early_stopping_patience
@@ -123,6 +127,14 @@ class TrainConfig:
         if isinstance(value, dict):
             return value.copy()
         return vars(value).copy()
+
+    @staticmethod
+    def _normalize_tasks(value: list[TaskSpec] | list[dict[str, Any]] | None) -> list[TaskSpec]:
+        if not value:
+            return []
+        if all(isinstance(task, TaskSpec) for task in value):
+            return list(value)
+        return parse_task_specs(value)
 
     @property
     def warmup_steps(self) -> int:

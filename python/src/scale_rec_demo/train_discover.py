@@ -142,6 +142,7 @@ def main() -> None:
         sep=args.separator,
         null_markers=set(args.null_markers),
         batch_factory=batch_factory,
+        task_specs=built.spec.get("tasks"),
     )
     best = trainer.fit()
     logger.info("best AUC=%.4f", best)

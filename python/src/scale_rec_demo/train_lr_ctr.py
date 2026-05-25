@@ -78,6 +78,7 @@ def main():
         data_path=args.data,
         flow_config=fc,
         has_header=not args.no_header,
+        task_specs=built.spec.get("tasks"),
     )
     best = trainer.fit()
     logger.info("best=%.4f", best)

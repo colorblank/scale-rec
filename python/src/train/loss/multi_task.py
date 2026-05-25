@@ -8,6 +8,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from ..task import TaskSpec, legacy_task_specs
+
 
 def _pick_labels(batch_labels: dict[str, list[Any]], *names: str) -> list[Any]:
     for n in names:
@@ -42,14 +44,17 @@ class MultiTaskLoss(nn.Module):
         task_weights: dict[str, float] | None = None,
         pos_weights: dict[str, float] | None = None,
         reg_weight: float = 0.1,
+        task_specs: list[TaskSpec] | None = None,
     ):
         super().__init__()
         if mode not in {"static", "equal", "uncertainty"}:
             raise ValueError(f"Unknown loss weighting mode: {mode}")
-        self.task_names = [t for t in task_names if not t.startswith("ct")]
+        self.task_specs = task_specs or legacy_task_specs(task_names, label_map, task_weights)
+        self.spec_by_name = {spec.name: spec for spec in self.task_specs}
+        self.task_names = [spec.name for spec in self.task_specs]
         self.label_map = label_map
         self.mode = mode
-        self.task_weights = task_weights or {}
+        self.task_weights = {spec.name: spec.weight for spec in self.task_specs}
         self.pos_weights = pos_weights or {}
         self.reg_weight = reg_weight
         if mode == "uncertainty":
@@ -68,23 +73,26 @@ class MultiTaskLoss(nn.Module):
         for task, logits in outputs.items():
             if task.startswith("ct"):
                 continue
-            col = self.label_map.get(task)
-            if not col:
+            spec = self.spec_by_name.get(task)
+            if spec is None:
                 continue
+            col = spec.label
             raw = _pick_labels(batch_labels, col, task)
             if not raw:
                 continue
             arr = np.array([float(v) if v is not None else np.nan for v in raw], dtype=np.float32)
             valid = ~np.isnan(arr)
+            if spec.mask:
+                valid &= _eval_mask(spec.mask, batch_labels, col)
             if not valid.any():
                 continue
 
-            if task == "stay":
+            if spec.loss == "weighted_bce_stay":
                 t = torch.tensor(arr[valid], dtype=torch.float32, device=logits.device).view(-1, 1)
                 raw_loss = _weighted_bce_stay(logits[valid], t)
             else:
                 y = torch.tensor(arr[valid], dtype=torch.float32, device=logits.device).view(-1, 1)
-                pw = self.pos_weights.get(task)
+                pw = spec.pos_weight if spec.pos_weight is not None else self.pos_weights.get(task)
                 if pw is not None:
                     raw_loss = F.binary_cross_entropy_with_logits(
                         logits[valid], y, pos_weight=torch.tensor(pw, device=logits.device)
@@ -123,6 +131,29 @@ class MultiTaskLoss(nn.Module):
         if self.mode == "equal":
             return {t: 1.0 for t in self.task_names}
         return {t: self.task_weights.get(t, 1.0) for t in self.task_names}
+
+
+def _eval_mask(mask: str, batch_labels: dict[str, list[Any]], default_col: str) -> np.ndarray:
+    tokens = mask.strip().split()
+    if len(tokens) != 3:
+        raise ValueError(f"Unsupported task mask: {mask}")
+    col, op, raw_threshold = tokens
+    values = batch_labels.get(col) or batch_labels.get(default_col) or []
+    arr = np.array([float(v) if v is not None else np.nan for v in values], dtype=np.float32)
+    threshold = float(raw_threshold)
+    if op == ">=":
+        return arr >= threshold
+    if op == ">":
+        return arr > threshold
+    if op == "<=":
+        return arr <= threshold
+    if op == "<":
+        return arr < threshold
+    if op == "==":
+        return arr == threshold
+    if op == "!=":
+        return arr != threshold
+    raise ValueError(f"Unsupported task mask operator: {op}")
 
 
 def compute_loss(
