@@ -21,6 +21,7 @@ from train.dag import FeatureDag  # noqa: E402
 from train.export import export_to_safetensors  # noqa: E402
 from train.models import ModelConfig, get_output_spec  # noqa: E402
 
+from paths import LEGACY_FEATURE_CONFIG, MODEL_CONFIGS  # noqa: E402
 from ._metrics import accuracy, auc, logloss, sigmoid  # noqa: E402
 
 
@@ -76,15 +77,15 @@ def _wrap_unimixer(model):
 
 
 DEMO_DIR = os.path.dirname(os.path.abspath(__file__))
-FEATURE_CONFIG = os.path.join(DEMO_DIR, "feature_config_demo.yaml")
+FEATURE_CONFIG = str(LEGACY_FEATURE_CONFIG)
 DATA_PATH = os.path.join(DEMO_DIR, "temp", "train_data.csv")
 
 MODELS = [
-    ("lr", "model_lr_demo.yaml", ["ctr"]),
-    ("deepfm", "model_deepfm_demo.yaml", ["ctr"]),
-    ("mmoe", "model_mmoe_demo.yaml", ["ctr", "cvr"]),
-    ("esmm", "model_esmm_demo.yaml", ["ctr", "cvr"]),
-    ("unimixer", "model_unimixer_demo.yaml", ["ctr", "cvr"]),
+    ("lr", str(MODEL_CONFIGS["lr"]), ["ctr"]),
+    ("deepfm", str(MODEL_CONFIGS["deepfm"]), ["ctr"]),
+    ("mmoe", str(MODEL_CONFIGS["mmoe"]), ["ctr", "cvr"]),
+    ("esmm", str(MODEL_CONFIGS["esmm"]), ["ctr", "cvr"]),
+    ("unimixer", str(MODEL_CONFIGS["unimixer"]), ["ctr", "cvr"]),
 ]
 
 SINGLE_TASK_LABEL = "ctr"
@@ -297,8 +298,7 @@ def main() -> None:
         selected = [(t, c, lbs) for t, c, lbs in MODELS if t in wanted]
 
     results = []
-    for model_type, config_name, lbs in selected:
-        config_path = os.path.join(DEMO_DIR, config_name)
+    for model_type, config_path, lbs in selected:
         if not os.path.exists(config_path):
             print(f"[Skip] config not found: {config_path}")
             continue

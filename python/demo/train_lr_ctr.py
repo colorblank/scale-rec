@@ -25,18 +25,16 @@ from train.config import FlowConfig  # noqa: E402
 from train.dag import FeatureDag  # noqa: E402
 from train.trainer import Trainer  # noqa: E402
 
-DEMO_DIR = Path(__file__).resolve().parent
-_PROJ_ROOT = DEMO_DIR.parent.parent
+from paths import DEMO_DIR, DISCOVER_FEATURE_CONFIG, MODEL_CONFIGS, REPO_ROOT  # noqa: E402
+
 logger = logging.getLogger("train")
 
 
 def main():
     p = argparse.ArgumentParser(description="纯 LR 单任务 CTR 训练")
     p.add_argument("--data", required=True)
-    p.add_argument(
-        "--feature-config", default=str(_PROJ_ROOT / "examples" / "feature_config_discover.yaml")
-    )
-    p.add_argument("--model-config", default=str(DEMO_DIR / "model_lr_ctr.yaml"))
+    p.add_argument("--feature-config", default=str(DISCOVER_FEATURE_CONFIG))
+    p.add_argument("--model-config", default=str(MODEL_CONFIGS["lr"]))
     p.add_argument("--no-header", action="store_true")
     add_training_args(p, lr=0.01, batch_size=128)
     p.set_defaults(
@@ -90,7 +88,7 @@ def main():
         model_type=built.config.type,
         spec=built.spec,
         best_score=best,
-        repo_root=_PROJ_ROOT,
+        repo_root=REPO_ROOT,
     )
     logger.info("manifest exported to %s", manifest_path)
 

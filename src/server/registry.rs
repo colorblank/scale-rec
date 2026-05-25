@@ -199,22 +199,56 @@ impl ModelRegistry {
     }
 
     fn find_model_config(&self, model_name: &str) -> Result<PathBuf, String> {
-        // Look next to model_dir first, then alongside feature_config
+        // Look next to model_dir first, then alongside feature_config.
+        // Demo configs may live under python/demo/configs/{legacy,discover}.
         let demo_parent = self.model_dir.parent();
         let feature_parent = self.feature_config_path.parent();
         let parent_candidates: Vec<Option<&Path>> = vec![demo_parent, feature_parent];
+        let model_key = model_name.strip_prefix("model_").unwrap_or(model_name);
+        let (config_key, prefers_discover) = match model_key.strip_prefix("discover_") {
+            Some(key) => (key, true),
+            None => (model_key, false),
+        };
         let config_names = vec![
             format!("{}_demo.yaml", model_name),
-            format!(
-                "model_{}_demo.yaml",
-                model_name.strip_prefix("model_").unwrap_or(model_name)
-            ),
+            format!("model_{}_demo.yaml", model_key),
+            format!("model_{}.yaml", model_key),
+            format!("model_{}.yaml", config_key),
         ];
         for parent in parent_candidates.into_iter().flatten() {
-            for name in &config_names {
-                let p = parent.join(name);
-                if p.exists() {
-                    return Ok(p);
+            let mut dirs = vec![
+                parent.to_path_buf(),
+                parent.join("configs").join(if prefers_discover {
+                    "discover"
+                } else {
+                    "legacy"
+                }),
+                parent.join("configs").join(if prefers_discover {
+                    "legacy"
+                } else {
+                    "discover"
+                }),
+            ];
+            if let Some(feature_sibling) = match parent.file_name() {
+                Some(name) if name == "legacy" || name == "discover" => {
+                    parent.parent().map(|config_dir| {
+                        if name == "legacy" {
+                            config_dir.join("discover")
+                        } else {
+                            config_dir.join("legacy")
+                        }
+                    })
+                }
+                _ => None,
+            } {
+                dirs.push(feature_sibling);
+            }
+            for dir in dirs {
+                for name in &config_names {
+                    let p = dir.join(name);
+                    if p.exists() {
+                        return Ok(p);
+                    }
                 }
             }
         }
@@ -373,6 +407,7 @@ fn validate_safetensors_keys(varmap: &VarMap, path: &Path) -> Result<(), String>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     fn hex(bytes: [u8; 32]) -> String {
         let mut out = String::with_capacity(64);
@@ -392,5 +427,50 @@ mod tests {
             hex(sha256_bytes(b"abc")),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
+    }
+
+    fn empty_registry(feature_config_path: PathBuf, model_dir: PathBuf) -> ModelRegistry {
+        ModelRegistry {
+            engines: RwLock::new(HashMap::new()),
+            feature_config_path,
+            model_dir,
+            embed_features_cache: RwLock::new(Vec::new()),
+        }
+    }
+
+    #[test]
+    fn finds_model_config_in_demo_config_subdirs() {
+        let root = std::env::temp_dir().join(format!(
+            "scale-rec-registry-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let demo_dir = root.join("python").join("demo");
+        let temp_dir = demo_dir.join("temp");
+        let legacy_dir = demo_dir.join("configs").join("legacy");
+        let discover_dir = demo_dir.join("configs").join("discover");
+        fs::create_dir_all(&temp_dir).unwrap();
+        fs::create_dir_all(&legacy_dir).unwrap();
+        fs::create_dir_all(&discover_dir).unwrap();
+
+        let feature_config = legacy_dir.join("feature_config.yaml");
+        let legacy_lr = legacy_dir.join("model_lr.yaml");
+        let legacy_esmm = legacy_dir.join("model_esmm.yaml");
+        let discover_esmm = discover_dir.join("model_esmm.yaml");
+        fs::write(&feature_config, "").unwrap();
+        fs::write(&legacy_lr, "type: lr\n").unwrap();
+        fs::write(&legacy_esmm, "type: esmm\n").unwrap();
+        fs::write(&discover_esmm, "type: esmm\n").unwrap();
+
+        let registry = empty_registry(feature_config, temp_dir);
+        assert_eq!(registry.find_model_config("model_lr").unwrap(), legacy_lr);
+        assert_eq!(
+            registry.find_model_config("model_discover_esmm").unwrap(),
+            discover_esmm
+        );
+
+        fs::remove_dir_all(root).unwrap();
     }
 }

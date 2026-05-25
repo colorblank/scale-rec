@@ -96,7 +96,7 @@ uv run python -m demo.train_all --epochs 1 --models lr --debug-trace 10
 # 启动服务 (自动加载 temp/ 下所有 .safetensors)
 cargo run --bin server --release -- \
   --model-dir python/demo/temp \
-  --feature-config python/demo/feature_config_demo.yaml
+  --feature-config python/demo/configs/legacy/feature_config.yaml
 
 # 健康检查
 curl http://localhost:8080/health

@@ -29,11 +29,7 @@ from train.dag import FeatureDag  # noqa: E402
 from train.data import build_item_index, stream_join  # noqa: E402
 from train.trainer import Trainer  # noqa: E402
 
-DEMO_DIR = Path(__file__).resolve().parent
-_PROJ_ROOT = DEMO_DIR.parent.parent
-
-DEFAULT_FEATURE_CONFIG = str(_PROJ_ROOT / "examples" / "feature_config_discover.yaml")
-DEFAULT_MODEL_CONFIG = str(DEMO_DIR / "model_discover_esmm.yaml")
+from paths import DEMO_DIR, DISCOVER_FEATURE_CONFIG, MODEL_CONFIGS, REPO_ROOT  # noqa: E402
 
 NULL_MARKERS: set[str] = {"NULL", "\\N", "null", "None", ""}
 logger = logging.getLogger("train")
@@ -61,8 +57,8 @@ def main() -> None:
     p.add_argument("--data", help="single training TSV path")
     p.add_argument("--user-data", help="user behavior TSV path for streaming join mode")
     p.add_argument("--item-files", help="comma-separated item TSV paths for streaming join mode")
-    p.add_argument("--feature-config", default=DEFAULT_FEATURE_CONFIG)
-    p.add_argument("--model-config", default=DEFAULT_MODEL_CONFIG)
+    p.add_argument("--feature-config", default=str(DISCOVER_FEATURE_CONFIG))
+    p.add_argument("--model-config", default=str(MODEL_CONFIGS["discover_esmm"]))
     p.add_argument("--export-path")
     p.add_argument("--no-header", action="store_true", help="TSV 文件无 header 行")
     p.add_argument("--null-markers", nargs="*", default=list(NULL_MARKERS))
@@ -156,7 +152,7 @@ def main() -> None:
         model_type=built.config.type,
         spec=built.spec,
         best_score=best,
-        repo_root=_PROJ_ROOT,
+        repo_root=REPO_ROOT,
     )
     logger.info("manifest exported to %s", manifest_path)
 

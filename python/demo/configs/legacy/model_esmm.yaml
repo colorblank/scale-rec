@@ -1,0 +1,7 @@
+type: esmm
+shared_bottom_dims: [8]
+click_hidden_dims: [8]
+cvr_hidden_dims: [8]
+detail_hidden_dims: [8]
+stock_hidden_dims: [8]
+stay_hidden_dims: [8]

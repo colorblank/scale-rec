@@ -8,10 +8,12 @@ import sys
 import numpy as np
 import pandas as pd
 
+from paths import LEGACY_FEATURE_CONFIG, MODEL_CONFIGS
+
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 PYTHON_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DEMO_DIR = os.path.abspath(os.path.dirname(__file__))
-FEATURE_CONFIG = os.path.join(DEMO_DIR, "feature_config_demo.yaml")
+FEATURE_CONFIG = str(LEGACY_FEATURE_CONFIG)
 
 MODEL_TYPES = ["lr", "deepfm", "mmoe", "esmm", "unimixer"]
 
@@ -39,7 +41,7 @@ def verify_model(model_type: str, threshold: float = 1e-3) -> dict:
     print(f"{'=' * 60}")
 
     temp_dir = os.path.join(DEMO_DIR, "temp")
-    model_config = os.path.join(DEMO_DIR, f"model_{model_type}_demo.yaml")
+    model_config = str(MODEL_CONFIGS[model_type])
     safetensors = os.path.join(temp_dir, f"model_{model_type}.safetensors")
     test_csv = os.path.join(temp_dir, f"model_{model_type}_test.csv")
     py_preds_csv = os.path.join(temp_dir, f"model_{model_type}_py_preds.csv")

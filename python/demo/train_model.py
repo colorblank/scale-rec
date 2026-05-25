@@ -21,6 +21,7 @@ from train.dag import FeatureDag  # noqa: E402
 from train.export import export_to_safetensors  # noqa: E402
 from train.models import ModelConfig  # noqa: E402
 
+from paths import LEGACY_FEATURE_CONFIG, MODEL_CONFIGS  # noqa: E402
 from ._metrics import accuracy, auc, logloss, sigmoid  # noqa: E402
 
 LABEL_COL = "ctr"
@@ -93,12 +94,12 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--feature-config",
-        default=os.path.join(demo_dir, "feature_config_demo.yaml"),
+        default=str(LEGACY_FEATURE_CONFIG),
     )
     temp_dir = os.path.join(demo_dir, "temp")
     parser.add_argument(
         "--model-config",
-        default=os.path.join(demo_dir, "model_lr_demo.yaml"),
+        default=str(MODEL_CONFIGS["lr"]),
     )
     parser.add_argument("--data", default=os.path.join(temp_dir, "train_data.csv"))
     parser.add_argument("--epochs", type=int, default=50)

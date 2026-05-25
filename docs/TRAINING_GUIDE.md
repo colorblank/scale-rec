@@ -53,7 +53,7 @@ sources:
 
 ## 模型配置
 
-`python/demo/model_discover_esmm.yaml`：
+`python/demo/configs/discover/model_esmm.yaml`：
 
 ```yaml
 type: esmm

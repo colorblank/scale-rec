@@ -265,7 +265,8 @@ for i in range(5):
 
 config = {"version": "1.0.0", "sources": sources, "operators": operators}
 
-out = os.path.join(os.path.dirname(__file__), "feature_config_demo.yaml")
+out = os.path.join(os.path.dirname(__file__), "configs", "legacy", "feature_config.yaml")
+os.makedirs(os.path.dirname(out), exist_ok=True)
 with open(out, "w", encoding="utf-8") as f:
     yaml.dump(config, f, default_flow_style=False, allow_unicode=True, width=200)
 
