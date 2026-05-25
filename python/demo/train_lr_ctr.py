@@ -7,18 +7,22 @@ import logging
 import sys
 from pathlib import Path
 
-import torch
-
 _src = Path(__file__).resolve().parent.parent / "src"
 if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
 
+from train.cli import (  # noqa: E402
+    add_runtime_args,
+    add_training_args,
+    build_model_for_dag,
+    configure_logging,
+    prepare_export_bundle,
+    resolve_device,
+    train_config_from_args,
+    write_training_manifest,
+)
 from train.config import FlowConfig  # noqa: E402
-from train.config_train import TrainConfig  # noqa: E402
 from train.dag import FeatureDag  # noqa: E402
-from train.eval.evaluator import EvalConfig  # noqa: E402
-from train.manifest import write_model_manifest  # noqa: E402
-from train.models import ModelConfig, get_output_spec  # noqa: E402
 from train.trainer import Trainer  # noqa: E402
 
 DEMO_DIR = Path(__file__).resolve().parent
@@ -33,36 +37,16 @@ def main():
         "--feature-config", default=str(_PROJ_ROOT / "examples" / "feature_config_discover.yaml")
     )
     p.add_argument("--model-config", default=str(DEMO_DIR / "model_lr_ctr.yaml"))
-    p.add_argument("--epochs", type=int, default=10)
-    p.add_argument("--batch-size", type=int, default=128)
-    p.add_argument("--lr", type=float, default=0.01)
     p.add_argument("--no-header", action="store_true")
-    p.add_argument("--eval-samples", type=int, default=1000)
-    p.add_argument("--log-interval", type=int, default=10)
-    p.add_argument("--eval-interval", type=int, default=200)
-    p.add_argument("--warmup-steps", type=int, default=100)
-    p.add_argument("--eval-metrics", default="auc,gauc")
-    p.add_argument("--eval-log", default="")
-    p.add_argument("--optim", default="adamw")
-    p.add_argument("--device", default="auto")
-    p.add_argument("--log-level", default="INFO")
+    add_training_args(p, lr=0.01, batch_size=128)
+    p.set_defaults(
+        epochs=10, eval_samples=1000, eval_interval=200, warmup_steps=100, eval_metrics="auc,gauc"
+    )
+    add_runtime_args(p)
     args = p.parse_args()
 
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s [%(levelname)-5s] %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-    )
-
-    device = torch.device(
-        args.device
-        if args.device != "auto"
-        else "cuda"
-        if torch.cuda.is_available()
-        else "mps"
-        if torch.backends.mps.is_available()
-        else "cpu"
-    )
+    configure_logging(args.log_level)
+    device = resolve_device(args.device)
     logger.info("device: %s", device)
 
     fc = FlowConfig.from_yaml(args.feature_config)
@@ -70,33 +54,27 @@ def main():
     features = dag.feature_tuples()
     logger.info("%d features, %d ops", len(features), len(fc.operators))
 
-    mc = ModelConfig.from_yaml(args.model_config)
-    model = mc.build(
-        features, pooling_map=dag.feature_pooling(), total_dim=dag.feature_total_dim()
-    ).to(device)
-    spec = get_output_spec(mc.type, model)
+    built = build_model_for_dag(args.model_config, dag, device)
     logger.info(
         "LR params=%s task=%s",
-        f"{sum(p.numel() for p in model.parameters()):,}",
-        spec["task_names"],
+        f"{built.param_count:,}",
+        built.spec["task_names"],
+    )
+    bundle = prepare_export_bundle(
+        export_path=DEMO_DIR / "temp" / "lr_ctr.safetensors",
+        export_dir=DEMO_DIR / "temp",
+        model_type=built.config.type,
+        feature_config_path=args.feature_config,
+        model_config_path=args.model_config,
+        copy_configs=False,
     )
 
-    cfg = TrainConfig(
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        export_path=str(DEMO_DIR / "temp" / "lr_ctr.safetensors"),
-        eval_samples=args.eval_samples,
-        eval_interval=args.eval_interval,
-        log_interval=args.log_interval,
-        lr_schedule={"warmup_steps": args.warmup_steps},
-        optim={"name": args.optim, "lr": args.lr},
-        eval=EvalConfig(metrics=args.eval_metrics.split(","), log_path=args.eval_log),
-    )
+    cfg = train_config_from_args(args, export_path=bundle.export_path)
     trainer = Trainer(
-        model,
+        built.model,
         dag,
-        spec["task_names"],
-        spec["label_col_map"],
+        built.spec["task_names"],
+        built.spec["label_col_map"],
         device,
         cfg,
         data_path=args.data,
@@ -106,19 +84,12 @@ def main():
     best = trainer.fit()
     logger.info("best=%.4f", best)
 
-    export_path = Path(cfg.export_path)
-    manifest_path = export_path.with_suffix(".manifest.yaml")
-    write_model_manifest(
-        manifest_path=manifest_path,
-        model_id=export_path.stem,
-        model_version=export_path.stem,
-        model_type=mc.type,
-        weights_path=export_path,
-        feature_config_path=args.feature_config,
-        model_config_path=args.model_config,
-        tasks=spec["task_names"],
-        label_col_map=spec["label_col_map"],
-        metrics={"best_auc": float(best)},
+    manifest_path = write_training_manifest(
+        bundle=bundle,
+        model_id=bundle.export_path.stem,
+        model_type=built.config.type,
+        spec=built.spec,
+        best_score=best,
         repo_root=_PROJ_ROOT,
     )
     logger.info("manifest exported to %s", manifest_path)
