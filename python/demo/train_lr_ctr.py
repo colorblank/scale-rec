@@ -17,6 +17,7 @@ from train.config import FlowConfig  # noqa: E402
 from train.config_train import TrainConfig  # noqa: E402
 from train.dag import FeatureDag  # noqa: E402
 from train.eval.evaluator import EvalConfig  # noqa: E402
+from train.manifest import write_model_manifest  # noqa: E402
 from train.models import ModelConfig, get_output_spec  # noqa: E402
 from train.trainer import Trainer  # noqa: E402
 
@@ -104,6 +105,23 @@ def main():
     )
     best = trainer.fit()
     logger.info("best=%.4f", best)
+
+    export_path = Path(cfg.export_path)
+    manifest_path = export_path.with_suffix(".manifest.yaml")
+    write_model_manifest(
+        manifest_path=manifest_path,
+        model_id=export_path.stem,
+        model_version=export_path.stem,
+        model_type=mc.type,
+        weights_path=export_path,
+        feature_config_path=args.feature_config,
+        model_config_path=args.model_config,
+        tasks=spec["task_names"],
+        label_col_map=spec["label_col_map"],
+        metrics={"best_auc": float(best)},
+        repo_root=_PROJ_ROOT,
+    )
+    logger.info("manifest exported to %s", manifest_path)
 
 
 if __name__ == "__main__":

@@ -22,6 +22,7 @@ from train.config import FlowConfig  # noqa: E402
 from train.config_train import TrainConfig  # noqa: E402
 from train.dag import FeatureDag  # noqa: E402
 from train.data import build_item_index, stream_join  # noqa: E402
+from train.manifest import write_model_manifest  # noqa: E402
 from train.models import ModelConfig, get_output_spec  # noqa: E402
 from train.trainer import Trainer  # noqa: E402
 
@@ -202,10 +203,13 @@ def main() -> None:
     export_dir.mkdir(parents=True, exist_ok=True)
     export_path = str(export_dir / f"{mc.type}_{ts}.safetensors")
 
-    # 导出特征配置副本
-    config_copy = export_dir / f"feature_config_{ts}.yaml"
-    shutil.copy(args.feature_config, config_copy)
-    logger.info("config exported to %s", config_copy)
+    # 导出配置副本，manifest 以副本为发布契约。
+    feature_config_copy = export_dir / f"feature_config_{ts}.yaml"
+    model_config_copy = export_dir / f"model_config_{ts}.yaml"
+    shutil.copy(args.feature_config, feature_config_copy)
+    shutil.copy(args.model_config, model_config_copy)
+    logger.info("feature config exported to %s", feature_config_copy)
+    logger.info("model config exported to %s", model_config_copy)
 
     # Train
     cfg = TrainConfig(
@@ -239,6 +243,22 @@ def main() -> None:
     )
     best = trainer.fit()
     logger.info("best AUC=%.4f", best)
+
+    manifest_path = export_dir / f"{Path(export_path).stem}.manifest.yaml"
+    write_model_manifest(
+        manifest_path=manifest_path,
+        model_id=Path(export_path).stem,
+        model_version=ts,
+        model_type=mc.type,
+        weights_path=export_path,
+        feature_config_path=feature_config_copy,
+        model_config_path=model_config_copy,
+        tasks=spec["task_names"],
+        label_col_map=spec["label_col_map"],
+        metrics={"best_auc": float(best)},
+        repo_root=_PROJ_ROOT,
+    )
+    logger.info("manifest exported to %s", manifest_path)
 
 
 if __name__ == "__main__":
