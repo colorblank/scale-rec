@@ -25,10 +25,8 @@ scale-rec/
 │   │   └── demo_inference.rs       # 单次推理示例
 │   └── lib.rs
 ├── python/                          # Python 训练管线 (PyTorch)
-│   ├── config/                      #   模型配置 YAML
-│   ├── demo/                        #   Demo 管线 (数据生成 → 训练 → 验证)
-│   │   ├── temp/                    #     生成文件 (safetensors, CSV)
-│   │   └── debug/                   #     Debug 追踪输出
+│   ├── configs/                     #   Python 模型和 demo 配置 YAML
+│   ├── artifacts/                   #   本地生成产物 (safetensors, CSV, debug)
 │   ├── data/                        #   训练数据 (parquet)
 │   └── src/train/
 │       ├── config.py                #   FlowConfig (镜像 Rust config.rs)
@@ -78,16 +76,16 @@ scale-rec/
 cd python
 
 # 生成合成数据 (2000 行, ctr+cvr 标签)
-uv run python -m demo.generate_data
+uv run python -m scale_rec_demo.generate_data
 
 # 训练所有模型 (5 epochs)
-uv run python -m demo.train_all --epochs 5
+uv run python -m scale_rec_demo.train_all --epochs 5
 
 # 验证 PyTorch vs Rust 推理一致性
-uv run python -m demo.verify_all
+uv run python -m scale_rec_demo.verify_all
 
 # Debug 追踪 (逐算子 I/O)
-uv run python -m demo.train_all --epochs 1 --models lr --debug-trace 10
+uv run python -m scale_rec_demo.train_all --epochs 1 --models lr --debug-trace 10
 ```
 
 ### 2. HTTP 推理服务
@@ -95,8 +93,8 @@ uv run python -m demo.train_all --epochs 1 --models lr --debug-trace 10
 ```bash
 # 启动服务 (自动加载 temp/ 下所有 .safetensors)
 cargo run --bin server --release -- \
-  --model-dir python/demo/temp \
-  --feature-config python/demo/configs/legacy/feature_config.yaml
+  --model-dir python/artifacts/demo \
+  --feature-config python/configs/demo/legacy/feature_config.yaml
 
 # 健康检查
 curl http://localhost:8080/health
@@ -128,7 +126,7 @@ cargo run --bin bench --release -- \
 cd python
 uv run python -m train.main \
   --feature-config ../examples/feature_config.yaml \
-  --model-config config/model_lr.yaml \
+  --model-config configs/models/model_lr.yaml \
   --data data/train.parquet \
   --epochs 10 --batch-size 64 --lr 0.001 \
   --export-path model.safetensors

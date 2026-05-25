@@ -6,9 +6,9 @@ import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEMO_DIR = REPO_ROOT / "python" / "demo"
-LEGACY_CONFIG_DIR = DEMO_DIR / "configs" / "legacy"
-DISCOVER_CONFIG_DIR = DEMO_DIR / "configs" / "discover"
+PYTHON_DIR = REPO_ROOT / "python"
+LEGACY_CONFIG_DIR = PYTHON_DIR / "configs" / "demo" / "legacy"
+DISCOVER_CONFIG_DIR = PYTHON_DIR / "configs" / "demo" / "discover"
 
 
 def test_demo_model_configs_exist_and_are_current():
@@ -38,4 +38,4 @@ def test_demo_model_configs_exist_and_are_current():
 
 
 def test_lr_ctr_duplicate_config_was_removed():
-    assert not (DEMO_DIR / "model_lr_ctr.yaml").exists()
+    assert not (PYTHON_DIR / "demo" / "model_lr_ctr.yaml").exists()

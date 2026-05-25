@@ -9,7 +9,8 @@ import csv
 import json
 import math
 import random
-from pathlib import Path
+
+from .paths import DEMO_ARTIFACT_DIR
 
 # ═══════════════════════════════════════════
 # 受控词汇表
@@ -316,7 +317,7 @@ def make_user(user_id: int, rng: random.Random) -> dict:
 
 
 def main():
-    out_dir = Path(__file__).resolve().parent / "temp"
+    out_dir = DEMO_ARTIFACT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "discover_train_data.txt"
 

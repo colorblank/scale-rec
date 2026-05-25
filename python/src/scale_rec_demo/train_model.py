@@ -12,7 +12,7 @@ import torch
 import torch.nn.functional as F
 
 # 确保 src/ 在 sys.path 中，使 `train` 包可导入（不依赖 .pth 或 venv 配置）
-_src = Path(__file__).resolve().parent.parent / "src"
+_src = Path(__file__).resolve().parents[1]
 if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
 
@@ -21,7 +21,7 @@ from train.dag import FeatureDag  # noqa: E402
 from train.export import export_to_safetensors  # noqa: E402
 from train.models import ModelConfig  # noqa: E402
 
-from paths import LEGACY_FEATURE_CONFIG, MODEL_CONFIGS  # noqa: E402
+from .paths import DEMO_ARTIFACT_DIR, LEGACY_FEATURE_CONFIG, MODEL_CONFIGS  # noqa: E402
 from ._metrics import accuracy, auc, logloss, sigmoid  # noqa: E402
 
 LABEL_COL = "ctr"
@@ -90,13 +90,12 @@ def train_epoch(model, optimizer, dag, df: pd.DataFrame, batch_size: int) -> flo
 
 
 def main() -> None:
-    demo_dir = os.path.dirname(__file__) or "."
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--feature-config",
         default=str(LEGACY_FEATURE_CONFIG),
     )
-    temp_dir = os.path.join(demo_dir, "temp")
+    temp_dir = str(DEMO_ARTIFACT_DIR)
     parser.add_argument(
         "--model-config",
         default=str(MODEL_CONFIGS["lr"]),

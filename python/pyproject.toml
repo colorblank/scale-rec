@@ -2,18 +2,23 @@
 name = "train"
 version = "0.1.0"
 description = "Python training pipeline for scale-rec"
-requires-python = ">=3.14"
+requires-python = ">=3.10"
 dependencies = [
-    "numpy>=2.4.4",
-    "packaging>=26.2",
-    "pandas>=2.3.0",
-    "pyyaml>=6.0.3",
-    "safetensors>=0.7.0",
-    "torch>=2.11.0",
+    "numpy>=1.26",
+    "packaging>=23.0",
+    "pandas>=2.1",
+    "pyyaml>=6.0",
+    "safetensors>=0.4",
+    "torch>=2.1",
 ]
 
 [project.scripts]
 train = "train.main:main"
+scale-rec-demo-data = "scale_rec_demo.generate_data:main"
+scale-rec-demo-discover-data = "scale_rec_demo.generate_discover_data:main"
+scale-rec-demo-train-all = "scale_rec_demo.train_all:main"
+scale-rec-demo-train-discover = "scale_rec_demo.train_discover:main"
+scale-rec-demo-verify = "scale_rec_demo.verify_all:main"
 
 [tool.ruff]
 line-length = 100
@@ -32,5 +37,5 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "pytest>=9.0.3",
+    "pytest>=8.0",
 ]

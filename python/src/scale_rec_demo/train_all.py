@@ -12,7 +12,7 @@ import torch
 import torch.nn.functional as F
 
 # 确保 src/ 在 sys.path 中，使 `train` 包可导入（不依赖 .pth 或 venv 配置）
-_src = Path(__file__).resolve().parent.parent / "src"
+_src = Path(__file__).resolve().parents[1]
 if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
 
@@ -21,7 +21,7 @@ from train.dag import FeatureDag  # noqa: E402
 from train.export import export_to_safetensors  # noqa: E402
 from train.models import ModelConfig, get_output_spec  # noqa: E402
 
-from paths import LEGACY_FEATURE_CONFIG, MODEL_CONFIGS  # noqa: E402
+from .paths import DEMO_ARTIFACT_DIR, LEGACY_FEATURE_CONFIG, MODEL_CONFIGS  # noqa: E402
 from ._metrics import accuracy, auc, logloss, sigmoid  # noqa: E402
 
 
@@ -76,9 +76,8 @@ def _wrap_unimixer(model):
     return wrapper
 
 
-DEMO_DIR = os.path.dirname(os.path.abspath(__file__))
 FEATURE_CONFIG = str(LEGACY_FEATURE_CONFIG)
-DATA_PATH = os.path.join(DEMO_DIR, "temp", "train_data.csv")
+DATA_PATH = str(DEMO_ARTIFACT_DIR / "train_data.csv")
 
 MODELS = [
     ("lr", str(MODEL_CONFIGS["lr"]), ["ctr"]),
@@ -199,7 +198,7 @@ def train_one_model(model_type: str, model_config_path: str, label_cols: list[st
         tracer = DebugTracer(
             DebugConfig(
                 max_trace_samples=args.debug_trace,
-                output_dir=os.path.join(DEMO_DIR, "temp", "debug"),
+                output_dir=str(DEMO_ARTIFACT_DIR / "debug"),
             )
         )
     dag = FeatureDag(flow_config, tracer=tracer)
@@ -249,7 +248,8 @@ def train_one_model(model_type: str, model_config_path: str, label_cols: list[st
     print(f"[Best] AUC={best_auc:.4f}")
 
     # Export
-    prefix = os.path.join(DEMO_DIR, "temp", f"model_{model_type}")
+    DEMO_ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+    prefix = str(DEMO_ARTIFACT_DIR / f"model_{model_type}")
     safetensors_path = prefix + ".safetensors"
     test_csv_path = prefix + "_test.csv"
     preds_csv_path = prefix + "_py_preds.csv"

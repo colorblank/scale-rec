@@ -223,3 +223,4 @@ __marimo__/
 *.parquet
 .claude/
 demo/temp/
+artifacts/

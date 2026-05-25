@@ -200,7 +200,7 @@ impl ModelRegistry {
 
     fn find_model_config(&self, model_name: &str) -> Result<PathBuf, String> {
         // Look next to model_dir first, then alongside feature_config.
-        // Demo configs may live under python/demo/configs/{legacy,discover}.
+        // Demo configs may live under python/configs/demo/{legacy,discover}.
         let demo_parent = self.model_dir.parent();
         let feature_parent = self.feature_config_path.parent();
         let parent_candidates: Vec<Option<&Path>> = vec![demo_parent, feature_parent];
@@ -216,33 +216,40 @@ impl ModelRegistry {
             format!("model_{}.yaml", config_key),
         ];
         for parent in parent_candidates.into_iter().flatten() {
-            let mut dirs = vec![
-                parent.to_path_buf(),
-                parent.join("configs").join(if prefers_discover {
-                    "discover"
-                } else {
-                    "legacy"
-                }),
-                parent.join("configs").join(if prefers_discover {
-                    "legacy"
-                } else {
-                    "discover"
-                }),
-            ];
-            if let Some(feature_sibling) = match parent.file_name() {
-                Some(name) if name == "legacy" || name == "discover" => {
-                    parent.parent().map(|config_dir| {
-                        if name == "legacy" {
-                            config_dir.join("discover")
+            let dirs = match parent.file_name().and_then(|name| name.to_str()) {
+                Some("legacy") | Some("discover") => {
+                    let config_dir = parent.parent();
+                    let sibling = config_dir.map(|dir| {
+                        dir.join(if parent.file_name().unwrap() == "legacy" {
+                            "discover"
                         } else {
-                            config_dir.join("legacy")
+                            "legacy"
+                        })
+                    });
+                    match (
+                        prefers_discover,
+                        parent.file_name().and_then(|name| name.to_str()),
+                    ) {
+                        (true, Some("legacy")) | (false, Some("discover")) => {
+                            sibling.into_iter().chain([parent.to_path_buf()]).collect()
                         }
-                    })
+                        _ => [parent.to_path_buf()].into_iter().chain(sibling).collect(),
+                    }
                 }
-                _ => None,
-            } {
-                dirs.push(feature_sibling);
-            }
+                _ => vec![
+                    parent.to_path_buf(),
+                    parent.join("configs").join(if prefers_discover {
+                        "discover"
+                    } else {
+                        "legacy"
+                    }),
+                    parent.join("configs").join(if prefers_discover {
+                        "legacy"
+                    } else {
+                        "discover"
+                    }),
+                ],
+            };
             for dir in dirs {
                 for name in &config_names {
                     let p = dir.join(name);
@@ -447,11 +454,12 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        let demo_dir = root.join("python").join("demo");
-        let temp_dir = demo_dir.join("temp");
-        let legacy_dir = demo_dir.join("configs").join("legacy");
-        let discover_dir = demo_dir.join("configs").join("discover");
-        fs::create_dir_all(&temp_dir).unwrap();
+        let python_dir = root.join("python");
+        let artifact_dir = python_dir.join("artifacts").join("demo");
+        let config_dir = python_dir.join("configs").join("demo");
+        let legacy_dir = config_dir.join("legacy");
+        let discover_dir = config_dir.join("discover");
+        fs::create_dir_all(&artifact_dir).unwrap();
         fs::create_dir_all(&legacy_dir).unwrap();
         fs::create_dir_all(&discover_dir).unwrap();
 
@@ -464,7 +472,7 @@ mod tests {
         fs::write(&legacy_esmm, "type: esmm\n").unwrap();
         fs::write(&discover_esmm, "type: esmm\n").unwrap();
 
-        let registry = empty_registry(feature_config, temp_dir);
+        let registry = empty_registry(feature_config, artifact_dir);
         assert_eq!(registry.find_model_config("model_lr").unwrap(), legacy_lr);
         assert_eq!(
             registry.find_model_config("model_discover_esmm").unwrap(),

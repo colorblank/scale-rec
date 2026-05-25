@@ -4,11 +4,11 @@
 
 ```bash
 # 1. 生成合成数据
-PYTHONPATH=python/src:$PYTHONPATH uv run python python/demo/generate_discover_data.py
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.generate_discover_data
 
 # 2. 训练
-PYTHONPATH=python/src:$PYTHONPATH uv run python python/demo/train_discover.py \
-  --data python/demo/temp/discover_train_data.txt \
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.train_discover \
+  --data python/artifacts/demo/discover_train_data.txt \
   --epochs 10 --batch-size 128 --no-header --eval-samples 400
 ```
 
@@ -16,7 +16,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python python/demo/train_discover.py \
 
 43 列 Tab 分隔 TSV，无 header。列定义见 `examples/feature_config_discover.yaml`。
 
-**生成合成数据**：`python/demo/generate_discover_data.py` 输出 2000 行 × 43 列。
+**生成合成数据**：`scale_rec_demo.generate_discover_data` 输出 2000 行 × 43 列。
 
 | 参数 | 默认 | 说明 |
 |------|------|------|
@@ -53,7 +53,7 @@ sources:
 
 ## 模型配置
 
-`python/demo/configs/discover/model_esmm.yaml`：
+`python/configs/demo/discover/model_esmm.yaml`：
 
 ```yaml
 type: esmm
@@ -213,8 +213,11 @@ python/src/train/
 ├── models/        — ESMM, MMoE, DeepFM, LR, UniMixer
 ├── layers/        — MLP, Embedding, Tokenizer, Towers
 └── ops/           — 14 种特征算子
-python/demo/
-├── train_discover.py          — CLI 入口
+python/src/scale_rec_demo/
+├── train_discover.py          — demo CLI 入口
 ├── generate_discover_data.py  — 合成数据生成
-└── TRAINING_GUIDE.md          — 本手册
+└── paths.py                   — demo 路径常量
+python/configs/demo/
+└── discover/                  — demo 模型配置
+python/artifacts/demo/         — 本地训练输出
 ```

@@ -4,10 +4,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-DEMO_DIR = Path(__file__).resolve().parent
-REPO_ROOT = DEMO_DIR.parent.parent
-TEMP_DIR = DEMO_DIR / "temp"
-CONFIG_DIR = DEMO_DIR / "configs"
+PACKAGE_DIR = Path(__file__).resolve().parent
+PYTHON_SRC_DIR = PACKAGE_DIR.parent
+PYTHON_DIR = PYTHON_SRC_DIR.parent
+REPO_ROOT = PYTHON_DIR.parent
+
+ARTIFACT_DIR = PYTHON_DIR / "artifacts"
+DEMO_ARTIFACT_DIR = ARTIFACT_DIR / "demo"
+TEMP_DIR = DEMO_ARTIFACT_DIR
+
+CONFIG_DIR = PYTHON_DIR / "configs" / "demo"
 LEGACY_CONFIG_DIR = CONFIG_DIR / "legacy"
 DISCOVER_CONFIG_DIR = CONFIG_DIR / "discover"
 

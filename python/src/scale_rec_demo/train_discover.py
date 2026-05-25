@@ -10,7 +10,7 @@ import logging
 import sys
 from pathlib import Path
 
-_src = Path(__file__).resolve().parent.parent / "src"
+_src = Path(__file__).resolve().parents[1]
 if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
 
@@ -29,7 +29,7 @@ from train.dag import FeatureDag  # noqa: E402
 from train.data import build_item_index, stream_join  # noqa: E402
 from train.trainer import Trainer  # noqa: E402
 
-from paths import DEMO_DIR, DISCOVER_FEATURE_CONFIG, MODEL_CONFIGS, REPO_ROOT  # noqa: E402
+from .paths import DEMO_ARTIFACT_DIR, DISCOVER_FEATURE_CONFIG, MODEL_CONFIGS, REPO_ROOT  # noqa: E402
 
 NULL_MARKERS: set[str] = {"NULL", "\\N", "null", "None", ""}
 logger = logging.getLogger("train")
@@ -118,7 +118,7 @@ def main() -> None:
     )
     bundle = prepare_export_bundle(
         export_path=args.export_path,
-        export_dir=DEMO_DIR / "temp",
+        export_dir=DEMO_ARTIFACT_DIR,
         model_type=built.config.type,
         feature_config_path=args.feature_config,
         model_config_path=args.model_config,

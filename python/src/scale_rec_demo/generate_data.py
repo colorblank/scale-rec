@@ -7,6 +7,8 @@ import math
 import os
 import random
 
+from .paths import DEMO_ARTIFACT_DIR
+
 
 def sigmoid(x):
     return 1.0 / (1.0 + math.exp(-x))
@@ -129,7 +131,7 @@ def generate_row(uid: int, rng: random.Random) -> list:
 
 
 def main():
-    out = os.path.join(os.path.dirname(__file__), "temp", "train_data.csv")
+    out = str(DEMO_ARTIFACT_DIR / "train_data.csv")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     headers = ["user_id"]
     for i in range(15):

@@ -8,11 +8,9 @@ import sys
 import numpy as np
 import pandas as pd
 
-from paths import LEGACY_FEATURE_CONFIG, MODEL_CONFIGS
+from .paths import DEMO_ARTIFACT_DIR, LEGACY_FEATURE_CONFIG, MODEL_CONFIGS, PYTHON_DIR
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-PYTHON_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-DEMO_DIR = os.path.abspath(os.path.dirname(__file__))
 FEATURE_CONFIG = str(LEGACY_FEATURE_CONFIG)
 
 MODEL_TYPES = ["lr", "deepfm", "mmoe", "esmm", "unimixer"]
@@ -40,7 +38,7 @@ def verify_model(model_type: str, threshold: float = 1e-3) -> dict:
     print(f"  Model: {model_type}")
     print(f"{'=' * 60}")
 
-    temp_dir = os.path.join(DEMO_DIR, "temp")
+    temp_dir = str(DEMO_ARTIFACT_DIR)
     model_config = str(MODEL_CONFIGS[model_type])
     safetensors = os.path.join(temp_dir, f"model_{model_type}.safetensors")
     test_csv = os.path.join(temp_dir, f"model_{model_type}_test.csv")
@@ -73,7 +71,7 @@ def verify_model(model_type: str, threshold: float = 1e-3) -> dict:
             test_csv,
             rust_preds_csv,
         ],
-        cwd=PYTHON_DIR,
+        cwd=str(PYTHON_DIR),
         capture_output=True,
         text=True,
         timeout=120,
