@@ -14,13 +14,14 @@ if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
 
 from train.config import FlowConfig  # noqa: E402
+from train.config_train import TrainConfig  # noqa: E402
 from train.dag import FeatureDag  # noqa: E402
+from train.eval.evaluator import EvalConfig  # noqa: E402
 from train.models import ModelConfig, get_output_spec  # noqa: E402
-from train.trainer import TrainConfig, Trainer  # noqa: E402
+from train.trainer import Trainer  # noqa: E402
 
 DEMO_DIR = Path(__file__).resolve().parent
 _PROJ_ROOT = DEMO_DIR.parent.parent
-
 logger = logging.getLogger("train")
 
 
@@ -39,6 +40,9 @@ def main():
     p.add_argument("--log-interval", type=int, default=10)
     p.add_argument("--eval-interval", type=int, default=200)
     p.add_argument("--warmup-steps", type=int, default=100)
+    p.add_argument("--eval-metrics", default="auc,gauc")
+    p.add_argument("--eval-log", default="")
+    p.add_argument("--optim", default="adamw")
     p.add_argument("--device", default="auto")
     p.add_argument("--log-level", default="INFO")
     args = p.parse_args()
@@ -71,7 +75,7 @@ def main():
     ).to(device)
     spec = get_output_spec(mc.type, model)
     logger.info(
-        "LR params=%s  task=%s",
+        "LR params=%s task=%s",
         f"{sum(p.numel() for p in model.parameters()):,}",
         spec["task_names"],
     )
@@ -79,12 +83,13 @@ def main():
     cfg = TrainConfig(
         epochs=args.epochs,
         batch_size=args.batch_size,
-        lr=args.lr,
+        export_path=str(DEMO_DIR / "temp" / "lr_ctr.safetensors"),
         eval_samples=args.eval_samples,
         eval_interval=args.eval_interval,
         log_interval=args.log_interval,
-        warmup_steps=args.warmup_steps,
-        export_path=str(DEMO_DIR / "temp" / "lr_ctr.safetensors"),
+        lr_schedule={"warmup_steps": args.warmup_steps},
+        optim={"name": args.optim, "lr": args.lr},
+        eval=EvalConfig(metrics=args.eval_metrics.split(","), log_path=args.eval_log),
     )
     trainer = Trainer(
         model,
@@ -98,7 +103,7 @@ def main():
         has_header=not args.no_header,
     )
     best = trainer.fit()
-    logger.info("best AUC=%.4f", best)
+    logger.info("best=%.4f", best)
 
 
 if __name__ == "__main__":

@@ -19,10 +19,11 @@ if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
 
 from train.config import FlowConfig  # noqa: E402
+from train.config_train import TrainConfig  # noqa: E402
 from train.dag import FeatureDag  # noqa: E402
 from train.data import build_item_index, stream_join  # noqa: E402
 from train.models import ModelConfig, get_output_spec  # noqa: E402
-from train.trainer import TrainConfig, Trainer  # noqa: E402
+from train.trainer import Trainer  # noqa: E402
 
 DEMO_DIR = Path(__file__).resolve().parent
 _PROJ_ROOT = DEMO_DIR.parent.parent
@@ -210,18 +211,15 @@ def main() -> None:
     cfg = TrainConfig(
         epochs=args.epochs,
         batch_size=args.batch_size,
-        lr=args.lr,
-        weight_decay=args.weight_decay,
         eval_samples=args.eval_samples,
         eval_interval=args.eval_interval,
         log_interval=args.log_interval,
         export_path=export_path,
-        warmup_steps=args.warmup_steps,
-        min_lr_ratio=args.min_lr_ratio,
+        optim={"lr": args.lr, "weight_decay": args.weight_decay},
+        lr_schedule={"warmup_steps": args.warmup_steps, "min_lr_ratio": args.min_lr_ratio},
         grad_max_norm=args.grad_max_norm,
         early_stopping_patience=args.early_stopping,
-        ema_enabled=not args.no_ema,
-        ema_decay=args.ema_decay,
+        ema_decay=0.0 if args.no_ema else args.ema_decay,
         tb_dir=args.tb_dir,
         loss_weighting=args.loss_weighting,
     )

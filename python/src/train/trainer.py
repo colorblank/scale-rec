@@ -1,102 +1,39 @@
 from __future__ import annotations
 
-"""训练编排器：验证集收集、多 epoch 训练、checkpoint、耗时统计。"""
+"""训练编排器。"""
 
 import logging
-import math
 import time
-from dataclasses import dataclass
-from typing import Callable, Iterator
+from typing import Any, Callable, Iterator
 
 import torch
 
 from .config import FlowConfig
+from .config_train import TrainConfig
 from .dag import FeatureDag
 from .data import stream_file_batches
+from .eval.evaluator import Evaluator
 from .export import export_to_safetensors
-from .metrics import Batch, MultiTaskLoss, _to_device, compute_aucs
+from .loss.multi_task import MultiTaskLoss, _to_device
+from .optim.scheduler import LRScheduler, build_optimizer
 
 logger = logging.getLogger(__name__)
 
-
-@dataclass
-class TrainConfig:
-    """训练超参数。"""
-
-    epochs: int = 30
-    batch_size: int = 64
-    lr: float = 0.005
-    weight_decay: float = 1e-4
-    eval_samples: int = 2000
-    eval_interval: int = 50
-    log_interval: int = 10
-    export_path: str = ""
-
-    # ── LR warmup + cosine decay (step-based) ──
-    warmup_steps: int = 200
-    min_lr_ratio: float = 0.01
-
-    # ── Embedding 正则化 (0=禁用, SparseAdam 当前不支持) ──
-    embedding_weight_decay: float = 0
-
-    # ── Gradient clipping ──
-    grad_max_norm: float = 1.0
-
-    # ── Early stopping ──
-    early_stopping_patience: int = 5
-
-    # ── EMA ──
-    ema_decay: float = 0.999  # θ_ema = ema_decay * θ_ema + (1 - ema_decay) * θ
-    ema_enabled: bool = True
-
-    # ── Multi-task loss ──
-    loss_weighting: str = "static"  # "static" | "equal" | "uncertainty"
-
-    # ── TensorBoard ──
-    tb_dir: str = ""  # TensorBoard 日志目录，空字符串=禁用
-    tb_grad_interval: int = 100  # 每隔 N batch 记录梯度直方图
+Batch = dict[str, Any]
 
 
 def _collect_batches(batches: Iterator[Batch], max_samples: int) -> list[Batch]:
     result: list[Batch] = []
     collected = 0
-    for b in batches:
-        result.append(b)
-        collected += len(b["features"])
+    for batch in batches:
+        result.append(batch)
+        collected += len(batch["features"])
         if collected >= max_samples:
             break
     return result
 
 
-class _LRScheduler:
-    """Step-based warmup → cosine decay。warmup_steps 内线性升温，之后 cosine 衰减。"""
-
-    def __init__(self, optimizers, base_lr, warmup_steps, total_steps, min_lr_ratio):
-        self.optimizers = optimizers if isinstance(optimizers, list) else [optimizers]
-        self.base_lr = base_lr
-        self.warmup = warmup_steps
-        self.total = max(total_steps, warmup_steps + 1)
-        self.min_lr = base_lr * min_lr_ratio
-
-    def step(self, step: int) -> None:
-        if step <= self.warmup:
-            lr = self.base_lr * step / max(self.warmup, 1)
-        else:
-            progress = min((step - self.warmup) / max(self.total - self.warmup, 1), 1.0)
-            lr = self.min_lr + 0.5 * (self.base_lr - self.min_lr) * (
-                1 + math.cos(math.pi * progress)
-            )
-        for opt in self.optimizers:
-            for pg in opt.param_groups:
-                pg["lr"] = lr
-
-    def current_lr(self) -> float:
-        return self.optimizers[0].param_groups[0]["lr"]
-
-
 class _EMA:
-    """Exponential moving average of model weights."""
-
     def __init__(self, model: torch.nn.Module, decay: float):
         self.decay = decay
         self.shadow = {name: p.detach().clone() for name, p in model.named_parameters()}
@@ -108,16 +45,13 @@ class _EMA:
                 self.shadow[name].mul_(self.decay).add_(p, alpha=1 - self.decay)
 
     def apply_to(self, model: torch.nn.Module) -> None:
-        """Copy EMA weights into target model."""
-        sd = model.state_dict()
+        state = model.state_dict()
         for name, p in self.shadow.items():
-            if name in sd:
-                sd[name].copy_(p)
+            if name in state:
+                state[name].copy_(p)
 
 
 class Trainer:
-    """训练编排器，封装验证集收集、epoch 循环、日志、checkpoint。"""
-
     def __init__(
         self,
         model: torch.nn.Module,
@@ -150,84 +84,70 @@ class Trainer:
 
         self.eval_batches: list[Batch] = []
         self._n_eval_batches = 0
-
-        self.loss_fn = MultiTaskLoss(task_names, label_map, mode=self.cfg.loss_weighting)
-        self.lr_scheduler: _LRScheduler | None = None
+        self.loss_fn = MultiTaskLoss(
+            task_names,
+            label_map,
+            mode=config.loss_weighting,
+            task_weights=config.task_weights,
+        )
+        self.lr_scheduler: LRScheduler | None = None
+        self.optimizer: torch.optim.Optimizer | None = None
         self.ema: _EMA | None = None
+        self.evaluator = Evaluator(config.eval)
         self._best_auc = 0.0
         self._stale_epochs = 0
-        self._tb_writer = None
         self._global_step = 0
-
-    # ── 公开 API ──
 
     def fit(self) -> float:
         self._collect_eval()
-
         self.loss_fn = self.loss_fn.to(self.device)
 
-        # 参数分组：embedding 用独立 weight_decay, dense 用基础 weight_decay
-        emb_params = []
-        dense_params = []
-        for name, p in self.model.named_parameters():
-            if p.requires_grad:
-                (emb_params if "emb_" in name else dense_params).append(p)
+        emb_params: list[torch.nn.Parameter] = []
+        dense_params: list[torch.nn.Parameter] = []
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                (emb_params if "emb_" in name else dense_params).append(param)
 
-        dense_opt = torch.optim.AdamW(
-            dense_params + list(self.loss_fn.parameters()),
-            lr=self.cfg.lr,
-            weight_decay=self.cfg.weight_decay,
-        )
-        emb_opt = torch.optim.AdamW(
-            emb_params,
-            lr=self.cfg.lr,
-            weight_decay=self.cfg.embedding_weight_decay,
-        )
-        self.optimizers = [emb_opt, dense_opt]
+        cfg = self.cfg.optim
+        emb_lr = cfg.emb_lr if cfg.emb_lr is not None else cfg.lr
+        emb_wd = cfg.emb_weight_decay if cfg.emb_weight_decay is not None else cfg.weight_decay
+        param_groups = [
+            {
+                "params": emb_params,
+                "lr": emb_lr,
+                "weight_decay": emb_wd,
+                "momentum": cfg.momentum,
+            },
+            {
+                "params": dense_params + list(self.loss_fn.parameters()),
+                "lr": cfg.lr,
+                "weight_decay": cfg.weight_decay,
+                "momentum": cfg.momentum,
+            },
+        ]
+        self.optimizer = build_optimizer(param_groups, cfg.name)
 
-        # Step-based scheduler: estimate total steps from first epoch
-        n_eval = self._n_eval_batches
-        reader = stream_file_batches(
-            self._data_path,
-            self._flow_config,
-            self.cfg.batch_size,
-            has_header=self._has_header,
-            sep=self._sep,
-            null_markers=self._null_markers,
-        )
-        n_total = sum(1 for _ in reader)
-        batches_per_epoch = max(n_total - n_eval, 1)
+        n_total = sum(1 for _ in self._iter_batches())
+        batches_per_epoch = max(n_total - self._n_eval_batches, 1)
         total_steps = self.cfg.epochs * batches_per_epoch
-        warmup = min(self.cfg.warmup_steps, max(1, total_steps // 10))
-        self.lr_scheduler = _LRScheduler(
-            [emb_opt, dense_opt],
-            self.cfg.lr,
+        warmup = min(self.cfg.lr_schedule.warmup_steps, max(1, total_steps // 10))
+        self.lr_scheduler = LRScheduler(
+            [self.optimizer],
             warmup,
             total_steps,
-            self.cfg.min_lr_ratio,
+            self.cfg.lr_schedule.min_lr_ratio,
         )
         logger.info(
-            "optimizer: AdamW(%d emb wd=%.0e) + AdamW(%d dense wd=%.0e), warmup=%d/%d steps",
-            len(emb_params),
-            self.cfg.embedding_weight_decay,
-            len(dense_params),
-            self.cfg.weight_decay,
+            "optimizer: %s, emb_lr=%.0e lr=%.0e, warmup=%d/%d steps",
+            cfg.name,
+            emb_lr,
+            cfg.lr,
             warmup,
             total_steps,
         )
 
-        if self.cfg.ema_enabled:
+        if self.cfg.ema_decay > 0:
             self.ema = _EMA(self.model, self.cfg.ema_decay)
-
-        if self.cfg.tb_dir:
-            try:
-                from torch.utils.tensorboard import SummaryWriter
-
-                self._tb_writer = SummaryWriter(self.cfg.tb_dir)
-                logger.info("tensorboard: %s", self.cfg.tb_dir)
-            except Exception as e:
-                logger.warning("tensorboard 初始化失败 (pip install tensorboard): %s", e)
-                self._tb_writer = None
 
         self._best_auc = 0.0
         self._stale_epochs = 0
@@ -236,17 +156,17 @@ class Trainer:
 
         for epoch in range(1, self.cfg.epochs + 1):
             avg_loss = self._train_epoch(epoch)
-            aucs = self._validate()
-            self._log_epoch(epoch, avg_loss, aucs)
+            eval_results = self.evaluator.evaluate(
+                self.model,
+                self.dag,
+                self.eval_batches,
+                self.task_names,
+                self.label_map,
+                self.device,
+            )
+            self._log_epoch(epoch, avg_loss, eval_results)
 
-            # TensorBoard scalars
-            if self._tb_writer is not None:
-                self._tb_writer.add_scalar("train/loss", avg_loss, epoch)
-                self._tb_writer.add_scalar("train/lr", self.lr_scheduler.current_lr(), epoch)
-                for t, v in aucs.items():
-                    self._tb_writer.add_scalar(f"val/auc_{t}", v, epoch)
-
-            cur = max(aucs.values(), default=0)
+            cur = self._monitor_score(eval_results)
             if cur > self._best_auc:
                 self._best_auc = cur
                 self._stale_epochs = 0
@@ -255,20 +175,18 @@ class Trainer:
             else:
                 self._stale_epochs += 1
 
-            if self._stale_epochs >= self.cfg.early_stopping_patience:
+            if (
+                self.cfg.early_stopping_patience > 0
+                and self._stale_epochs >= self.cfg.early_stopping_patience
+            ):
                 logger.info(
-                    "early stopping at epoch %d (patience=%d, best=%.4f@epoch%d)",
+                    "early stopping at epoch %d (best=%.4f@%d)",
                     epoch,
-                    self.cfg.early_stopping_patience,
                     self._best_auc,
                     best_epoch,
                 )
                 break
 
-        if self._tb_writer is not None:
-            self._tb_writer.close()
-
-        # 最终导出 EMA 权重
         if self.ema is not None:
             self.ema.apply_to(self.model)
             export_to_safetensors(self.model, self.cfg.export_path)
@@ -276,25 +194,24 @@ class Trainer:
 
         return self._best_auc
 
-    # ── 内部 ──
-
     def _collect_eval(self) -> None:
-        reader = self._iter_batches()
-        self.eval_batches = _collect_batches(reader, self.cfg.eval_samples)
+        self.eval_batches = _collect_batches(self._iter_batches(), self.cfg.eval_samples)
         self._n_eval_batches = len(self.eval_batches)
-        n = sum(len(b["features"]) for b in self.eval_batches)
-        logger.info("validation: %d samples (%d batches)", n, self._n_eval_batches)
+        n_samples = sum(len(batch["features"]) for batch in self.eval_batches)
+        logger.info("validation: %d samples (%d batches)", n_samples, self._n_eval_batches)
 
     def _train_epoch(self, epoch: int) -> float:
+        if self.optimizer is None or self.lr_scheduler is None:
+            raise RuntimeError("Trainer.fit() must initialize optimizer before training")
+
         self.model.train()
         total_loss = 0.0
         n_batches = 0
         t_data = t_preproc = t_forward = t_loss = t_backward = 0.0
         t0_epoch = time.perf_counter()
 
-        stream = enumerate(self._iter_batches())
         t0_iter = time.perf_counter()
-        for i, batch in stream:
+        for i, batch in enumerate(self._iter_batches()):
             t_data += time.perf_counter() - t0_iter
             if i < self._n_eval_batches:
                 t0_iter = time.perf_counter()
@@ -313,20 +230,16 @@ class Trainer:
             t_loss += time.perf_counter() - t0
 
             if loss is None:
+                t0_iter = time.perf_counter()
                 continue
 
             t0 = time.perf_counter()
-            for opt in self.optimizers:
-                opt.zero_grad()
+            self.optimizer.zero_grad()
             loss.backward()
-            grad_pre = self._grad_global_norm() if self._tb_writer is not None else 0.0
             if self.cfg.grad_max_norm > 0:
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.grad_max_norm)
-            if self._tb_writer is not None:
-                self._tb_writer.add_scalar("grad/pre_clip_norm", grad_pre, self._global_step)
-            for opt in self.optimizers:
-                opt.step()
-            self.lr_scheduler.step(self._global_step)
+            self.lr_scheduler.step(self._global_step + 1)
+            self.optimizer.step()
             t_backward += time.perf_counter() - t0
 
             if self.ema is not None:
@@ -336,28 +249,10 @@ class Trainer:
             n_batches += 1
             self._global_step += 1
 
-            # TensorBoard: 梯度直方图（post-clip, 仅 weight/bias）
-            if self._tb_writer is not None and n_batches % self.cfg.tb_grad_interval == 0:
-                self._tb_writer.add_scalar(
-                    "grad/post_clip_norm", self._grad_global_norm(), self._global_step
-                )
-                for name, p in self.model.named_parameters():
-                    if p.grad is not None and ("weight" in name or "bias" in name):
-                        self._tb_writer.add_histogram(f"grad/{name}", p.grad, self._global_step)
+            if self.cfg.log_interval > 0 and n_batches % self.cfg.log_interval == 0:
+                self._log_batch(n_batches, total_loss, loss.item())
 
-            if n_batches % self.cfg.log_interval == 0:
-                task_losses = self.loss_fn.last_losses()
-                pos_rates = self.loss_fn.last_pos_rates()
-                parts = [
-                    f"batch {n_batches:4d}  avg_loss={total_loss / n_batches:.6f}  cur_loss={loss.item():.6f}",
-                    f"lr={self.lr_scheduler.current_lr() if self.lr_scheduler else self.cfg.lr:.2e}",
-                ]
-                for t in sorted(task_losses):
-                    pr = pos_rates.get(t, 0)
-                    parts.append(f"{t}={task_losses[t]:.4f}(pr={pr:.2f})")
-                logger.info("  " + "  ".join(parts))
-
-            if n_batches % self.cfg.eval_interval == 0:
+            if self.cfg.eval_interval > 0 and n_batches % self.cfg.eval_interval == 0:
                 self._eval_during_training(n_batches, total_loss)
 
             t0_iter = time.perf_counter()
@@ -387,78 +282,97 @@ class Trainer:
             null_markers=self._null_markers,
         )
 
-    def _validate(self) -> dict[str, float]:
-        self.model.eval()
-        with torch.no_grad():
-            aucs = compute_aucs(
-                self.model,
-                self.dag,
-                self.eval_batches,
-                self.task_names,
-                self.label_map,
-                self.device,
-            )
-        return aucs
-
     def _eval_during_training(self, n_batches: int, total_loss: float) -> None:
         t0 = time.perf_counter()
-        aucs = self._validate()
-        t_eval = (time.perf_counter() - t0) * 1000
+        self.model.eval()
+        results = self.evaluator.evaluate(
+            self.model,
+            self.dag,
+            self.eval_batches,
+            self.task_names,
+            self.label_map,
+            self.device,
+        )
         self.model.train()
+        t_eval = (time.perf_counter() - t0) * 1000
         parts = [f"batch {n_batches:4d}  loss={total_loss / n_batches:.6f}  eval={t_eval:.0f}ms"]
-        for t in sorted(self.task_names):
-            if t in aucs and t != "stay":
-                parts.append(f"{t}: auc={aucs[t]:.4f}")
+        for task in sorted(self.task_names):
+            auc = results.get(task, {}).get("auc")
+            if auc is not None:
+                parts.append(f"{task}: auc={auc:.4f}")
         logger.info("  " + "  ".join(parts))
 
-    def _grad_global_norm(self) -> float:
-        total = 0.0
-        for p in self.model.parameters():
-            if p.grad is not None:
-                total += p.grad.norm().item() ** 2
-        return total**0.5
+    def _monitor_score(self, results: dict[str, dict[str, float]]) -> float:
+        metric = self.cfg.eval.monitor_metric
+        if metric not in self.cfg.eval.metrics and self.cfg.eval.metrics:
+            metric = self.cfg.eval.metrics[0]
+        return max(
+            (results.get(task, {}).get(metric, 0.0) for task in self.task_names),
+            default=0.0,
+        )
+
+    def _log_batch(self, n_batches: int, total_loss: float, current_loss: float) -> None:
+        if self.lr_scheduler is None:
+            lr = self.cfg.optim.lr
+        else:
+            lr = self.lr_scheduler.current_lr()
+        parts = [
+            f"batch {n_batches:4d}  avg_loss={total_loss / n_batches:.6f}  cur_loss={current_loss:.6f}",
+            f"lr={lr:.2e}",
+        ]
+        task_losses = self.loss_fn.last_losses()
+        pos_rates = self.loss_fn.last_pos_rates()
+        for task in sorted(task_losses):
+            parts.append(f"{task}={task_losses[task]:.4f}(pr={pos_rates.get(task, 0):.2f})")
+        logger.info("  " + "  ".join(parts))
 
     def _save_checkpoint(self, auc: float) -> None:
         export_to_safetensors(self.model, self.cfg.export_path)
-        logger.info("checkpoint saved to %s (best auc=%.4f)", self.cfg.export_path, auc)
+        logger.info("checkpoint: %s (auc=%.4f)", self.cfg.export_path, auc)
 
-    # ── 日志 ──
-
-    def _log_epoch(self, epoch: int, avg_loss: float, aucs: dict[str, float]) -> None:
-        lr = self.lr_scheduler.current_lr() if self.lr_scheduler else self.cfg.lr
+    def _log_epoch(
+        self,
+        epoch: int,
+        avg_loss: float,
+        results: dict[str, dict[str, float]],
+    ) -> None:
+        lr = self.lr_scheduler.current_lr() if self.lr_scheduler else self.cfg.optim.lr
         parts = [f"epoch {epoch:3d}/{self.cfg.epochs}  loss={avg_loss:.6f}  lr={lr:.2e}"]
-        for t in sorted(self.task_names):
-            if t in aucs and t != "stay":
-                parts.append(f"{t}: auc={aucs[t]:.4f}")
+        for task in sorted(self.task_names):
+            for metric, value in sorted(results.get(task, {}).items()):
+                parts.append(f"{task}_{metric}={value:.4f}")
         logger.info("  ".join(parts))
+
         weights = self.loss_fn.task_weights_info()
         if self.cfg.loss_weighting != "equal":
-            w_str = "  ".join(f"w({t})={weights.get(t, 1):.3f}" for t in sorted(weights))
-            logger.info("  [%s] %s", self.cfg.loss_weighting, w_str)
+            weight_str = "  ".join(
+                f"w({task})={weights.get(task, 1):.3f}" for task in sorted(weights)
+            )
+            logger.info("  [%s] %s", self.cfg.loss_weighting, weight_str)
 
     def _log_timing(
         self,
         epoch: int,
         t_epoch: float,
-        n: int,
+        n_batches: int,
         t_data: float,
         t_preproc: float,
         t_forward: float,
         t_loss: float,
         t_backward: float,
     ) -> None:
-        if n == 0:
+        if n_batches == 0:
             return
         t_total = t_data + t_preproc + t_forward + t_loss + t_backward
-        ms = lambda s: s * 1000 / n  # noqa: E731
-        pct = lambda s: s / t_total * 100 if t_total > 0 else 0  # noqa: E731
+        ms = lambda seconds: seconds * 1000 / n_batches  # noqa: E731
+        pct = lambda seconds: seconds / t_total * 100 if t_total > 0 else 0  # noqa: E731
         logger.info(
-            "  [timing epoch %d] total=%.1fs  batches=%d | "
-            "per_batch: data=%.1fms(%.0f%%) preproc=%.1fms(%.0f%%) "
-            "forward=%.1fms(%.0f%%) loss=%.1fms(%.0f%%) backward=%.1fms(%.0f%%)",
+            "  [timing epoch %d] total=%.1fs batches=%d | per_batch: "
+            "data=%.1fms(%.0f%%) preproc=%.1fms(%.0f%%) forward=%.1fms(%.0f%%) "
+            "loss=%.1fms(%.0f%%) backward=%.1fms(%.0f%%)",
             epoch,
             t_epoch,
-            n,
+            n_batches,
             ms(t_data),
             pct(t_data),
             ms(t_preproc),
