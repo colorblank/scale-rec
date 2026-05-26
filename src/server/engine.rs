@@ -1,5 +1,6 @@
 //! 推理引擎：FeatureDag + Box<dyn Model> + 预编译执行计划。
 use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 
 use candle_core::{Device, Tensor};
 
@@ -8,6 +9,15 @@ use crate::feats::dag::{FeatureDag, FeatureValue};
 use crate::feats::ops::Fv;
 use crate::layers::embedding::FeatureSpec;
 use crate::models::Model;
+
+#[derive(Debug, Clone, Default)]
+pub struct InferenceMetrics {
+    pub parse_us: u64,
+    pub dag_us: u64,
+    pub tensor_us: u64,
+    pub forward_us: u64,
+    pub response_us: u64,
+}
 
 pub struct InferenceEngine {
     pub dag: FeatureDag,
@@ -46,25 +56,42 @@ impl InferenceEngine {
         }
     }
 
-    pub fn predict(&self, features: &[FeatureRow]) -> Result<Vec<PredictionRow>, String> {
+    pub fn predict(
+        &self,
+        features: &[FeatureRow],
+    ) -> Result<(Vec<PredictionRow>, InferenceMetrics), String> {
+        let mut metrics = InferenceMetrics::default();
         if features.is_empty() {
-            return Ok(vec![]);
+            return Ok((vec![], metrics));
         }
         let n = features.len();
 
-        let columns = self.rows_to_columns(features);
+        let start_parse = Instant::now();
+        let columns = self.rows_to_columns(features)?;
+        metrics.parse_us = start_parse.elapsed().as_micros() as u64;
 
         // Plan-based execution: zero HashMap during operator loop
+        let start_dag = Instant::now();
         let context = self
             .dag
             .plan
             .execute_plan(&columns, &HashSet::new(), &HashMap::new())
             .map_err(|e| format!("DAG: {}", e))?;
+        metrics.dag_us = start_dag.elapsed().as_micros() as u64;
 
-        self.extract_predictions(&context, n)
+        let (predictions, tensor_us, forward_us, response_us) =
+            self.extract_predictions_measured(&context, n)?;
+        metrics.tensor_us = tensor_us;
+        metrics.forward_us = forward_us;
+        metrics.response_us = response_us;
+
+        Ok((predictions, metrics))
     }
 
-    fn rows_to_columns(&self, rows: &[FeatureRow]) -> HashMap<String, Vec<FeatureValue>> {
+    fn rows_to_columns(
+        &self,
+        rows: &[FeatureRow],
+    ) -> Result<HashMap<String, Vec<FeatureValue>>, String> {
         let n = rows.len();
         let mut columns: HashMap<String, Vec<FeatureValue>> = self
             .dag
@@ -73,33 +100,90 @@ impl InferenceEngine {
             .map(|(name, source)| (name.clone(), vec![source_default(source); n]))
             .collect();
 
+        let mut default_hits = 0;
+        let mut empty_sequences = 0;
+
         for (row_idx, row) in rows.iter().enumerate() {
+            for (key, _source) in self.dag.source_defs() {
+                if !row.contains_key(key) {
+                    default_hits += 1;
+                    tracing::debug!(key = %key, row = row_idx, "default value hit");
+                }
+            }
+
             for (key, val) in row {
                 if let Some(col) = columns.get_mut(key) {
-                    col[row_idx] = json_to_feature(val);
+                    let source = self.dag.source_defs().get(key).unwrap();
+                    let fv = json_to_feature_typed(val, &source.dtype)
+                        .map_err(|err| format!("column '{}' row {}: {}", key, row_idx, err))?;
+
+                    match &fv {
+                        Fv::IntList(v) if v.is_empty() => {
+                            empty_sequences += 1;
+                            tracing::warn!(key = %key, row = row_idx, "empty sequence detected");
+                        }
+                        Fv::FloatList(v) if v.is_empty() => {
+                            empty_sequences += 1;
+                            tracing::warn!(key = %key, row = row_idx, "empty sequence detected");
+                        }
+                        Fv::StrList(v) if v.is_empty() => {
+                            empty_sequences += 1;
+                            tracing::warn!(key = %key, row = row_idx, "empty sequence detected");
+                        }
+                        _ => {}
+                    }
+
+                    col[row_idx] = fv;
                 }
             }
         }
-        columns
+
+        if default_hits > 0 {
+            tracing::info!(
+                count = default_hits,
+                "default values used during rows_to_columns"
+            );
+        }
+        if empty_sequences > 0 {
+            tracing::warn!(
+                count = empty_sequences,
+                "empty sequences detected during rows_to_columns"
+            );
+        }
+
+        Ok(columns)
     }
 
     pub fn predict_broadcast(
         &self,
         user: &FeatureRow,
         items: &[FeatureRow],
-    ) -> Result<Vec<PredictionRow>, String> {
+    ) -> Result<(Vec<PredictionRow>, InferenceMetrics), String> {
+        let mut metrics = InferenceMetrics::default();
         if items.is_empty() {
-            return Ok(vec![]);
+            return Ok((vec![], metrics));
         }
 
         // Step 1: Precompute with one item to get user-derived outputs
+        let start_parse1 = Instant::now();
         let mut one: HashMap<String, Vec<FeatureValue>> = HashMap::new();
         for (k, v) in user {
-            one.insert(k.clone(), vec![json_to_feature(v)]);
+            if let Some(source) = self.dag.source_defs().get(k) {
+                let fv = json_to_feature_typed(v, &source.dtype)
+                    .map_err(|err| format!("user field '{}': {}", k, err))?;
+                one.insert(k.clone(), vec![fv]);
+            }
         }
         for (k, v) in &items[0] {
-            one.insert(k.clone(), vec![json_to_feature(v)]);
+            if let Some(source) = self.dag.source_defs().get(k) {
+                let fv = json_to_feature_typed(v, &source.dtype)
+                    .map_err(|err| format!("item[0] field '{}': {}", k, err))?;
+                one.insert(k.clone(), vec![fv]);
+            }
         }
+        metrics.parse_us = start_parse1.elapsed().as_micros() as u64;
+
+        let start_dag1 = Instant::now();
         let full_1 = self
             .dag
             .plan
@@ -120,8 +204,10 @@ impl InferenceEngine {
                 }
             }
         }
+        let dag1_us = start_dag1.elapsed().as_micros() as u64;
 
         // Step 2: Build batch columns
+        let start_parse2 = Instant::now();
         let n = items.len();
         let merged_rows: Vec<FeatureRow> = items
             .iter()
@@ -131,22 +217,32 @@ impl InferenceEngine {
                 row
             })
             .collect();
-        let columns = self.rows_to_columns(&merged_rows);
+        let columns = self.rows_to_columns(&merged_rows)?;
+        metrics.parse_us += start_parse2.elapsed().as_micros() as u64;
 
+        let start_dag2 = Instant::now();
         let context = self
             .dag
             .plan
             .execute_plan(&columns, &self.user_op_indices, &precomputed)
             .map_err(|e| format!("DAG: {}", e))?;
+        metrics.dag_us = dag1_us + start_dag2.elapsed().as_micros() as u64;
 
-        self.extract_predictions(&context, n)
+        let (predictions, tensor_us, forward_us, response_us) =
+            self.extract_predictions_measured(&context, n)?;
+        metrics.tensor_us = tensor_us;
+        metrics.forward_us = forward_us;
+        metrics.response_us = response_us;
+
+        Ok((predictions, metrics))
     }
 
-    fn extract_predictions(
+    fn extract_predictions_measured(
         &self,
         context: &[Vec<Fv>],
         n: usize,
-    ) -> Result<Vec<PredictionRow>, String> {
+    ) -> Result<(Vec<PredictionRow>, u64, u64, u64), String> {
+        let start_tensor = Instant::now();
         let mut tensor_inputs: HashMap<String, Tensor> =
             HashMap::with_capacity(self.embed_features.len());
         for (i, spec) in self.embed_features.iter().enumerate() {
@@ -157,10 +253,16 @@ impl InferenceEngine {
             let tensor = feature_column_to_tensor(spec, col, n)?;
             tensor_inputs.insert(spec.name.clone(), tensor);
         }
+        let tensor_us = start_tensor.elapsed().as_micros() as u64;
+
+        let start_forward = Instant::now();
         let outputs = self
             .model
             .forward(&tensor_inputs)
             .map_err(|e| format!("Model: {}", e))?;
+        let forward_us = start_forward.elapsed().as_micros() as u64;
+
+        let start_response = Instant::now();
         let mut out_keys: Vec<&String> = outputs.keys().collect();
         out_keys.sort();
         let mut result: Vec<PredictionRow> = vec![HashMap::new(); n];
@@ -177,7 +279,9 @@ impl InferenceEngine {
                 result[i].insert(key.to_string(), *v);
             }
         }
-        Ok(result)
+        let response_us = start_response.elapsed().as_micros() as u64;
+
+        Ok((result, tensor_us, forward_us, response_us))
     }
 }
 
@@ -227,25 +331,145 @@ fn feature_column_to_tensor(spec: &FeatureSpec, col: &[Fv], n: usize) -> Result<
         .map_err(|e| format!("tensor '{}': {}", spec.name, e))
 }
 
-fn json_to_feature(val: &serde_json::Value) -> FeatureValue {
+fn json_to_feature_typed(val: &serde_json::Value, dtype: &DType) -> Result<FeatureValue, String> {
     match val {
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Fv::Int(i as i32)
-            } else {
-                Fv::Float(n.as_f64().unwrap_or(0.0) as f32)
+        serde_json::Value::Null => Err("explicit null value is not allowed".to_string()),
+        serde_json::Value::Bool(b) => match dtype {
+            DType::Int => Ok(Fv::Int(if *b { 1 } else { 0 })),
+            DType::String => Ok(Fv::Str(b.to_string())),
+            _ => Err(format!("cannot convert bool to dtype {:?}", dtype)),
+        },
+        serde_json::Value::Number(n) => match dtype {
+            DType::Int => {
+                if let Some(i) = n.as_i64() {
+                    i32::try_from(i)
+                        .map(Fv::Int)
+                        .map_err(|_| format!("integer value out of range for i32: {}", n))
+                } else if let Some(u) = n.as_u64() {
+                    i32::try_from(u)
+                        .map(Fv::Int)
+                        .map_err(|_| format!("integer value out of range for i32: {}", n))
+                } else {
+                    Err(format!("invalid integer value: {}", n))
+                }
             }
+            DType::Float => Ok(Fv::Float(
+                n.as_f64()
+                    .ok_or_else(|| format!("invalid float value: {}", n))? as f32,
+            )),
+            DType::String => Ok(Fv::Str(n.to_string())),
+            _ => Err(format!("cannot convert scalar number to dtype {:?}", dtype)),
+        },
+        serde_json::Value::String(s) => match dtype {
+            DType::Int => s
+                .parse::<i32>()
+                .map(Fv::Int)
+                .map_err(|e| format!("parse int from '{}' failed: {}", s, e)),
+            DType::Float => s
+                .parse::<f32>()
+                .map(Fv::Float)
+                .map_err(|e| format!("parse float from '{}' failed: {}", s, e)),
+            DType::String => Ok(Fv::Str(s.clone())),
+            _ => Err(format!("cannot convert string to dtype {:?}", dtype)),
+        },
+        serde_json::Value::Array(arr) => match dtype {
+            DType::List {
+                dtype: elem_type, ..
+            } => {
+                let mut elements = Vec::with_capacity(arr.len());
+                for (idx, item) in arr.iter().enumerate() {
+                    let parsed = json_to_feature_typed(item, elem_type)
+                        .map_err(|e| format!("at index {}: {}", idx, e))?;
+                    elements.push(parsed);
+                }
+                match elem_type.as_ref() {
+                    DType::Int => {
+                        let mut ints = Vec::with_capacity(elements.len());
+                        for el in elements {
+                            if let Fv::Int(i) = el {
+                                ints.push(i);
+                            } else {
+                                return Err("expected Int element".to_string());
+                            }
+                        }
+                        Ok(Fv::IntList(ints))
+                    }
+                    DType::Float => {
+                        let mut floats = Vec::with_capacity(elements.len());
+                        for el in elements {
+                            if let Fv::Float(f) = el {
+                                floats.push(f);
+                            } else {
+                                return Err("expected Float element".to_string());
+                            }
+                        }
+                        Ok(Fv::FloatList(floats))
+                    }
+                    DType::String => {
+                        let mut strs = Vec::with_capacity(elements.len());
+                        for el in elements {
+                            if let Fv::Str(s) = el {
+                                strs.push(s);
+                            } else {
+                                return Err("expected String element".to_string());
+                            }
+                        }
+                        Ok(Fv::StrList(strs))
+                    }
+                    _ => Err("unsupported list element dtype".to_string()),
+                }
+            }
+            _ => Err(format!("cannot convert array to scalar dtype {:?}", dtype)),
+        },
+        serde_json::Value::Object(_) => {
+            Err("cannot convert JSON object to feature value".to_string())
         }
-        serde_json::Value::String(s) => Fv::Str(s.clone()),
-        serde_json::Value::Array(arr) => Fv::StrList(
-            arr.iter()
-                .map(|v| match v {
-                    serde_json::Value::String(s) => s.clone(),
-                    other => other.to_string(),
-                })
-                .collect(),
-        ),
-        _ => Fv::Int(0),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn json_int_rejects_fractional_number() {
+        let value = serde_json::json!(12.9);
+
+        let err = json_to_feature_typed(&value, &DType::Int).unwrap_err();
+
+        assert!(err.contains("invalid integer value"));
+    }
+
+    #[test]
+    fn json_int_rejects_out_of_range_number() {
+        let value = serde_json::json!(i64::from(i32::MAX) + 1);
+
+        let err = json_to_feature_typed(&value, &DType::Int).unwrap_err();
+
+        assert!(err.contains("out of range"));
+    }
+
+    #[test]
+    fn json_int_accepts_integral_number() {
+        let value = serde_json::json!(12);
+
+        let parsed = json_to_feature_typed(&value, &DType::Int).unwrap();
+
+        assert!(matches!(parsed, Fv::Int(12)));
+    }
+
+    #[test]
+    fn json_int_list_rejects_fractional_elements() {
+        let value = serde_json::json!([1, 2.5, 3]);
+        let dtype = DType::List {
+            dtype: Box::new(DType::Int),
+            length: 3,
+        };
+
+        let err = json_to_feature_typed(&value, &dtype).unwrap_err();
+
+        assert!(err.contains("at index 1"));
+        assert!(err.contains("invalid integer value"));
     }
 }
 

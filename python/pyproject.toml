@@ -38,4 +38,29 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "mypy>=1.0.0",
+    "types-PyYAML>=6.0.0",
 ]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_configs = true
+files = "$MYPY_CONFIG_FILE_DIR/src/train"
+
+[[tool.mypy.overrides]]
+module = [
+    "train.cli",
+    "train.config_train",
+    "train.dag",
+    "train.data",
+    "train.layers.towers",
+    "train.main",
+    "train.metrics",
+    "train.models",
+    "train.models.unimixer.model",
+    "train.ops.expression",
+    "train.ops.feature_hash",
+    "train.quality",
+]
+ignore_errors = true
