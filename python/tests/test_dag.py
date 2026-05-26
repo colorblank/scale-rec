@@ -1,7 +1,7 @@
 import pytest
 
-from train.config import FlowConfig
-from train.dag import FeatureDag
+from train.core.config import FlowConfig
+from train.core.dag import FeatureDag
 
 
 def test_dag_from_yaml():

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 """独立评估模块：可配置指标 + 日志文件输出。"""
 import logging
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -10,24 +9,13 @@ from typing import Any
 import numpy as np
 import torch
 
-from ..dag import FeatureDag
+from ...core.config import EvalConfig
+from ...core.dag import FeatureDag
 from ..loss.multi_task import _pick_labels, _to_device
 from ..metrics import compute_metrics, get_available_metrics
 
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class EvalConfig:
-    metrics: list[str] = field(default_factory=lambda: ["auc"])
-    monitor_metric: str = "auc"
-    log_path: str = ""  # 日志文件路径，空=不写文件
-    gauc_group_feature: str = "user_id"  # GAUC 分组原始特征名
-
-    def __post_init__(self) -> None:
-        if isinstance(self.metrics, str):
-            self.metrics = [m.strip() for m in self.metrics.split(",") if m.strip()]
 
 
 class Evaluator:

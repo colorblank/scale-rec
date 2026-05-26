@@ -1,26 +1,23 @@
 from __future__ import annotations
 
+import pytest
 import torch
 
-from train.config_train import TrainConfig
-from train.config import FlowConfig
-from train.dag import FeatureDag
-from train.eval.evaluator import EvalConfig, Evaluator
-from train.loss.multi_task import MultiTaskLoss
-from train.optim.scheduler import LRScheduler
-from train.quality import summarize_feature_quality
-from train.task import TaskSpec, parse_task_specs
-from train.trainer import Trainer
+from train.core.config import EvalConfig, FlowConfig, LRScheduleConfig, OptimConfig, TrainConfig
+from train.core.dag import FeatureDag
+from train.training.eval.evaluator import Evaluator
+from train.training.loss.multi_task import MultiTaskLoss
+from train.training.optim.scheduler import LRScheduler
+from train.training.quality import summarize_feature_quality
+from train.core.task import TaskSpec, parse_task_specs
+from train.training.trainer import Trainer
 
 
-def test_train_config_accepts_legacy_kwargs():
+def test_train_config_uses_structured_subconfigs():
     cfg = TrainConfig(
-        lr=0.01,
-        weight_decay=0.02,
-        embedding_weight_decay=0.0,
-        warmup_steps=7,
-        min_lr_ratio=0.2,
-        ema_enabled=False,
+        optim=OptimConfig(lr=0.01, weight_decay=0.02, emb_weight_decay=0.0),
+        lr_schedule=LRScheduleConfig(warmup_steps=7, min_lr_ratio=0.2),
+        ema_decay=0.0,
     )
 
     assert cfg.optim.lr == 0.01
@@ -29,6 +26,11 @@ def test_train_config_accepts_legacy_kwargs():
     assert cfg.lr_schedule.warmup_steps == 7
     assert cfg.lr_schedule.min_lr_ratio == 0.2
     assert not cfg.ema_enabled
+
+
+def test_train_config_rejects_legacy_kwargs():
+    with pytest.raises(TypeError):
+        TrainConfig(lr=0.01)  # type: ignore[call-arg]
 
 
 def test_scheduler_preserves_param_group_lr_ratios():

@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 import torch
 
 from .config import DType, EmbedConfig, FlowConfig, OperatorDef, Role, SourceDef
-from .ops import (
+from ..ops import (
     Bucketing,
     CrossFeature,
     CustomOp,
@@ -30,7 +30,7 @@ from .ops import (
 from .schema import FeatureSchema, infer_feature_schemas
 
 if False:  # pragma: no cover
-    from .debug.tracer import DebugTracer
+    from ..debug.tracer import DebugTracer
 
 FeatureValue = Any
 

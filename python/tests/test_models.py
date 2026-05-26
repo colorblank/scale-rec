@@ -9,7 +9,8 @@ from train.models.esmm import ESMM
 from train.models.gdcn_esmm import GDCNESMM
 from train.models.lr import LogisticRegression
 from train.models.mmoe import MMoE
-from train.models import ModelConfig, get_output_spec
+from train.core.config import ModelConfig
+from train.models import get_output_spec
 
 FEATURES = [("a", 10, 4), ("b", 5, 4)]
 

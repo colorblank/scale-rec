@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import yaml
 
-from train.manifest import sha256_file, write_model_manifest
+from train.app.manifest import sha256_file, write_model_manifest
 
 
 def test_write_model_manifest_records_relative_files_and_hashes(tmp_path):

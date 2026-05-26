@@ -1,23 +1,15 @@
 from __future__ import annotations
 
-"""模型注册表：@register_model 装饰器 + 中央 build() 工厂。
-
-新增模型只需:
-1. 创建 models/newmodel.py，用 @register_model("newmodel") 装饰
-2. 实现 output_spec() 返回 {task_names, label_col_map}
-3. 实现 from_params(params) 静态方法解析 YAML params
-"""
+"""模型注册表：@register_model 装饰器 + 中央 build() 工厂。"""
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Callable
 
 import torch.nn as nn
-import yaml
 
 from ..layers.embedding import FeatureTuple
 from ..layers.towers import Activation, MultiTaskConfig, TaskRelation, TowerConfig
-from ..task import label_map as task_label_map
-from ..task import parse_task_specs, task_names
+from ..core.task import label_map as task_label_map
+from ..core.task import parse_task_specs, task_names
 from .deepfm import DeepFM
 from .esmm import ESMM, default_task_config
 from .gdcn_esmm import GDCNESMM
@@ -65,9 +57,6 @@ def get_output_spec(
         return fn(model_instance)
 
 
-# ── backward-compat config types ──
-
-
 @dataclass
 class TaskConfigEntry:
     name: str
@@ -104,39 +93,6 @@ def _parse_mmoe_task_configs(raw: dict[str, Any]) -> list[TaskConfigEntry]:
     return [
         TaskConfigEntry(t["name"], t.get("tower_dims", [])) for t in raw.get("task_configs", [])
     ]
-
-
-@dataclass
-class ModelConfig:
-    """YAML model config. Kept minimal: type + raw params dict."""
-
-    type: str
-    params: dict = field(default_factory=dict)
-
-    @classmethod
-    def from_yaml(cls, path: str | Path) -> "ModelConfig":
-        with open(path, encoding="utf-8") as f:
-            raw = yaml.safe_load(f)
-        return cls.from_dict(raw)
-
-    @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "ModelConfig":
-        mtype = raw["type"]
-        params = {k: v for k, v in raw.items() if k != "type"}
-        return cls(type=mtype, params=params)
-
-    def build(
-        self,
-        features: list[FeatureTuple],
-        tokenizer: nn.Module | None = None,
-        pooling_map: dict[str, str] | None = None,
-        total_dim: int | None = None,
-    ) -> nn.Module:
-        if pooling_map:
-            self.params["_pooling_map"] = pooling_map
-        if total_dim is not None:
-            self.params["_total_dim"] = total_dim
-        return build_model(self.type, features, tokenizer=tokenizer, **self.params)
 
 
 # ── register built-in models ──

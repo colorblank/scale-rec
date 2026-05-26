@@ -2,7 +2,6 @@ from __future__ import annotations
 
 """统一验证脚本：针对新增的 GDCN+ESMM 校验特征预处理和模型输出的一致性。"""
 
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -15,9 +14,8 @@ _src = Path(__file__).resolve().parents[1]
 if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
 
-from train.config import FlowConfig
-from train.dag import FeatureDag
-from train.models import ModelConfig
+from train.core.config import FlowConfig, ModelConfig
+from train.core.dag import FeatureDag
 from safetensors.torch import load_file
 
 from .paths import DEMO_ARTIFACT_DIR, DISCOVER_FEATURE_CONFIG, MODEL_CONFIGS, REPO_ROOT
@@ -52,7 +50,7 @@ def run_training(data_path: Path, feature_config: Path, model_config: Path, weig
     """Train GDCN+ESMM model for 1 epoch to save safetensors weights."""
     print("[Train] Training discover gdcn_esmm for 1 epoch...")
     cmd = [
-        "python", "-m", "scale_rec_demo.train_discover",
+        "python", "-m", "train.main", "discover",
         "--data", str(data_path),
         "--feature-config", str(feature_config),
         "--model-config", str(model_config),

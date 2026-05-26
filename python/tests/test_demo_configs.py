@@ -6,20 +6,19 @@ import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-PYTHON_DIR = REPO_ROOT / "python"
-LEGACY_CONFIG_DIR = PYTHON_DIR / "configs" / "demo" / "legacy"
-DISCOVER_CONFIG_DIR = PYTHON_DIR / "configs" / "demo" / "discover"
+EXAMPLES_DIR = REPO_ROOT / "examples"
 
 
 def test_demo_model_configs_exist_and_are_current():
     configs = {
-        "lr": LEGACY_CONFIG_DIR / "model_lr.yaml",
-        "deepfm": LEGACY_CONFIG_DIR / "model_deepfm.yaml",
-        "mmoe": LEGACY_CONFIG_DIR / "model_mmoe.yaml",
-        "esmm": LEGACY_CONFIG_DIR / "model_esmm.yaml",
-        "unimixer": LEGACY_CONFIG_DIR / "model_unimixer.yaml",
-        "discover_esmm": DISCOVER_CONFIG_DIR / "model_esmm.yaml",
-        "discover_unimixer": DISCOVER_CONFIG_DIR / "model_unimixer.yaml",
+        "lr": EXAMPLES_DIR / "model_lr.yaml",
+        "deepfm": EXAMPLES_DIR / "model_deepfm.yaml",
+        "mmoe": EXAMPLES_DIR / "model_mmoe.yaml",
+        "esmm": EXAMPLES_DIR / "model_esmm.yaml",
+        "unimixer": EXAMPLES_DIR / "model_unimixer.yaml",
+        "discover_esmm": EXAMPLES_DIR / "model_discover_esmm.yaml",
+        "discover_gdcn_esmm": EXAMPLES_DIR / "model_gdcn_esmm.yaml",
+        "discover_unimixer": EXAMPLES_DIR / "model_discover_unimixer.yaml",
     }
 
     for path in configs.values():
@@ -44,4 +43,4 @@ def test_demo_model_configs_exist_and_are_current():
 
 
 def test_lr_ctr_duplicate_config_was_removed():
-    assert not (PYTHON_DIR / "demo" / "model_lr_ctr.yaml").exists()
+    assert not (REPO_ROOT / "python" / "demo" / "model_lr_ctr.yaml").exists()

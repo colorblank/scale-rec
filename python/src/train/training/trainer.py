@@ -8,16 +8,15 @@ from typing import Any, Callable, Iterator
 
 import torch
 
-from .config import FlowConfig
-from .config_train import TrainConfig
-from .dag import FeatureDag
-from .data import stream_file_batches
+from ..core.config import FlowConfig, TrainConfig
+from ..core.dag import FeatureDag
+from ..app.data import stream_file_batches
 from .eval.evaluator import Evaluator
-from .export import export_to_safetensors
+from ..app.export import export_to_safetensors
 from .loss.multi_task import MultiTaskLoss, _to_device
 from .optim.scheduler import LRScheduler, build_optimizer
 from .quality import FeatureQualityReport, summarize_feature_quality
-from .task import TaskSpec, legacy_task_specs
+from ..core.task import TaskSpec, legacy_task_specs
 
 logger = logging.getLogger(__name__)
 

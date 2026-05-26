@@ -13,12 +13,9 @@ dependencies = [
 ]
 
 [project.scripts]
-train = "train.main:main"
+train = "train.app.main:main"
 scale-rec-demo-data = "scale_rec_demo.generate_data:main"
 scale-rec-demo-discover-data = "scale_rec_demo.generate_discover_data:main"
-scale-rec-demo-train-all = "scale_rec_demo.train_all:main"
-scale-rec-demo-train-discover = "scale_rec_demo.train_discover:main"
-scale-rec-demo-train-discover-gdcn = "scale_rec_demo.train_discover_gdcn:main"
 scale-rec-demo-verify = "scale_rec_demo.verify_all:main"
 scale-rec-demo-verify-gdcn = "scale_rec_demo.verify_discover_gdcn:main"
 
@@ -52,17 +49,24 @@ files = "$MYPY_CONFIG_FILE_DIR/src/train"
 
 [[tool.mypy.overrides]]
 module = [
-    "train.cli",
-    "train.config_train",
-    "train.dag",
-    "train.data",
+    "train.app.cli",
+    "train.app.data",
+    "train.app.main",
+    "train.app.manifest",
+    "train.core.config",
+    "train.core.dag",
+    "train.core.schema",
+    "train.core.task",
     "train.layers.towers",
-    "train.main",
-    "train.metrics",
     "train.models",
     "train.models.unimixer.model",
     "train.ops.expression",
     "train.ops.feature_hash",
-    "train.quality",
+    "train.training.eval.evaluator",
+    "train.training.loss.multi_task",
+    "train.training.metrics",
+    "train.training.optim.scheduler",
+    "train.training.quality",
+    "train.training.trainer",
 ]
 ignore_errors = true

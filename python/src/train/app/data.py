@@ -8,7 +8,7 @@ from typing import Any, Iterator
 
 import pandas as pd
 
-from .config import FlowConfig
+from ..core.config import FlowConfig
 
 logger = logging.getLogger(__name__)
 

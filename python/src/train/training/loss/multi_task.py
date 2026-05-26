@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..task import TaskSpec, legacy_task_specs
+from ...core.task import TaskSpec, legacy_task_specs
 
 
 def _pick_labels(batch_labels: dict[str, list[Any]], *names: str) -> list[Any]:

@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 import torch
 
-from ..dag import FeatureDag
+from ...core.dag import FeatureDag
 from ..loss.multi_task import MultiTaskLoss as MultiTaskLoss
 from ..loss.multi_task import compute_loss as compute_loss
 from ..loss.multi_task import _pick_labels, _to_device

@@ -6,7 +6,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
-from .dag import FeatureDag
+from ..core.dag import FeatureDag
 
 
 @dataclass(frozen=True)

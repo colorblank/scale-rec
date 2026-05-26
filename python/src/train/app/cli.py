@@ -12,11 +12,10 @@ from typing import Any
 
 import torch
 
-from .config_train import TrainConfig
-from .dag import FeatureDag
-from .eval.evaluator import EvalConfig
+from ..core.config import EvalConfig, ModelConfig, TrainConfig
+from ..core.dag import FeatureDag
 from .manifest import write_model_manifest
-from .models import ModelConfig, get_output_spec
+from ..models import get_output_spec
 
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 CONSOLE_LOG_FORMAT = "%(asctime)s [%(levelname)-5s] %(name)s: %(message)s"
@@ -190,7 +189,7 @@ def build_model_for_dag(
     features = dag.feature_tuples()
     tokenizer = None
     if model_config.type == "unimixer":
-        from .models.unimixer.tokenizer import FeatureTokenizer
+        from ..models.unimixer.tokenizer import FeatureTokenizer
 
         params = model_config.params
         tokenizer = FeatureTokenizer(

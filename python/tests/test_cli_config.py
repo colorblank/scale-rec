@@ -3,7 +3,12 @@ from __future__ import annotations
 import argparse
 import logging
 
-from train.cli import add_runtime_args, add_training_args, configure_logging, train_config_from_args
+from train.app.cli import (
+    add_runtime_args,
+    add_training_args,
+    configure_logging,
+    train_config_from_args,
+)
 
 
 def test_train_config_from_args_uses_nested_config_fields(tmp_path):
