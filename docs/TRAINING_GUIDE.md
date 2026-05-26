@@ -7,9 +7,13 @@
 PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.generate_discover_data
 
 # 2. 训练
-PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.train_discover \
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.main discover \
   --data python/artifacts/demo/discover_train_data.txt \
-  --epochs 10 --batch-size 128 --no-header --eval-samples 400
+  --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
+  --artifact-dir python/artifacts/demo \
+  --publish-path python/artifacts/demo/model_gdcn_esmm.safetensors \
+  --model-name model_gdcn_esmm \
+  --run-version 20260526_120000
 ```
 
 ## 数据格式
@@ -24,6 +28,11 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.train_discover
 | `--no-header` | off | 文件无 header 行时启用 |
 | `--separator` | `\t` | 字段分隔符 |
 | `--null-markers` | NULL \N null None "" | NULL 标记字符串 |
+| `--artifact-dir` | `python/artifacts/demo` | 训练 run 目录根路径 |
+| `--publish-path` | 自动生成 | 最终发布权重路径 |
+| `--model-name` | 自动推导 | 模型逻辑名，用于 run 目录和 manifest |
+| `--run-version` | 自动生成 | 训练 run 版本号 |
+| `--keep-checkpoints` | 3 | 保留的 checkpoint 数量 |
 
 ## 特征配置
 
@@ -55,7 +64,7 @@ sources:
 
 ### 1. 5 任务 ESMM 概率关系配置
 
-`python/configs/demo/discover/model_esmm.yaml`：
+`examples/model_esmm.yaml`：
 
 ```yaml
 type: esmm
@@ -75,7 +84,7 @@ stay_hidden_dims: [8]
 
 ### 2. GDCN+ESMM 门控交叉网络配置
 
-`python/configs/demo/discover/model_gdcn_esmm.yaml`：
+`examples/model_gdcn_esmm.yaml`：
 
 ```yaml
 type: gdcn_esmm
@@ -138,7 +147,11 @@ GDCN+ESMM 将门控交叉网络 (GCN) 与 ESMM 多任务预测塔相结合。底
 
 ### Early Stopping
 
-验证 AUC 连续 N epoch 不提升时自动停止。仅最佳 AUC 时保存 checkpoint。
+验证指标连续 N 个 epoch 不提升时自动停止。训练过程中会保存每个 epoch 的 checkpoint，并维护：
+
+- `best.safetensors`：当前最优 checkpoint
+- `latest.safetensors`：最新 checkpoint
+- `checkpoints/*.safetensors`：按 epoch/step 编号的历史 checkpoint
 
 | 参数 | 默认 | 说明 |
 |------|------|------|
@@ -228,7 +241,10 @@ best AUC=0.7622
 
 ## 推理导出
 
-训练输出 `model.safetensors`（72 个张量），可直接由 Rust Candle 引擎加载：
+训练输出分为两类：
+
+- 发布权重：`model.safetensors`，可直接由 Rust Candle 引擎加载
+- run 目录：保留 checkpoint、best/latest 别名、复制后的配置和 run manifest
 
 ```bash
 cargo run --bin server -- --feature-config examples/feature_config_discover.yaml
@@ -238,20 +254,15 @@ cargo run --bin server -- --feature-config examples/feature_config_discover.yaml
 
 ```
 python/src/train/
-├── config.py      — FlowConfig, SourceDef, Role 定义
-├── dag.py         — FeatureDag 执行引擎
-├── data.py        — stream_file_batches 流式读取
-├── metrics.py     — MultiTaskLoss, AUC, _sigmoid
-├── trainer.py     — Trainer + TrainConfig + 训练技巧
-├── export.py      — safetensors 导出
-├── models/        — ESMM, MMoE, DeepFM, LR, UniMixer
-├── layers/        — MLP, Embedding, Tokenizer, Towers
-└── ops/           — 14 种特征算子
+├── core/        — FlowConfig、FeatureDag、TaskSpec、schema
+├── app/         — CLI、入口、artifact/manifest 管理
+├── training/    — trainer、loss、metrics、eval、optim、quality
+├── models/      — ESMM、MMoE、DeepFM、LR、UniMixer、GDCN+ESMM
+├── layers/      — MLP、Embedding、Tokenizer、Towers
+└── ops/         — 特征算子
 python/src/scale_rec_demo/
-├── train_discover.py          — demo CLI 入口
 ├── generate_discover_data.py  — 合成数据生成
+├── verify_all.py              — PyTorch vs Rust 一致性验证
 └── paths.py                   — demo 路径常量
-python/configs/demo/
-└── discover/                  — demo 模型配置
 python/artifacts/demo/         — 本地训练输出
 ```

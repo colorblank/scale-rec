@@ -25,18 +25,15 @@ scale-rec/
 │   │   └── demo_inference.rs       # 单次推理示例
 │   └── lib.rs
 ├── python/                          # Python 训练管线 (PyTorch)
-│   ├── configs/                     #   Python 模型和 demo 配置 YAML
-│   ├── artifacts/                   #   本地生成产物 (safetensors, CSV, debug)
-│   ├── data/                        #   训练数据 (parquet)
+│   ├── artifacts/                   #   本地训练产物 (run/best/latest/checkpoints)
 │   └── src/train/
-│       ├── config.py                #   FlowConfig (镜像 Rust config.rs)
-│       ├── dag.py                   #   FeatureDag (execute_batch 列式批量)
+│       ├── core/                    #   配置、DAG、任务定义
+│       ├── app/                     #   CLI、入口、manifest、artifact 管理
+│       ├── training/                #   trainer / loss / metrics / eval / optim
 │       ├── debug/                   #   Debug 追踪器
-│       ├── ops/                     #   9 个特征算子
+│       ├── ops/                     #   特征算子
 │       ├── layers/                  #   神经网络层
-│       ├── models/                  #   6 个推荐模型 (注册表模式)
-│       ├── export.py                #   safetensors 导出
-│       └── main.py                  #   训练入口
+│       └── models/                  #   推荐模型 (注册表模式)
 ├── examples/feature_config.yaml     # 共享特征配置 (完整示例: 82 特征, 85 算子)
 └── Cargo.toml
 ```
@@ -80,7 +77,11 @@ cd python
 uv run python -m scale_rec_demo.generate_data
 
 # 训练所有模型 (5 epochs)
-uv run python -m scale_rec_demo.train_all --epochs 5
+uv run python -m train.main all \
+  --feature-config ../examples/feature_config_legacy.yaml \
+  --data data/train.parquet \
+  --epochs 5 \
+  --artifact-dir artifacts/demo
 
 # 验证 PyTorch vs Rust 推理一致性
 uv run python -m scale_rec_demo.verify_all
@@ -89,7 +90,15 @@ uv run python -m scale_rec_demo.verify_all
 uv run python -m scale_rec_demo.verify_discover_gdcn
 
 # Debug 追踪 (逐算子 I/O)
-uv run python -m scale_rec_demo.train_all --epochs 1 --models lr --debug-trace 10
+uv run python -m train.main single \
+  --feature-config ../examples/feature_config_legacy.yaml \
+  --model-config ../examples/model_lr.yaml \
+  --data data/train.parquet \
+  --epochs 1 \
+  --debug 10 \
+  --artifact-dir artifacts/demo \
+  --model-name model_lr \
+  --run-version 20260526_120000
 ```
 
 ### 2. HTTP 推理服务
@@ -98,7 +107,7 @@ uv run python -m scale_rec_demo.train_all --epochs 1 --models lr --debug-trace 1
 # 启动服务 (自动加载 temp/ 下所有 .safetensors)
 cargo run --bin server --release -- \
   --model-dir python/artifacts/demo \
-  --feature-config python/configs/demo/legacy/feature_config.yaml
+  --feature-config examples/feature_config_legacy.yaml
 
 # 健康检查
 curl http://localhost:8080/health
@@ -130,11 +139,20 @@ cargo run --bin bench --release -- \
 cd python
 uv run python -m train.main \
   --feature-config ../examples/feature_config.yaml \
-  --model-config configs/models/model_lr.yaml \
+  --model-config ../examples/model_lr.yaml \
   --data data/train.parquet \
   --epochs 10 --batch-size 64 --lr 0.001 \
-  --export-path model.safetensors
+  --artifact-dir artifacts/demo \
+  --publish-path artifacts/demo/model_lr.safetensors \
+  --model-name model_lr \
+  --run-version 20260526_120000 \
+  --keep-checkpoints 3
 ```
+
+训练产物会分成三层：
+- `artifacts/demo/model_lr/20260526_120000/checkpoints/`：每个 epoch 的 checkpoint
+- `artifacts/demo/model_lr/20260526_120000/{best,latest}.safetensors`：最佳与最新别名
+- `artifacts/demo/model_lr.safetensors` 和同目录 `.manifest.yaml`：最终发布权重与 manifest
 
 ## 性能 (Release build)
 
