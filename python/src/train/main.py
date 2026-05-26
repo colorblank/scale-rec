@@ -3,6 +3,7 @@ from __future__ import annotations
 """训练入口：Polars → DAG → Model → BCE → Adam → safetensors。"""
 
 import argparse
+from typing import Any
 
 import pandas as pd
 import torch
@@ -14,7 +15,14 @@ from .export import export_to_safetensors, print_state_dict_keys
 from .models import ModelConfig, get_output_spec
 
 
-def train_epoch(model, optimizer, dag, df, batch_size, label_col_map=None):
+def train_epoch(
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    dag: FeatureDag,
+    df: pd.DataFrame,
+    batch_size: int,
+    label_col_map: dict[str, str] | None = None,
+) -> float:
     """Train one epoch: slice df -> preprocess -> forward -> BCE loss -> backward.
 
     Args:
@@ -50,7 +58,7 @@ def train_epoch(model, optimizer, dag, df, batch_size, label_col_map=None):
     return total_loss / max(n_batches, 1)
 
 
-def main():
+def main() -> None:
     """CLI: load configs -> build DAG + model -> train -> export safetensors."""
     from pathlib import Path
 
@@ -118,7 +126,11 @@ def main():
         # Hook up forward — closure over original model for its config/forward logic
         _raw = model
 
-        def _forward(self, x_inputs, temperature=None):
+        def _forward(
+            self: torch.nn.Module,
+            x_inputs: dict[str, torch.Tensor],
+            temperature: float | None = None,
+        ) -> dict[str, Any]:
             return _raw(x_inputs, temperature)
 
         import types

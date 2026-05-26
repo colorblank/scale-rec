@@ -2,13 +2,13 @@ from __future__ import annotations
 
 """JSON 数组提取算子：解析 JSON 数组/对象数组并提取内容。"""
 import json
-from typing import Any, Optional
+from typing import Any
 
 
 class JsonExtractList:
     """Parse JSON array strings and extract elements or specific properties."""
 
-    def __init__(self, key: Optional[str], pad_len: int, pad_val: str):
+    def __init__(self, key: str | None, pad_len: int, pad_val: str) -> None:
         self.key = key
         self.pad_len = pad_len
         self.pad_val = pad_val

@@ -8,9 +8,13 @@ from __future__ import annotations
 3. 实现 from_params(params) 静态方法解析 YAML params
 """
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable
 
+import torch.nn as nn
 import yaml
 
+from ..layers.embedding import FeatureTuple
 from ..layers.towers import Activation, MultiTaskConfig, TaskRelation, TowerConfig
 from ..task import label_map as task_label_map
 from ..task import parse_task_specs, task_names
@@ -21,22 +25,35 @@ from .mmoe import MMoE
 from .unimixer.model import UniMixerModel
 
 # ── registry ──
-_registry: dict[str, dict] = {}
+OutputSpec = dict[str, Any]
+BuildFn = Callable[[list[FeatureTuple], nn.Module | None], nn.Module]
+OutputSpecFn = Callable[[nn.Module | None, dict[str, Any] | None], OutputSpec]
+
+_registry: dict[str, dict[str, Callable[..., Any]]] = {}
 """Each entry: {build_fn, output_spec_fn}"""
 
 
-def register_model(name: str, output_spec_fn, build_fn):
+def register_model(name: str, output_spec_fn: OutputSpecFn, build_fn: BuildFn) -> None:
     _registry[name] = {"build": build_fn, "output_spec": output_spec_fn}
 
 
-def build_model(model_type: str, features, tokenizer=None, **params):
+def build_model(
+    model_type: str,
+    features: list[FeatureTuple],
+    tokenizer: nn.Module | None = None,
+    **params: Any,
+) -> nn.Module:
     """Build any registered model by type name. No if-elif chain."""
     if model_type not in _registry:
         raise ValueError(f"Unknown model type: {model_type}. Registered: {list(_registry)}")
     return _registry[model_type]["build"](features, tokenizer, **params)
 
 
-def get_output_spec(model_type: str, model_instance=None, params: dict | None = None):
+def get_output_spec(
+    model_type: str,
+    model_instance: nn.Module | None = None,
+    params: dict[str, Any] | None = None,
+) -> OutputSpec:
     """Get output spec dict {task_names, label_col_map} for a model type."""
     if model_type not in _registry:
         return {"task_names": [], "label_col_map": {}}
@@ -56,7 +73,7 @@ class TaskConfigEntry:
     tower_dims: list[int] = field(default_factory=list)
 
 
-def _parse_task_config(raw):
+def _parse_task_config(raw: dict[str, Any] | None) -> MultiTaskConfig | None:
     if not raw:
         return None
     towers = [
@@ -72,7 +89,7 @@ def _parse_task_config(raw):
     return MultiTaskConfig(towers=towers, relations=relations)
 
 
-def _default_esmm_task_config(params):
+def _default_esmm_task_config(params: dict[str, Any]) -> MultiTaskConfig:
     return default_task_config(
         params.get("click_hidden_dims", [8]),
         params.get("cvr_hidden_dims", [8]),
@@ -82,7 +99,7 @@ def _default_esmm_task_config(params):
     )
 
 
-def _parse_mmoe_task_configs(raw):
+def _parse_mmoe_task_configs(raw: dict[str, Any]) -> list[TaskConfigEntry]:
     return [
         TaskConfigEntry(t["name"], t.get("tower_dims", [])) for t in raw.get("task_configs", [])
     ]
@@ -96,18 +113,24 @@ class ModelConfig:
     params: dict = field(default_factory=dict)
 
     @classmethod
-    def from_yaml(cls, path):
+    def from_yaml(cls, path: str | Path) -> "ModelConfig":
         with open(path, encoding="utf-8") as f:
             raw = yaml.safe_load(f)
         return cls.from_dict(raw)
 
     @classmethod
-    def from_dict(cls, raw):
+    def from_dict(cls, raw: dict[str, Any]) -> "ModelConfig":
         mtype = raw["type"]
         params = {k: v for k, v in raw.items() if k != "type"}
         return cls(type=mtype, params=params)
 
-    def build(self, features, tokenizer=None, pooling_map=None, total_dim=None):
+    def build(
+        self,
+        features: list[FeatureTuple],
+        tokenizer: nn.Module | None = None,
+        pooling_map: dict[str, str] | None = None,
+        total_dim: int | None = None,
+    ) -> nn.Module:
         if pooling_map:
             self.params["_pooling_map"] = pooling_map
         if total_dim is not None:
@@ -118,7 +141,7 @@ class ModelConfig:
 # ── register built-in models ──
 
 
-def _spec_pred(model=None, params=None):
+def _spec_pred(model: nn.Module | None = None, params: dict[str, Any] | None = None) -> OutputSpec:
     specs = parse_task_specs((params or {}).get("tasks"))
     if specs:
         return {
@@ -129,13 +152,17 @@ def _spec_pred(model=None, params=None):
     return {"task_names": ["pred"], "label_col_map": {"pred": "is_click"}}
 
 
-def _build_lr(features, tokenizer=None, **params):
+def _build_lr(
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
+) -> LogisticRegression:
     return LogisticRegression(
         features, pooling_map=params.get("_pooling_map"), total_dim=params.get("_total_dim")
     )
 
 
-def _build_deepfm(features, tokenizer=None, **params):
+def _build_deepfm(
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
+) -> DeepFM:
     return DeepFM(
         features,
         params.get("fm_k", 16),
@@ -145,7 +172,9 @@ def _build_deepfm(features, tokenizer=None, **params):
     )
 
 
-def _build_mmoe(features, tokenizer=None, **params):
+def _build_mmoe(
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
+) -> MMoE:
     tcs = [(t.name, t.tower_dims) for t in _parse_mmoe_task_configs(params)]
     return MMoE(
         features,
@@ -159,7 +188,7 @@ def _build_mmoe(features, tokenizer=None, **params):
     )
 
 
-def _spec_mmoe(model=None, params=None):
+def _spec_mmoe(model: nn.Module | None = None, params: dict[str, Any] | None = None) -> OutputSpec:
     specs = parse_task_specs((params or {}).get("tasks"))
     if specs:
         return {
@@ -171,7 +200,9 @@ def _spec_mmoe(model=None, params=None):
     return {"task_names": names, "label_col_map": {n: n for n in names}}
 
 
-def _build_esmm(features, tokenizer=None, **params):
+def _build_esmm(
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
+) -> ESMM:
     task_config = _parse_task_config(params.get("task_config")) or _default_esmm_task_config(params)
     return ESMM(
         features,
@@ -187,7 +218,7 @@ def _build_esmm(features, tokenizer=None, **params):
     )
 
 
-def _spec_esmm(model=None, params=None):
+def _spec_esmm(model: nn.Module | None = None, params: dict[str, Any] | None = None) -> OutputSpec:
     params = params or {}
     specs = parse_task_specs(params.get("tasks"))
     if specs:
@@ -216,7 +247,9 @@ def _spec_esmm(model=None, params=None):
     return {"task_names": task_names, "label_col_map": label_col_map}
 
 
-def _spec_unimixer(model=None, params=None):
+def _spec_unimixer(
+    model: nn.Module | None = None, params: dict[str, Any] | None = None
+) -> OutputSpec:
     specs = parse_task_specs((params or {}).get("tasks"))
     if specs:
         return {
@@ -233,7 +266,9 @@ def _spec_unimixer(model=None, params=None):
     return {"task_names": names, "label_col_map": label_col_map}
 
 
-def _build_unimixer(features, tokenizer=None, **params):
+def _build_unimixer(
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
+) -> UniMixerModel:
     if tokenizer is None:
         raise ValueError("UniMixer requires external FeatureTokenizer")
     tc = _parse_task_config(params.get("task_config"))

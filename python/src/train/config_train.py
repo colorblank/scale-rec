@@ -80,7 +80,7 @@ class TrainConfig:
         tb_dir: str = "",
         tb_grad_interval: int = 100,
         **legacy: Any,
-    ):
+    ) -> None:
         optim_data = self._as_dict(optim)
         for key in ("lr", "weight_decay", "momentum", "emb_lr", "emb_weight_decay"):
             if key in legacy:

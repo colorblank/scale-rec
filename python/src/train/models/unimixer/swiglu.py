@@ -8,9 +8,11 @@ import torch.nn as nn
 
 
 class PerTokenSwiGlu(nn.Module):
-    def __init__(self, num_tokens, token_dim, hidden_factor):
+    def __init__(self, num_tokens: int, token_dim: int, hidden_factor: float) -> None:
         super().__init__()
         h = int(token_dim * hidden_factor)
+        if h <= 0:
+            raise ValueError("hidden_factor produces zero hidden dimension")
         self.token_dim = token_dim
         self.hidden_dim = h
         ub = math.sqrt(6.0 / (token_dim + h))
@@ -24,11 +26,11 @@ class PerTokenSwiGlu(nn.Module):
         self.b_down = nn.Parameter(torch.zeros(1, num_tokens, token_dim))
 
     @staticmethod
-    def _einsum(x, w):
+    def _einsum(x: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
         # x: [B, T, D], w: [T, H, D] -> output: [B, T, H]
         return torch.einsum("btd,thd->bth", x, w)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         up = self._einsum(x, self.w_up) + self.b_up
         gate = self._einsum(x, self.w_gate) + self.b_gate
         hidden = up * (gate * torch.sigmoid(gate))

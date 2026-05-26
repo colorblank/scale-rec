@@ -7,7 +7,7 @@ from typing import Any
 class StringParser:
     """Parse structured strings into token sequences."""
 
-    def __init__(self, sep1: str, sep2: str, key_index: int, pad_len: int, pad_val: str):
+    def __init__(self, sep1: str, sep2: str, key_index: int, pad_len: int, pad_val: str) -> None:
         """Initialize with delimiters, key index, and padding config."""
         self.sep1 = sep1
         self.sep2 = sep2

@@ -170,6 +170,72 @@ fn test_unimixer_forward_shape() {
 }
 
 #[test]
+fn test_unimixer_tokenizer_accepts_sequence_pooling() {
+    use scale_rec::feats::config::PoolingStrategy;
+    use scale_rec::models::unimixer::tokenizer::FeatureTokenizer;
+
+    let device = Device::Cpu;
+    let mut seq = FeatureSpec::new("seq".into(), 16, 4);
+    seq.pooling = PoolingStrategy::First;
+    let mut flat = FeatureSpec::new("flat".into(), 16, 2);
+    flat.pooling = PoolingStrategy::Flatten;
+    flat.seq_len = Some(2);
+    let vb = vb();
+    let tokenizer = FeatureTokenizer::new(vb.pp("tokenizer"), &[seq, flat], 3, 2).unwrap();
+    let mut inputs = HashMap::new();
+    inputs.insert(
+        "seq".into(),
+        Tensor::from_slice(&[1u32, 2, 3, 4], (2, 2), &device).unwrap(),
+    );
+    inputs.insert(
+        "flat".into(),
+        Tensor::from_slice(&[1u32, 2, 3, 4], (2, 2), &device).unwrap(),
+    );
+
+    let out = tokenizer.forward(&inputs).unwrap();
+
+    assert_eq!(out.dims(), &[2, 2, 3]);
+}
+
+#[test]
+fn test_unimixer_rejects_invalid_temperature() {
+    use scale_rec::models::unimixer::{model::UniMixerModel, tokenizer::FeatureTokenizer};
+
+    let features = dummy_features();
+    let vb = vb();
+    let tokenizer = FeatureTokenizer::new(vb.pp("tokenizer"), &features, 4, 2).unwrap();
+    let task_config = MultiTaskConfig {
+        towers: vec![TowerConfig {
+            name: "ctr".into(),
+            hidden_dims: vec![8],
+            output_dim: 1,
+            activation: Activation::Relu,
+        }],
+        relations: vec![],
+    };
+    let model = UniMixerModel::new(
+        tokenizer,
+        4,
+        2,
+        1,
+        Some(4),
+        false,
+        1.0,
+        4,
+        4,
+        &task_config,
+        false,
+        vb.pp("unimixer"),
+    )
+    .unwrap();
+
+    let err = model
+        .forward_with_temperature(&dummy_inputs(3), 0.0)
+        .unwrap_err();
+    assert!(err.to_string().contains("temperature must be > 0"));
+}
+
+#[test]
 fn test_modelconfig_build_mmoe() {
     let mut params = serde_yaml::Mapping::new();
     params.insert("num_experts".into(), serde_yaml::Value::Number(2.into()));

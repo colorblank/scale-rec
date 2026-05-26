@@ -45,7 +45,7 @@ class MultiTaskLoss(nn.Module):
         pos_weights: dict[str, float] | None = None,
         reg_weight: float = 0.1,
         task_specs: list[TaskSpec] | None = None,
-    ):
+    ) -> None:
         super().__init__()
         if mode not in {"static", "equal", "uncertainty"}:
             raise ValueError(f"Unknown loss weighting mode: {mode}")

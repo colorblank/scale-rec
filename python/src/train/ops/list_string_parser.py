@@ -7,7 +7,7 @@ from typing import Any
 class ListStringParser:
     """Parse list of strings, splitting each by a separator and extracting a specific index."""
 
-    def __init__(self, sep: str, key_index: int):
+    def __init__(self, sep: str, key_index: int) -> None:
         self.sep = sep
         self.key_index = key_index
 

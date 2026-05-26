@@ -39,12 +39,21 @@ impl UniMixingLite {
         rank: usize,
         vb: VarBuilder,
     ) -> Result<Self> {
+        if block_size == 0 {
+            candle_core::bail!("block_size must be > 0");
+        }
         if embed_dim % block_size != 0 {
             candle_core::bail!(
                 "embed_dim ({}) 必须能被 block_size ({}) 整除",
                 embed_dim,
                 block_size
             );
+        }
+        if num_basis == 0 {
+            candle_core::bail!("num_basis must be > 0");
+        }
+        if rank == 0 {
+            candle_core::bail!("rank must be > 0");
         }
         let num_blocks = embed_dim / block_size;
 
@@ -99,7 +108,10 @@ impl UniMixingLite {
 
     /// 应用 Sinkhorn-Knopp 迭代生成双随机矩阵
     fn sinkhorn_knopp(&self, matrix: &Tensor, n_iters: usize) -> Result<Tensor> {
-        let mut mat = matrix.exp()?;
+        let max = matrix
+            .max_keepdim(matrix.rank() - 1)?
+            .max_keepdim(matrix.rank() - 2)?;
+        let mut mat = matrix.broadcast_sub(&max)?.exp()?;
         let eps = 1e-8f64;
         let rank = mat.rank();
 
@@ -124,6 +136,9 @@ impl UniMixingLite {
     /// 返回:
     /// - 输出张量，形状为 (batch_size, L)
     pub fn forward(&self, x: &Tensor, temperature: f64) -> Result<Tensor> {
+        if temperature <= 0.0 {
+            candle_core::bail!("temperature must be > 0");
+        }
         let (batch_size, _) = x.dims2()?;
         let n = self.num_blocks;
         let b = self.block_size;

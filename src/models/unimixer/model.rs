@@ -35,8 +35,36 @@ impl UniMixerModel {
         use_siamese: bool,
         vb: VarBuilder,
     ) -> Result<Self> {
+        if token_dim == 0 {
+            candle_core::bail!("token_dim must be > 0");
+        }
+        if num_tokens == 0 {
+            candle_core::bail!("num_tokens must be > 0");
+        }
+        if num_blocks == 0 {
+            candle_core::bail!("num_blocks must be > 0");
+        }
+        if hidden_factor <= 0.0 {
+            candle_core::bail!("hidden_factor must be > 0");
+        }
+        if use_lite && num_basis == 0 {
+            candle_core::bail!("num_basis must be > 0 when use_lite=true");
+        }
+        if use_lite && rank == 0 {
+            candle_core::bail!("rank must be > 0 when use_lite=true");
+        }
         let embed_dim = num_tokens * token_dim;
         let block_size = block_size_opt.unwrap_or(token_dim);
+        if block_size == 0 {
+            candle_core::bail!("block_size must be > 0");
+        }
+        if embed_dim % block_size != 0 {
+            candle_core::bail!(
+                "embed_dim ({}) must be divisible by block_size ({})",
+                embed_dim,
+                block_size
+            );
+        }
         let mut blocks = Vec::with_capacity(num_blocks);
         for i in 0..num_blocks {
             let block = UniMixerBlock::new(
@@ -79,6 +107,9 @@ impl UniMixerModel {
         x_inputs: &HashMap<String, Tensor>,
         temperature: f64,
     ) -> Result<HashMap<String, Tensor>> {
+        if temperature <= 0.0 {
+            candle_core::bail!("temperature must be > 0");
+        }
         let tokens = self.tokenizer.forward(x_inputs)?;
         let (batch_size, _, _) = tokens.dims3()?;
         let mut x = tokens.reshape((batch_size, self.embed_dim))?;

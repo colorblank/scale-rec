@@ -4,7 +4,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from ..layers.embedding import FeatureEmbeddings
+from ..layers.embedding import FeatureEmbeddings, FeatureTensorMap, FeatureTuple
 from ..layers.fm import fm_interaction
 from ..layers.mlp import Mlp
 from ..layers.towers import Activation
@@ -13,7 +13,14 @@ from ..layers.towers import Activation
 class DeepFM(nn.Module):
     """DeepFM: FM first-order + FM second-order + Deep MLP."""
 
-    def __init__(self, features, fm_k, deep_hidden_dims, pooling_map=None, total_dim=None):
+    def __init__(
+        self,
+        features: list[FeatureTuple],
+        fm_k: int,
+        deep_hidden_dims: list[int],
+        pooling_map: dict[str, str] | None = None,
+        total_dim: int | None = None,
+    ) -> None:
         super().__init__()
         self.fm_first = FeatureEmbeddings([(n, v, 1) for n, v, _ in features], pooling_map)
         self.fm_second = FeatureEmbeddings([(n, v, fm_k) for n, v, _ in features], pooling_map)
@@ -23,7 +30,7 @@ class DeepFM(nn.Module):
         self.deep_mlp = Mlp(self.deep_total_dim, deep_hidden_dims, 1, Activation.RELU)
         self.global_bias = nn.Parameter(torch.zeros(1))
 
-    def forward(self, x_inputs):
+    def forward(self, x_inputs: FeatureTensorMap) -> dict[str, torch.Tensor]:
         """Forward: FM first + FM second + Deep MLP + global_bias -> {"pred": logits}."""
         first = self.fm_first(x_inputs).sum(dim=1, keepdim=True)
         stacked = torch.cat(self.fm_second.forward_stacked(x_inputs), dim=1)

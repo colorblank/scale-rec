@@ -36,7 +36,7 @@ def _collect_batches(batches: Iterator[Batch], max_samples: int) -> list[Batch]:
 
 
 class _EMA:
-    def __init__(self, model: torch.nn.Module, decay: float):
+    def __init__(self, model: torch.nn.Module, decay: float) -> None:
         self.decay = decay
         self.shadow = {name: p.detach().clone() for name, p in model.named_parameters()}
         self._model = model
@@ -70,7 +70,7 @@ class Trainer:
         null_markers: set[str] | None = None,
         batch_factory: Callable[[], Iterator[Batch]] | None = None,
         task_specs: list[TaskSpec] | None = None,
-    ):
+    ) -> None:
         self.model = model
         self.dag = dag
         self.task_specs = (

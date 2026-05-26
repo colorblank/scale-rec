@@ -5,17 +5,17 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from ..layers.embedding import FeatureEmbeddings
+from ..layers.embedding import FeatureEmbeddings, FeatureTensorMap, FeatureTuple
 from ..layers.mlp import Mlp
 from ..layers.towers import Activation, MultiTaskConfig, TaskRelation, TaskTower, TowerConfig
 
 
 def default_task_config(
-    click_hidden_dims,
-    cvr_hidden_dims,
-    detail_hidden_dims,
-    stock_hidden_dims,
-    stay_hidden_dims,
+    click_hidden_dims: list[int],
+    cvr_hidden_dims: list[int],
+    detail_hidden_dims: list[int],
+    stock_hidden_dims: list[int],
+    stay_hidden_dims: list[int],
 ) -> MultiTaskConfig:
     return MultiTaskConfig(
         towers=[
@@ -39,17 +39,17 @@ class ESMM(nn.Module):
 
     def __init__(
         self,
-        features,
-        shared_bottom_dims,
-        click_hidden_dims,
-        cvr_hidden_dims,
-        detail_hidden_dims,
-        stock_hidden_dims,
-        stay_hidden_dims,
+        features: list[FeatureTuple],
+        shared_bottom_dims: list[int],
+        click_hidden_dims: list[int],
+        cvr_hidden_dims: list[int],
+        detail_hidden_dims: list[int],
+        stock_hidden_dims: list[int],
+        stay_hidden_dims: list[int],
         task_config: MultiTaskConfig | None = None,
-        pooling_map=None,
-        total_dim=None,
-    ):
+        pooling_map: dict[str, str] | None = None,
+        total_dim: int | None = None,
+    ) -> None:
         super().__init__()
         self.embeddings = FeatureEmbeddings(features, pooling_map, total_dim=total_dim)
         if shared_bottom_dims:
@@ -75,7 +75,7 @@ class ESMM(nn.Module):
         for tower in self.task_config.towers:
             setattr(self, f"{tower.name}_tower", TaskTower(tower, sd))
 
-    def forward(self, x_inputs):
+    def forward(self, x_inputs: FeatureTensorMap) -> dict[str, torch.Tensor]:
         concat = self.embeddings(x_inputs)
         shared = self.shared_bottom(concat) if hasattr(self, "shared_bottom") else concat
 

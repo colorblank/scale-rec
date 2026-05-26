@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..layers.embedding import FeatureEmbeddings
+from ..layers.embedding import FeatureEmbeddings, FeatureTensorMap, FeatureTuple
 from ..layers.mlp import Mlp
 from ..layers.towers import Activation
 
@@ -15,15 +15,15 @@ class MMoE(nn.Module):
 
     def __init__(
         self,
-        features,
-        shared_bottom_dims,
-        num_experts,
-        expert_hidden_dims,
-        expert_output_dim,
-        task_configs,
-        pooling_map=None,
-        total_dim=None,
-    ):
+        features: list[FeatureTuple],
+        shared_bottom_dims: list[int],
+        num_experts: int,
+        expert_hidden_dims: list[int],
+        expert_output_dim: int,
+        task_configs: list[tuple[str, list[int]]],
+        pooling_map: dict[str, str] | None = None,
+        total_dim: int | None = None,
+    ) -> None:
         """Build MMoE: embeddings + optional shared_bottom + N experts + K gates + K towers."""
         super().__init__()
         self.embeddings = FeatureEmbeddings(features, pooling_map, total_dim=total_dim)
@@ -60,7 +60,7 @@ class MMoE(nn.Module):
             setattr(self, f"task_{t}_tower", tower)
             self._towers.append(tower)
 
-    def forward(self, x_inputs):
+    def forward(self, x_inputs: FeatureTensorMap) -> dict[str, torch.Tensor]:
         """Forward: embed -> shared -> experts -> gate softmax -> weighted sum -> task towers."""
         concat = self.embeddings(x_inputs)
         shared = self.shared_bottom(concat) if hasattr(self, "shared_bottom") else concat

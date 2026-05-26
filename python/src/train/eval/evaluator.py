@@ -31,7 +31,7 @@ class EvalConfig:
 
 
 class Evaluator:
-    def __init__(self, config: EvalConfig):
+    def __init__(self, config: EvalConfig) -> None:
         self.cfg = config
         unknown = sorted(set(config.metrics) - set(get_available_metrics()))
         if unknown:

@@ -29,6 +29,9 @@ from .ops import (
 )
 from .schema import FeatureSchema, infer_feature_schemas
 
+if False:  # pragma: no cover
+    from .debug.tracer import DebugTracer
+
 FeatureValue = Any
 
 
@@ -68,9 +71,9 @@ class FeatureDag:
         self,
         config: FlowConfig,
         debug_mode: bool = False,
-        tracer=None,
+        tracer: "DebugTracer | None" = None,
         strict_validation: bool = False,
-    ):
+    ) -> None:
         self.sources: dict[str, SourceDef] = {}
         self.tracer = tracer  # Optional[DebugTracer] for per-stage I/O tracing
         for s in config.sources:
@@ -304,6 +307,12 @@ class FeatureDag:
         """返回 {feature_name: pooling_strategy} 映射。"""
         return {name: emb.pooling for name, emb in self.embeddable_features()}
 
+    def feature_seq_lens(self) -> dict[str, int]:
+        """返回配置了固定序列长度的 embedding 特征。"""
+        return {
+            name: emb.seq_len for name, emb in self.embeddable_features() if emb.seq_len is not None
+        }
+
     def execute_batch(self, columns: dict[str, list]) -> dict[str, list]:
         """Execute DAG on columnar batch data. Each value in `columns` is a list of N elements.
 
@@ -440,7 +449,12 @@ class FeatureDag:
             computed_names=computed_names,
         )
 
-    def _dump_snapshot(self, context, source_names, computed_names):
+    def _dump_snapshot(
+        self,
+        context: dict[str, FeatureValue],
+        source_names: set[str],
+        computed_names: set[str],
+    ) -> None:
         logger.debug("[Feature Snapshot]")
         for name, val in sorted(context.items()):
             origin = (

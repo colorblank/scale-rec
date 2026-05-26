@@ -30,6 +30,9 @@ impl PerTokenSwiGlu {
         vb: VarBuilder,
     ) -> Result<Self> {
         let hidden_dim = (token_dim as f64 * hidden_factor) as usize;
+        if hidden_dim == 0 {
+            candle_core::bail!("hidden_factor produces zero hidden dimension");
+        }
 
         // 使用 Xavier uniform 初始化 (对应 PyTorch 的 xavier_uniform_)
         // 计算 W_up 权重的边界界限

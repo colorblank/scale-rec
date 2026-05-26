@@ -15,7 +15,7 @@ class FeatureHash:
         namespace: str = "",
         salt: str = "",
         version: str = "",
-    ):
+    ) -> None:
         if vocab_size <= 0:
             raise ValueError("vocab_size must be positive")
         self.vocab_size = vocab_size
@@ -35,7 +35,7 @@ class FeatureHash:
 
     # ── batch ──
 
-    def process_batch(self, inputs: list[Any]) -> list:
+    def process_batch(self, inputs: list[Any]) -> list[int] | list[list[int]]:
         """Columnar batch: list 列逐元素 hash → IntList 列。"""
         if not inputs or not inputs[0]:
             return []

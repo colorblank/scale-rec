@@ -16,7 +16,7 @@ class Activation(Enum):
     GELU = auto()
     NONE = auto()
 
-    def apply(self, x):
+    def apply(self, x: torch.Tensor) -> torch.Tensor:
         """Apply activation function to tensor."""
         m = {
             self.RELU: F.relu,
@@ -28,7 +28,7 @@ class Activation(Enum):
         return m[self](x)
 
     @classmethod
-    def from_str(cls, s):
+    def from_str(cls, s: str) -> "Activation":
         """Parse activation from string: relu, sigmoid, swish, gelu, none."""
         return {
             "relu": cls.RELU,
@@ -50,7 +50,7 @@ class TowerConfig:
 class TaskTower(nn.Module):
     """Single-task MLP tower. Naming matches Candle vb.pp paths."""
 
-    def __init__(self, config, input_dim):
+    def __init__(self, config: TowerConfig, input_dim: int) -> None:
         """Build tower from TowerConfig with hidden.{i} and output.{n} naming."""
         super().__init__()
         self.name = config.name
@@ -64,7 +64,7 @@ class TaskTower(nn.Module):
         self.output = nn.ModuleDict()
         self.output[str(n)] = nn.Linear(in_dim, config.output_dim)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward: hidden layers with activation, output layer without."""
         for i in range(len(self.hidden)):
             x = self._act.apply(self.hidden[str(i)](x))
@@ -87,7 +87,7 @@ class MultiTaskConfig:
 class MultiTaskTower(nn.Module):
     """Multi-task tower manager with optional task relation derivation."""
 
-    def __init__(self, config, input_dim):
+    def __init__(self, config: MultiTaskConfig, input_dim: int) -> None:
         """Build towers from config; each registered by name matching Candle vb.pp paths."""
         super().__init__()
         for tc in config.towers:
@@ -95,7 +95,7 @@ class MultiTaskTower(nn.Module):
         self._tower_names = [tc.name for tc in config.towers]
         self._relations = config.relations
 
-    def forward(self, shared):
+    def forward(self, shared: torch.Tensor) -> dict[str, torch.Tensor]:
         """Run all towers, then apply task relations (sigmoid before op)."""
         outputs = {n: getattr(self, n)(shared) for n in self._tower_names}
         for rel in self._relations:

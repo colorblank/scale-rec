@@ -13,7 +13,7 @@ class LRScheduler:
         warmup_steps: int,
         total_steps: int,
         min_lr_ratio: float,
-    ):
+    ) -> None:
         self.optimizers = optimizers
         self.warmup = warmup_steps
         self.total = max(total_steps, warmup_steps + 1)

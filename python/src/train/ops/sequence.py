@@ -7,7 +7,7 @@ from typing import Any
 class SequenceOp:
     """Pad or truncate integer sequences to fixed length."""
 
-    def __init__(self, max_len: int, pad_val: int = 0):
+    def __init__(self, max_len: int, pad_val: int = 0) -> None:
         """Initialize with target length and padding value."""
         self.max_len = max_len
         self.pad_val = pad_val

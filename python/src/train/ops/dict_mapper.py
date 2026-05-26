@@ -11,7 +11,7 @@ class DictMapper:
     下游 Embedding 的 index 0 可固定映射为零向量，避免 padding 与真实特征混淆。
     """
 
-    def __init__(self, mapping: dict[str, int], default_idx: int = 0):
+    def __init__(self, mapping: dict[str, int], default_idx: int = 0) -> None:
         """Initialize with mapping table and fallback index."""
         self.mapping = mapping
         self.default_idx = default_idx
@@ -30,7 +30,7 @@ class DictMapper:
             val = str(val)
         return self.mapping.get(val, self.default_idx) if isinstance(val, str) else self.default_idx
 
-    def process_batch(self, inputs: list[Any]) -> list:
+    def process_batch(self, inputs: list[Any]) -> list[int] | list[list[int]]:
         """Batch map: N values -> N results. Single call for entire column."""
         vals = inputs[0]
         if not vals:

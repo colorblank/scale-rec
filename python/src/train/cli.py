@@ -198,6 +198,7 @@ def build_model_for_dag(
             params.get("token_dim", 64),
             params.get("num_tokens", 8),
             pooling_map=dag.feature_pooling(),
+            seq_len_map=dag.feature_seq_lens(),
         )
 
     model = model_config.build(
@@ -224,6 +225,9 @@ def wrap_unimixer_for_rust_names(model: torch.nn.Module) -> torch.nn.Module:
     import torch.nn as nn
 
     wrapper = nn.Module()
+    wrapper.embed_dim = model.embed_dim
+    wrapper.use_siamese = model.use_siamese
+    wrapper.temperature = model.temperature
     wrapper.add_module("tokenizer", model.tokenizer)
     inner = nn.Module()
     inner.add_module("blocks", model.blocks)
@@ -232,10 +236,28 @@ def wrap_unimixer_for_rust_names(model: torch.nn.Module) -> torch.nn.Module:
         inner.add_module("final_norm", model.final_norm)
     wrapper.add_module("unimixer", inner)
 
-    raw = model
-
-    def _forward(self, x_inputs, temperature=None):
-        return raw(x_inputs, temperature)
+    def _forward(
+        self: torch.nn.Module,
+        x_inputs: dict[str, torch.Tensor],
+        temperature: float | None = None,
+    ) -> dict[str, torch.Tensor]:
+        t = temperature if temperature is not None else self.temperature
+        if t <= 0:
+            raise ValueError("temperature must be > 0")
+        tokens = self.tokenizer(x_inputs)
+        batch_size = tokens.shape[0]
+        x = tokens.reshape(batch_size, self.embed_dim)
+        if self.use_siamese:
+            x_bar = y_bar = x
+            for block in self.unimixer.blocks:
+                _, x_bar, y_bar = block(x, t, x_bar, y_bar)
+                x = x_bar
+            output = self.unimixer.final_norm(x_bar, y_bar, None)
+        else:
+            for block in self.unimixer.blocks:
+                x = block(x, t)
+            output = x
+        return self.unimixer.task_towers(output)
 
     wrapper.forward = types.MethodType(_forward, wrapper)
     return wrapper

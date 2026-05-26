@@ -21,7 +21,7 @@ class Mlp(nn.Module):
         hidden_dims: list[int],
         output_dim: int,
         activation: Activation,
-    ):
+    ) -> None:
         """Construct MLP.
 
         Args:

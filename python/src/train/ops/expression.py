@@ -20,7 +20,7 @@ _UNARYOPS = {ast.USub: operator.neg, ast.UAdd: operator.pos}
 class ExpressionOp:
     """Evaluate script expressions using AST parsing (no eval)."""
 
-    def __init__(self, script: str):
+    def __init__(self, script: str) -> None:
         self.tree = ast.parse(script.strip(), mode="eval")
 
     def process(self, inputs: list[Any]) -> float:
@@ -28,7 +28,7 @@ class ExpressionOp:
         scope.update(_FUNCTIONS)
         return float(self._eval(self.tree.body, scope))
 
-    def _eval(self, node, scope):
+    def _eval(self, node: ast.AST, scope: dict[str, Any]) -> Any:
         if isinstance(node, ast.Constant):
             return node.value
         if isinstance(node, ast.Name):

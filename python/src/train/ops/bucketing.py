@@ -7,7 +7,7 @@ from typing import Any
 class Bucketing:
     """Continuous value to bucket index."""
 
-    def __init__(self, boundaries: list[float]):
+    def __init__(self, boundaries: list[float]) -> None:
         """Initialize with sorted boundary thresholds."""
         self.boundaries = sorted(boundaries)
 

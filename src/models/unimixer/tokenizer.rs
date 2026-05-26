@@ -3,11 +3,13 @@ use candle_core::{Result, Tensor};
 use candle_nn::{conv1d, embedding, Conv1d, Conv1dConfig, Embedding, Module, VarBuilder};
 use std::collections::HashMap;
 
+use crate::feats::config::PoolingStrategy;
 use crate::layers::embedding::FeatureSpec;
 
 pub struct FeatureTokenizer {
     feature_to_emb_idx: HashMap<String, usize>,
     ordered_feature_names: Vec<String>,
+    feature_specs: Vec<FeatureSpec>,
     embeddings: Vec<Embedding>,
     token_projections: Conv1d,
     pub num_tokens: usize,
@@ -21,20 +23,28 @@ impl FeatureTokenizer {
         token_dim: usize,
         num_tokens: usize,
     ) -> Result<Self> {
+        if num_tokens == 0 {
+            candle_core::bail!("num_tokens must be > 0");
+        }
+        if token_dim == 0 {
+            candle_core::bail!("token_dim must be > 0");
+        }
         let mut feature_to_emb_idx = HashMap::with_capacity(features.len());
         let mut ordered_feature_names = Vec::with_capacity(features.len());
+        let mut feature_specs = Vec::with_capacity(features.len());
         let mut embeddings = Vec::with_capacity(features.len());
         let mut total_embed_dim = 0;
         for (i, spec) in features.iter().enumerate() {
             feature_to_emb_idx.insert(spec.name.clone(), i);
             ordered_feature_names.push(spec.name.clone());
+            feature_specs.push(spec.clone());
             let emb = embedding(
                 spec.vocab_size,
                 spec.embed_dim,
                 vb.pp(format!("emb_{}", spec.name)),
             )?;
             embeddings.push(emb);
-            total_embed_dim += spec.embed_dim;
+            total_embed_dim += feature_output_dim(spec)?;
         }
         if total_embed_dim % num_tokens != 0 {
             candle_core::bail!(
@@ -57,11 +67,33 @@ impl FeatureTokenizer {
         Ok(Self {
             feature_to_emb_idx,
             ordered_feature_names,
+            feature_specs,
             embeddings,
             token_projections,
             token_dim,
             num_tokens,
         })
+    }
+
+    fn pool(&self, idx: usize, emb: Tensor) -> Result<Tensor> {
+        if emb.rank() != 3 {
+            return Ok(emb);
+        }
+        match self.feature_specs[idx].pooling {
+            PoolingStrategy::Mean => {
+                let seq_len = emb.dim(1)? as f64;
+                emb.sum(1)?.affine(1.0 / seq_len, 0.0)
+            }
+            PoolingStrategy::Sum => emb.sum(1),
+            PoolingStrategy::Max => emb.max(1),
+            PoolingStrategy::Flatten => {
+                let batch = emb.dim(0)?;
+                let seq_len = emb.dim(1)?;
+                let dim = emb.dim(2)?;
+                emb.reshape((batch, seq_len * dim))
+            }
+            PoolingStrategy::First => emb.narrow(1, 0, 1)?.squeeze(1),
+        }
     }
 
     pub fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<Tensor> {
@@ -71,12 +103,8 @@ impl FeatureTokenizer {
                 .get(name)
                 .ok_or_else(|| candle_core::Error::Msg(format!("Feature '{}' not found", name)))?;
             let emb_idx = *self.feature_to_emb_idx.get(name).unwrap();
-            let mut emb_out = self.embeddings[emb_idx].forward(input_tensor)?;
-            if emb_out.rank() == 3 {
-                let seq_len = emb_out.dim(1)? as f64;
-                emb_out = emb_out.sum(1)?.affine(1.0 / seq_len, 0.0)?;
-            }
-            embeds.push(emb_out);
+            let emb_out = self.embeddings[emb_idx].forward(input_tensor)?;
+            embeds.push(self.pool(emb_idx, emb_out)?);
         }
         let concat_embeds = Tensor::cat(&embeds, 1)?;
         let batch_size = concat_embeds.dim(0)?;
@@ -85,5 +113,18 @@ impl FeatureTokenizer {
         let squeezed = conv_out.squeeze(2)?;
         let output_tokens = squeezed.reshape((batch_size, self.num_tokens, self.token_dim))?;
         Ok(output_tokens)
+    }
+}
+
+fn feature_output_dim(spec: &FeatureSpec) -> Result<usize> {
+    match (spec.pooling, spec.seq_len) {
+        (PoolingStrategy::Flatten, Some(seq_len)) if seq_len > 0 => Ok(spec.embed_dim * seq_len),
+        (PoolingStrategy::Flatten, _) => {
+            candle_core::bail!(
+                "feature '{}' pooling flatten requires seq_len > 0",
+                spec.name
+            )
+        }
+        _ => Ok(spec.embed_dim),
     }
 }

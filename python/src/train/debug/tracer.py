@@ -73,7 +73,7 @@ class StageTrace:
 class DebugTracer:
     """Tracer attached to FeatureDag — records per-sample stage traces."""
 
-    def __init__(self, config: DebugConfig):
+    def __init__(self, config: DebugConfig) -> None:
         self.config = config
         self.traces: list[SampleTrace] = []
         self._current: SampleTrace | None = None

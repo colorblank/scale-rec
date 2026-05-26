@@ -4,6 +4,9 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
+FeatureTuple = tuple[str, int, int]
+FeatureTensorMap = dict[str, torch.Tensor]
+
 
 class FeatureEmbeddings(nn.Module):
     """特征嵌入层，支持 mean/sum/max pooling 处理变长序列特征。
@@ -15,10 +18,10 @@ class FeatureEmbeddings(nn.Module):
 
     def __init__(
         self,
-        features: list[tuple[str, int, int]],
+        features: list[FeatureTuple],
         pooling_map: dict[str, str] | None = None,
         total_dim: int | None = None,
-    ):
+    ) -> None:
         super().__init__()
         self.ordered_names = []
         self.feature_to_idx = {}
@@ -43,9 +46,9 @@ class FeatureEmbeddings(nn.Module):
             return emb.max(dim=1).values
         elif p == "flatten":
             return emb.reshape(emb.shape[0], -1)  # (batch, seq, dim) → (batch, seq*dim)
-        return emb  # first: already 2D from single-element, no-op
+        return emb[:, 0, :]
 
-    def forward(self, x_inputs):
+    def forward(self, x_inputs: FeatureTensorMap) -> torch.Tensor:
         """Lookup + pool + concat → [batch, total_dim]."""
         embeds = []
         for n in self.ordered_names:
@@ -56,7 +59,7 @@ class FeatureEmbeddings(nn.Module):
             embeds.append(emb)
         return torch.cat(embeds, dim=1)
 
-    def forward_stacked(self, x_inputs):
+    def forward_stacked(self, x_inputs: FeatureTensorMap) -> list[torch.Tensor]:
         """Return list of [batch, 1, embed_dim] for FM interaction."""
         result = []
         for n in self.ordered_names:

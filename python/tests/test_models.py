@@ -1,6 +1,8 @@
 import torch
+import pytest
 
 from train.layers.towers import Activation, MultiTaskConfig, TaskRelation, TowerConfig
+from train.layers.embedding import FeatureEmbeddings
 from train.models.deepfm import DeepFM
 from train.models.esmm import ESMM
 from train.models.lr import LogisticRegression
@@ -48,6 +50,14 @@ def test_deepfm_forward():
     model = DeepFM(FEATURES, fm_k=8, deep_hidden_dims=[4])
     out = model(_inputs(3))
     assert out["pred"].shape == (3, 1)
+
+
+def test_feature_embeddings_first_pooling_accepts_sequences():
+    embeddings = FeatureEmbeddings([("seq", 10, 4)], pooling_map={"seq": "first"})
+
+    out = embeddings({"seq": torch.tensor([[1, 2], [3, 4]])})
+
+    assert out.shape == (2, 4)
 
 
 def test_mmoe_forward():
@@ -111,3 +121,70 @@ def test_unimixer_forward():
     out = model(_inputs(3))
     assert out["ctr"].shape == (3, 1)
     assert out["cvr"].shape == (3, 1)
+
+
+def test_unimixer_tokenizer_pools_first_and_flatten_sequences():
+    from train.models.unimixer.tokenizer import FeatureTokenizer
+
+    tokenizer = FeatureTokenizer(
+        [("seq", 10, 4), ("flat", 10, 2)],
+        token_dim=3,
+        num_tokens=2,
+        pooling_map={"seq": "first", "flat": "flatten"},
+        seq_len_map={"flat": 2},
+    )
+
+    out = tokenizer(
+        {
+            "seq": torch.tensor([[1, 2], [3, 4]]),
+            "flat": torch.tensor([[1, 2], [3, 4]]),
+        }
+    )
+
+    assert out.shape == (2, 2, 3)
+
+
+def test_unimixer_rejects_invalid_temperature():
+    from train.models.unimixer.model import UniMixerModel
+    from train.models.unimixer.tokenizer import FeatureTokenizer
+
+    tokenizer = FeatureTokenizer(FEATURES, token_dim=4, num_tokens=2)
+    task_config = MultiTaskConfig(
+        towers=[TowerConfig("ctr", [8], 1, Activation.RELU)],
+        relations=[],
+    )
+    model = UniMixerModel(
+        tokenizer,
+        4,
+        2,
+        1,
+        4,
+        False,
+        1.0,
+        4,
+        4,
+        task_config,
+        False,
+    )
+
+    with pytest.raises(ValueError, match="temperature"):
+        model(_inputs(3), temperature=0.0)
+
+
+def test_unimixer_block_mode_is_constructor_state():
+    from train.models.unimixer.block import UniMixerBlock
+
+    block = UniMixerBlock(
+        embed_dim=8,
+        block_size=4,
+        token_dim=4,
+        num_tokens=2,
+        use_lite=False,
+        hidden_factor=1.0,
+        num_basis=4,
+        rank=4,
+        use_siamese=True,
+    )
+
+    with pytest.raises(ValueError, match="siamese block requires"):
+        block(torch.randn(2, 8), temperature=1.0)

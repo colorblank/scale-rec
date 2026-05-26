@@ -25,6 +25,9 @@ impl UniMixing {
     /// - `block_size`: 块的大小 (B)。注意：`embed_dim` 必须能被 `block_size` 整除。
     /// - `vb`: 变量构建器，用于张量权重的注册和初始化。
     pub fn new(embed_dim: usize, block_size: usize, vb: VarBuilder) -> Result<Self> {
+        if block_size == 0 {
+            candle_core::bail!("block_size must be > 0");
+        }
         if embed_dim % block_size != 0 {
             candle_core::bail!(
                 "embed_dim ({}) 必须能被 block_size ({}) 整除",
@@ -68,7 +71,10 @@ impl UniMixing {
     /// 通过交替对行和列进行归一化，使得矩阵的每一行和每一列的总和均近似为 1，
     /// 以提供一种具备结构归纳偏置的稀疏注意力替代方案。
     fn sinkhorn_knopp(&self, matrix: &Tensor, n_iters: usize) -> Result<Tensor> {
-        let mut mat = matrix.exp()?;
+        let max = matrix
+            .max_keepdim(matrix.rank() - 1)?
+            .max_keepdim(matrix.rank() - 2)?;
+        let mut mat = matrix.broadcast_sub(&max)?.exp()?;
         let eps = 1e-8f64;
         let rank = mat.rank();
 
@@ -93,6 +99,9 @@ impl UniMixing {
     /// # 返回值
     /// 返回经过局部和全局交互混合后的张量，形状为 `[batch_size, embed_dim]`。
     pub fn forward(&self, x: &Tensor, temperature: f64) -> Result<Tensor> {
+        if temperature <= 0.0 {
+            candle_core::bail!("temperature must be > 0");
+        }
         let (batch_size, _) = x.dims2()?;
         let n = self.num_blocks;
         let b = self.block_size;
