@@ -1,9 +1,9 @@
 """生成 discover-main-sort 特征配置文件。
 
-默认策略：高基数特征使用 FeatureHash（无状态哈希），低基数枚举保留 DictMapper。
+默认策略：生产测试样本统一使用 FeatureHash（无状态哈希），避免维护离线词表状态。
 
 字段分类：
-  一、低基数枚举 → DictMapper（仅 item_type, source_name, rec_algo, is_new_user, asset_level, city, investment_horizon, scene）
+  一、低基数枚举/ID → FeatureHash
   二、JSON 对象数组 [{"score","tag"}] → JsonExtractList → FeatureHash
   三、JSON 纯值数组 ["a","b"] → JsonExtractList → FeatureHash
   四、JSON 数组含二次切分 → JsonExtractList → ListStringParser → FeatureHash → SequenceOp
@@ -17,68 +17,230 @@
 
 from __future__ import annotations
 
-import os
+from pathlib import Path
+from typing import Any
 
 import yaml
 
-# ═══════════════════════════════════════════════════════
-# 受控词汇表（仅用于低基数枚举类 DictMapper）
-# ═══════════════════════════════════════════════════════
+VERSION = "1.0.0"
+FULL_CONFIG_FILE = "feature_config_discover.yaml"
+ITEM_CONFIG_FILE = "feature_config_item.yaml"
+USER_CONFIG_FILE = "feature_config_user.yaml"
 
-ITEM_TYPES = [
-    "state",
-    "ask_answer",
-    "iwc_dialogue",
-    "news",
-    "report",
-    "snslivepost",
-    "snsview",
+ConfigDict = dict[str, Any]
+SourceDef = ConfigDict
+OperatorDef = ConfigDict
+EmbedDef = ConfigDict
+
+LABEL_SOURCES: list[SourceDef] = [
+    {"name": "is_click", "dtype": "int", "default_val": "0"},
+    {"name": "is_cvr", "dtype": "int", "default_val": "0"},
+    {"name": "is_click_detail", "dtype": "int", "default_val": "0"},
+    {"name": "is_click_stock", "dtype": "int", "default_val": "0"},
+    {"name": "stay_time", "dtype": "int", "default_val": "-1"},
+    {"name": "ctr", "dtype": "int", "default_val": "0"},
+    {"name": "cvr", "dtype": "int", "default_val": "0"},
 ]
-SOURCE_NAMES = ["社区", "同花顺", "东方财富", "雪球"]
-REC_ALGOS = ["favSecuritiesV1", "stockFenshiKxian-hot", "favEntitiesV1"]
-CITIES = ["上海市", "北京市", "深圳市", "杭州市", "广州市", "成都市"]
-ASSET_LEVELS = ["1万以下", "1-10万", "10-30万", "30-100万", "100万以上"]
 
 
-def _m(vals: list[str], start: int = 1) -> dict:
-    return {v: start + i for i, v in enumerate(vals)}
+def _source(name: str, source: str, dtype: str, default_val: str) -> SourceDef:
+    return {"name": name, "source": source, "dtype": dtype, "default_val": default_val}
 
 
-def generate_config() -> dict:
+def _embed(vocab_size: int, embed_dim: int, **extra: Any) -> EmbedDef:
+    embed: EmbedDef = {"vocab_size": vocab_size, "embed_dim": embed_dim}
+    embed.update(extra)
+    return embed
+
+
+def _op(
+    name: str,
+    op_type: str,
+    inputs: list[str],
+    outputs: list[str],
+    params: ConfigDict | None = None,
+    embed: EmbedDef | None = None,
+) -> OperatorDef:
+    op: OperatorDef = {
+        "name": name,
+        "op_type": op_type,
+        "inputs": inputs,
+        "outputs": outputs,
+        "params": params or {},
+    }
+    if embed is not None:
+        op["embed"] = embed
+    return op
+
+
+def feature_hash(
+    name: str,
+    inputs: list[str],
+    output: str,
+    vocab_size: int,
+    *,
+    num_hashes: int = 1,
+    embed: EmbedDef | None = None,
+) -> OperatorDef:
+    return _op(
+        name,
+        "FeatureHash",
+        inputs,
+        [output],
+        {"vocab_size": vocab_size, "num_hashes": num_hashes},
+        embed,
+    )
+
+
+def single_feature_hash(
+    name: str,
+    input_name: str,
+    output: str,
+    vocab_size: int,
+    *,
+    embed: EmbedDef | None = None,
+) -> OperatorDef:
+    return feature_hash(name, [input_name], output, vocab_size, embed=embed)
+
+
+def bucket(
+    name: str,
+    input_name: str,
+    output: str,
+    boundaries: list[float],
+    *,
+    embed: EmbedDef | None = None,
+) -> OperatorDef:
+    return _op(
+        name, "Bucketing", [input_name], [output], {"boundaries": boundaries}, embed
+    )
+
+
+def expression(name: str, input_name: str, output: str, script: str) -> OperatorDef:
+    return _op(name, "ExpressionOp", [input_name], [output], {"script": script})
+
+
+def json_extract_list(
+    name: str,
+    input_name: str,
+    output: str,
+    *,
+    key: str | None,
+    pad_len: int,
+    pad_val: str = "",
+) -> OperatorDef:
+    return _op(
+        name,
+        "JsonExtractList",
+        [input_name],
+        [output],
+        {"key": key, "pad_len": pad_len, "pad_val": pad_val},
+    )
+
+
+def json_tags(name: str, input_name: str, output: str, pad_len: int = 3) -> OperatorDef:
+    return json_extract_list(name, input_name, output, key="tag", pad_len=pad_len)
+
+
+def json_values(
+    name: str, input_name: str, output: str, pad_len: int = 5
+) -> OperatorDef:
+    return json_extract_list(name, input_name, output, key=None, pad_len=pad_len)
+
+
+def string_parser(
+    name: str,
+    input_name: str,
+    output: str,
+    *,
+    sep1: str,
+    sep2: str,
+    key_index: int,
+    pad_len: int,
+    pad_val: str = "",
+) -> OperatorDef:
+    return _op(
+        name,
+        "StringParser",
+        [input_name],
+        [output],
+        {
+            "sep1": sep1,
+            "sep2": sep2,
+            "key_index": key_index,
+            "pad_len": pad_len,
+            "pad_val": pad_val,
+        },
+    )
+
+
+def list_string_parser(
+    name: str, input_name: str, output: str, *, sep: str, key_index: int
+) -> OperatorDef:
+    return _op(
+        name,
+        "ListStringParser",
+        [input_name],
+        [output],
+        {"sep": sep, "key_index": key_index},
+    )
+
+
+def flat_split(
+    name: str,
+    input_name: str,
+    output: str,
+    *,
+    sep: str = ",",
+    max_len: int = 0,
+    pad_val: str = "",
+) -> OperatorDef:
+    return _op(
+        name,
+        "FlatSplit",
+        [input_name],
+        [output],
+        {"sep": sep, "max_len": max_len, "pad_val": pad_val},
+    )
+
+
+def list_overlap(
+    name: str,
+    left: str,
+    right: str,
+    output: str,
+    *,
+    embed: EmbedDef | None = None,
+) -> OperatorDef:
+    return _op(name, "ListOverlap", [left, right], [output], {}, embed)
+
+
+def string_concat(
+    name: str, inputs: list[str], output: str, *, separator: str = "_"
+) -> OperatorDef:
+    return _op(name, "StringConcat", inputs, [output], {"separator": separator})
+
+
+def generate_config() -> ConfigDict:
     return {
-        "version": "1.0.0",
+        "version": VERSION,
         "sources": _build_sources(),
         "operators": _build_operators(),
     }
 
 
-def generate_item_config() -> dict:
+def generate_item_config() -> ConfigDict:
     """生成仅含 Item 侧 source 定义的配置（用于 Polars 读取物品文件）。"""
     item_sources = [s for s in _build_sources() if s["source"] == "Item"]
-    return {"version": "1.0.0", "sources": item_sources}
+    return {"version": VERSION, "sources": item_sources}
 
 
-def generate_user_config() -> dict:
+def generate_user_config() -> ConfigDict:
     """生成仅含 User/Context 侧 source + label 定义的配置（用于 Polars 读取用户文件）。"""
     user_sources = [s for s in _build_sources() if s["source"] in ("User", "Context")]
     # item_id 作为 Join 键也需出现在用户侧配置
-    item_id_src = {
-        "name": "item_id",
-        "source": "Item",
-        "dtype": "int",
-        "default_val": "0",
-    }
-    # 标签列声明
-    label_sources = [
-        {"name": "is_click", "dtype": "int", "default_val": "0"},
-        {"name": "is_cvr", "dtype": "int", "default_val": "0"},
-        {"name": "is_click_detail", "dtype": "int", "default_val": "0"},
-        {"name": "is_click_stock", "dtype": "int", "default_val": "0"},
-        {"name": "stay_time", "dtype": "int", "default_val": "-1"},
-        {"name": "ctr", "dtype": "int", "default_val": "0"},
-        {"name": "cvr", "dtype": "int", "default_val": "0"},
-    ]
-    return {"version": "1.0.0", "sources": [item_id_src] + user_sources + label_sources}
+    item_id_src = _source("item_id", "Item", "int", "0")
+    return {"version": VERSION, "sources": [item_id_src] + user_sources + LABEL_SOURCES}
 
 
 # ═══════════════════════════════════════════════════════
@@ -86,7 +248,7 @@ def generate_user_config() -> dict:
 # ═══════════════════════════════════════════════════════
 
 
-def _build_sources() -> list[dict]:
+def _build_sources() -> list[SourceDef]:
     return [
         # ── Item (18 字段) ──
         {"name": "item_id", "source": "Item", "dtype": "int", "default_val": "0"},
@@ -266,206 +428,115 @@ def _build_sources() -> list[dict]:
 # ═══════════════════════════════════════════════════════
 
 
-def _build_operators() -> list[dict]:
-    ops = []
+def _build_operators() -> list[OperatorDef]:
+    ops: list[OperatorDef] = []
 
-    def add(op: dict):
+    def add(op: OperatorDef) -> None:
         ops.append(op)
 
-    # ── FeatureHash 辅助：列表特征直接哈希（FeatureHash 内部拼接所有输入）──
-    def fh(name, inps, out, vocab_size, num_hashes=1, embed=None):
-        op = {
-            "name": name,
-            "op_type": "FeatureHash",
-            "inputs": inps,
-            "outputs": [out],
-            "params": {"vocab_size": vocab_size, "num_hashes": num_hashes},
-        }
-        if embed:
-            op["embed"] = embed
-        add(op)
-
-    # ── 单值 → 直接 FeatureHash（无需 StringConcat 中转，FeatureHash 内部 str(v)）──
-    def single_fh(name, inp, out, vocab_size, embed=None):
-        fh(name, [inp], out, vocab_size, embed=embed)
-
-    # ── 数值 ──
-    def bk(name, inp, out, boundaries, embed=None):
+    def fh(
+        name: str,
+        inps: list[str],
+        out: str,
+        vocab_size: int,
+        num_hashes: int = 1,
+        embed: EmbedDef | None = None,
+    ) -> None:
         add(
-            {
-                "name": name,
-                "op_type": "Bucketing",
-                "inputs": [inp],
-                "outputs": [out],
-                "params": {"boundaries": boundaries},
-                **(embed or {}),
-            }
-        )
-        if embed:
-            ops[-1]["embed"] = embed
-
-    def ex(name, inp, out, script):
-        add(
-            {
-                "name": name,
-                "op_type": "ExpressionOp",
-                "inputs": [inp],
-                "outputs": [out],
-                "params": {"script": script},
-            }
+            feature_hash(
+                name, inps, out, vocab_size, num_hashes=num_hashes, embed=embed
+            )
         )
 
-    # ── JSON 解析 ──
-    def json_tags(name, inp, out, pad_len=3, pad_val=""):
+    def single_fh(
+        name: str, inp: str, out: str, vocab_size: int, embed: EmbedDef | None = None
+    ) -> None:
+        add(single_feature_hash(name, inp, out, vocab_size, embed=embed))
+
+    def bk(
+        name: str,
+        inp: str,
+        out: str,
+        boundaries: list[float],
+        embed: EmbedDef | None = None,
+    ) -> None:
+        add(bucket(name, inp, out, boundaries, embed=embed))
+
+    def ex(name: str, inp: str, out: str, script: str) -> None:
+        add(expression(name, inp, out, script))
+
+    def jt(name: str, inp: str, out: str, pad_len: int = 3) -> None:
+        add(json_tags(name, inp, out, pad_len))
+
+    def jl(name: str, inp: str, out: str, pad_len: int = 5) -> None:
+        add(json_values(name, inp, out, pad_len))
+
+    def sp(
+        name: str,
+        inp: str,
+        out: str,
+        sep1: str,
+        sep2: str,
+        key_index: int,
+        pad_len: int,
+        pad_val: str = "",
+    ) -> None:
         add(
-            {
-                "name": name,
-                "op_type": "JsonExtractList",
-                "inputs": [inp],
-                "outputs": [out],
-                "params": {"key": "tag", "pad_len": pad_len, "pad_val": pad_val},
-            }
+            string_parser(
+                name,
+                inp,
+                out,
+                sep1=sep1,
+                sep2=sep2,
+                key_index=key_index,
+                pad_len=pad_len,
+                pad_val=pad_val,
+            )
         )
 
-    def json_list(name, inp, out, pad_len=5, pad_val=""):
-        add(
-            {
-                "name": name,
-                "op_type": "JsonExtractList",
-                "inputs": [inp],
-                "outputs": [out],
-                "params": {"key": None, "pad_len": pad_len, "pad_val": pad_val},
-            }
-        )
+    def lsp(name: str, inp: str, out: str, sep: str, key_index: int) -> None:
+        add(list_string_parser(name, inp, out, sep=sep, key_index=key_index))
 
-    # ── 字符串解析 ──
-    def sp(name, inp, out, sep1, sep2, key_index, pad_len, pad_val=""):
-        add(
-            {
-                "name": name,
-                "op_type": "StringParser",
-                "inputs": [inp],
-                "outputs": [out],
-                "params": {
-                    "sep1": sep1,
-                    "sep2": sep2,
-                    "key_index": key_index,
-                    "pad_len": pad_len,
-                    "pad_val": pad_val,
-                },
-            }
-        )
+    def fls(
+        name: str,
+        inp: str,
+        out: str,
+        sep: str = ",",
+        max_len: int = 0,
+        pad_val: str = "",
+    ) -> None:
+        add(flat_split(name, inp, out, sep=sep, max_len=max_len, pad_val=pad_val))
 
-    def lsp(name, inp, out, sep, key_index):
-        add(
-            {
-                "name": name,
-                "op_type": "ListStringParser",
-                "inputs": [inp],
-                "outputs": [out],
-                "params": {"sep": sep, "key_index": key_index},
-            }
-        )
-
-    def fls(name, inp, out, sep=",", max_len=0, pad_val=""):
-        add(
-            {
-                "name": name,
-                "op_type": "FlatSplit",
-                "inputs": [inp],
-                "outputs": [out],
-                "params": {"sep": sep, "max_len": max_len, "pad_val": pad_val},
-            }
-        )
-
-    def sq(name, inp, out, max_len, pad_val=0):
-        add(
-            {
-                "name": name,
-                "op_type": "SequenceOp",
-                "inputs": [inp],
-                "outputs": [out],
-                "params": {"max_len": max_len, "pad_val": pad_val},
-            }
-        )
-
-    def lo(name, inp1, inp2, out, embed=None):
-        op = {
-            "name": name,
-            "op_type": "ListOverlap",
-            "inputs": [inp1, inp2],
-            "outputs": [out],
-            "params": {},
-        }
-        if embed:
-            op["embed"] = embed
-        add(op)
+    def lo(
+        name: str, inp1: str, inp2: str, out: str, embed: EmbedDef | None = None
+    ) -> None:
+        add(list_overlap(name, inp1, inp2, out, embed=embed))
 
     # ═══════════════════════════════════════════════════
     # Section 1: 单值特征 → FeatureHash（全量 FeatureHash，sources 无 embed）
     # ═══════════════════════════════════════════════════
-    single_fh(
-        "item_id_hash",
-        "item_id",
-        "item_id_idx",
-        5000,
-        embed={"vocab_size": 5000, "embed_dim": 16},
-    )
-    single_fh(
-        "user_id_hash",
-        "user_id",
-        "user_id_idx",
-        5000,
-        embed={"vocab_size": 5000, "embed_dim": 16},
-    )
-    single_fh(
-        "scene_hash", "scene", "scene_idx", 10, embed={"vocab_size": 10, "embed_dim": 4}
-    )
-    single_fh(
-        "item_type_hash",
-        "item_type",
-        "item_type_idx",
-        20,
-        embed={"vocab_size": 20, "embed_dim": 4},
-    )
-    single_fh(
-        "source_name_hash",
-        "source_name",
-        "source_name_idx",
-        20,
-        embed={"vocab_size": 20, "embed_dim": 4},
-    )
-    single_fh(
-        "rec_algo_hash",
-        "rec_algo",
-        "rec_algo_idx",
-        20,
-        embed={"vocab_size": 20, "embed_dim": 4},
-    )
-    single_fh(
-        "is_new_user_hash",
-        "is_new_user",
-        "is_new_user_idx",
-        10,
-        embed={"vocab_size": 10, "embed_dim": 4},
-    )
-    single_fh(
-        "asset_level_hash",
-        "asset_level",
-        "asset_level_idx",
-        20,
-        embed={"vocab_size": 20, "embed_dim": 4},
-    )
-    single_fh(
-        "city_hash", "city", "city_idx", 50, embed={"vocab_size": 50, "embed_dim": 4}
-    )
-    single_fh(
-        "investment_horizon_hash",
-        "investment_horizon",
-        "investment_horizon_idx",
-        20,
-        embed={"vocab_size": 20, "embed_dim": 4},
-    )
+    single_hash_specs = [
+        ("item_id_hash", "item_id", "item_id_idx", 5000, 16),
+        ("user_id_hash", "user_id", "user_id_idx", 5000, 16),
+        ("scene_hash", "scene", "scene_idx", 10, 4),
+        ("item_type_hash", "item_type", "item_type_idx", 20, 4),
+        ("source_name_hash", "source_name", "source_name_idx", 20, 4),
+        ("rec_algo_hash", "rec_algo", "rec_algo_idx", 20, 4),
+        ("is_new_user_hash", "is_new_user", "is_new_user_idx", 10, 4),
+        ("asset_level_hash", "asset_level", "asset_level_idx", 20, 4),
+        ("city_hash", "city", "city_idx", 50, 4),
+        (
+            "investment_horizon_hash",
+            "investment_horizon",
+            "investment_horizon_idx",
+            20,
+            4,
+        ),
+    ]
+    for name, input_name, output, vocab_size, embed_dim in single_hash_specs:
+        single_fh(
+            name, input_name, output, vocab_size, embed=_embed(vocab_size, embed_dim)
+        )
 
     # ═══════════════════════════════════════════════════
     # Section 2: 数值 → Bucketing / ExpressionOp
@@ -501,96 +572,47 @@ def _build_operators() -> list[dict]:
     # ═══════════════════════════════════════════════════
     # Section 3: JSON 对象数组 → JsonExtractList → FeatureHash
     # ═══════════════════════════════════════════════════
-    json_tags(
-        "roleneeds_first_parse", "roleneeds_first_label", "roleneeds_first_tags", 3
-    )
-    fh(
-        "roleneeds_first_hash",
-        ["roleneeds_first_tags"],
-        "roleneeds_first_ids",
-        100,
-        embed={"vocab_size": 100, "embed_dim": 4},
-    )
-
-    json_tags(
-        "roleneeds_second_parse", "roleneeds_second_label", "roleneeds_second_tags", 3
-    )
-    fh(
-        "roleneeds_second_hash",
-        ["roleneeds_second_tags"],
-        "roleneeds_second_ids",
-        100,
-        embed={"vocab_size": 100, "embed_dim": 4},
-    )
-
-    json_tags("invest_label_parse", "invest_label", "invest_label_tags", 3)
-    fh(
-        "invest_label_hash",
-        ["invest_label_tags"],
-        "invest_label_ids",
-        100,
-        embed={"vocab_size": 100, "embed_dim": 4},
-    )
-
-    json_tags(
-        "invest_label_second_parse",
-        "invest_label_second",
-        "invest_label_second_tags",
-        3,
-    )
-    fh(
-        "invest_label_second_hash",
-        ["invest_label_second_tags"],
-        "invest_label_second_ids",
-        100,
-        embed={"vocab_size": 100, "embed_dim": 4},
-    )
-
-    json_tags(
-        "invest_label_third_parse", "invest_label_third", "invest_label_third_tags", 3
-    )
-    fh(
-        "invest_label_third_hash",
-        ["invest_label_third_tags"],
-        "invest_label_third_ids",
-        100,
-        embed={"vocab_size": 100, "embed_dim": 4},
-    )
-
-    json_tags("entity_words_parse", "entity_words_label", "entity_words_tags", 5)
-    fh(
-        "entity_words_hash",
-        ["entity_words_tags"],
-        "entity_words_ids",
-        200,
-        embed={"vocab_size": 200, "embed_dim": 4},
-    )
+    json_tag_specs = [
+        ("roleneeds_first", "roleneeds_first_label", 3, 100),
+        ("roleneeds_second", "roleneeds_second_label", 3, 100),
+        ("invest_label", "invest_label", 3, 100),
+        ("invest_label_second", "invest_label_second", 3, 100),
+        ("invest_label_third", "invest_label_third", 3, 100),
+        ("entity_words", "entity_words_label", 5, 200),
+    ]
+    for prefix, input_name, pad_len, vocab_size in json_tag_specs:
+        tags = f"{prefix}_tags"
+        jt(f"{prefix}_parse", input_name, tags, pad_len)
+        fh(
+            f"{prefix}_hash",
+            [tags],
+            f"{prefix}_ids",
+            vocab_size,
+            embed=_embed(vocab_size, 4),
+        )
 
     # ═══════════════════════════════════════════════════
     # Section 4: JSON 纯值数组 → JsonExtractList → FeatureHash
     # ═══════════════════════════════════════════════════
-    json_list("entities_v3_parse", "item_entities_v3", "entities_v3_list", 4)
-    fh(
-        "entities_v3_hash",
-        ["entities_v3_list"],
-        "entities_v3_ids",
-        1000,
-        embed={"vocab_size": 1000, "embed_dim": 4},
-    )
-
-    json_list("emb_id_parse", "emb_id", "emb_id_list", 4)
-    fh(
-        "emb_id_hash",
-        ["emb_id_list"],
-        "emb_id_ids",
-        1000,
-        embed={"vocab_size": 1000, "embed_dim": 4},
-    )
+    json_value_specs = [
+        ("entities_v3", "item_entities_v3", 4, 1000),
+        ("emb_id", "emb_id", 4, 1000),
+    ]
+    for prefix, input_name, pad_len, vocab_size in json_value_specs:
+        values = f"{prefix}_list"
+        jl(f"{prefix}_parse", input_name, values, pad_len)
+        fh(
+            f"{prefix}_hash",
+            [values],
+            f"{prefix}_ids",
+            vocab_size,
+            embed=_embed(vocab_size, 4),
+        )
 
     # ═══════════════════════════════════════════════════
     # Section 5: JSON 数组含二次切分 → JsonExtractList → ListStringParser → FeatureHash → SequenceOp
     # ═══════════════════════════════════════════════════
-    json_list("stock_list_parse", "stock_list", "stock_list_raw", 5)
+    jl("stock_list_parse", "stock_list", "stock_list_raw", 5)
     lsp("stock_code_extract", "stock_list_raw", "stock_codes", ",", 0)
     fh(
         "stock_code_hash",
@@ -603,55 +625,19 @@ def _build_operators() -> list[dict]:
     # ═══════════════════════════════════════════════════
     # Section 6: 高基数 ID/文本 → StringConcat → FeatureHash
     # ═══════════════════════════════════════════════════
-    single_fh(
-        "title_hash",
-        "title",
-        "title_idx",
-        2000,
-        embed={"vocab_size": 2000, "embed_dim": 8},
-    )
-    single_fh(
-        "content_hash",
-        "content",
-        "content_idx",
-        8000,
-        embed={"vocab_size": 8000, "embed_dim": 8},
-    )
-    single_fh(
-        "insight_hash",
-        "insight",
-        "insight_idx",
-        500,
-        embed={"vocab_size": 500, "embed_dim": 4},
-    )
-    single_fh(
-        "author_id_hash",
-        "author_id",
-        "author_id_idx",
-        1000,
-        embed={"vocab_size": 1000, "embed_dim": 8},
-    )
-    single_fh(
-        "author_hash",
-        "author",
-        "author_idx",
-        1000,
-        embed={"vocab_size": 1000, "embed_dim": 8},
-    )
-    single_fh(
-        "last_trade_date_hash",
-        "last_trade_date",
-        "last_trade_date_idx",
-        500,
-        embed={"vocab_size": 500, "embed_dim": 4},
-    )
-    single_fh(
-        "p_date_hash",
-        "p_date",
-        "p_date_idx",
-        100,
-        embed={"vocab_size": 100, "embed_dim": 4},
-    )
+    high_cardinality_specs = [
+        ("title_hash", "title", "title_idx", 2000, 8),
+        ("content_hash", "content", "content_idx", 8000, 8),
+        ("insight_hash", "insight", "insight_idx", 500, 4),
+        ("author_id_hash", "author_id", "author_id_idx", 1000, 8),
+        ("author_hash", "author", "author_idx", 1000, 8),
+        ("last_trade_date_hash", "last_trade_date", "last_trade_date_idx", 500, 4),
+        ("p_date_hash", "p_date", "p_date_idx", 100, 4),
+    ]
+    for name, input_name, output, vocab_size, embed_dim in high_cardinality_specs:
+        single_fh(
+            name, input_name, output, vocab_size, embed=_embed(vocab_size, embed_dim)
+        )
 
     # ═══════════════════════════════════════════════════
     # Section 7: User — 结构化字符串 → StringParser → FeatureHash
@@ -804,13 +790,7 @@ def _build_operators() -> list[dict]:
 
     # 用户-作者交叉哈希
     add(
-        {
-            "name": "user_author_concat",
-            "op_type": "StringConcat",
-            "inputs": ["user_id", "author_id"],
-            "outputs": ["user_author_str"],
-            "params": {"separator": "_"},
-        }
+        string_concat("user_author_concat", ["user_id", "author_id"], "user_author_str")
     )
     fh(
         "user_author_hash",
@@ -822,13 +802,9 @@ def _build_operators() -> list[dict]:
 
     # 内容类型-来源交叉哈希
     add(
-        {
-            "name": "type_source_concat",
-            "op_type": "StringConcat",
-            "inputs": ["item_type", "source_name"],
-            "outputs": ["type_source_str"],
-            "params": {"separator": "_"},
-        }
+        string_concat(
+            "type_source_concat", ["item_type", "source_name"], "type_source_str"
+        )
     )
     fh(
         "type_source_hash",
@@ -841,10 +817,9 @@ def _build_operators() -> list[dict]:
     return ops
 
 
-def _write_yaml(data: dict, name: str) -> str:
-    dir_ = os.path.dirname(__file__)
-    path = os.path.join(dir_, name)
-    with open(path, "w", encoding="utf-8") as f:
+def _write_yaml(data: ConfigDict, name: str) -> str:
+    path = Path(__file__).resolve().parent / name
+    with path.open("w", encoding="utf-8") as f:
         yaml.dump(
             data,
             f,
@@ -853,13 +828,13 @@ def _write_yaml(data: dict, name: str) -> str:
             sort_keys=False,
             width=120,
         )
-    return path
+    return str(path)
 
 
-def main():
+def main() -> None:
     # 统一配置（DAG + 模型）
     full = generate_config()
-    path = _write_yaml(full, "feature_config_discover.yaml")
+    path = _write_yaml(full, FULL_CONFIG_FILE)
     n_feat = sum(
         len(op.get("outputs", [])) for op in full["operators"] if "embed" in op
     )
@@ -870,12 +845,12 @@ def main():
 
     # Item 侧读取配置（Polars schema）
     item = generate_item_config()
-    path = _write_yaml(item, "feature_config_item.yaml")
+    path = _write_yaml(item, ITEM_CONFIG_FILE)
     print(f"[Item]  {len(item['sources'])} columns → {path}")
 
     # User 侧读取配置（Polars schema + labels）
     user = generate_user_config()
-    path = _write_yaml(user, "feature_config_user.yaml")
+    path = _write_yaml(user, USER_CONFIG_FILE)
     print(f"[User]  {len(user['sources'])} columns → {path}")
 
 
