@@ -20,6 +20,7 @@ from ..task import label_map as task_label_map
 from ..task import parse_task_specs, task_names
 from .deepfm import DeepFM
 from .esmm import ESMM, default_task_config
+from .gdcn_esmm import GDCNESMM
 from .lr import LogisticRegression
 from .mmoe import MMoE
 from .unimixer.model import UniMixerModel
@@ -218,6 +219,26 @@ def _build_esmm(
     )
 
 
+def _build_gdcn_esmm(
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
+) -> GDCNESMM:
+    task_config = _parse_task_config(params.get("task_config")) or _default_esmm_task_config(params)
+    return GDCNESMM(
+        features,
+        cross_layers=params.get("cross_layers", 3),
+        deep_hidden_dims=params.get("deep_hidden_dims", []),
+        shared_bottom_dims=params.get("shared_bottom_dims", []),
+        click_hidden_dims=params.get("click_hidden_dims", [8]),
+        cvr_hidden_dims=params.get("cvr_hidden_dims", [8]),
+        detail_hidden_dims=params.get("detail_hidden_dims", [8]),
+        stock_hidden_dims=params.get("stock_hidden_dims", [8]),
+        stay_hidden_dims=params.get("stay_hidden_dims", [8]),
+        task_config=task_config,
+        pooling_map=params.get("_pooling_map"),
+        total_dim=params.get("_total_dim"),
+    )
+
+
 def _spec_esmm(model: nn.Module | None = None, params: dict[str, Any] | None = None) -> OutputSpec:
     params = params or {}
     specs = parse_task_specs(params.get("tasks"))
@@ -293,4 +314,5 @@ register_model("lr", _spec_pred, _build_lr)
 register_model("deepfm", _spec_pred, _build_deepfm)
 register_model("mmoe", _spec_mmoe, _build_mmoe)
 register_model("esmm", _spec_esmm, _build_esmm)
+register_model("gdcn_esmm", _spec_esmm, _build_gdcn_esmm)
 register_model("unimixer", _spec_unimixer, _build_unimixer)

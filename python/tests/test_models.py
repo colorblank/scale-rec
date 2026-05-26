@@ -3,11 +3,13 @@ import pytest
 
 from train.layers.towers import Activation, MultiTaskConfig, TaskRelation, TowerConfig
 from train.layers.embedding import FeatureEmbeddings
+from train.layers.gdcn import GatedCrossNetwork
 from train.models.deepfm import DeepFM
 from train.models.esmm import ESMM
+from train.models.gdcn_esmm import GDCNESMM
 from train.models.lr import LogisticRegression
 from train.models.mmoe import MMoE
-from train.models import get_output_spec
+from train.models import ModelConfig, get_output_spec
 
 FEATURES = [("a", 10, 4), ("b", 5, 4)]
 
@@ -60,6 +62,14 @@ def test_feature_embeddings_first_pooling_accepts_sequences():
     assert out.shape == (2, 4)
 
 
+def test_gated_cross_network_forward():
+    layer = GatedCrossNetwork(input_dim=8, num_layers=2)
+
+    out = layer(torch.randn(3, 8))
+
+    assert out.shape == (3, 8)
+
+
 def test_mmoe_forward():
     model = MMoE(FEATURES, [8], 2, [8], 4, [("ctr", [4]), ("cvr", [4])])
     out = model(_inputs(3))
@@ -89,6 +99,51 @@ def test_esmm_forward_with_configurable_tasks_and_relations():
     assert model.task_names == ["view", "buy"]
     assert set(out) == {"view", "buy", "ctbuy"}
     assert out["ctbuy"].shape == (3, 1)
+
+
+def test_gdcn_esmm_forward():
+    model = GDCNESMM(
+        FEATURES,
+        cross_layers=2,
+        deep_hidden_dims=[8],
+        shared_bottom_dims=[8],
+        click_hidden_dims=[4],
+        cvr_hidden_dims=[4],
+        detail_hidden_dims=[4],
+        stock_hidden_dims=[4],
+        stay_hidden_dims=[4],
+    )
+
+    out = model(_inputs(3))
+
+    assert out["click"].shape == (3, 1)
+    assert out["cvr"].shape == (3, 1)
+    assert out["ctcvr"].shape == (3, 1)
+
+
+def test_gdcn_esmm_builds_from_model_config():
+    config = ModelConfig.from_dict(
+        {
+            "type": "gdcn_esmm",
+            "cross_layers": 2,
+            "deep_hidden_dims": [8],
+            "shared_bottom_dims": [8],
+            "task_config": {
+                "towers": [
+                    {"name": "view", "hidden_dims": [4]},
+                    {"name": "buy", "hidden_dims": [4]},
+                ],
+                "relations": [{"target": "ctbuy", "sources": ["view", "buy"], "op": "multiply"}],
+            },
+        }
+    )
+
+    model = config.build(FEATURES)
+    out = model(_inputs(3))
+    spec = get_output_spec(config.type, model, config.params)
+
+    assert set(out) == {"view", "buy", "ctbuy"}
+    assert spec["task_names"] == ["view", "buy"]
 
 
 def test_unimixer_forward():
