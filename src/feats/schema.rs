@@ -2,7 +2,10 @@
 
 use std::collections::HashMap;
 
-use crate::feats::config::{DType, EmbedConfig, OperatorDef, PoolingStrategy, Role, SourceDef};
+use crate::feats::config::{
+    parse_float_strict, parse_int_strict, DType, EmbedConfig, OperatorDef, PoolingStrategy, Role,
+    SourceDef,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FeatureDType {
@@ -121,8 +124,8 @@ fn dtype_from_config(dtype: &DType) -> FeatureDType {
 
 fn validate_default(name: &str, dtype: &FeatureDType, default_val: &str) -> Result<(), String> {
     let ok = match dtype {
-        FeatureDType::Int => default_val.parse::<f32>().is_ok(),
-        FeatureDType::Float => default_val.parse::<f32>().is_ok(),
+        FeatureDType::Int => parse_int_strict(default_val).is_ok(),
+        FeatureDType::Float => parse_float_strict(default_val).is_ok(),
         FeatureDType::String | FeatureDType::Unknown => true,
         FeatureDType::List { dtype, .. } => validate_default(name, dtype, default_val).is_ok(),
     };

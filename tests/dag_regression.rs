@@ -87,6 +87,24 @@ operators: []
 }
 
 #[test]
+fn dag_rejects_fractional_int_default_values() {
+    let yaml = r#"
+version: 1.0.0
+sources:
+  - name: user_id
+    dtype: int
+    default_val: "12.9"
+operators: []
+"#;
+    let config = FlowConfig::from_yaml(yaml).unwrap();
+    let err = match FeatureDag::from_config(config, false, None) {
+        Ok(_) => panic!("expected fractional int default to be rejected"),
+        Err(err) => err,
+    };
+    assert!(err.contains("does not match dtype"));
+}
+
+#[test]
 fn rust_embedding_accepts_sequence_pooling_inputs() {
     let device = Device::Cpu;
     let varmap = VarMap::new();

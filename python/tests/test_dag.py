@@ -62,6 +62,55 @@ def test_preprocess_batch():
     assert str(tensors["user_id_idx"].dtype) == "torch.int64"
 
 
+def test_preprocess_batch_uses_configured_flatten_seq_len():
+    raw = {
+        "version": "1.0.0",
+        "sources": [
+            {
+                "name": "seq",
+                "dtype": {"list": {"dtype": "int", "length": 4}},
+                "default_val": "0",
+            }
+        ],
+        "operators": [
+            {
+                "name": "seq_hash",
+                "op_type": "FeatureHash",
+                "inputs": ["seq"],
+                "outputs": ["seq_idx"],
+                "params": {"vocab_size": 32, "num_hashes": 1},
+                "embed": {"vocab_size": 32, "embed_dim": 4, "pooling": "flatten", "seq_len": 4},
+            }
+        ],
+    }
+    dag = FeatureDag(FlowConfig.from_dict(raw))
+    tensors = dag.preprocess_batch(
+        [
+            {"seq": [1, 2]},
+            {"seq": [3, 4, 5, 6, 7]},
+        ]
+    )
+
+    assert tensors["seq_idx"].shape == (2, 4)
+
+
+def test_dag_rejects_fractional_int_default():
+    raw = {
+        "version": "1.0.0",
+        "sources": [
+            {
+                "name": "user_id",
+                "dtype": "int",
+                "default_val": "12.9",
+            }
+        ],
+        "operators": [],
+    }
+
+    with pytest.raises(ValueError, match="does not match dtype"):
+        FeatureDag(FlowConfig.from_dict(raw))
+
+
 def test_dag_rejects_non_integer_embeddable_feature():
     raw = {
         "version": "1.0.0",

@@ -4,7 +4,9 @@ use super::ops::{
     JsonExtractList, ListOverlap, ListStringParser, PluginOp, SequenceOp, Split, StringConcat,
     StringParser,
 };
-use crate::feats::config::{DType, FlowConfig, OperatorDef, SourceDef};
+use crate::feats::config::{
+    parse_float_strict, parse_int_strict, DType, FlowConfig, OperatorDef, SourceDef,
+};
 use crate::feats::debug::DebugTracer;
 use crate::feats::schema::{infer_feature_schemas, FeatureSchema};
 use petgraph::algo::toposort;
@@ -54,6 +56,7 @@ pub struct ExecutionPlan {
     pub ops: Vec<Box<dyn CustomOp>>,
     source_cols: Vec<usize>,
     source_names: Vec<String>,
+    col_names: Vec<Option<String>>,
     source_defaults: Vec<Fv>,
     col_count: usize,
     embed_ids: Vec<usize>,
@@ -82,15 +85,17 @@ pub struct FeatureDag {
 impl FeatureDag {
     fn parse_default(val_str: &str, dtype: &DType) -> FeatureValue {
         match dtype {
-            DType::Int => Fv::Int(val_str.parse::<i32>().unwrap_or(0)),
-            DType::Float => Fv::Float(val_str.parse::<f32>().unwrap_or(0.0)),
+            DType::Int => Fv::Int(parse_int_strict(val_str).unwrap_or(0)),
+            DType::Float => Fv::Float(parse_float_strict(val_str).unwrap_or(0.0)),
             DType::String => Fv::Str(val_str.to_string()),
             DType::List {
                 dtype: inner,
                 length,
             } => match inner.as_ref() {
-                DType::Int => Fv::IntList(vec![val_str.parse::<i32>().unwrap_or(0); *length]),
-                DType::Float => Fv::FloatList(vec![val_str.parse::<f32>().unwrap_or(0.0); *length]),
+                DType::Int => Fv::IntList(vec![parse_int_strict(val_str).unwrap_or(0); *length]),
+                DType::Float => {
+                    Fv::FloatList(vec![parse_float_strict(val_str).unwrap_or(0.0); *length])
+                }
                 DType::String => Fv::StrList(vec![val_str.to_string(); *length]),
                 _ => Fv::Int(0),
             },
@@ -173,10 +178,12 @@ impl FeatureDag {
         let mut source_cols: Vec<usize> = Vec::new();
         let mut source_names: Vec<String> = Vec::new();
         let mut source_defaults: Vec<Fv> = Vec::new();
+        let mut col_names: Vec<Option<String>> = vec![None; sources.len()];
         for (i, s) in sources.keys().enumerate() {
             col_id.insert(s.clone(), i);
             source_cols.push(i);
             source_names.push(s.clone());
+            col_names[i] = Some(s.clone());
             let source_def = sources.get(s).unwrap();
             source_defaults.push(Self::parse_default(
                 &source_def.default_val,
@@ -189,6 +196,7 @@ impl FeatureDag {
             for out in &op_def.outputs {
                 if !col_id.contains_key(out) {
                     col_id.insert(out.clone(), col_count);
+                    col_names.push(Some(out.clone()));
                     col_count += 1;
                 }
             }
@@ -241,6 +249,7 @@ impl FeatureDag {
             ops: plan_ops,
             source_cols,
             source_names,
+            col_names,
             source_defaults,
             col_count,
             embed_ids,
@@ -731,7 +740,6 @@ impl ExecutionPlan {
         }
 
         let mut context: Vec<Vec<Fv>> = vec![Vec::with_capacity(n_rows); self.col_count];
-        let default: Vec<Fv> = vec![Fv::Int(0); n_rows];
 
         // Stage 1: fill sources from input
         for i in 0..self.source_cols.len() {
@@ -768,8 +776,17 @@ impl ExecutionPlan {
             let input_slices: Vec<&[Fv]> = step
                 .input_cols
                 .iter()
-                .map(|&cid| context.get(cid).map(|c| c.as_slice()).unwrap_or(&default))
-                .collect();
+                .map(|&cid| {
+                    context.get(cid).map(|c| c.as_slice()).ok_or_else(|| {
+                        let name = self
+                            .col_names
+                            .get(cid)
+                            .and_then(|n| n.as_deref())
+                            .unwrap_or("<unknown>");
+                        format!("missing required column '{}' (id={})", name, cid)
+                    })
+                })
+                .collect::<Result<_, String>>()?;
             let result_vec = op
                 .process_batch(&input_slices, n_rows)
                 .map_err(|e| format!("step {}: {}", step.op_idx, e))?;

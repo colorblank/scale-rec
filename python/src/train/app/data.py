@@ -8,7 +8,7 @@ from typing import Any, Iterator
 
 import pandas as pd
 
-from ..core.config import FlowConfig
+from ..core.config import FlowConfig, parse_float_strict, parse_int_strict
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +19,9 @@ DTYPE_PANDAS = {"int": "Int64", "float": "float64", "string": "str"}
 def _parse_default(val_str: str, dtype_tag: str) -> Any:
     """按 dtype 解析配置中的 default_val。"""
     if dtype_tag == "int":
-        return int(float(val_str)) if val_str else 0
+        return parse_int_strict(val_str) if val_str else 0
     elif dtype_tag == "float":
-        return float(val_str) if val_str else 0.0
+        return parse_float_strict(val_str) if val_str else 0.0
     return str(val_str)
 
 
@@ -48,16 +48,16 @@ def _build_reader_params(
         dtype[n] = DTYPE_PANDAS.get(dt, "str")
         default_val = s.get("default_val", "")
         if dt == "int":
-            default_vals[n] = int(float(default_val)) if default_val else 0
+            default_vals[n] = parse_int_strict(default_val) if default_val else 0
         elif dt == "float":
-            default_vals[n] = float(default_val) if default_val else 0.0
+            default_vals[n] = parse_float_strict(default_val) if default_val else 0.0
         else:
             default_vals[n] = str(default_val) if default_val else ""
 
     params: dict[str, Any] = {
         "sep": separator,
-        # "na_values": na_vals, # 没有必要
-        # "keep_default_na": False,
+        "na_values": na_vals,
+        "keep_default_na": False,
         "dtype": dtype,
         "on_bad_lines": "skip",
     }
@@ -154,15 +154,9 @@ def build_item_index(
 def _parse_val(raw: str, dtype_tag: str) -> Any:
     """将 TSV 原始字符串按 dtype 解析为 Python 原生类型。"""
     if dtype_tag == "int":
-        try:
-            return int(float(raw))
-        except (ValueError, TypeError):
-            return 0
+        return parse_int_strict(raw)
     elif dtype_tag == "float":
-        try:
-            return float(raw)
-        except (ValueError, TypeError):
-            return 0.0
+        return parse_float_strict(raw)
     return raw
 
 

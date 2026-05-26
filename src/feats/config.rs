@@ -87,3 +87,21 @@ impl FlowConfig {
         serde_yaml::from_str(yaml)
     }
 }
+
+pub fn parse_int_strict(raw: &str) -> Result<i32, String> {
+    let text = raw.trim();
+    if text.is_empty() {
+        return Err("empty integer value".to_string());
+    }
+    text.parse::<i32>()
+        .map_err(|e| format!("invalid integer value '{}': {}", raw, e))
+}
+
+pub fn parse_float_strict(raw: &str) -> Result<f32, String> {
+    let text = raw.trim();
+    if text.is_empty() {
+        return Err("empty float value".to_string());
+    }
+    text.parse::<f32>()
+        .map_err(|e| format!("invalid float value '{}': {}", raw, e))
+}

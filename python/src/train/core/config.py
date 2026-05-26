@@ -37,6 +37,20 @@ class DType:
         raise ValueError(f"Invalid DType: {raw}")
 
 
+def parse_int_strict(raw: str) -> int:
+    text = raw.strip()
+    if not text:
+        raise ValueError("empty integer value")
+    return int(text)
+
+
+def parse_float_strict(raw: str) -> float:
+    text = raw.strip()
+    if not text:
+        raise ValueError("empty float value")
+    return float(text)
+
+
 @dataclass
 class EmbedConfig:
     vocab_size: int

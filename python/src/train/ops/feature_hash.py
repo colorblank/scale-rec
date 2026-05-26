@@ -40,14 +40,17 @@ class FeatureHash:
         if not inputs or not inputs[0]:
             return []
         n = len(inputs[0])
-
-        # 检测第一列是否有 list 值
-        first_col = inputs[0]
-        is_list_col = any(isinstance(first_col[i], list) for i in range(min(n, 3)))
+        row_has_list = [
+            any(isinstance(col[i], list) for col in inputs if i < len(col)) for i in range(n)
+        ]
+        has_list_row = any(row_has_list)
+        has_scalar_row = any(not flag for flag in row_has_list)
+        if has_list_row and has_scalar_row:
+            raise ValueError("mixed scalar/list rows are not supported in FeatureHash batch")
 
         results = []
         for i in range(n):
-            if is_list_col:
+            if has_list_row:
                 # 逐元素 hash → list[int] 输出
                 row_vals = []
                 for col in inputs:

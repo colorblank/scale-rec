@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import time
 
+import pytest
+
 from train.ops.feature_hash import FeatureHash, _djb2_seeded
 
 
@@ -74,6 +76,13 @@ class TestFeatureHashSingle:
         assert batch[0] == op.process(["a", "1"])
         assert batch[1] == op.process(["b", "2"])
         assert batch[2] == op.process(["c", "3"])
+
+    def test_batch_rejects_mixed_scalar_and_list_rows(self):
+        op = FeatureHash(1000, 1, "|")
+        cols = [["a", "b", ["c", "d"]], ["1", "2", "3"]]
+
+        with pytest.raises(ValueError, match="mixed scalar/list rows"):
+            op.process_batch(cols)
 
     def test_hash_scope_changes_output_without_affecting_default(self):
         default_op = FeatureHash(1_000_000, 1)

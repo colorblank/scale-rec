@@ -100,15 +100,24 @@ impl CustomOp for FeatureHash {
         if inputs.is_empty() || n_rows == 0 {
             return Ok(vec![]);
         }
-        // 检测 list 列 → 逐元素 hash → IntList 列
-        let has_list_col = inputs.iter().any(|col| {
-            col.iter()
-                .take(3)
-                .any(|v| matches!(v, Fv::StrList(_) | Fv::IntList(_) | Fv::FloatList(_)))
-        });
+        let row_has_list: Vec<bool> = (0..n_rows)
+            .map(|row| {
+                inputs.iter().any(|col| {
+                    row < col.len()
+                        && matches!(col[row], Fv::StrList(_) | Fv::IntList(_) | Fv::FloatList(_))
+                })
+            })
+            .collect();
+        let has_list_row = row_has_list.iter().any(|v| *v);
+        let has_scalar_row = row_has_list.iter().any(|v| !*v);
+        if has_list_row && has_scalar_row {
+            return Err(
+                "mixed scalar/list rows are not supported in FeatureHash batch".to_string(),
+            );
+        }
 
         let mut results: Vec<Fv> = Vec::with_capacity(n_rows);
-        if has_list_col {
+        if has_list_row {
             for row in 0..n_rows {
                 let mut elems: Vec<String> = Vec::new();
                 for col in inputs.iter() {
@@ -365,5 +374,22 @@ mod tests {
             .unwrap();
         assert_eq!(results[0], single_0);
         assert_eq!(results[1], single_1);
+    }
+
+    #[test]
+    fn test_batch_rejects_mixed_scalar_and_list_rows() {
+        let op = FeatureHash::new(1000, 1, "|".into());
+        let col_a = vec![
+            Fv::Str("x".into()),
+            Fv::Str("y".into()),
+            Fv::StrList(vec!["z".into(), "w".into()]),
+        ];
+        let col_b = vec![
+            Fv::Str("1".into()),
+            Fv::Str("2".into()),
+            Fv::Str("3".into()),
+        ];
+        let err = op.process_batch(&[&col_a, &col_b], 3).unwrap_err();
+        assert!(err.contains("mixed scalar/list rows"));
     }
 }

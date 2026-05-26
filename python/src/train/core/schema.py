@@ -4,7 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .config import DType, EmbedConfig, FlowConfig, OperatorDef, Role
+from .config import (
+    DType,
+    EmbedConfig,
+    FlowConfig,
+    OperatorDef,
+    Role,
+    parse_float_strict,
+    parse_int_strict,
+)
 
 
 @dataclass(frozen=True)
@@ -100,9 +108,9 @@ def _dtype_from_config(dtype: DType) -> FeatureDType:
 def _validate_default(name: str, dtype: FeatureDType, default_val: str) -> None:
     try:
         if dtype.tag == "int":
-            int(float(default_val))
+            parse_int_strict(default_val)
         elif dtype.tag == "float":
-            float(default_val)
+            parse_float_strict(default_val)
         elif dtype.tag == "list" and dtype.inner is not None:
             _validate_default(name, dtype.inner, default_val)
     except (TypeError, ValueError) as exc:

@@ -10,7 +10,16 @@ logger = logging.getLogger(__name__)
 
 import torch
 
-from .config import DType, EmbedConfig, FlowConfig, OperatorDef, Role, SourceDef
+from .config import (
+    DType,
+    EmbedConfig,
+    FlowConfig,
+    OperatorDef,
+    Role,
+    SourceDef,
+    parse_float_strict,
+    parse_int_strict,
+)
 from ..ops import (
     Bucketing,
     CrossFeature,
@@ -201,17 +210,17 @@ class FeatureDag:
     @staticmethod
     def _parse_default(val_str: str, dtype: DType) -> FeatureValue:
         if dtype.tag == "int":
-            return int(float(val_str))
+            return parse_int_strict(val_str)
         elif dtype.tag == "float":
-            return float(val_str)
+            return parse_float_strict(val_str)
         elif dtype.tag == "string":
             return val_str
         elif dtype.tag == "list":
             inner, length = dtype.inner, dtype.length
             if inner.tag == "int":
-                return [int(float(val_str))] * length
+                return [parse_int_strict(val_str)] * length
             elif inner.tag == "float":
-                return [float(val_str)] * length
+                return [parse_float_strict(val_str)] * length
             elif inner.tag == "string":
                 return [val_str] * length
         return 0
@@ -399,9 +408,23 @@ class FeatureDag:
         tensors: dict[str, torch.Tensor] = {}
         for name, vals in feature_lists.items():
             pooling = embed_infos[name].pooling
-            if pooling != "first" and vals and isinstance(vals[0], list):
-                max_len = max(len(v) for v in vals)
-                padded = [v + [0] * (max_len - len(v)) for v in vals]
+            if pooling != "first":
+                if not vals:
+                    tensors[name] = torch.tensor([], dtype=torch.long)
+                    continue
+                if not isinstance(vals[0], list):
+                    raise ValueError(
+                        f"feature '{name}' pooling '{pooling}' requires list-valued inputs"
+                    )
+                if pooling == "flatten":
+                    seq_len = embed_infos[name].seq_len
+                    if not seq_len or seq_len <= 0:
+                        raise ValueError(
+                            f"feature '{name}' pooling flatten requires seq_len > 0"
+                        )
+                else:
+                    seq_len = max(max(len(v) for v in vals), 1)
+                padded = [v[:seq_len] + [0] * max(seq_len - len(v), 0) for v in vals]
                 tensors[name] = torch.tensor(padded, dtype=torch.long)
             else:
                 tensors[name] = torch.tensor(vals, dtype=torch.long)

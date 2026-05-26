@@ -290,15 +290,23 @@ fn feature_column_to_tensor(spec: &FeatureSpec, col: &[Fv], n: usize) -> Result<
         spec.pooling != PoolingStrategy::First && col.iter().any(|v| matches!(v, Fv::IntList(_)));
 
     if use_sequence {
-        let observed_max = col
-            .iter()
-            .filter_map(|v| match v {
-                Fv::IntList(values) => Some(values.len()),
-                _ => None,
-            })
-            .max()
-            .unwrap_or(1);
-        let seq_len = spec.seq_len.unwrap_or(observed_max).max(1);
+        let seq_len = match spec.pooling {
+            PoolingStrategy::Flatten => spec.seq_len.ok_or_else(|| {
+                format!(
+                    "feature '{}' pooling flatten requires seq_len > 0",
+                    spec.name
+                )
+            })?,
+            _ => col
+                .iter()
+                .filter_map(|v| match v {
+                    Fv::IntList(values) => Some(values.len()),
+                    _ => None,
+                })
+                .max()
+                .unwrap_or(1),
+        }
+        .max(1);
         let mut flat = Vec::with_capacity(n * seq_len);
         for val in col.iter().take(n) {
             match val {
@@ -470,6 +478,38 @@ mod tests {
 
         assert!(err.contains("at index 1"));
         assert!(err.contains("invalid integer value"));
+    }
+
+    #[test]
+    fn flatten_pooling_uses_configured_seq_len() {
+        let spec = FeatureSpec {
+            name: "seq".to_string(),
+            vocab_size: 16,
+            embed_dim: 4,
+            pooling: PoolingStrategy::Flatten,
+            seq_len: Some(3),
+        };
+        let col = vec![Fv::IntList(vec![1, 2]), Fv::IntList(vec![3, 4, 5, 6])];
+
+        let tensor = feature_column_to_tensor(&spec, &col, 2).unwrap();
+
+        assert_eq!(tensor.shape().dims(), &[2, 3]);
+    }
+
+    #[test]
+    fn flatten_pooling_requires_seq_len() {
+        let spec = FeatureSpec {
+            name: "seq".to_string(),
+            vocab_size: 16,
+            embed_dim: 4,
+            pooling: PoolingStrategy::Flatten,
+            seq_len: None,
+        };
+        let col = vec![Fv::IntList(vec![1, 2])];
+
+        let err = feature_column_to_tensor(&spec, &col, 1).unwrap_err();
+
+        assert!(err.contains("requires seq_len"));
     }
 }
 
