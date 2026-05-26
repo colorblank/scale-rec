@@ -53,6 +53,8 @@ sources:
 
 ## 模型配置
 
+### 1. 5 任务 ESMM 概率关系配置
+
 `python/configs/demo/discover/model_esmm.yaml`：
 
 ```yaml
@@ -70,6 +72,38 @@ stay_hidden_dims: [8]
 - P(stock) = σ(click) × σ(stock)
 - P(cvr) = σ(click) × σ(cvr)
 - P(stay) = σ(detail) × σ(stay)
+
+### 2. GDCN+ESMM 门控交叉网络配置
+
+`python/configs/demo/discover/model_gdcn_esmm.yaml`：
+
+```yaml
+type: gdcn_esmm
+cross_layers: 3
+deep_hidden_dims: [64, 32]
+shared_bottom_dims: [32, 16]
+label_col_map:
+  click: is_click
+  cvr: is_cvr
+  detail: is_click_detail
+  stock: is_click_stock
+  stay: stay_time
+task_config:
+  towers:
+    - {name: click, hidden_dims: [16, 8], output_dim: 1, activation: relu}
+    - {name: cvr, hidden_dims: [16, 8], output_dim: 1, activation: relu}
+    - {name: detail, hidden_dims: [8], output_dim: 1, activation: relu}
+    - {name: stock, hidden_dims: [8], output_dim: 1, activation: relu}
+    - {name: stay, hidden_dims: [8], output_dim: 1, activation: relu}
+  relations:
+    - {target: ctcvr, sources: [click, cvr], op: multiply}
+    - {target: ctdetail, sources: [click, detail], op: multiply}
+    - {target: ctstock, sources: [click, stock], op: multiply}
+    - {target: ctstay, sources: [detail, stay], op: multiply}
+```
+
+GDCN+ESMM 将门控交叉网络 (GCN) 与 ESMM 多任务预测塔相结合。底层利用 3 层门控交叉层捕捉高阶显式特征交叉，并行使用两层全连接深层网络提取隐式非线性特征；最终通过 5 个独立的预测塔预测单任务 logits，并通过乘积算子 (multiply) 计算多任务联合概率输出。
+
 
 ## 训练参数
 

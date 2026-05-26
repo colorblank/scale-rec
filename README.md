@@ -13,7 +13,7 @@ scale-rec/
 │   │   ├── debug/                   # 特征预处理 Debug 追踪器
 │   │   └── ops/                    # 9 个特征算子
 │   ├── layers/                      # 神经网络层 (Embedding, FM, MLP, Towers)
-│   ├── models/                      # 5 个推荐模型 (LR/DeepFM/MMoE/ESMM/UniMixer)
+│   ├── models/                      # 6 个推荐模型 (LR/DeepFM/MMoE/ESMM/UniMixer/GDCNESMM)
 │   ├── server/                      # HTTP 推理服务
 │   │   ├── engine.rs               #   推理引擎 (DAG + Model 封装)
 │   │   ├── registry.rs             #   多模型管理 + 热加载
@@ -34,7 +34,7 @@ scale-rec/
 │       ├── debug/                   #   Debug 追踪器
 │       ├── ops/                     #   9 个特征算子
 │       ├── layers/                  #   神经网络层
-│       ├── models/                  #   5 个推荐模型 (注册表模式)
+│       ├── models/                  #   6 个推荐模型 (注册表模式)
 │       ├── export.py                #   safetensors 导出
 │       └── main.py                  #   训练入口
 ├── examples/feature_config.yaml     # 共享特征配置 (完整示例: 82 特征, 85 算子)
@@ -50,6 +50,7 @@ scale-rec/
 | **MMoE** | 多任务 | 自定义 (ctr, cvr) | 多门控专家混合 |
 | **ESMM** | 多任务 | ctr, cvr, ctcvr | CTR×CVR 乘积链，全量空间消除 SSB |
 | **UniMixer** | 多任务 | 自定义 (ctr, cvr, ctcvr) | Token 化 + 双随机矩阵交互 + SiameseNorm |
+| **GDCN+ESMM** | 多任务 | click, cvr, detail, stock, stay 及乘积关系 | 门控交叉网络 (GCN) + 共享表示层 + 5 任务预测塔 |
 
 新增模型无需修改现有文件：使用 Python `@register_model` + Rust `REGISTRY` 注册即可。
 
@@ -83,6 +84,9 @@ uv run python -m scale_rec_demo.train_all --epochs 5
 
 # 验证 PyTorch vs Rust 推理一致性
 uv run python -m scale_rec_demo.verify_all
+
+# 验证 GDCN+ESMM 预处理与模型输出一致性 (发现流式模式数据)
+uv run python -m scale_rec_demo.verify_discover_gdcn
 
 # Debug 追踪 (逐算子 I/O)
 uv run python -m scale_rec_demo.train_all --epochs 1 --models lr --debug-trace 10

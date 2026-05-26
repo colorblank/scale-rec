@@ -38,34 +38,36 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python examples/gen_discover_config.py
 # → 输出 examples/feature_config_discover.yaml
 
 # ── 训练 (demo 单文件模式) ──
-PYTHONPATH=python/src:$PYTHONPATH uv run python python/demo/train_discover.py \
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.train_discover \
   --data python/demo/temp/discover_train_data.txt \
   --feature-config examples/feature_config_discover.yaml \
-  --model-config python/demo/model_discover_esmm.yaml \
+  --model-config python/configs/demo/discover/model_esmm.yaml \
   --epochs 30 --batch-size 128 --lr 0.005
 
 # ── 训练 (生产流式模式) ──
-PYTHONPATH=python/src:$PYTHONPATH uv run python python/demo/train_discover.py \
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.train_discover \
   --user-data data/user_20260331.txt \
   --item-files data/items/20260325.txt,data/items/20260326.txt,...,data/items/20260331.txt \
   --feature-config examples/feature_config_discover.yaml \
-  --model-config python/demo/model_discover_esmm.yaml \
+  --model-config python/configs/demo/discover/model_esmm.yaml \
   --epochs 10 --batch-size 1024 \
   --no-header --null-markers 'NULL' '\N' \
   --skip-missing-item --eval-samples 2000
 
 # ── 训练 (旧 demo 配置) ──
-PYTHONPATH=python/src:$PYTHONPATH uv run python python/demo/train_all.py \
-  --feature-config python/demo/feature_config_demo.yaml \
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.train_all \
+  --feature-config python/configs/demo/legacy/feature_config.yaml \
   --data python/demo/temp/train_data.csv \
   --epochs 50 --batch-size 64
 
 # ── 生成合成数据 ──
-PYTHONPATH=python/src:$PYTHONPATH uv run python python/demo/generate_data.py
-PYTHONPATH=python/src:$PYTHONPATH uv run python python/demo/generate_discover_data.py
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.generate_data
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.generate_discover_data
 
 # ── PyTorch vs Rust 推理一致性验证 ──
-PYTHONPATH=python/src:$PYTHONPATH uv run python python/demo/verify_all.py
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.verify_all
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.verify_discover_gdcn
+
 ```
 
 ### train_discover.py 参数说明
@@ -101,7 +103,7 @@ Both sides parse the same `examples/feature_config.yaml` which defines:
 **配置原则**：
 - 默认使用 FeatureHash（无状态哈希），DictMapper 仅用于低基数枚举
 - sources 不配 `embed`，全部 embedding 由 operator 输出 `embed` 字段声明
-- DAG 构建时自动校验 source 消费率和输出利用率
+- DAG 构建时自动校验 source 消费率 and 输出利用率
 
 `FlowConfig` (Rust: `src/feats/config.rs`, Python: `python/src/train/config.py`) deserializes the YAML. `FeatureDag` (Rust: `src/feats/dag.rs`, Python: `python/src/train/dag.py`) builds the DAG with topological sort and executes single samples via `execute(raw_inputs) -> FeatureResult`.
 
@@ -116,9 +118,9 @@ pub trait Model: Send + Sync {
 }
 ```
 
-`ModelConfig` enum is YAML-deserializable with `#[serde(tag = "type")]`. Five variants: `LR`, `DeepFM`, `MMoE`, `ESMM`, `UniMixer`. `build(vb, features, tokenizer)` constructs any model from config. Features come from the DAG, not from ModelConfig itself.
+`ModelConfig` enum is YAML-deserializable with `#[serde(tag = "type")]`. Six variants: `LR`, `DeepFM`, `MMoE`, `ESMM`, `UniMixer`, `GDCNESMM`. `build(vb, features, tokenizer)` constructs any model from config. Features come from the DAG, not from ModelConfig itself.
 
-ESMM 当前为 5 任务塔（click/cvr/detail/stock/stay），概率关系：
+ESMM/GDCNESMM 当前为 5 任务塔（click/cvr/detail/stock/stay），概率关系：
 - P(detail) = σ(click)·σ(detail), P(stock) = σ(click)·σ(stock)
 - P(cvr) = σ(click)·σ(cvr), P(stay) = σ(detail)·σ(stay)
 
