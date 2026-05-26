@@ -27,5 +27,6 @@ MODEL_CONFIGS = {
     "esmm": LEGACY_CONFIG_DIR / "model_esmm.yaml",
     "unimixer": LEGACY_CONFIG_DIR / "model_unimixer.yaml",
     "discover_esmm": DISCOVER_CONFIG_DIR / "model_esmm.yaml",
+    "discover_gdcn_esmm": DISCOVER_CONFIG_DIR / "model_gdcn_esmm.yaml",
     "discover_unimixer": DISCOVER_CONFIG_DIR / "model_unimixer.yaml",
 }

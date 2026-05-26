@@ -18,7 +18,9 @@ scale-rec-demo-data = "scale_rec_demo.generate_data:main"
 scale-rec-demo-discover-data = "scale_rec_demo.generate_discover_data:main"
 scale-rec-demo-train-all = "scale_rec_demo.train_all:main"
 scale-rec-demo-train-discover = "scale_rec_demo.train_discover:main"
+scale-rec-demo-train-discover-gdcn = "scale_rec_demo.train_discover_gdcn:main"
 scale-rec-demo-verify = "scale_rec_demo.verify_all:main"
+scale-rec-demo-verify-gdcn = "scale_rec_demo.verify_discover_gdcn:main"
 
 [tool.ruff]
 line-length = 100

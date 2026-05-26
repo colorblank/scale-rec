@@ -81,6 +81,6 @@ def _djb2_seeded(key: str, seed: int) -> int:
     for ch in str(seed):
         h = ((h << 5) + h + ord(ch)) & 0xFFFFFFFF
     h = ((h << 5) + h + ord("_")) & 0xFFFFFFFF
-    for ch in key:
-        h = ((h << 5) + h + ord(ch)) & 0xFFFFFFFF
+    for b in key.encode("utf-8"):
+        h = ((h << 5) + h + b) & 0xFFFFFFFF
     return h & 0x7FFFFFFF
