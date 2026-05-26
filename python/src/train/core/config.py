@@ -154,10 +154,22 @@ class LRScheduleConfig:
 
 
 @dataclass
+class ArtifactConfig:
+    artifact_root: str = ""
+    model_name: str = ""
+    run_version: str = ""
+    keep_checkpoints: int = 3
+    publish_best: bool = True
+    publish_latest: bool = True
+    copy_configs: bool = True
+
+
+@dataclass
 class TrainConfig:
     epochs: int = 30
     batch_size: int = 64
     export_path: str = ""
+    artifacts: ArtifactConfig | dict[str, Any] = field(default_factory=ArtifactConfig)
     optim: OptimConfig | dict[str, Any] = field(default_factory=OptimConfig)
     lr_schedule: LRScheduleConfig | dict[str, Any] = field(default_factory=LRScheduleConfig)
     eval: EvalConfig | dict[str, Any] = field(default_factory=EvalConfig)
@@ -174,6 +186,8 @@ class TrainConfig:
     tb_grad_interval: int = 100
 
     def __post_init__(self) -> None:
+        if isinstance(self.artifacts, dict):
+            self.artifacts = ArtifactConfig(**self.artifacts)
         if isinstance(self.optim, dict):
             self.optim = OptimConfig(**self.optim)
         if isinstance(self.lr_schedule, dict):

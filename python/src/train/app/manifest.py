@@ -44,6 +44,20 @@ def write_model_manifest(
     label_col_map: dict[str, str],
     metrics: dict[str, float],
     repo_root: str | Path | None = None,
+    run_version: str | None = None,
+    published_version: str | None = None,
+    best_version: str | None = None,
+    best_epoch: int | None = None,
+    best_step: int | None = None,
+    best_score: float | None = None,
+    latest_version: str | None = None,
+    latest_epoch: int | None = None,
+    latest_step: int | None = None,
+    checkpoint_dir: str | Path | None = None,
+    run_manifest_file: str | Path | None = None,
+    published_weights_file: str | Path | None = None,
+    best_weights_file: str | Path | None = None,
+    latest_weights_file: str | Path | None = None,
 ) -> Path:
     manifest_path = Path(manifest_path)
     manifest_dir = manifest_path.parent
@@ -55,6 +69,8 @@ def write_model_manifest(
         "schema_version": 1,
         "model_id": model_id,
         "model_version": model_version,
+        "run_version": run_version or model_version,
+        "published_version": published_version or model_version,
         "model_type": model_type,
         "code_commit": current_git_commit(repo_root),
         "weights_file": _relative_to_manifest(weights_path, manifest_dir),
@@ -67,6 +83,32 @@ def write_model_manifest(
         "label_col_map": label_col_map,
         "metrics": metrics,
     }
+    if best_version is not None:
+        data["best_version"] = best_version
+    if best_epoch is not None:
+        data["best_epoch"] = best_epoch
+    if best_step is not None:
+        data["best_step"] = best_step
+    if best_score is not None:
+        data["best_score"] = best_score
+    if latest_version is not None:
+        data["latest_version"] = latest_version
+    if latest_epoch is not None:
+        data["latest_epoch"] = latest_epoch
+    if latest_step is not None:
+        data["latest_step"] = latest_step
+    if checkpoint_dir is not None:
+        data["checkpoint_dir"] = str(checkpoint_dir)
+    if run_manifest_file is not None:
+        data["run_manifest_file"] = str(run_manifest_file)
+    if published_weights_file is not None:
+        data["published_weights_file"] = _relative_to_manifest(
+            Path(published_weights_file), manifest_dir
+        )
+    if best_weights_file is not None:
+        data["best_weights_file"] = _relative_to_manifest(Path(best_weights_file), manifest_dir)
+    if latest_weights_file is not None:
+        data["latest_weights_file"] = _relative_to_manifest(Path(latest_weights_file), manifest_dir)
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     with open(manifest_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)

@@ -4,17 +4,15 @@ from __future__ import annotations
 
 import argparse
 import logging
-import shutil
-from dataclasses import dataclass
 from datetime import datetime, timezone
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import torch
 
-from ..core.config import EvalConfig, ModelConfig, TrainConfig
+from ..core.config import ArtifactConfig, EvalConfig, ModelConfig, TrainConfig
 from ..core.dag import FeatureDag
-from .manifest import write_model_manifest
 from ..models import get_output_spec
 
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
@@ -28,15 +26,6 @@ class BuiltModel:
     config: ModelConfig
     spec: dict[str, Any]
     param_count: int
-
-
-@dataclass
-class ExportBundle:
-    export_path: Path
-    manifest_path: Path
-    feature_config_path: Path
-    model_config_path: Path
-    model_version: str
 
 
 def add_training_args(parser: argparse.ArgumentParser, *, lr: float, batch_size: int) -> None:
@@ -74,6 +63,12 @@ def add_runtime_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--log-file", default="", help="explicit log file path; overrides --log-dir"
     )
+
+
+def add_artifact_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--model-name", default="", help="logical model name for published artifacts")
+    parser.add_argument("--run-version", default="", help="version string for this training run")
+    parser.add_argument("--keep-checkpoints", type=int, default=3)
 
 
 def configure_logging(
@@ -155,6 +150,12 @@ def train_config_from_args(args: argparse.Namespace, *, export_path: str | Path)
         epochs=args.epochs,
         batch_size=args.batch_size,
         export_path=str(export_path),
+        artifacts=ArtifactConfig(
+            artifact_root=str(getattr(args, "artifact_dir", "")),
+            model_name=str(getattr(args, "model_name", "")),
+            run_version=str(getattr(args, "run_version", "")),
+            keep_checkpoints=int(getattr(args, "keep_checkpoints", 3)),
+        ),
         eval_samples=args.eval_samples,
         eval_interval=args.eval_interval,
         log_interval=args.log_interval,
@@ -260,65 +261,3 @@ def wrap_unimixer_for_rust_names(model: torch.nn.Module) -> torch.nn.Module:
 
     wrapper.forward = types.MethodType(_forward, wrapper)
     return wrapper
-
-
-def prepare_export_bundle(
-    *,
-    export_path: str | Path | None,
-    export_dir: str | Path,
-    model_type: str,
-    feature_config_path: str | Path,
-    model_config_path: str | Path,
-    copy_configs: bool,
-) -> ExportBundle:
-    version = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    export_dir = Path(export_dir if export_path is None else Path(export_path).parent)
-    export_dir.mkdir(parents=True, exist_ok=True)
-    weights_path = (
-        Path(export_path) if export_path else export_dir / f"{model_type}_{version}.safetensors"
-    )
-
-    if copy_configs:
-        feature_copy = export_dir / f"feature_config_{version}.yaml"
-        model_copy = export_dir / f"model_config_{version}.yaml"
-        shutil.copy(feature_config_path, feature_copy)
-        shutil.copy(model_config_path, model_copy)
-    else:
-        feature_copy = Path(feature_config_path)
-        model_copy = Path(model_config_path)
-
-    return ExportBundle(
-        export_path=weights_path,
-        manifest_path=weights_path.with_suffix(".manifest.yaml"),
-        feature_config_path=feature_copy,
-        model_config_path=model_copy,
-        model_version=version,
-    )
-
-
-def write_training_manifest(
-    *,
-    bundle: ExportBundle,
-    model_id: str,
-    model_type: str,
-    spec: dict[str, Any],
-    best_score: float,
-    repo_root: str | Path,
-    extra_metrics: dict[str, float] | None = None,
-) -> Path:
-    metrics = {"best_score": float(best_score)}
-    if extra_metrics:
-        metrics.update(extra_metrics)
-    return write_model_manifest(
-        manifest_path=bundle.manifest_path,
-        model_id=model_id,
-        model_version=bundle.model_version,
-        model_type=model_type,
-        weights_path=bundle.export_path,
-        feature_config_path=bundle.feature_config_path,
-        model_config_path=bundle.model_config_path,
-        tasks=spec["task_names"],
-        label_col_map=spec["label_col_map"],
-        metrics=metrics,
-        repo_root=repo_root,
-    )

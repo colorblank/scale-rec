@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from pathlib import Path
 from typing import Any, Callable, Iterator
 
 import torch
@@ -11,6 +12,7 @@ import torch
 from ..core.config import FlowConfig, TrainConfig
 from ..core.dag import FeatureDag
 from ..app.data import stream_file_batches
+from ..app.artifacts import TrainingArtifactManager
 from .eval.evaluator import Evaluator
 from ..app.export import export_to_safetensors
 from .loss.multi_task import MultiTaskLoss, _to_device
@@ -62,6 +64,7 @@ class Trainer:
         device: torch.device,
         config: TrainConfig,
         *,
+        model_type: str = "",
         data_path: str,
         flow_config: FlowConfig,
         has_header: bool = True,
@@ -69,6 +72,8 @@ class Trainer:
         null_markers: set[str] | None = None,
         batch_factory: Callable[[], Iterator[Batch]] | None = None,
         task_specs: list[TaskSpec] | None = None,
+        artifact_manager: TrainingArtifactManager | None = None,
+        repo_root: str | Path | None = None,
     ) -> None:
         self.model = model
         self.dag = dag
@@ -81,6 +86,7 @@ class Trainer:
         self.label_map = {spec.name: spec.label for spec in self.task_specs}
         self.device = device
         self.cfg = config
+        self.model_type = model_type
 
         self._data_path = data_path
         self._flow_config = flow_config
@@ -88,6 +94,8 @@ class Trainer:
         self._sep = sep
         self._null_markers = null_markers
         self._batch_factory = batch_factory
+        self.artifacts = artifact_manager
+        self.repo_root = repo_root
 
         self.eval_batches: list[Batch] = []
         self._n_eval_batches = 0
@@ -103,7 +111,7 @@ class Trainer:
         self.optimizer: torch.optim.Optimizer | None = None
         self.ema: _EMA | None = None
         self.evaluator = Evaluator(config.eval)
-        self._best_auc = 0.0
+        self._best_score = float("-inf")
         self._stale_epochs = 0
         self._global_step = 0
 
@@ -158,11 +166,10 @@ class Trainer:
         if self.cfg.ema_decay > 0:
             self.ema = _EMA(self.model, self.cfg.ema_decay)
 
-        self._best_auc = 0.0
+        self._best_score = float("-inf")
         self._stale_epochs = 0
         self._global_step = 0
         best_epoch = 0
-
         for epoch in range(1, self.cfg.epochs + 1):
             avg_loss = self._train_epoch(epoch)
             eval_results = self.evaluator.evaluate(
@@ -176,10 +183,21 @@ class Trainer:
             self._log_epoch(epoch, avg_loss, eval_results)
 
             cur = self._monitor_score(eval_results)
-            if cur > self._best_auc:
-                self._best_auc = cur
+            is_best = cur > self._best_score
+            if is_best:
+                self._best_score = cur
                 self._stale_epochs = 0
                 best_epoch = epoch
+            if self.artifacts is not None:
+                self.artifacts.save_checkpoint(
+                    self.model,
+                    epoch=epoch,
+                    step=self._global_step,
+                    score=cur,
+                    metric_name=self.cfg.eval.monitor_metric,
+                    is_best=is_best,
+                )
+            elif is_best:
                 self._save_checkpoint(cur)
             else:
                 self._stale_epochs += 1
@@ -191,17 +209,35 @@ class Trainer:
                 logger.info(
                     "early stopping at epoch %d (best=%.4f@%d)",
                     epoch,
-                    self._best_auc,
+                    self._best_score,
                     best_epoch,
                 )
                 break
 
+        published_version = None
         if self.ema is not None:
             self.ema.apply_to(self.model)
+            published_version = f"{self.artifacts.paths.run_version}/ema-final" if self.artifacts else "ema-final"
             export_to_safetensors(self.model, self.cfg.export_path)
             logger.info("EMA weights exported to %s", self.cfg.export_path)
+        elif self.artifacts is not None and self.artifacts.best is not None:
+            published_version = self.artifacts.best.version
 
-        return self._best_auc
+        if self.artifacts is not None:
+            published_source = None if self.ema is not None else self.artifacts.paths.best_alias_path
+            self.artifacts.finalize(
+                model=self.model if self.ema is not None else None,
+                model_type=self.model_type,
+                tasks=self.task_names,
+                label_col_map=self.label_map,
+                metrics=self.feature_quality_metrics(),
+                repo_root=self.repo_root,
+                published_version=published_version,
+                best_score=self._best_score,
+                published_source=published_source,
+            )
+
+        return self._best_score
 
     def _collect_eval(self) -> None:
         self.eval_batches = _collect_batches(self._iter_batches(), self.cfg.eval_samples)

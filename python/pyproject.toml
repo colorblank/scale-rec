@@ -50,6 +50,7 @@ files = "$MYPY_CONFIG_FILE_DIR/src/train"
 [[tool.mypy.overrides]]
 module = [
     "train.app.cli",
+    "train.app.artifacts",
     "train.app.data",
     "train.app.main",
     "train.app.manifest",

@@ -21,17 +21,16 @@ import torch.nn.functional as F
 from .cli import (
     add_runtime_args,
     add_training_args,
+    add_artifact_args,
     build_model_for_dag,
     configure_logging,
-    prepare_export_bundle,
     resolve_device,
     train_config_from_args,
-    write_training_manifest,
 )
+from .artifacts import TrainingArtifactManager
 from ..core.config import FlowConfig
 from ..core.dag import FeatureDag
 from .data import build_item_index, stream_join
-from .export import export_to_safetensors
 from ..training.trainer import Trainer
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -257,7 +256,7 @@ def _run_single(args: argparse.Namespace) -> None:
     configure_logging(
         args.log_level,
         file_level=args.file_log_level,
-        log_dir=args.log_dir or Path(args.export_dir) / "logs",
+        log_dir=args.log_dir or Path(args.artifact_dir) / "logs",
         log_file=args.log_file,
         run_name="single_train",
     )
@@ -272,15 +271,18 @@ def _run_single(args: argparse.Namespace) -> None:
     built = build_model_for_dag(model_config, dag, device)
     logger.info("%s tasks=%s params=%s", built.config.type, built.spec["task_names"], f"{built.param_count:,}")
 
-    export_path = args.export_path or (Path(args.export_dir) / f"{built.config.type}.safetensors")
-    bundle = prepare_export_bundle(
-        export_path=export_path,
-        export_dir=args.export_dir,
+    cfg = train_config_from_args(args, export_path=args.publish_path or "")
+    artifacts = TrainingArtifactManager.from_config(
+        cfg.artifacts,
+        model_name=args.model_name or built.config.type,
         model_type=built.config.type,
+        artifact_root=args.artifact_dir,
+        publish_path=args.publish_path or None,
         feature_config_path=feature_config,
         model_config_path=model_config,
-        copy_configs=True,
     )
+    artifacts.prepare(feature_config, model_config)
+    cfg.export_path = str(artifacts.paths.published_weights_path)
 
     df = _load_dataframe(data)
     if "ctr" in df.columns:
@@ -310,22 +312,26 @@ def _run_single(args: argparse.Namespace) -> None:
     if not np.isfinite(best_score):
         best_score = 0.0
 
-    export_to_safetensors(model, bundle.export_path)
-    test_df.to_csv(bundle.export_path.with_name(bundle.export_path.stem + "_test.csv"))
+    test_df.to_csv(artifacts.paths.published_weights_path.with_name(artifacts.paths.published_weights_path.stem + "_test.csv"))
     preds = _predict_all(model, dag, test_df, args.batch_size)
     preds_rows = {"label_ctr": test_df["ctr"].to_numpy().astype(np.float32)} if "ctr" in test_df.columns else {}
     for key, values in preds.items():
         preds_rows[f"logit_{key}"] = values
-    pd.DataFrame(preds_rows).to_csv(bundle.export_path.with_name(bundle.export_path.stem + "_py_preds.csv"))
-
-    write_training_manifest(
-        bundle=bundle,
-        model_id=bundle.export_path.stem,
+    pd.DataFrame(preds_rows).to_csv(
+        artifacts.paths.published_weights_path.with_name(
+            artifacts.paths.published_weights_path.stem + "_py_preds.csv"
+        )
+    )
+    artifacts.finalize(
+        model=model,
         model_type=built.config.type,
-        spec=built.spec,
-        best_score=best_score,
-        extra_metrics={},
+        tasks=built.spec["task_names"],
+        label_col_map=built.spec["label_col_map"],
+        metrics={"best_score": best_score},
         repo_root=args.repo_root,
+        published_version=artifacts.best.version if artifacts.best is not None else None,
+        best_score=best_score,
+        published_source=artifacts.paths.best_alias_path if artifacts.best is not None else None,
     )
 
 
@@ -340,7 +346,7 @@ def _run_discover(args: argparse.Namespace) -> None:
     configure_logging(
         args.log_level,
         file_level=args.file_log_level,
-        log_dir=args.log_dir or Path(args.export_dir) / "logs",
+        log_dir=args.log_dir or Path(args.artifact_dir) / "logs",
         log_file=args.log_file,
         run_name="discover_train",
     )
@@ -369,18 +375,21 @@ def _run_discover(args: argparse.Namespace) -> None:
     built = build_model_for_dag(args.model_config, dag, device)
     logger.info("%s tasks=%s params=%s", built.config.type, built.spec["task_names"], f"{built.param_count:,}")
 
-    bundle = prepare_export_bundle(
-        export_path=args.export_path,
-        export_dir=args.export_dir,
+    cfg = train_config_from_args(args, export_path=args.publish_path or "")
+    artifacts = TrainingArtifactManager.from_config(
+        cfg.artifacts,
+        model_name=args.model_name or built.config.type,
         model_type=built.config.type,
+        artifact_root=args.artifact_dir,
+        publish_path=args.publish_path or None,
         feature_config_path=args.feature_config,
         model_config_path=args.model_config,
-        copy_configs=True,
     )
-    logger.info("feature config exported to %s", bundle.feature_config_path)
-    logger.info("model config exported to %s", bundle.model_config_path)
+    artifacts.prepare(args.feature_config, args.model_config)
+    cfg.export_path = str(artifacts.paths.published_weights_path)
+    logger.info("feature config exported to %s", artifacts.paths.feature_config_path)
+    logger.info("model config exported to %s", artifacts.paths.model_config_path)
 
-    cfg = train_config_from_args(args, export_path=bundle.export_path)
     trainer = Trainer(
         built.model,
         dag,
@@ -388,6 +397,7 @@ def _run_discover(args: argparse.Namespace) -> None:
         built.spec["label_col_map"],
         device,
         cfg,
+        model_type=built.config.type,
         data_path=data_path,
         flow_config=fc,
         has_header=not args.no_header,
@@ -395,19 +405,11 @@ def _run_discover(args: argparse.Namespace) -> None:
         null_markers=set(args.null_markers),
         batch_factory=batch_factory,
         task_specs=built.spec.get("tasks"),
+        artifact_manager=artifacts,
+        repo_root=args.repo_root,
     )
     best = trainer.fit()
     logger.info("best AUC=%.4f", best)
-
-    write_training_manifest(
-        bundle=bundle,
-        model_id=bundle.export_path.stem,
-        model_type=built.config.type,
-        spec=built.spec,
-        best_score=best,
-        extra_metrics=trainer.feature_quality_metrics(),
-        repo_root=args.repo_root,
-    )
 
 
 def _run_all(args: argparse.Namespace) -> None:
@@ -417,7 +419,7 @@ def _run_all(args: argparse.Namespace) -> None:
     configure_logging(
         args.log_level,
         file_level=args.file_log_level,
-        log_dir=args.log_dir or Path(args.export_dir) / "logs",
+        log_dir=args.log_dir or Path(args.artifact_dir) / "logs",
         log_file=args.log_file,
         run_name="all_train",
     )
@@ -462,6 +464,20 @@ def _run_all(args: argparse.Namespace) -> None:
         spec = built.spec
         label_col_map = spec.get("label_col_map", {})
 
+        cfg = train_config_from_args(args, export_path=args.publish_path or "")
+        model_name = f"{args.model_name}-{model_type}" if args.model_name else model_type
+        artifacts = TrainingArtifactManager.from_config(
+            cfg.artifacts,
+            model_name=model_name,
+            model_type=model_type,
+            artifact_root=args.artifact_dir,
+            publish_path=None,
+            feature_config_path=args.feature_config,
+            model_config_path=model_config_path,
+        )
+        artifacts.prepare(args.feature_config, model_config_path)
+        cfg.export_path = str(artifacts.paths.published_weights_path)
+
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
         best_score = float("inf")
         for epoch in range(1, args.epochs + 1):
@@ -470,14 +486,23 @@ def _run_all(args: argparse.Namespace) -> None:
             )
             metrics = _evaluate_single(model, dag, test_df, args.batch_size, label_col_map)
             score = min((m.get("logloss", best_score) for m in metrics.values()), default=best_score)
-            best_score = min(best_score, score)
+            is_best = score < best_score
+            if is_best:
+                best_score = score
+            artifacts.save_checkpoint(
+                model,
+                epoch=epoch,
+                step=epoch,
+                score=score,
+                metric_name="logloss",
+                is_best=is_best,
+            )
             logger.info("[%s] epoch %d/%d loss=%.6f", model_type, epoch, args.epochs, train_loss)
 
         if not np.isfinite(best_score):
             best_score = 0.0
 
-        prefix = Path(args.export_dir) / f"model_{model_type}"
-        export_to_safetensors(model, prefix.with_suffix(".safetensors"))
+        prefix = artifacts.paths.published_weights_path.with_suffix("")
         test_df.to_csv(prefix.with_name(prefix.name + "_test.csv"))
         preds = _predict_all(model, dag, test_df, args.batch_size)
         preds_rows = {"label_ctr": test_df["ctr"].to_numpy().astype(np.float32)}
@@ -486,6 +511,17 @@ def _run_all(args: argparse.Namespace) -> None:
         for k, v in preds.items():
             preds_rows[f"logit_{k}"] = v
         pd.DataFrame(preds_rows).to_csv(prefix.with_name(prefix.name + "_py_preds.csv"))
+        artifacts.finalize(
+            model=model,
+            model_type=model_type,
+            tasks=spec["task_names"],
+            label_col_map=label_col_map,
+            metrics={"best_score": best_score},
+            repo_root=args.repo_root,
+            published_version=artifacts.best.version if artifacts.best is not None else None,
+            best_score=best_score,
+            published_source=artifacts.paths.best_alias_path if artifacts.best is not None else None,
+        )
         results.append(
             {
                 "model_type": model_type,
@@ -506,10 +542,11 @@ def build_parser() -> argparse.ArgumentParser:
     single.add_argument("--feature-config", default=str(EXAMPLES_DIR / "feature_config_legacy.yaml"))
     single.add_argument("--model-config", required=True)
     single.add_argument("--data", required=True)
-    single.add_argument("--export-dir", default=str(DEMO_ARTIFACT_DIR))
-    single.add_argument("--export-path")
+    single.add_argument("--artifact-dir", "--export-dir", dest="artifact_dir", default=str(DEMO_ARTIFACT_DIR))
+    single.add_argument("--publish-path", "--export-path", dest="publish_path")
     single.add_argument("--debug", type=int, default=0)
     add_training_args(single, lr=0.001, batch_size=64)
+    add_artifact_args(single)
     add_runtime_args(single)
 
     discover = sub.add_parser("discover", help="train discover-main-sort with TSV input")
@@ -518,19 +555,21 @@ def build_parser() -> argparse.ArgumentParser:
     discover.add_argument("--data")
     discover.add_argument("--user-data")
     discover.add_argument("--item-files")
-    discover.add_argument("--export-dir", default=str(DEMO_ARTIFACT_DIR))
-    discover.add_argument("--export-path")
+    discover.add_argument("--artifact-dir", "--export-dir", dest="artifact_dir", default=str(DEMO_ARTIFACT_DIR))
+    discover.add_argument("--publish-path", "--export-path", dest="publish_path")
     discover.add_argument("--no-header", action="store_true")
     discover.add_argument("--null-markers", nargs="*", default=list(NULL_MARKERS))
     discover.add_argument("--separator", default="\t")
     discover.add_argument("--skip-missing-item", action="store_true")
     add_training_args(discover, lr=0.005, batch_size=64)
+    add_artifact_args(discover)
     add_runtime_args(discover)
 
     all_ = sub.add_parser("all", help="train multiple models on one dataset")
     all_.add_argument("--feature-config", default=str(EXAMPLES_DIR / "feature_config_legacy.yaml"))
     all_.add_argument("--data", required=True)
-    all_.add_argument("--export-dir", default=str(DEMO_ARTIFACT_DIR))
+    all_.add_argument("--artifact-dir", "--export-dir", dest="artifact_dir", default=str(DEMO_ARTIFACT_DIR))
+    all_.add_argument("--publish-path", "--export-path", dest="publish_path")
     all_.add_argument("--models", default="all")
     all_.add_argument("--model-config-lr", default=str(EXAMPLES_DIR / "model_lr.yaml"))
     all_.add_argument("--model-config-deepfm", default=str(EXAMPLES_DIR / "model_deepfm.yaml"))
@@ -539,6 +578,7 @@ def build_parser() -> argparse.ArgumentParser:
     all_.add_argument("--model-config-unimixer", default=str(EXAMPLES_DIR / "model_unimixer.yaml"))
     all_.add_argument("--debug", type=int, default=0)
     add_training_args(all_, lr=0.005, batch_size=64)
+    add_artifact_args(all_)
     add_runtime_args(all_)
     return parser
 
