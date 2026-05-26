@@ -37,3 +37,28 @@ def test_discover_config_operator_names_are_unique() -> None:
     names = [op["name"] for op in operators]
 
     assert len(names) == len(set(names))
+
+
+def test_discover_config_generator_matches_committed_files() -> None:
+    import yaml
+
+    generator = _load_generator()
+    repo_root = Path(__file__).resolve().parents[2]
+
+    # 1. Full discover config
+    full_generated = generator.generate_config()
+    with open(repo_root / "examples" / "feature_config_discover.yaml", "r", encoding="utf-8") as f:
+        full_committed = yaml.safe_load(f)
+    assert full_generated == full_committed
+
+    # 2. Item config
+    item_generated = generator.generate_item_config()
+    with open(repo_root / "examples" / "feature_config_item.yaml", "r", encoding="utf-8") as f:
+        item_committed = yaml.safe_load(f)
+    assert item_generated == item_committed
+
+    # 3. User config
+    user_generated = generator.generate_user_config()
+    with open(repo_root / "examples" / "feature_config_user.yaml", "r", encoding="utf-8") as f:
+        user_committed = yaml.safe_load(f)
+    assert user_generated == user_committed

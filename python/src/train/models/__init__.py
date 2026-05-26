@@ -228,12 +228,12 @@ def _spec_esmm(model: nn.Module | None = None, params: dict[str, Any] | None = N
             "label_col_map": task_label_map(specs),
         }
     if model is not None:
-        task_names = list(getattr(model, "task_names", []))
+        names = list(getattr(model, "task_names", []))
     else:
         task_config = _parse_task_config(params.get("task_config")) or _default_esmm_task_config(
             params
         )
-        task_names = [tower.name for tower in task_config.towers]
+        names = [tower.name for tower in task_config.towers]
     label_col_map = params.get(
         "label_col_map",
         {
@@ -244,7 +244,7 @@ def _spec_esmm(model: nn.Module | None = None, params: dict[str, Any] | None = N
             "stay": "stay_time",
         },
     )
-    return {"task_names": task_names, "label_col_map": label_col_map}
+    return {"task_names": names, "label_col_map": label_col_map}
 
 
 def _spec_unimixer(

@@ -1,7 +1,6 @@
 //! Axum 路由：/health, /models, /predict, /predict/broadcast。
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use axum::{
     extract::State,
@@ -41,8 +40,59 @@ pub struct PredictResponse {
 }
 
 #[derive(Debug, Serialize)]
-pub struct ErrorResponse {
-    pub error: String,
+pub struct ApiError {
+    pub code: String,
+    pub message: String,
+    pub request_id: Option<String>,
+    pub model_id: Option<String>,
+    pub details: Option<Value>,
+}
+
+impl axum::response::IntoResponse for ApiError {
+    fn into_response(self) -> axum::response::Response {
+        let status = match self.code.as_str() {
+            "BAD_REQUEST" => StatusCode::BAD_REQUEST,
+            "REGISTRY_ERROR" => StatusCode::NOT_FOUND,
+            "FEATURE_ERROR" => StatusCode::UNPROCESSABLE_ENTITY,
+            "MODEL_ERROR" | "INTERNAL_ERROR" => StatusCode::INTERNAL_SERVER_ERROR,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        tracing::error!(
+            code = %self.code,
+            message = %self.message,
+            model_id = ?self.model_id,
+            "API error response returned"
+        );
+        (status, Json(self)).into_response()
+    }
+}
+
+fn map_predict_error(err: String, model_id: String) -> ApiError {
+    if err.contains("column '") || err.contains("field '") || err.contains("value") {
+        ApiError {
+            code: "BAD_REQUEST".to_string(),
+            message: err,
+            request_id: None,
+            model_id: Some(model_id),
+            details: None,
+        }
+    } else if err.contains("Model:") {
+        ApiError {
+            code: "MODEL_ERROR".to_string(),
+            message: err,
+            request_id: None,
+            model_id: Some(model_id),
+            details: None,
+        }
+    } else {
+        ApiError {
+            code: "FEATURE_ERROR".to_string(),
+            message: err,
+            request_id: None,
+            model_id: Some(model_id),
+            details: None,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -73,27 +123,23 @@ async fn list_models(State(reg): State<AppState>) -> Json<ModelListResponse> {
 async fn predict(
     State(reg): State<AppState>,
     Json(req): Json<PredictRequest>,
-) -> Result<Json<PredictResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<Json<PredictResponse>, ApiError> {
     let mut timer = RequestTimer::new();
 
-    let engine: Arc<InferenceEngine> = reg.get(&req.model).ok_or_else(|| {
-        (
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse {
-                error: format!("model '{}' not found", req.model),
-            }),
-        )
+    let engine: Arc<InferenceEngine> = reg.get(&req.model).ok_or_else(|| ApiError {
+        code: "REGISTRY_ERROR".to_string(),
+        message: format!("model '{}' not found", req.model),
+        request_id: None,
+        model_id: Some(req.model.clone()),
+        details: None,
     })?;
 
-    let dag_start = Instant::now();
-    let result = engine.predict(&req.features).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse { error: e }),
-        )
-    })?;
-    timer.record_dag(dag_start.elapsed().as_micros() as u64);
-    timer.finish(&req.model, req.features.len());
+    let (result, metrics) = engine
+        .predict(&req.features)
+        .map_err(|e| map_predict_error(e, req.model.clone()))?;
+
+    timer.record(&metrics);
+    timer.finish("/predict", &req.model, req.features.len());
 
     Ok(Json(PredictResponse {
         model: req.model,
@@ -104,29 +150,23 @@ async fn predict(
 async fn predict_broadcast(
     State(reg): State<AppState>,
     Json(req): Json<BroadcastRequest>,
-) -> Result<Json<PredictResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<Json<PredictResponse>, ApiError> {
     let mut timer = RequestTimer::new();
 
-    let engine: Arc<InferenceEngine> = reg.get(&req.model).ok_or_else(|| {
-        (
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse {
-                error: format!("model '{}' not found", req.model),
-            }),
-        )
+    let engine: Arc<InferenceEngine> = reg.get(&req.model).ok_or_else(|| ApiError {
+        code: "REGISTRY_ERROR".to_string(),
+        message: format!("model '{}' not found", req.model),
+        request_id: None,
+        model_id: Some(req.model.clone()),
+        details: None,
     })?;
 
-    let dag_start = Instant::now();
-    let result = engine
+    let (result, metrics) = engine
         .predict_broadcast(&req.user, &req.items)
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse { error: e }),
-            )
-        })?;
-    timer.record_dag(dag_start.elapsed().as_micros() as u64);
-    timer.finish(&req.model, req.items.len());
+        .map_err(|e| map_predict_error(e, req.model.clone()))?;
+
+    timer.record(&metrics);
+    timer.finish("/predict/broadcast", &req.model, req.items.len());
 
     Ok(Json(PredictResponse {
         model: req.model,

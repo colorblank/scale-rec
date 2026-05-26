@@ -31,32 +31,20 @@ pub struct ModelRegistry {
     engines: RwLock<HashMap<String, Arc<InferenceEngine>>>,
     feature_config_path: PathBuf,
     model_dir: PathBuf,
-    embed_features_cache: RwLock<Vec<FeatureSpec>>,
 }
 
 impl ModelRegistry {
     pub fn new(feature_config_path: &Path, model_dir: &Path) -> Result<Self, String> {
-        let yaml = std::fs::read_to_string(feature_config_path)
-            .map_err(|e| format!("read feature config: {}", e))?;
-        let flow_config = FlowConfig::from_yaml(&yaml).map_err(|e| format!("parse: {}", e))?;
-        let dag =
-            FeatureDag::from_config(flow_config, false, None).map_err(|e| format!("dag: {}", e))?;
-        let embed_features = dag.embeddable_features();
-        let features: Vec<FeatureSpec> = embed_features
-            .iter()
-            .map(|(n, e)| FeatureSpec {
-                name: n.to_string(),
-                vocab_size: e.vocab_size,
-                embed_dim: e.embed_dim,
-                pooling: e.pooling,
-                seq_len: e.seq_len,
-            })
-            .collect();
+        if !feature_config_path.exists() {
+            return Err(format!(
+                "feature config path not found: {}",
+                feature_config_path.display()
+            ));
+        }
         Ok(Self {
             engines: RwLock::new(HashMap::new()),
             feature_config_path: feature_config_path.to_path_buf(),
             model_dir: model_dir.to_path_buf(),
-            embed_features_cache: RwLock::new(features),
         })
     }
 
@@ -117,8 +105,6 @@ impl ModelRegistry {
             })
             .collect();
 
-        let cached_features = self.embed_features_cache.read().unwrap();
-
         let device = Device::Cpu;
         let mut varmap = VarMap::new();
         let vb = VarBuilder::from_varmap(&varmap, DType::F32, &device);
@@ -135,7 +121,7 @@ impl ModelRegistry {
                 .and_then(|v| v.as_u64())
                 .unwrap_or(8) as usize;
             Some(
-                FeatureTokenizer::new(vb.pp("tokenizer"), &cached_features, td, nt)
+                FeatureTokenizer::new(vb.pp("tokenizer"), &embed_features, td, nt)
                     .map_err(|e| format!("tokenizer: {}", e))?,
             )
         } else {
@@ -143,7 +129,7 @@ impl ModelRegistry {
         };
 
         let model = model_config
-            .build(vb, &cached_features, tokenizer)
+            .build(vb, &embed_features, tokenizer)
             .map_err(|e| format!("build: {}", e))?;
         validate_safetensors_keys(&varmap, &safetensors_path)?;
         varmap
@@ -424,6 +410,7 @@ fn validate_safetensors_keys(varmap: &VarMap, path: &Path) -> Result<(), String>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use candle_core::Tensor;
     use std::fs;
 
     fn hex(bytes: [u8; 32]) -> String {
@@ -451,7 +438,6 @@ mod tests {
             engines: RwLock::new(HashMap::new()),
             feature_config_path,
             model_dir,
-            embed_features_cache: RwLock::new(Vec::new()),
         }
     }
 
@@ -531,6 +517,89 @@ mod tests {
             .validate_manifest_files(&manifest, &model_config, &weights)
             .unwrap_err();
         assert!(err.contains("weights sha256 mismatch"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn test_feature_hot_reload_consistency() {
+        let root = std::env::temp_dir().join(format!(
+            "scale-rec-reload-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let feature_config = root.join("feature.yaml");
+        let model_config = root.join("model_lr_demo.yaml");
+        let weights = root.join("model_lr.safetensors");
+
+        // 1. Initial configuration
+        let initial_feature_yaml = "version: '1.0.0'\nsources:\n  - name: user_id\n    dtype: int\n    default_val: '0'\noperators:\n  - name: user_id_hash\n    op_type: FeatureHash\n    inputs: [user_id]\n    outputs: [user_id_idx]\n    params: {vocab_size: 100, num_hashes: 1}\n    embed: {vocab_size: 100, embed_dim: 8}\n";
+        fs::write(&feature_config, initial_feature_yaml).unwrap();
+        fs::write(&model_config, "type: lr\n").unwrap();
+
+        let device = Device::Cpu;
+        let mut tensors1 = HashMap::new();
+        tensors1.insert(
+            "global_bias".to_string(),
+            Tensor::zeros((1,), DType::F32, &device).unwrap(),
+        );
+        tensors1.insert(
+            "embeddings.emb_user_id_idx.weight".to_string(),
+            Tensor::zeros((100, 8), DType::F32, &device).unwrap(),
+        );
+        tensors1.insert(
+            "mlp.output.weight".to_string(),
+            Tensor::zeros((1, 8), DType::F32, &device).unwrap(),
+        );
+        tensors1.insert(
+            "mlp.output.bias".to_string(),
+            Tensor::zeros((1,), DType::F32, &device).unwrap(),
+        );
+        candle_core::safetensors::save(&tensors1, &weights).unwrap();
+
+        let registry = ModelRegistry::new(&feature_config, &root).unwrap();
+        registry.load_model("model_lr").unwrap();
+
+        // Check registry engine initialized with vocab_size = 100
+        {
+            let engine = registry.get("model_lr").unwrap();
+            assert_eq!(engine.embed_features[0].vocab_size, 100);
+        }
+
+        // 2. Hot reload with modified feature configuration and new weights
+        let updated_feature_yaml = "version: '1.0.0'\nsources:\n  - name: user_id\n    dtype: int\n    default_val: '0'\noperators:\n  - name: user_id_hash\n    op_type: FeatureHash\n    inputs: [user_id]\n    outputs: [user_id_idx]\n    params: {vocab_size: 120, num_hashes: 1}\n    embed: {vocab_size: 120, embed_dim: 8}\n";
+        fs::write(&feature_config, updated_feature_yaml).unwrap();
+
+        let mut tensors2 = HashMap::new();
+        tensors2.insert(
+            "global_bias".to_string(),
+            Tensor::zeros((1,), DType::F32, &device).unwrap(),
+        );
+        tensors2.insert(
+            "embeddings.emb_user_id_idx.weight".to_string(),
+            Tensor::zeros((120, 8), DType::F32, &device).unwrap(),
+        );
+        tensors2.insert(
+            "mlp.output.weight".to_string(),
+            Tensor::zeros((1, 8), DType::F32, &device).unwrap(),
+        );
+        tensors2.insert(
+            "mlp.output.bias".to_string(),
+            Tensor::zeros((1,), DType::F32, &device).unwrap(),
+        );
+        candle_core::safetensors::save(&tensors2, &weights).unwrap();
+
+        // Load again
+        registry.load_model("model_lr").unwrap();
+
+        // Check registry engine is re-initialized with vocab_size = 120
+        {
+            let engine = registry.get("model_lr").unwrap();
+            assert_eq!(engine.embed_features[0].vocab_size, 120);
+        }
 
         fs::remove_dir_all(root).unwrap();
     }
