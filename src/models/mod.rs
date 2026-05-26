@@ -11,6 +11,7 @@ use crate::models::unimixer::tokenizer::FeatureTokenizer;
 
 pub mod deepfm;
 pub mod esmm;
+pub mod gdcn_esmm;
 pub mod lr;
 pub mod mmoe;
 pub mod unimixer;
@@ -49,6 +50,7 @@ static REGISTRY: LazyLock<HashMap<&'static str, BuildFn>> = LazyLock::new(|| {
     m.insert("deepfm", build_deepfm);
     m.insert("mmoe", build_mmoe);
     m.insert("esmm", build_esmm);
+    m.insert("gdcn_esmm", build_gdcn_esmm);
     m.insert("unimixer", build_unimixer);
     m
 });
@@ -153,6 +155,47 @@ fn build_esmm(
         Ok(Box::new(esmm::ESMM::new(
             vb,
             features,
+            &shared_bottom_dims,
+            &click_hidden_dims,
+            &cvr_hidden_dims,
+            &detail_hidden_dims,
+            &stock_hidden_dims,
+            &stay_hidden_dims,
+        )?))
+    }
+}
+
+fn build_gdcn_esmm(
+    vb: VarBuilder,
+    features: &[FeatureSpec],
+    _tokenizer: Option<FeatureTokenizer>,
+    params: &serde_yaml::Value,
+) -> Result<Box<dyn Model>> {
+    let cross_layers = yaml_usize(params, "cross_layers", 3);
+    let deep_hidden_dims: Vec<usize> = yaml_usize_seq(params, "deep_hidden_dims");
+    let shared_bottom_dims: Vec<usize> = yaml_usize_seq(params, "shared_bottom_dims");
+    let click_hidden_dims: Vec<usize> = yaml_usize_seq(params, "click_hidden_dims");
+    let cvr_hidden_dims: Vec<usize> = yaml_usize_seq(params, "cvr_hidden_dims");
+    let detail_hidden_dims: Vec<usize> = yaml_usize_seq(params, "detail_hidden_dims");
+    let stock_hidden_dims: Vec<usize> = yaml_usize_seq(params, "stock_hidden_dims");
+    let stay_hidden_dims: Vec<usize> = yaml_usize_seq(params, "stay_hidden_dims");
+    if let Some(task_config) = params.get("task_config") {
+        let task_config = serde_yaml::from_value(task_config.clone())
+            .map_err(|e| candle_core::Error::Msg(format!("parse gdcn_esmm task_config: {}", e)))?;
+        Ok(Box::new(gdcn_esmm::GDCNESMM::with_task_config(
+            vb,
+            features,
+            cross_layers,
+            &deep_hidden_dims,
+            &shared_bottom_dims,
+            &task_config,
+        )?))
+    } else {
+        Ok(Box::new(gdcn_esmm::GDCNESMM::new(
+            vb,
+            features,
+            cross_layers,
+            &deep_hidden_dims,
             &shared_bottom_dims,
             &click_hidden_dims,
             &cvr_hidden_dims,

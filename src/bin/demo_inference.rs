@@ -1,16 +1,16 @@
 //! demo_inference：加载 Python 训练的权重，对 CSV 测试数据做推理，输出 logits。
-//! 支持所有 5 种模型：LR, DeepFM, MMoE, ESMM, UniMixer。
+//! 支持所有注册模型：LR, DeepFM, MMoE, ESMM, GDCN+ESMM, UniMixer。
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
-use candle_core::{DType, Device, Tensor};
+use candle_core::{DType, Device};
 use candle_nn::{VarBuilder, VarMap};
 use scale_rec::feats::config::FlowConfig;
-use scale_rec::feats::dag::{FeatureDag, FeatureValue};
-use scale_rec::feats::ops::Fv;
+use scale_rec::feats::dag::FeatureDag;
 use scale_rec::layers::embedding::FeatureSpec;
 use scale_rec::models::unimixer::tokenizer::FeatureTokenizer;
 use scale_rec::models::ModelConfig;
+use scale_rec::server::engine::{FeatureRow, InferenceEngine};
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
@@ -95,7 +95,9 @@ fn main() -> Result<()> {
         .context("Failed to load safetensors")?;
     println!("[Rust] loaded weights from {}", safetensors_path);
 
-    // 6. 读取 CSV 并逐行 DAG 执行
+    let engine = InferenceEngine::new(dag, model, features);
+
+    // 5. 读取 CSV，并复用服务端 InferenceEngine 的 source-aware 解析和 tensor 构造。
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(true)
         .from_path(test_csv_path)
@@ -110,101 +112,51 @@ fn main() -> Result<()> {
         .map(|(i, h)| (h.to_string(), i))
         .collect();
 
-    // Read source names from feature config to dynamically match CSV columns
-    let source_names: Vec<String> = dag.source_defs().keys().cloned().collect();
-    let embed_names: Vec<String> = features.iter().map(|f| f.name.clone()).collect();
-    let mut all_indices: HashMap<String, Vec<u32>> = embed_names
-        .iter()
-        .map(|n| (n.clone(), Vec::new()))
-        .collect();
+    let source_names: Vec<String> = engine.dag.source_defs().keys().cloned().collect();
+    let mut rows: Vec<FeatureRow> = Vec::new();
 
-    let mut row_count = 0usize;
     for result in reader.records() {
         let record = result.context("Failed to read CSV row")?;
-        let mut raw_inputs: HashMap<String, FeatureValue> = HashMap::new();
-
+        let mut row = HashMap::new();
         for field in &source_names {
             let col = col_index.get(field).context("Missing column")?;
             let val = record.get(*col).context("Missing field")?;
-            let fv: FeatureValue = if val.parse::<f64>().is_ok() && val.contains('.') {
-                Fv::Float(val.parse::<f32>().unwrap_or(0.0))
-            } else if let Ok(i) = val.parse::<i64>() {
-                Fv::Int(i as i32)
-            } else {
-                Fv::Str(val.to_string())
-            };
-            raw_inputs.insert(field.clone(), fv);
+            row.insert(field.clone(), serde_json::Value::String(val.to_string()));
         }
-
-        let pre_result = dag
-            .execute(&raw_inputs)
-            .map_err(|e| anyhow::anyhow!("DAG execute error: {}", e))?;
-
-        for name in &embed_names {
-            let val = pre_result
-                .features
-                .get(name)
-                .with_context(|| format!("Feature '{}' not found in DAG output", name))?;
-            let idx: i32 = match val.clone() {
-                Fv::Int(i) => i,
-                Fv::IntList(ref list) => list.first().copied().unwrap_or(0),
-                _ => anyhow::bail!("Feature '{}' has unsupported type", name),
-            };
-            all_indices.get_mut(name).unwrap().push(idx as u32);
-        }
-        row_count += 1;
+        rows.push(row);
     }
-    println!("[Rust] processed {} rows", row_count);
+    println!("[Rust] processed {} rows", rows.len());
 
-    // 7. 构建 batch tensor 并推理
-    let tensor_inputs: HashMap<String, Tensor> = all_indices
-        .iter()
-        .map(|(name, indices)| {
-            let tensor =
-                Tensor::from_slice(indices.as_slice(), indices.len(), &Device::Cpu).unwrap();
-            (name.clone(), tensor)
-        })
-        .collect();
+    let (predictions, _metrics) = engine
+        .predict(&rows)
+        .map_err(|e| anyhow::anyhow!("Inference failed: {}", e))?;
 
-    let outputs = model
-        .forward(&tensor_inputs)
-        .context("Model forward failed")?;
-
-    // 8. 收集所有输出 key 并按名称排序
-    let mut out_keys: Vec<&String> = outputs.keys().collect();
+    // 6. 收集所有输出 key 并按名称排序
+    let mut out_keys: Vec<&String> = predictions
+        .first()
+        .map(|row| row.keys().collect())
+        .unwrap_or_default();
     out_keys.sort();
 
     let mut columns: Vec<String> = Vec::new();
-    let mut data: Vec<Vec<f32>> = Vec::new();
-
     for key in &out_keys {
-        let tensor = outputs.get(*key).context("Missing output")?;
-        let vals: Vec<f32> = tensor
-            .to_vec2::<f32>()
-            .context("Failed to convert")?
-            .iter()
-            .map(|row| row[0])
-            .collect();
-        if columns.is_empty() {
-            data.resize(vals.len(), Vec::new());
-        }
         columns.push(format!("logit_{}", key));
-        for (i, v) in vals.iter().enumerate() {
-            data[i].push(*v);
-        }
     }
 
-    // 9. 写入输出 CSV
+    // 7. 写入输出 CSV
     let mut writer = csv::Writer::from_path(output_csv_path)?;
     writer.write_record(&columns)?;
-    for row in &data {
-        let row_strs: Vec<String> = row.iter().map(|v| format!("{:.8}", v)).collect();
+    for row in &predictions {
+        let row_strs: Vec<String> = out_keys
+            .iter()
+            .map(|key| format!("{:.8}", row.get(*key).copied().unwrap_or_default()))
+            .collect();
         writer.write_record(&row_strs)?;
     }
     writer.flush()?;
     println!(
         "[Rust] wrote {} predictions (keys: {:?}) to {}",
-        data.len(),
+        predictions.len(),
         out_keys,
         output_csv_path
     );

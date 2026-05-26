@@ -6,7 +6,7 @@ use scale_rec::layers::embedding::FeatureSpec;
 use scale_rec::layers::towers::{
     Activation, MultiTaskConfig, RelationOp, TaskRelation, TowerConfig,
 };
-use scale_rec::models::{deepfm, esmm, lr, mmoe, Model, ModelConfig};
+use scale_rec::models::{deepfm, esmm, gdcn_esmm, lr, mmoe, Model, ModelConfig};
 
 fn dummy_features() -> Vec<FeatureSpec> {
     vec![
@@ -101,6 +101,56 @@ fn test_esmm_forward_with_configurable_tasks_and_relations() {
     assert_eq!(out["view"].dims(), &[3, 1]);
     assert_eq!(out["buy"].dims(), &[3, 1]);
     assert_eq!(out["ctbuy"].dims(), &[3, 1]);
+}
+
+#[test]
+fn test_gdcn_esmm_forward_shape() {
+    let model = gdcn_esmm::GDCNESMM::new(
+        vb(),
+        &dummy_features(),
+        2,
+        &[8],
+        &[8],
+        &[4],
+        &[4],
+        &[4],
+        &[4],
+        &[4],
+    )
+    .unwrap();
+    let out = model.forward(&dummy_inputs(3)).unwrap();
+    assert_eq!(out.len(), 9);
+    assert_eq!(out["click"].dims(), &[3, 1]);
+    assert_eq!(out["cvr"].dims(), &[3, 1]);
+    assert_eq!(out["ctcvr"].dims(), &[3, 1]);
+}
+
+#[test]
+fn test_modelconfig_build_gdcn_esmm() {
+    let params = serde_yaml::from_str(
+        r#"
+cross_layers: 2
+deep_hidden_dims: [8]
+shared_bottom_dims: [8]
+task_config:
+  towers:
+    - {name: view, hidden_dims: [4], output_dim: 1, activation: relu}
+    - {name: buy, hidden_dims: [4], output_dim: 1, activation: relu}
+  relations:
+    - {target: ctbuy, sources: [view, buy], op: multiply}
+"#,
+    )
+    .unwrap();
+    let cfg = ModelConfig {
+        model_type: "gdcn_esmm".into(),
+        params,
+    };
+    let model = cfg.build(vb(), &dummy_features(), None).unwrap();
+    let out = model.forward(&dummy_inputs(2)).unwrap();
+    assert_eq!(out.len(), 3);
+    assert_eq!(out["view"].dims(), &[2, 1]);
+    assert_eq!(out["buy"].dims(), &[2, 1]);
+    assert_eq!(out["ctbuy"].dims(), &[2, 1]);
 }
 
 #[test]
