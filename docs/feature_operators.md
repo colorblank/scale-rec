@@ -57,6 +57,9 @@ operators:
     embed:                # 可选：输出送入 Embedding
       vocab_size: 4
       embed_dim: 8
+      pooling: mean       # 可选：first | flatten | mean | sum | max (默认 first)
+      seq_len: 3          # 可选：序列长度（默认由列表特征的 schema 自动继承）
+      truncation: tail    # 可选：截断方向 head (头部截断，默认) | tail (尾部截断)
 ```
 
 ### 2.2 SourceDef — 原始输入源
@@ -65,13 +68,22 @@ operators:
 |---|---|---|---|
 | `name` | string | 是 | 全局唯一特征名 |
 | `source` | string | 是 | 来源分组，用于 broadcast 模式优化 |
-| `dtype` | enum | 是 | `int` / `float` / `string` / `list` |
+| `dtype` | enum/object | 是 | `int` / `float` / `string` / `enum` / `list` |
 | `default_val` | string | 是 | 默认值（字符串形式，按 dtype 解析） |
-| `embed` | object | 否 | 直接嵌入配置 `{vocab_size, embed_dim}` |
+| `embed` | object | 否 | 直接嵌入配置（结构同下方 EmbedConfig） |
 
 **List 类型**：`dtype` 支持嵌套列表声明。
 ```yaml
-dtype: { dtype: string, length: 10 }
+dtype: { list: { item_dtype: string, max_len: 10 } }
+```
+
+**Enum 类型**：`dtype` 支持枚举类型声明，可包含合法值列表及 OOV 映射规则。
+```yaml
+dtype:
+  enum:
+    values: [unknown, books, fashion]
+    default: unknown
+    oov: unknown
 ```
 
 **Source 分组的语义**（详见第 5 节 broadcast 模式）：
@@ -92,7 +104,84 @@ dtype: { dtype: string, length: 10 }
 | `inputs` | string[] | 是 | 输入特征名列表 |
 | `outputs` | string[] | 是 | 输出特征名列表 |
 | `params` | object | 否 | 算子参数（各算子自行解析） |
-| `embed` | object | 否 | 输出嵌入配置 `{vocab_size, embed_dim}` |
+| `embed` | object | 否 | 输出嵌入配置（见下方 2.4 EmbedConfig） |
+
+### 2.4 EmbedConfig — 嵌入配置
+
+特征编排 DAG 允许在算子输出的最终索引特征上声明 `embed`，从而将离散的特征索引转换为稠密特征向量。
+
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `vocab_size` | int | — | 词表空间大小（词表索引范围为 `[0, vocab_size)`） |
+| `embed_dim` | int | — | 嵌入向量维度 |
+| `pooling` | string | `first` | 池化策略：`first` / `flatten` / `mean` / `sum` / `max`（详见下文） |
+| `seq_len` | int | null | 固定截断/填充的序列长度。当输出为 `list` 且 `pooling != first` 时，默认从 `dtype.max_len` 自动继承。 |
+| `truncation` | string | `head` | 列表超长时的截断方向：`head`（保留左侧/头部）或 `tail`（保留右侧/尾部，常用于最新行为序列） |
+
+---
+
+### 2.5 嵌入与池化深度解析
+
+#### 2.5.1 单一定义源原则 (Single Source of Truth)
+*   **统一声明在算子层**：所有 Embedding 应当统一配置在**算子节点（`OperatorDef`）的 `embed` 字段**中。输入源（`SourceDef`）中的 `embed` 声明已被弃用。
+*   这可确保所有原始特征先经过算子处理（如字典映射 `DictMapper`、数值分桶 `Bucketing` 或哈希 `FeatureHash`）转化为致密整数索引后，再送入统一的 Embedding 空间，避免了冗余的 Embedding 层初始化。
+
+#### 2.5.2 特征对齐与 Pooling 机制
+对于列表类型的特征（如 `IntList`），为将其传入下游全连接层（Dense MLP），需将变长或多值的 Embedding 转化为固定大小的张量。支持五种池化模式：
+
+1.  **`first`（首元素池化）**
+    *   **行为**：仅取列表第一个元素的 Embedding 向量。
+    *   **输出维度**：`[embed_dim]`
+    *   **适用场景**：多值特征的单值提取，或列表退化为标量时的默认兜底。
+2.  **`mean` / `sum` / `max`（均值/求和/最大值池化）**
+    *   **行为**：对列表中所有元素的 Embedding 向量进行按元素（Element-wise）的均值、求和或最大值约简操作。
+    *   **输出维度**：`[embed_dim]`
+    *   **适用场景**：无序的标签集合（如 `user_tags`）、多值类别特征。
+3.  **`flatten`（顺序打平）**
+    *   **行为**：将列表中各个元素的 Embedding 向量按照先后顺序横向拼接。
+    *   **输出维度**：`[seq_len * embed_dim]`
+    *   **适用场景**：有序的行为序列特征（如 `historical_click_items`），常接 Attention 机制或直接送入 MLP。
+
+#### 2.5.3 截断与填充 (Alignment & Truncation)
+当特征输出为 `IntList` 且使用了 `pooling = flatten` 时，序列必须对齐为固定的 `seq_len`：
+*   **长度推导**：若在 `embed` 中未显式指定 `seq_len`，DAG 在加载时将自动寻找该特征 schema 中的 `max_len`（通过上游算子或源的类型定义继承）。
+*   **截断策略 (`truncation`)**：
+    *   `head`：截断序列右侧，保留左侧头部元素（即第 `[0, seq_len)` 个元素）。
+    *   `tail`：截断序列左侧，保留右侧尾部元素（即最新的 `seq_len` 个元素）。在推荐系统中，**行为序列特征通常应该配置为 `tail`**，以便在序列超长时保留最近的交互，捕捉最实时的兴趣。
+*   **零向量 Padding**：当列表元素不足 `seq_len` 时，右侧（若为 `head` 截断）或左侧（若为 `tail` 截断）会填充索引值 `0`。下游的 PyTorch/Candle Embedding 层会将索引 `0` 固定映射为零向量（Zero Embedding），确保 Padding 不会引入干扰信号。
+
+#### 2.5.4 典型 YAML 声明示例
+
+##### 示例 1：用户无序兴趣标签（均值池化，哈希到 500 大小的词表）
+```yaml
+- name: user_tags_hash
+  op_type: FeatureHash
+  inputs: [user_raw_tags]  # 原始列表数据如 ["sports", "gaming"]
+  outputs: [user_tag_indices]
+  params:
+    vocab_size: 500
+  embed:
+    vocab_size: 500
+    embed_dim: 16
+    pooling: mean         # 池化成 [16] 维的单向量
+```
+
+##### 示例 2：物品历史点击序列（打平，保留最近的 10 个行为，自动继承 `seq_len`）
+```yaml
+# 假设 upstream_item_seq 已经在类型 schema 中指定了 max_len 为 10
+- name: item_history_align
+  op_type: SequenceOp
+  inputs: [upstream_item_seq]
+  outputs: [aligned_item_ids]
+  params:
+    max_len: 10
+    pad_val: 0
+  embed:
+    vocab_size: 10000
+    embed_dim: 32
+    pooling: flatten       # 打平为 [10 * 32] = 300 维的拼接向量
+    truncation: tail      # 截断左侧，保留最近的 10 个交互行为
+```
 
 ---
 
@@ -114,11 +203,15 @@ pub enum Fv {
 
 ### 3.2 类型转换规则
 
-DAG 在初始化阶段根据 SourceDef.dtype 生成默认值：
+DAG 在初始化阶段根据 SourceDef.dtype 生成默认值及类型映射：
 - `Int` → `Fv::Int(parsed)`
 - `Float` → `Fv::Float(parsed)`
-- `String` → `Fv::Str(string)`
-- `List { dtype: String, length: N }` → `Fv::StrList(vec![string; N])`
+- `String` / `Enum` → `Fv::Str(string)`
+  - *注意*：`Enum` 类型在在线 Rust 引擎中会对输入值进行严格校验与 OOV（Out Of Vocabulary）映射（映射至 oov 字段指定的 token），离线 Python 侧以 raw value 直接向下传递，因此建议将 OOV 归一化收拢于下游 `DictMapper` 等算子以保持完全一致性。
+- `List { dtype: inner, max_len: N }` → 生成对应大小为 N 的列表类型特征：
+  - `inner == int` → `Fv::IntList(vec![int; N])`
+  - `inner == float` → `Fv::FloatList(vec![float; N])`
+  - `inner in {string, enum}` → `Fv::StrList(vec![string; N])`
 
 ---
 
@@ -718,7 +811,7 @@ max_len=5, pad_val=0
 
 ### 4.13 FeatureHash — 特征哈希
 
-无状态 DJB2 多种子哈希。将输入拼接后用 k 个独立种子分别哈希，输出一个或一组索引。Python 与 Rust 实现逐位一致。
+无状态 DJB2 多种子哈希。将输入拼接后用 k 个独立种子分别哈希，输出一个或一组索引。此外，原生支持对列表输入进行逐元素哈希。Python 与 Rust 实现逐位一致。
 
 **参数**：
 
@@ -729,16 +822,25 @@ max_len=5, pad_val=0
 | `separator` | string | `"\|"` | 输入拼接分隔符 |
 
 **输入**：任意数量和类型
-**输出**：`Int`（`num_hashes=1`）或 `IntList`（`num_hashes>1`）
+**输出**：`Int`（标量输入且 `num_hashes=1`）或 `IntList`（标量输入且 `num_hashes>1`，或列表输入）
 
 **处理流程**：
 
-1. 将全部输入值转为字符串，用 `separator` 拼接为单 key
-2. 对每个种子 s ∈ [0, num_hashes)：计算 `(djb2_seeded(key, s) % vocab_size)`
-3. `num_hashes=1` 返回单个 `Int`，否则返回 `IntList`
-4. DJB2 算法：`h=5381; for byte: h = h*33 + byte`，32 位回绕后取 `0x7FFFFFFF` 低 31 位
+*   **标量哈希模式**（输入均为标量）：
+    1. 将全部输入值转为字符串，用 `separator` 拼接为单 key。
+    2. 对每个种子 s ∈ [0, num_hashes)：计算 `(djb2_seeded(key, s) % vocab_size)`。
+    3. `num_hashes=1` 返回单个 `Int`，否则返回 `IntList`。
+*   **列表哈希模式**（输入中包含 `StrList` / `IntList` / `FloatList`）：
+    1. 自动切换为**逐元素哈希**，固定使用 `seed=0` 分别对列表中每个元素计算 `(djb2_seeded(elem, seed=0) % vocab_size)`。
+    2. 忽略 `num_hashes` 参数（始终产生单路哈希列表），输出类型总是 `IntList`。
+    3. *注：批量执行时，同一批次内不允许混合标量行与列表行。*
+
+**DJB2 算法**：
+`h = 5381; for byte: h = h * 33 + byte`，32 位回绕后取 `0x7FFFFFFF` 低 31 位。
 
 **示例**：
+
+#### 示例 A：标量哈希
 
 ```yaml
 - name: cross_hash
@@ -762,6 +864,43 @@ max_len=5, pad_val=0
   → [djb2_seeded(..., seed=0)%500, ..., djb2_seeded(..., seed=3)%500]
   → [312, 89, 457, 23]
 ```
+
+#### 示例 B：列表逐元素哈希
+
+```yaml
+- name: tag_list_hash
+  op_type: FeatureHash
+  inputs: [item_tags]  # 假设 item_tags 类型为 StrList
+  outputs: [tag_indices]
+  params:
+    vocab_size: 1000
+    num_hashes: 1
+  embed: { vocab_size: 1000, embed_dim: 16 }
+```
+
+```
+列表逐元素哈希 (使用 seed=0)：
+  输入 ["sports", "gaming", "music"]
+  → djb2_seeded("sports", seed=0) = 1834126079 → 1834126079 % 1000 = 79
+  → djb2_seeded("gaming", seed=0) = 1346630663 → 1346630663 % 1000 = 663
+  → djb2_seeded("music", seed=0) = 1480303541 → 1480303541 % 1000 = 541
+  → 输出 [79, 663, 541]
+```
+
+#### 4.13.1 特殊情况与下游 Embedding 行为警告
+
+使用 `FeatureHash` 时，请务必关注以下两种特殊情况下的下游 Embedding 行为：
+
+##### 情况 A：标量特征多哈希时（`num_hashes > 1`），必须显式指定 `pooling`
+当输入为标量特征且 `num_hashes = 4` 时，输出为长度为 4 的 `IntList`（如 `[312, 89, 457, 23]`），这在下游 Embedding 层查表后会得到 `[batch_size, 4, embed_dim]` 的三维张量。
+*   **⚠️ 避坑警告**：如果此时 `embed` 中**未显式指定 `pooling`**，默认会采用 `pooling: first` 策略。这将导致下游仅读取第一个哈希索引（`seed=0` 对应的嵌入值），而**其余 3 个哈希值会被无声无息地丢弃**，导致计算冗余且无法起到降低哈希碰撞的效果。
+*   **最佳实践**：多重哈希场景下，必须显式在 `embed` 中指定以下池化方式之一：
+    *   `pooling: mean` 或 `sum`：将 4 个独立哈希值对应的 Embedding 向量取均值或求和，以获得抗碰撞的稳定表达（输出 Shape `[batch_size, embed_dim]`）。
+    *   `pooling: flatten`：将 4 个独立哈希向量横向打平拼接（输出 Shape `[batch_size, 4 * embed_dim]`），完整保留 4 个投影空间的信息。
+
+##### 情况 B：列表特征进行多哈希时，会发生退化
+*   如果输入已经是列表类型（如 `StrList` 等标签序列），即使在参数中配置了 `num_hashes > 1`，`FeatureHash` 在执行时也会**强制忽略 `num_hashes` 限制，退化为列表逐元素单哈希模式**（固定只使用 `seed=0` 哈希每个元素）。
+*   **设计原因**：避免如果对列表叠加多重哈希，会在下游产生 `[batch_size, list_len, num_hashes, embed_dim]` 的 4 维冗余结构，下游的全连接层及交叉层（如 FM）无法直接消费。
 
 ---
 
