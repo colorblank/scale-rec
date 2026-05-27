@@ -1,6 +1,7 @@
 //! UniMixing：标准版双随机矩阵 Token 交互。
 use candle_core::{Result, Tensor};
 use candle_nn::{Init, VarBuilder};
+use std::sync::Mutex;
 
 /// 标准 `UniMixing` 模块 (参考论文第 4.3 节)。
 ///
@@ -15,6 +16,13 @@ pub struct UniMixing {
     global_weights_logits: Tensor,
     /// 局部交互权重 `W_B` (形状: `[num_blocks, block_size, block_size]`)
     local_weights_logits: Tensor,
+    cached_mixing: Mutex<Option<CachedMixing>>,
+}
+
+struct CachedMixing {
+    temperature_bits: u64,
+    w_b_star: Tensor,
+    w_r: Tensor,
 }
 
 impl UniMixing {
@@ -63,6 +71,7 @@ impl UniMixing {
             num_blocks,
             global_weights_logits,
             local_weights_logits,
+            cached_mixing: Mutex::new(None),
         })
     }
 
@@ -90,6 +99,56 @@ impl UniMixing {
         Ok(mat)
     }
 
+    fn build_cached_mixing(&self, temperature: f64) -> Result<CachedMixing> {
+        let w_b_div = (&self.local_weights_logits * (1.0 / temperature))?;
+        let w_b_sink = self.sinkhorn_knopp(&w_b_div, 3)?;
+        let w_b_t = w_b_sink.transpose(1, 2)?;
+        let w_b_star = ((w_b_sink + w_b_t)? * 0.5)?;
+
+        let w_g_div = (&self.global_weights_logits * (1.0 / temperature))?;
+        let w_g_sink = self.sinkhorn_knopp(&w_g_div, 3)?;
+        let w_g_t = w_g_sink.transpose(0, 1)?;
+        let w_r = ((w_g_sink + w_g_t)? * 0.5)?;
+
+        Ok(CachedMixing {
+            temperature_bits: temperature.to_bits(),
+            w_b_star,
+            w_r,
+        })
+    }
+
+    fn cached_mixing(&self, temperature: f64) -> Result<(Tensor, Tensor)> {
+        let temperature_bits = temperature.to_bits();
+        if let Some((w_b_star, w_r)) = self
+            .cached_mixing
+            .lock()
+            .expect("UniMixing cache mutex poisoned")
+            .as_ref()
+            .and_then(|cached| {
+                (cached.temperature_bits == temperature_bits)
+                    .then(|| (cached.w_b_star.clone(), cached.w_r.clone()))
+            })
+        {
+            return Ok((w_b_star, w_r));
+        }
+
+        let cached = self.build_cached_mixing(temperature)?;
+        let w_b_star = cached.w_b_star.clone();
+        let w_r = cached.w_r.clone();
+        let mut guard = self
+            .cached_mixing
+            .lock()
+            .expect("UniMixing cache mutex poisoned");
+        if guard
+            .as_ref()
+            .map(|cached| cached.temperature_bits != temperature_bits)
+            .unwrap_or(true)
+        {
+            *guard = Some(cached);
+        }
+        Ok((w_b_star, w_r))
+    }
+
     /// 执行前向传播。
     ///
     /// # 参数
@@ -105,18 +164,13 @@ impl UniMixing {
         let (batch_size, _) = x.dims2()?;
         let n = self.num_blocks;
         let b = self.block_size;
+        let (w_b_proc, w_g_proc) = self.cached_mixing(temperature)?;
 
         // --- 1. 分割输入特征矩阵 ---
         // X: [batch_size, L] -> [batch_size, N, B]
         let x_blocks = x.reshape((batch_size, n, b))?;
 
         // --- 2. 局部交互 (Local Interaction) ---
-        // 生成双随机矩阵并应用对称约束: (W + W^T) / 2
-        let w_b_div = (&self.local_weights_logits * (1.0 / temperature))?;
-        let w_b_sink = self.sinkhorn_knopp(&w_b_div, 3)?;
-        let w_b_t = w_b_sink.transpose(1, 2)?;
-        let w_b_proc = ((w_b_sink + w_b_t)? * 0.5)?;
-
         // 使用 Batch Matmul 计算局部混合: H = x_blocks * W_B
         let x_blocks_unsqueezed = x_blocks.unsqueeze(2)?.contiguous()?;
         let w_b_proc_bcasted = w_b_proc
@@ -128,12 +182,6 @@ impl UniMixing {
         let h = h_unsqueezed.squeeze(2)?;
 
         // --- 3. 全局交互 (Global Interaction) ---
-        // 生成全局双随机矩阵并应用对称约束
-        let w_g_div = (&self.global_weights_logits * (1.0 / temperature))?;
-        let w_g_sink = self.sinkhorn_knopp(&w_g_div, 3)?;
-        let w_g_t = w_g_sink.transpose(0, 1)?;
-        let w_g_proc = ((w_g_sink + w_g_t)? * 0.5)?;
-
         // 使用 Batch Matmul 计算跨块全局混合: out_blocks = W_G * H
         // W_G: [batch_size, N, N], H: [batch_size, N, B] -> [batch_size, N, B]
         let w_g_proc_bcasted = w_g_proc

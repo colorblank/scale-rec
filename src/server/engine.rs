@@ -26,6 +26,7 @@ pub struct InferenceEngine {
     // Pre-cached plan data
     embed_ids: Vec<usize>,
     user_op_indices: HashSet<usize>,
+    broadcast_precompute_skip_indices: HashSet<usize>,
 }
 
 pub type FeatureRow = HashMap<String, serde_json::Value>;
@@ -47,12 +48,20 @@ impl InferenceEngine {
             .filter(|s| user_ops.contains(&dag.execution_order[s.op_idx]))
             .map(|s| s.op_idx)
             .collect();
+        let broadcast_precompute_skip_indices: HashSet<usize> = dag
+            .plan
+            .steps
+            .iter()
+            .filter(|s| !user_ops.contains(&dag.execution_order[s.op_idx]))
+            .map(|s| s.op_idx)
+            .collect();
         Self {
             dag,
             model,
             embed_features,
             embed_ids,
             user_op_indices,
+            broadcast_precompute_skip_indices,
         }
     }
 
@@ -164,7 +173,8 @@ impl InferenceEngine {
             return Ok((vec![], metrics));
         }
 
-        // Step 1: Precompute with one item to get user-derived outputs
+        // Step 1: Precompute only the user-side subgraph once.
+        // Item-side ops are skipped here and are recomputed per candidate later.
         let start_parse1 = Instant::now();
         let mut one: HashMap<String, Vec<FeatureValue>> = HashMap::new();
         for (k, v) in user {
@@ -174,20 +184,17 @@ impl InferenceEngine {
                 one.insert(k.clone(), vec![fv]);
             }
         }
-        for (k, v) in &items[0] {
-            if let Some(source) = self.dag.source_defs().get(k) {
-                let fv = json_to_feature_typed(v, &source.dtype)
-                    .map_err(|err| format!("item[0] field '{}': {}", k, err))?;
-                one.insert(k.clone(), vec![fv]);
-            }
-        }
         metrics.parse_us = start_parse1.elapsed().as_micros() as u64;
 
         let start_dag1 = Instant::now();
         let full_1 = self
             .dag
             .plan
-            .execute_plan(&one, &HashSet::new(), &HashMap::new())
+            .execute_plan(
+                &one,
+                &self.broadcast_precompute_skip_indices,
+                &HashMap::new(),
+            )
             .map_err(|e| format!("precompute: {}", e))?;
 
         // Extract user-derived outputs (column IDs from user-only ops)
@@ -206,18 +213,38 @@ impl InferenceEngine {
         }
         let dag1_us = start_dag1.elapsed().as_micros() as u64;
 
-        // Step 2: Build batch columns
+        // Step 2: Build batch columns without redundant cloning and parsing of user features
         let start_parse2 = Instant::now();
         let n = items.len();
-        let merged_rows: Vec<FeatureRow> = items
+        let mut columns: HashMap<String, Vec<FeatureValue>> = self
+            .dag
+            .source_defs()
             .iter()
-            .map(|item| {
-                let mut row = user.clone();
-                row.extend(item.clone());
-                row
-            })
+            .map(|(name, source)| (name.clone(), vec![source_default(source); n]))
             .collect();
-        let columns = self.rows_to_columns(&merged_rows)?;
+
+        // 1. Broadcast pre-parsed user-side features to all n rows
+        for (k, val_vec) in &one {
+            if let Some(col) = columns.get_mut(k) {
+                if let Some(fv) = val_vec.first() {
+                    for row_idx in 0..n {
+                        col[row_idx] = fv.clone();
+                    }
+                }
+            }
+        }
+
+        // 2. Parse candidate item-side features for each row, overwriting defaults or broadcasted values
+        for (row_idx, item) in items.iter().enumerate() {
+            for (key, val) in item {
+                if let Some(col) = columns.get_mut(key) {
+                    let source = self.dag.source_defs().get(key).unwrap();
+                    let fv = json_to_feature_typed(val, &source.dtype)
+                        .map_err(|err| format!("item column '{}' row {}: {}", key, row_idx, err))?;
+                    col[row_idx] = fv;
+                }
+            }
+        }
         metrics.parse_us += start_parse2.elapsed().as_micros() as u64;
 
         let start_dag2 = Instant::now();
@@ -546,6 +573,77 @@ mod tests {
             tensor_tail.to_vec2::<u32>().unwrap(),
             vec![vec![20, 30, 40]]
         );
+    }
+
+    #[test]
+    fn test_predict_broadcast_correctness() {
+        use crate::feats::config::FlowConfig;
+        use crate::feats::dag::FeatureDag;
+        use crate::models::lr::LogisticRegression;
+        use candle_nn::VarMap;
+
+        let yaml = r#"
+version: 1.0.0
+sources:
+  - name: user_id
+    source: User
+    dtype: int
+    default_val: '0'
+  - name: item_id
+    source: Item
+    dtype: int
+    default_val: '0'
+operators:
+  - name: user_hash
+    op_type: FeatureHash
+    inputs: [user_id]
+    outputs: [user_idx]
+    params: { vocab_size: 100 }
+    embed: { vocab_size: 100, embed_dim: 8 }
+  - name: item_hash
+    op_type: FeatureHash
+    inputs: [item_id]
+    outputs: [item_idx]
+    params: { vocab_size: 100 }
+    embed: { vocab_size: 100, embed_dim: 8 }
+"#;
+
+        let flow_config = FlowConfig::from_yaml(yaml).unwrap();
+        let dag = FeatureDag::from_config(flow_config, false, None).unwrap();
+
+        let embed_specs: Vec<FeatureSpec> = dag
+            .embeddable_features()
+            .iter()
+            .map(|(n, e)| FeatureSpec {
+                name: n.to_string(),
+                vocab_size: e.vocab_size,
+                embed_dim: e.embed_dim,
+                pooling: e.pooling,
+                seq_len: e.seq_len,
+                truncation: e.truncation,
+            })
+            .collect();
+
+        let device = Device::Cpu;
+        let varmap = VarMap::new();
+        let vb = candle_nn::VarBuilder::from_varmap(&varmap, candle_core::DType::F32, &device);
+
+        let model = Box::new(LogisticRegression::new(vb, &embed_specs).unwrap());
+        let engine = InferenceEngine::new(dag, model, embed_specs);
+
+        let mut user = HashMap::new();
+        user.insert("user_id".to_string(), serde_json::json!(42));
+
+        let mut item1 = HashMap::new();
+        item1.insert("item_id".to_string(), serde_json::json!(101));
+
+        let mut item2 = HashMap::new();
+        item2.insert("item_id".to_string(), serde_json::json!(102));
+
+        let items = vec![item1, item2];
+
+        let (preds, _metrics) = engine.predict_broadcast(&user, &items).unwrap();
+        assert_eq!(preds.len(), 2);
     }
 }
 

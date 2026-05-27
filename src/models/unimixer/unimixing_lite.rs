@@ -1,6 +1,7 @@
 //! UniMixingLite：轻量版基组合 + 低秩近似 Token 交互。
 use candle_core::{Result, Tensor};
 use candle_nn::{Init, VarBuilder};
+use std::sync::Mutex;
 
 /// 轻量级 UniMixing 模块 (UniMixing-Lite, 参考论文第 4.3 节公式 18)。
 ///
@@ -21,6 +22,13 @@ pub struct UniMixingLite {
     z: Tensor,
     /// 局部混合块特定权重 omega (N, b)
     omega: Tensor,
+    cached_mixing: Mutex<Option<CachedMixing>>,
+}
+
+struct CachedMixing {
+    temperature_bits: u64,
+    w_b_star: Tensor,
+    w_r: Tensor,
 }
 
 impl UniMixingLite {
@@ -103,6 +111,7 @@ impl UniMixingLite {
             b_g,
             z,
             omega,
+            cached_mixing: Mutex::new(None),
         })
     }
 
@@ -127,6 +136,60 @@ impl UniMixingLite {
         Ok(mat)
     }
 
+    fn build_cached_mixing(&self, temperature: f64) -> Result<CachedMixing> {
+        let omega_exp = self.omega.unsqueeze(2)?.unsqueeze(3)?;
+        let z_exp = self.z.unsqueeze(0)?;
+        let w_b_logits = omega_exp.broadcast_mul(&z_exp)?.sum(1)?;
+        let w_b_t = w_b_logits.transpose(1, 2)?;
+        let w_b_sym = ((w_b_logits + w_b_t)? * 0.5)?;
+        let w_b_div = (&w_b_sym * (1.0 / temperature))?;
+        let w_b_star = self.sinkhorn_knopp(&w_b_div, 3)?;
+
+        let w_g_logits = self.a_g.matmul(&self.b_g)?;
+        let w_g_t = w_g_logits.transpose(0, 1)?;
+        let w_g_sym = ((w_g_logits + w_g_t)? * 0.5)?;
+        let w_g_div = (&w_g_sym * (1.0 / temperature))?;
+        let w_r = self.sinkhorn_knopp(&w_g_div, 3)?;
+
+        Ok(CachedMixing {
+            temperature_bits: temperature.to_bits(),
+            w_b_star,
+            w_r,
+        })
+    }
+
+    fn cached_mixing(&self, temperature: f64) -> Result<(Tensor, Tensor)> {
+        let temperature_bits = temperature.to_bits();
+        if let Some((w_b_star, w_r)) = self
+            .cached_mixing
+            .lock()
+            .expect("UniMixingLite cache mutex poisoned")
+            .as_ref()
+            .and_then(|cached| {
+                (cached.temperature_bits == temperature_bits)
+                    .then(|| (cached.w_b_star.clone(), cached.w_r.clone()))
+            })
+        {
+            return Ok((w_b_star, w_r));
+        }
+
+        let cached = self.build_cached_mixing(temperature)?;
+        let w_b_star = cached.w_b_star.clone();
+        let w_r = cached.w_r.clone();
+        let mut guard = self
+            .cached_mixing
+            .lock()
+            .expect("UniMixingLite cache mutex poisoned");
+        if guard
+            .as_ref()
+            .map(|cached| cached.temperature_bits != temperature_bits)
+            .unwrap_or(true)
+        {
+            *guard = Some(cached);
+        }
+        Ok((w_b_star, w_r))
+    }
+
     /// 前向传播
     ///
     /// 参数:
@@ -143,29 +206,12 @@ impl UniMixingLite {
         let n = self.num_blocks;
         let b = self.block_size;
         let l = self.embed_dim;
+        let (w_b_star, w_r) = self.cached_mixing(temperature)?;
 
         // --- Step 1: 将输入划分为块 ---
         let x_blocks = x.reshape((batch_size, n, b))?; // (batch_size, N, B)
 
-        // --- Step 2: 通过基组合计算局部混合权重 ---
-        // omega: (N, num_basis) -> 扩展维度以支持广播 -> (N, num_basis, 1, 1)
-        let omega_exp = self.omega.unsqueeze(2)?.unsqueeze(3)?;
-        // Z: (num_basis, B, B) -> 扩展维度以支持广播 -> (1, num_basis, B, B)
-        let z_exp = self.z.unsqueeze(0)?;
-
-        // W_B_logits = sum_l(omega_l^i * Z_l)
-        // (N, num_basis, B, B) -> sum(1) -> (N, B, B)
-        let w_b_logits = omega_exp.broadcast_mul(&z_exp)?.sum(1)?;
-
-        // 对称约束: (W + W^T) / 2
-        let w_b_t = w_b_logits.transpose(1, 2)?;
-        let w_b_sym = ((w_b_logits + w_b_t)? * 0.5)?;
-
-        // 温度退火和 Sinkhorn-Knopp
-        let w_b_div = (&w_b_sym * (1.0 / temperature))?;
-        let w_b_star = self.sinkhorn_knopp(&w_b_div, 3)?; // (N, B, B)
-
-        // --- Step 3: 局部交互 ---
+        // --- Step 2: 局部交互 ---
         // H = einsum('bnd,nde->bne', x_blocks, W_B_star)
         // 使用批量矩阵乘法实现 [batch_size, N, 1, B] matmul [batch_size, N, B, B]
         let x_blocks_unsqueezed = x_blocks.unsqueeze(2)?.contiguous()?;
@@ -176,15 +222,7 @@ impl UniMixingLite {
         let h_unsqueezed = x_blocks_unsqueezed.matmul(&w_b_star_bcasted)?;
         let h = h_unsqueezed.squeeze(2)?; // (batch_size, N, B)
 
-        // --- Step 4: 通过低秩近似计算全局混合权重 ---
-        // W_G_logits = A_G @ B_G  -> (N, N)
-        let w_g_logits = self.a_g.matmul(&self.b_g)?;
-        let w_g_t = w_g_logits.transpose(0, 1)?;
-        let w_g_sym = ((w_g_logits + w_g_t)? * 0.5)?;
-        let w_g_div = (&w_g_sym * (1.0 / temperature))?;
-        let w_r = self.sinkhorn_knopp(&w_g_div, 3)?; // (N, N)
-
-        // --- Step 5: 全局交互 ---
+        // --- Step 3: 全局交互 ---
         // H_perm = H.permute(0, 2, 1) -> (batch_size, B, N)
         let h_perm = h.transpose(1, 2)?;
         let w_r_t = w_r.transpose(0, 1)?;
@@ -196,10 +234,10 @@ impl UniMixingLite {
         let h_perm_cont = h_perm.contiguous()?;
         let out_perm = h_perm_cont.matmul(&w_r_t_bcasted)?; // (batch_size, B, N)
 
-        // 恢复成块的顺序 out_blocks = out_perm.permute(0, 2, 1) -> (batch_size, N, B)
+        // --- Step 4: 恢复成块的顺序 out_blocks = out_perm.permute(0, 2, 1) -> (batch_size, N, B)
         let out_blocks = out_perm.transpose(1, 2)?;
 
-        // --- Step 6: 恢复为原始输出维度 ---
+        // --- Step 5: 恢复为原始输出维度 ---
         let out = out_blocks.reshape((batch_size, l))?;
 
         Ok(out)
