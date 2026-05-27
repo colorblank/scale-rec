@@ -78,7 +78,7 @@ uv run python -m scale_rec_demo.generate_data
 
 # 训练所有模型 (5 epochs)
 uv run python -m train.main all \
-  --feature-config ../examples/feature_config_legacy.yaml \
+  --feature-config ../examples/feature_config_discover.yaml \
   --data data/train.parquet \
   --epochs 5 \
   --artifact-dir artifacts/demo
@@ -91,7 +91,7 @@ uv run python -m scale_rec_demo.verify_discover_gdcn
 
 # Debug 追踪 (逐算子 I/O)
 uv run python -m train.main single \
-  --feature-config ../examples/feature_config_legacy.yaml \
+  --feature-config ../examples/feature_config_discover.yaml \
   --model-config ../examples/model_lr.yaml \
   --data data/train.parquet \
   --epochs 1 \
@@ -107,7 +107,7 @@ uv run python -m train.main single \
 # 启动服务 (自动加载 temp/ 下所有 .safetensors)
 cargo run --bin server --release -- \
   --model-dir python/artifacts/demo \
-  --feature-config examples/feature_config_legacy.yaml
+  --feature-config examples/feature_config_discover.yaml
 
 # 健康检查
 curl http://localhost:8080/health
@@ -245,6 +245,28 @@ operators:
 ```
 
 `FeatureDag.embeddable_features()` 提供模型所需的所有特征规格，模型配置中不重复声明。
+
+当前配置支持三类常见类型：
+- 标量：`int`、`float`、`string`
+- 枚举：`enum`，支持 `values`、`default`、`oov`
+- 变长序列：`list`，要求显式 `max_len`/`length`
+
+`FeatureHash`、`DictMapper`、`CrossFeature`、`SequenceOp` 这类算子的输出维度会在 DAG 阶段推导并同步到训练和推理两端。
+
+### 训练、导出与推理验证
+
+发现流式模式的端到端验证脚本会串起训练、权重导出、PyTorch 推理、Rust 推理和输出比对：
+
+```bash
+PYTHONPATH=python/src:$PYTHONPATH UV_CACHE_DIR=/private/tmp/uv-cache \
+  uv run python -m scale_rec_demo.verify_discover_gdcn
+```
+
+如果本地线程环境对 OpenMP 比较敏感，可以先加上：
+
+```bash
+OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 KMP_INIT_AT_FORK=FALSE
+```
 
 ## 开发
 
