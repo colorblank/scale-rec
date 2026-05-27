@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any, Iterator
 
 import torch
 
@@ -70,7 +70,6 @@ class Trainer:
         has_header: bool = True,
         sep: str = "\t",
         null_markers: set[str] | None = None,
-        batch_factory: Callable[[], Iterator[Batch]] | None = None,
         task_specs: list[TaskSpec] | None = None,
         artifact_manager: TrainingArtifactManager | None = None,
         repo_root: str | Path | None = None,
@@ -93,7 +92,6 @@ class Trainer:
         self._has_header = has_header
         self._sep = sep
         self._null_markers = null_markers
-        self._batch_factory = batch_factory
         self.artifacts = artifact_manager
         self.repo_root = repo_root
 
@@ -217,14 +215,18 @@ class Trainer:
         published_version = None
         if self.ema is not None:
             self.ema.apply_to(self.model)
-            published_version = f"{self.artifacts.paths.run_version}/ema-final" if self.artifacts else "ema-final"
+            published_version = (
+                f"{self.artifacts.paths.run_version}/ema-final" if self.artifacts else "ema-final"
+            )
             export_to_safetensors(self.model, self.cfg.export_path)
             logger.info("EMA weights exported to %s", self.cfg.export_path)
         elif self.artifacts is not None and self.artifacts.best is not None:
             published_version = self.artifacts.best.version
 
         if self.artifacts is not None:
-            published_source = None if self.ema is not None else self.artifacts.paths.best_alias_path
+            published_source = (
+                None if self.ema is not None else self.artifacts.paths.best_alias_path
+            )
             self.artifacts.finalize(
                 model=self.model if self.ema is not None else None,
                 model_type=self.model_type,
@@ -323,8 +325,6 @@ class Trainer:
         return avg_loss
 
     def _iter_batches(self) -> Iterator[Batch]:
-        if self._batch_factory is not None:
-            return self._batch_factory()
         return stream_file_batches(
             self._data_path,
             self._flow_config,

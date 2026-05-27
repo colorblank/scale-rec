@@ -4,7 +4,7 @@ from __future__ import annotations
 
 一个文件覆盖三种场景：
 1. `single`：单模型训练，适合 LR / DeepFM / ESMM / UniMixer / GDCN+ESMM
-2. `discover`：discover-main-sort 训练，支持单文件 TSV 或流式 join
+2. `discover`：discover-main-sort 训练，使用单文件 TSV
 3. `all`：同一数据集上批量训练多个模型
 """
 
@@ -30,7 +30,6 @@ from .cli import (
 from .artifacts import TrainingArtifactManager
 from ..core.config import FlowConfig
 from ..core.dag import FeatureDag
-from .data import build_item_index, stream_join
 from ..training.trainer import Trainer
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -40,23 +39,6 @@ DEMO_ARTIFACT_DIR = REPO_ROOT / "python" / "artifacts" / "demo"
 NULL_MARKERS: set[str] = {"NULL", "\\N", "null", "None", ""}
 
 logger = logging.getLogger("train")
-
-
-def _dtype_to_raw(dtype):
-    if dtype.tag == "list":
-        return {"list": {"dtype": _dtype_to_raw(dtype.inner), "length": dtype.length}}
-    return dtype.tag
-
-
-def _source_to_dict(source):
-    return {
-        "name": source.name,
-        "source": source.source,
-        "dtype": _dtype_to_raw(source.dtype),
-        "default_val": source.default_val,
-        "role": source.role,
-        "column_index": source.column_index,
-    }
 
 
 def _wrap_unimixer(model):
@@ -174,8 +156,10 @@ def _evaluate_single(
     results: dict[str, dict[str, float]] = {}
     for t, logits_list in all_outputs.items():
         logits_arr = np.concatenate(logits_list)
-        labels_arr = np.concatenate(all_labels.get(t, [])) if all_labels.get(t) else np.zeros_like(
-            logits_arr
+        labels_arr = (
+            np.concatenate(all_labels.get(t, []))
+            if all_labels.get(t)
+            else np.zeros_like(logits_arr)
         )
         probs = 1.0 / (1.0 + np.exp(-logits_arr))
         # Keep the metrics minimal here; single mode is mostly for smoke training.
@@ -190,7 +174,9 @@ def _evaluate_single(
     return results
 
 
-def _predict_all(model: torch.nn.Module, dag: FeatureDag, df: pd.DataFrame, batch_size: int) -> dict[str, np.ndarray]:
+def _predict_all(
+    model: torch.nn.Module, dag: FeatureDag, df: pd.DataFrame, batch_size: int
+) -> dict[str, np.ndarray]:
     model.eval()
     all_keys = None
     all_logits: dict[str, list[np.ndarray]] = {}
@@ -205,42 +191,6 @@ def _predict_all(model: torch.nn.Module, dag: FeatureDag, df: pd.DataFrame, batc
             for k in all_keys:
                 all_logits[k].append(outputs[k].cpu().numpy().flatten())
     return {k: np.concatenate(v) for k, v in all_logits.items()}
-
-
-def _build_batch_factory(
-    *,
-    fc: FlowConfig,
-    user_data: str,
-    item_files: str,
-    batch_size: int,
-    separator: str,
-    no_header: bool,
-    null_markers: set[str],
-    skip_missing_item: bool,
-):
-    all_sources = [_source_to_dict(s) for s in fc.sources]
-    item_sources = [s for s in all_sources if s.get("source") in {"Item", "ItemStats"}]
-    item_index = build_item_index(
-        [x for x in item_files.split(",") if x],
-        item_sources,
-        has_header=not no_header,
-        separator=separator,
-        null_markers=null_markers,
-    )
-
-    def batch_factory():
-        return stream_join(
-            user_data,
-            item_index,
-            all_sources,
-            batch_size=batch_size,
-            separator=separator,
-            has_header=not no_header,
-            null_markers=null_markers,
-            skip_missing_item=skip_missing_item,
-        )
-
-    return batch_factory
 
 
 def _run_single(args: argparse.Namespace) -> None:
@@ -266,10 +216,20 @@ def _run_single(args: argparse.Namespace) -> None:
     flow_config = FlowConfig.from_yaml(feature_config)
     dag = FeatureDag(flow_config, debug_mode=args.debug > 0)
     features = dag.feature_tuples()
-    logger.info("%d sources, %d ops → %d features", len(flow_config.sources), len(flow_config.operators), len(features))
+    logger.info(
+        "%d sources, %d ops → %d features",
+        len(flow_config.sources),
+        len(flow_config.operators),
+        len(features),
+    )
 
     built = build_model_for_dag(model_config, dag, device)
-    logger.info("%s tasks=%s params=%s", built.config.type, built.spec["task_names"], f"{built.param_count:,}")
+    logger.info(
+        "%s tasks=%s params=%s",
+        built.config.type,
+        built.spec["task_names"],
+        f"{built.param_count:,}",
+    )
 
     cfg = train_config_from_args(args, export_path=args.publish_path or "")
     artifacts = TrainingArtifactManager.from_config(
@@ -305,16 +265,28 @@ def _run_single(args: argparse.Namespace) -> None:
         train_loss = _train_epoch_single(
             model, optimizer, dag, train_df, args.batch_size, built.spec.get("label_col_map", {})
         )
-        metrics = _evaluate_single(model, dag, test_df, args.batch_size, built.spec.get("label_col_map", {}))
-        best_score = min(best_score, min((v["logloss"] for v in metrics.values()), default=best_score))
+        metrics = _evaluate_single(
+            model, dag, test_df, args.batch_size, built.spec.get("label_col_map", {})
+        )
+        best_score = min(
+            best_score, min((v["logloss"] for v in metrics.values()), default=best_score)
+        )
         logger.info("epoch %d/%d loss=%.6f", epoch, args.epochs, train_loss)
 
     if not np.isfinite(best_score):
         best_score = 0.0
 
-    test_df.to_csv(artifacts.paths.published_weights_path.with_name(artifacts.paths.published_weights_path.stem + "_test.csv"))
+    test_df.to_csv(
+        artifacts.paths.published_weights_path.with_name(
+            artifacts.paths.published_weights_path.stem + "_test.csv"
+        )
+    )
     preds = _predict_all(model, dag, test_df, args.batch_size)
-    preds_rows = {"label_ctr": test_df["ctr"].to_numpy().astype(np.float32)} if "ctr" in test_df.columns else {}
+    preds_rows = (
+        {"label_ctr": test_df["ctr"].to_numpy().astype(np.float32)}
+        if "ctr" in test_df.columns
+        else {}
+    )
     for key, values in preds.items():
         preds_rows[f"logit_{key}"] = values
     pd.DataFrame(preds_rows).to_csv(
@@ -336,10 +308,8 @@ def _run_single(args: argparse.Namespace) -> None:
 
 
 def _run_discover(args: argparse.Namespace) -> None:
-    if bool(args.data) == bool(args.user_data):
-        raise SystemExit("--data and --user-data are mutually exclusive; provide exactly one")
-    if args.user_data and not args.item_files:
-        raise SystemExit("--item-files is required with --user-data")
+    if not args.data:
+        raise SystemExit("--data is required for discover mode")
     if not args.model_config:
         raise SystemExit("--model-config is required for discover mode")
 
@@ -356,24 +326,17 @@ def _run_discover(args: argparse.Namespace) -> None:
     fc = FlowConfig.from_yaml(args.feature_config)
     dag = FeatureDag(fc)
     features = dag.feature_tuples()
-    logger.info("%d sources, %d ops → %d features", len(fc.sources), len(fc.operators), len(features))
-
-    data_path = args.data or args.user_data
-    batch_factory = None
-    if args.user_data:
-        batch_factory = _build_batch_factory(
-            fc=fc,
-            user_data=args.user_data,
-            item_files=args.item_files,
-            batch_size=args.batch_size,
-            separator=args.separator,
-            no_header=args.no_header,
-            null_markers=set(args.null_markers),
-            skip_missing_item=args.skip_missing_item,
-        )
+    logger.info(
+        "%d sources, %d ops → %d features", len(fc.sources), len(fc.operators), len(features)
+    )
 
     built = build_model_for_dag(args.model_config, dag, device)
-    logger.info("%s tasks=%s params=%s", built.config.type, built.spec["task_names"], f"{built.param_count:,}")
+    logger.info(
+        "%s tasks=%s params=%s",
+        built.config.type,
+        built.spec["task_names"],
+        f"{built.param_count:,}",
+    )
 
     cfg = train_config_from_args(args, export_path=args.publish_path or "")
     artifacts = TrainingArtifactManager.from_config(
@@ -398,12 +361,11 @@ def _run_discover(args: argparse.Namespace) -> None:
         device,
         cfg,
         model_type=built.config.type,
-        data_path=data_path,
+        data_path=args.data,
         flow_config=fc,
         has_header=not args.no_header,
         sep=args.separator,
         null_markers=set(args.null_markers),
-        batch_factory=batch_factory,
         task_specs=built.spec.get("tasks"),
         artifact_manager=artifacts,
         repo_root=args.repo_root,
@@ -485,7 +447,9 @@ def _run_all(args: argparse.Namespace) -> None:
                 model, optimizer, dag, train_df, args.batch_size, label_col_map
             )
             metrics = _evaluate_single(model, dag, test_df, args.batch_size, label_col_map)
-            score = min((m.get("logloss", best_score) for m in metrics.values()), default=best_score)
+            score = min(
+                (m.get("logloss", best_score) for m in metrics.values()), default=best_score
+            )
             is_best = score < best_score
             if is_best:
                 best_score = score
@@ -520,7 +484,9 @@ def _run_all(args: argparse.Namespace) -> None:
             repo_root=args.repo_root,
             published_version=artifacts.best.version if artifacts.best is not None else None,
             best_score=best_score,
-            published_source=artifacts.paths.best_alias_path if artifacts.best is not None else None,
+            published_source=artifacts.paths.best_alias_path
+            if artifacts.best is not None
+            else None,
         )
         results.append(
             {
@@ -531,7 +497,9 @@ def _run_all(args: argparse.Namespace) -> None:
         )
 
     for r in results:
-        logger.info("%s best_score=%.4f params=%s", r["model_type"], r["best_score"], f"{r['params']:,}")
+        logger.info(
+            "%s best_score=%.4f params=%s", r["model_type"], r["best_score"], f"{r['params']:,}"
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -539,10 +507,14 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="mode", required=True)
 
     single = sub.add_parser("single", help="train a single model on a CSV/Parquet dataset")
-    single.add_argument("--feature-config", default=str(EXAMPLES_DIR / "feature_config_legacy.yaml"))
+    single.add_argument(
+        "--feature-config", default=str(EXAMPLES_DIR / "feature_config_legacy.yaml")
+    )
     single.add_argument("--model-config", required=True)
     single.add_argument("--data", required=True)
-    single.add_argument("--artifact-dir", "--export-dir", dest="artifact_dir", default=str(DEMO_ARTIFACT_DIR))
+    single.add_argument(
+        "--artifact-dir", "--export-dir", dest="artifact_dir", default=str(DEMO_ARTIFACT_DIR)
+    )
     single.add_argument("--publish-path", "--export-path", dest="publish_path")
     single.add_argument("--debug", type=int, default=0)
     add_training_args(single, lr=0.001, batch_size=64)
@@ -550,17 +522,18 @@ def build_parser() -> argparse.ArgumentParser:
     add_runtime_args(single)
 
     discover = sub.add_parser("discover", help="train discover-main-sort with TSV input")
-    discover.add_argument("--feature-config", default=str(EXAMPLES_DIR / "feature_config_discover.yaml"))
+    discover.add_argument(
+        "--feature-config", default=str(EXAMPLES_DIR / "feature_config_discover.yaml")
+    )
     discover.add_argument("--model-config", required=True)
-    discover.add_argument("--data")
-    discover.add_argument("--user-data")
-    discover.add_argument("--item-files")
-    discover.add_argument("--artifact-dir", "--export-dir", dest="artifact_dir", default=str(DEMO_ARTIFACT_DIR))
+    discover.add_argument("--data", required=True)
+    discover.add_argument(
+        "--artifact-dir", "--export-dir", dest="artifact_dir", default=str(DEMO_ARTIFACT_DIR)
+    )
     discover.add_argument("--publish-path", "--export-path", dest="publish_path")
     discover.add_argument("--no-header", action="store_true")
     discover.add_argument("--null-markers", nargs="*", default=list(NULL_MARKERS))
     discover.add_argument("--separator", default="\t")
-    discover.add_argument("--skip-missing-item", action="store_true")
     add_training_args(discover, lr=0.005, batch_size=64)
     add_artifact_args(discover)
     add_runtime_args(discover)
@@ -568,7 +541,9 @@ def build_parser() -> argparse.ArgumentParser:
     all_ = sub.add_parser("all", help="train multiple models on one dataset")
     all_.add_argument("--feature-config", default=str(EXAMPLES_DIR / "feature_config_legacy.yaml"))
     all_.add_argument("--data", required=True)
-    all_.add_argument("--artifact-dir", "--export-dir", dest="artifact_dir", default=str(DEMO_ARTIFACT_DIR))
+    all_.add_argument(
+        "--artifact-dir", "--export-dir", dest="artifact_dir", default=str(DEMO_ARTIFACT_DIR)
+    )
     all_.add_argument("--publish-path", "--export-path", dest="publish_path")
     all_.add_argument("--models", default="all")
     all_.add_argument("--model-config-lr", default=str(EXAMPLES_DIR / "model_lr.yaml"))

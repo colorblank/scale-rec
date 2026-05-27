@@ -40,14 +40,14 @@
 
 ## P2：模型工程和数据工程的性能热点
 
-### 1. Python join / 读表路径还比较偏 row-wise
+### 1. Python 读表路径还比较偏 row-wise
 
 `python/src/train/app/data.py` 里大量使用 `iterrows()`、逐行 dict 拼装和逐列缺失填充。对小样本 demo 没问题，但在真实推荐训练数据上会非常吃 CPU。
 
 主要热点：
 - `build_item_index()` 的逐行 `iterrows()`
-- `stream_join()` 的逐行特征合并
 - `stream_file_batches()` 的 chunk 后再转 dict 再清洗
+- discover 训练已经不再保留单独的 `stream_join()` 分支，但单文件流式读取仍然是 row-wise
 
 建议：
 - 优先用列式或向量化方式做 join / 缺失填充
