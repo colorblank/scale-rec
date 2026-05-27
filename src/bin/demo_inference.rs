@@ -43,7 +43,11 @@ fn main() -> Result<()> {
             vocab_size: emb.vocab_size,
             embed_dim: emb.embed_dim,
             pooling: emb.pooling,
-            seq_len: emb.seq_len,
+            seq_len: emb.seq_len.or_else(|| {
+                dag.feature_schemas
+                    .get(*name)
+                    .and_then(|schema| schema.dtype.list_len())
+            }),
         })
         .collect();
     println!(

@@ -20,6 +20,9 @@ class FeatureDType:
     tag: str
     inner: "FeatureDType | None" = None
     length: int | None = None
+    values: tuple[str, ...] | None = None
+    default: str | None = None
+    oov: str | None = None
 
     @property
     def is_list(self) -> bool:
@@ -31,10 +34,16 @@ class FeatureDType:
             self.tag == "list" and self.inner is not None and self.inner.tag == "int"
         )
 
+    @property
+    def dimension(self) -> int:
+        return self.length or 1 if self.is_list else 1
+
     def __str__(self) -> str:
         if self.tag == "list" and self.inner is not None:
             length = "" if self.length is None else f";{self.length}"
             return f"list[{self.inner}{length}]"
+        if self.tag == "enum":
+            return "enum"
         return self.tag
 
 
@@ -43,6 +52,7 @@ class FeatureSchema:
     name: str
     dtype: FeatureDType
     rank: int
+    dimension: int
     nullable: bool = False
     default_val: str | None = None
     cardinality: int | None = None
@@ -61,6 +71,7 @@ def infer_feature_schemas(config: FlowConfig) -> dict[str, FeatureSchema]:
             name=source.name,
             dtype=dtype,
             rank=1 if dtype.is_list else 0,
+            dimension=dtype.dimension,
             nullable=False,
             default_val=source.default_val,
         )
@@ -78,6 +89,7 @@ def infer_feature_schemas(config: FlowConfig) -> dict[str, FeatureSchema]:
                     name=output,
                     dtype=dtype,
                     rank=output_schema.rank,
+                    dimension=_embedding_dimension(dtype, op.embed),
                     nullable=output_schema.nullable,
                     default_val=output_schema.default_val,
                     cardinality=op.embed.vocab_size,
@@ -88,6 +100,7 @@ def infer_feature_schemas(config: FlowConfig) -> dict[str, FeatureSchema]:
                     name=output,
                     dtype=dtype,
                     rank=output_schema.rank,
+                    dimension=output_schema.dimension,
                     nullable=output_schema.nullable,
                     default_val=output_schema.default_val,
                     cardinality=output_schema.cardinality,
@@ -101,7 +114,14 @@ def _dtype_from_config(dtype: DType) -> FeatureDType:
     if dtype.tag == "list":
         if dtype.inner is None:
             raise ValueError("list dtype requires inner dtype")
-        return FeatureDType("list", _dtype_from_config(dtype.inner), dtype.length)
+        if not dtype.max_len or dtype.max_len <= 0:
+            raise ValueError("list dtype requires max_len > 0")
+        return FeatureDType("list", _dtype_from_config(dtype.inner), dtype.max_len)
+    if dtype.tag == "enum":
+        values = tuple(dtype.values or ())
+        if not values:
+            raise ValueError("enum dtype requires values")
+        return FeatureDType("enum", values=values, default=dtype.default, oov=dtype.oov)
     return FeatureDType(dtype.tag)
 
 
@@ -111,6 +131,9 @@ def _validate_default(name: str, dtype: FeatureDType, default_val: str) -> None:
             parse_int_strict(default_val)
         elif dtype.tag == "float":
             parse_float_strict(default_val)
+        elif dtype.tag == "enum":
+            if dtype.values and default_val not in dtype.values and default_val != dtype.oov:
+                raise ValueError(f"unknown enum value '{default_val}'")
         elif dtype.tag == "list" and dtype.inner is not None:
             _validate_default(name, dtype.inner, default_val)
     except (TypeError, ValueError) as exc:
@@ -152,7 +175,20 @@ def _infer_operator_output(op: OperatorDef, input_schemas: list[FeatureSchema]) 
     if op_type == "CrossFeature":
         if params.get("cross_type") == "inner_product":
             return _schema(op, FeatureDType("float"))
-        return _schema(op, FeatureDType("list", FeatureDType("string"), None))
+        max_len = params.get("max_len")
+        if max_len is not None:
+            length = int(max_len)
+        else:
+            lengths = [schema.dtype.length for schema in input_schemas if schema.dtype.is_list]
+            length = 1
+            for item in lengths:
+                if item is None:
+                    length = 0
+                    break
+                length *= item
+            if not lengths or length <= 0:
+                length = None
+        return _schema(op, FeatureDType("list", FeatureDType("string"), length))
     if op_type == "ExpressionOp":
         return _schema(op, FeatureDType("float"))
     if op_type == "SequenceOp":
@@ -179,7 +215,10 @@ def _infer_operator_output(op: OperatorDef, input_schemas: list[FeatureSchema]) 
 
 def _schema(op: OperatorDef, dtype: FeatureDType) -> FeatureSchema:
     return FeatureSchema(
-        name=op.outputs[0] if op.outputs else op.name, dtype=dtype, rank=1 if dtype.is_list else 0
+        name=op.outputs[0] if op.outputs else op.name,
+        dtype=dtype,
+        rank=1 if dtype.is_list else 0,
+        dimension=dtype.dimension,
     )
 
 
@@ -200,7 +239,13 @@ def _validate_embed(name: str, dtype: FeatureDType, embed: EmbedConfig) -> None:
         raise ValueError(f"embeddable feature '{name}' must be int or list[int], got {dtype}")
     if embed.pooling in {"mean", "sum", "max", "flatten"} and not dtype.is_list:
         raise ValueError(f"embed '{name}' pooling '{embed.pooling}' requires list[int]")
-    if embed.pooling == "flatten":
+    if dtype.is_list:
         seq_len = embed.seq_len or dtype.length
         if not seq_len:
-            raise ValueError(f"embed '{name}' pooling flatten requires seq_len")
+            raise ValueError(f"embed '{name}' list input requires fixed max_len or seq_len")
+
+
+def _embedding_dimension(dtype: FeatureDType, embed: EmbedConfig) -> int:
+    if dtype.is_list:
+        return embed.seq_len or dtype.length or 1
+    return 1

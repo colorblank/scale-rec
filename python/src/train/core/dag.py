@@ -134,6 +134,10 @@ class FeatureDag:
         self.debug_mode = debug_mode
         self.feature_schemas: dict[str, FeatureSchema] = infer_feature_schemas(config)
         self.validation_report = self._validate(config)
+        self._source_names = tuple(self.sources)
+        self._source_name_set = set(self.sources)
+        self._embed_infos = dict(self.embeddable_features())
+        self._embed_names = tuple(self._embed_infos)
         if strict_validation and self.validation_report.warnings:
             details = ", ".join(issue.message for issue in self.validation_report.warnings)
             raise ValueError(f"strict validation failed: {details}")
@@ -213,15 +217,15 @@ class FeatureDag:
             return parse_int_strict(val_str)
         elif dtype.tag == "float":
             return parse_float_strict(val_str)
-        elif dtype.tag == "string":
+        elif dtype.tag in {"string", "enum"}:
             return val_str
         elif dtype.tag == "list":
-            inner, length = dtype.inner, dtype.length
+            inner, length = dtype.inner, dtype.max_len or dtype.length
             if inner.tag == "int":
                 return [parse_int_strict(val_str)] * length
             elif inner.tag == "float":
                 return [parse_float_strict(val_str)] * length
-            elif inner.tag == "string":
+            elif inner.tag in {"string", "enum"}:
                 return [val_str] * length
         return 0
 
@@ -294,7 +298,17 @@ class FeatureDag:
         for _, op_def in self.node_defs.items():
             if op_def.embed is not None:
                 for out_name in op_def.outputs:
-                    result.append((out_name, op_def.embed))
+                    schema = self.feature_schemas.get(out_name)
+                    if schema and schema.dtype.is_list and op_def.embed.seq_len is None:
+                        emb = EmbedConfig(
+                            vocab_size=op_def.embed.vocab_size,
+                            embed_dim=op_def.embed.embed_dim,
+                            pooling=op_def.embed.pooling,
+                            seq_len=schema.dtype.length,
+                        )
+                    else:
+                        emb = op_def.embed
+                    result.append((out_name, emb))
         result.sort(key=lambda x: x[0])
         return result
 
@@ -344,6 +358,11 @@ class FeatureDag:
             if name not in context:
                 default = self._parse_default(src.default_val, src.dtype)
                 context[name] = [default] * n_rows
+            else:
+                col = context[name]
+                if any(v is None for v in col):
+                    default = self._parse_default(src.default_val, src.dtype)
+                    context[name] = [default if v is None else v for v in col]
 
         # Stage 3: execute operators in topological order (bulk)
         for node_name in self.execution_order:
@@ -358,9 +377,6 @@ class FeatureDag:
                 for i in range(n_rows):
                     row_inputs = [col[i] for col in op_inputs]
                     output.append(op.process(row_inputs))
-                # Transpose list-of-structs back to column if needed
-                if output and isinstance(output[0], list):
-                    output = [list(x) for x in zip(*output)] if output else output
 
             if def_.outputs:
                 for out_name in def_.outputs:
@@ -368,28 +384,40 @@ class FeatureDag:
 
         return context
 
-    def preprocess_batch(self, rows: list[dict]) -> dict[str, torch.Tensor]:
+    def preprocess_batch(self, rows: list[dict] | dict[str, list]) -> dict[str, torch.Tensor]:
         """Execute DAG and build feature tensors. List-valued features with
         pooling!=flatten are stacked as 2D (batch, seq_len) tensors.
         """
-        columns: dict[str, list] = {}
-        for row in rows:
-            for k, v in row.items():
-                if k in self.sources:
-                    columns.setdefault(k, []).append(v)
+        if isinstance(rows, dict):
+            columns = {
+                name: list(values)
+                for name, values in rows.items()
+                if name in self._source_name_set
+            }
+            n_rows = len(next(iter(columns.values()))) if columns else 0
+        else:
+            n_rows = len(rows)
+            columns = {name: [None] * n_rows for name in self._source_names}
+            seen: set[str] = set()
+            for i, row in enumerate(rows):
+                for name, val in row.items():
+                    if name in self._source_name_set:
+                        columns[name][i] = val
+                        seen.add(name)
+            columns = {name: col for name, col in columns.items() if name in seen}
 
         if self.tracer:
-            for i in range(len(rows)):
+            for i in range(n_rows):
                 self.tracer.begin_sample(i)
 
         result = self.execute_batch(columns)
 
         # Build pooling lookup from embed configs
-        embed_infos = {name: emb for name, emb in self.embeddable_features()}
-        embed_names = list(embed_infos)
+        embed_infos = self._embed_infos
+        embed_names = self._embed_names
 
         feature_lists: dict[str, list] = {name: [] for name in embed_names}
-        for i in range(len(rows)):
+        for i in range(n_rows):
             for name in embed_names:
                 col = result.get(name)
                 if col is not None and i < len(col):
@@ -402,7 +430,7 @@ class FeatureDag:
                 feature_lists[name].append(val)
 
         if self.tracer:
-            for _ in range(len(rows)):
+            for _ in range(n_rows):
                 self.tracer.end_sample()
 
         tensors: dict[str, torch.Tensor] = {}
@@ -421,7 +449,11 @@ class FeatureDag:
                     if not seq_len or seq_len <= 0:
                         raise ValueError(f"feature '{name}' pooling flatten requires seq_len > 0")
                 else:
-                    seq_len = max(max(len(v) for v in vals), 1)
+                    seq_len = embed_infos[name].seq_len
+                    if not seq_len or seq_len <= 0:
+                        raise ValueError(
+                            f"feature '{name}' pooling '{pooling}' requires fixed max_len > 0"
+                        )
                 padded = [v[:seq_len] + [0] * max(seq_len - len(v), 0) for v in vals]
                 tensors[name] = torch.tensor(padded, dtype=torch.long)
             else:

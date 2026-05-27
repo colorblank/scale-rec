@@ -13,7 +13,7 @@ from ..core.config import FlowConfig, parse_float_strict, parse_int_strict
 logger = logging.getLogger(__name__)
 
 NULL_MARKERS = {"NULL", "\\N", "null", "None", ""}
-DTYPE_PANDAS = {"int": "Int64", "float": "float64", "string": "str"}
+DTYPE_PANDAS = {"int": "Int64", "float": "float64", "string": "str", "enum": "str"}
 
 
 def _parse_default(val_str: str, dtype_tag: str) -> Any:
@@ -143,8 +143,11 @@ def build_item_index(
     logger.info("%d item files → %d unique items", len(dfs), len(merged))
 
     index: dict[str, dict[str, str]] = {}
-    for _, row in merged.iterrows():
-        d = {col: str(row[col]) if not pd.isna(row[col]) else "" for col in merged.columns}
+    for row in merged.itertuples(index=False, name=None):
+        d = {
+            col: str(val) if not pd.isna(val) else ""
+            for col, val in zip(merged.columns, row, strict=False)
+        }
         item_id = d.pop("item_id", "")
         if item_id:
             index[item_id] = d

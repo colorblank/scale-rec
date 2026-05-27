@@ -25,15 +25,44 @@ class Role:
 class DType:
     tag: str
     inner: Optional["DType"] = None
-    length: int = 0
+    max_len: int | None = None
+    values: list[str] | None = None
+    default: str | None = None
+    oov: str | None = None
+
+    @property
+    def length(self) -> int:
+        return self.max_len or 0
 
     @classmethod
     def from_dict(cls, raw: str | dict) -> "DType":
         if isinstance(raw, str):
             return cls(tag=raw)
         if isinstance(raw, dict) and "list" in raw:
-            inner_raw = raw["list"]["dtype"]
-            return cls(tag="list", inner=cls.from_dict(inner_raw), length=raw["list"]["length"])
+            spec = raw["list"]
+            inner_raw = spec.get("item_dtype", spec.get("dtype"))
+            max_len = spec.get("max_len", spec.get("length"))
+            if inner_raw is None:
+                raise ValueError(f"Invalid list DType: {raw}")
+            if max_len is None:
+                raise ValueError(f"list dtype requires max_len: {raw}")
+            return cls(tag="list", inner=cls.from_dict(inner_raw), max_len=int(max_len))
+        if isinstance(raw, dict) and "enum" in raw:
+            spec = raw["enum"]
+            if isinstance(spec, list):
+                values = [str(v) for v in spec]
+                return cls(tag="enum", values=values, default=values[0] if values else None)
+            values = [str(v) for v in spec.get("values", [])]
+            if not values:
+                raise ValueError(f"enum dtype requires values: {raw}")
+            default = spec.get("default")
+            oov = spec.get("oov")
+            return cls(
+                tag="enum",
+                values=values,
+                default=str(default) if default is not None else values[0],
+                oov=str(oov) if oov is not None else None,
+            )
         raise ValueError(f"Invalid DType: {raw}")
 
 

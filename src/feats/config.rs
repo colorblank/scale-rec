@@ -1,6 +1,6 @@
 //! 特征配置类型：FlowConfig、SourceDef、OperatorDef、DType、EmbedConfig。
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// 列角色：特征入 DAG、训练标签、读入后丢弃。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -13,13 +13,129 @@ pub enum Role {
 }
 
 /// 数据类型：整数、浮点、字符串、列表。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum DType {
     Int,
     Float,
     String,
-    List { dtype: Box<DType>, length: usize },
+    Enum {
+        values: Vec<String>,
+        #[serde(default)]
+        default: Option<String>,
+        #[serde(default)]
+        oov: Option<String>,
+    },
+    List {
+        #[serde(alias = "item_dtype")]
+        dtype: Box<DType>,
+        #[serde(alias = "max_len")]
+        length: usize,
+    },
+}
+
+impl<'de> Deserialize<'de> for DType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value =
+            serde_yaml::Value::deserialize(deserializer).map_err(serde::de::Error::custom)?;
+        dtype_from_yaml_value(&value).map_err(serde::de::Error::custom)
+    }
+}
+
+fn dtype_from_yaml_value(value: &serde_yaml::Value) -> Result<DType, String> {
+    match value {
+        serde_yaml::Value::String(tag) => match tag.as_str() {
+            "int" => Ok(DType::Int),
+            "float" => Ok(DType::Float),
+            "string" => Ok(DType::String),
+            other => Err(format!("unsupported dtype '{}'", other)),
+        },
+        serde_yaml::Value::Mapping(map) => {
+            if let Some(list_spec) = map.get(&serde_yaml::Value::String("list".to_string())) {
+                return dtype_list_from_yaml(list_spec);
+            }
+            if let Some(enum_spec) = map.get(&serde_yaml::Value::String("enum".to_string())) {
+                return dtype_enum_from_yaml(enum_spec);
+            }
+            Err(format!("invalid dtype mapping: {:?}", value))
+        }
+        _ => Err(format!("invalid dtype: {:?}", value)),
+    }
+}
+
+fn dtype_list_from_yaml(value: &serde_yaml::Value) -> Result<DType, String> {
+    let map = value
+        .as_mapping()
+        .ok_or_else(|| "list dtype requires mapping".to_string())?;
+    let dtype_value = map
+        .get(&serde_yaml::Value::String("item_dtype".to_string()))
+        .or_else(|| map.get(&serde_yaml::Value::String("dtype".to_string())))
+        .ok_or_else(|| "list dtype requires item_dtype".to_string())?;
+    let length = map
+        .get(&serde_yaml::Value::String("max_len".to_string()))
+        .or_else(|| map.get(&serde_yaml::Value::String("length".to_string())))
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| "list dtype requires max_len".to_string())? as usize;
+    Ok(DType::List {
+        dtype: Box::new(dtype_from_yaml_value(dtype_value)?),
+        length,
+    })
+}
+
+fn dtype_enum_from_yaml(value: &serde_yaml::Value) -> Result<DType, String> {
+    if let Some(seq) = value.as_sequence() {
+        let values: Vec<String> = seq.iter().map(yaml_scalar_to_string).collect();
+        return Ok(DType::Enum {
+            default: values.first().cloned(),
+            values,
+            oov: None,
+        });
+    }
+    let map = value
+        .as_mapping()
+        .ok_or_else(|| "enum dtype requires mapping or sequence".to_string())?;
+    let values_value = map
+        .get(&serde_yaml::Value::String("values".to_string()))
+        .ok_or_else(|| "enum dtype requires values".to_string())?;
+    let values: Vec<String> = values_value
+        .as_sequence()
+        .ok_or_else(|| "enum values must be a sequence".to_string())?
+        .iter()
+        .map(yaml_scalar_to_string)
+        .collect();
+    if values.is_empty() {
+        return Err("enum dtype requires at least one value".to_string());
+    }
+    let default = map
+        .get(&serde_yaml::Value::String("default".to_string()))
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .or_else(|| values.first().cloned());
+    let oov = map
+        .get(&serde_yaml::Value::String("oov".to_string()))
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    Ok(DType::Enum {
+        values,
+        default,
+        oov,
+    })
+}
+
+fn yaml_scalar_to_string(value: &serde_yaml::Value) -> String {
+    if let Some(s) = value.as_str() {
+        s.to_string()
+    } else if let Some(i) = value.as_i64() {
+        i.to_string()
+    } else if let Some(f) = value.as_f64() {
+        f.to_string()
+    } else if let Some(b) = value.as_bool() {
+        b.to_string()
+    } else {
+        format!("{:?}", value)
+    }
 }
 
 /// 变长特征池化策略。

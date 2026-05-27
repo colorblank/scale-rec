@@ -120,3 +120,55 @@ fn rust_embedding_accepts_sequence_pooling_inputs() {
     let outputs = model.forward(&inputs).unwrap();
     assert_eq!(outputs["pred"].shape().dims(), &[2, 1]);
 }
+
+#[test]
+fn dag_tracks_enum_and_fixed_list_dimensions() {
+    let yaml = r#"
+version: 1.0.0
+sources:
+  - name: category
+    dtype:
+      enum:
+        values: [unknown, books, fashion]
+        default: unknown
+        oov: unknown
+    default_val: unknown
+  - name: tags
+    dtype:
+      list:
+        item_dtype: string
+        max_len: 3
+    default_val: unknown
+operators:
+  - name: category_map
+    op_type: DictMapper
+    inputs: [category]
+    outputs: [category_idx]
+    params:
+      default_idx: 0
+      mapping:
+        books: 1
+        fashion: 2
+    embed:
+      vocab_size: 3
+      embed_dim: 4
+  - name: tag_hash
+    op_type: FeatureHash
+    inputs: [tags]
+    outputs: [tag_idx]
+    params:
+      vocab_size: 16
+    embed:
+      vocab_size: 16
+      embed_dim: 4
+      pooling: mean
+"#;
+    let config = FlowConfig::from_yaml(yaml).unwrap();
+    let dag = FeatureDag::from_config(config, false, None).unwrap();
+
+    assert!(matches!(
+        dag.feature_schemas.get("category").unwrap().dtype,
+        FeatureDType::Enum { .. }
+    ));
+    assert_eq!(dag.feature_schemas.get("tag_idx").unwrap().dimension, 3);
+}

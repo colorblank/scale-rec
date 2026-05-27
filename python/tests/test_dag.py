@@ -94,6 +94,115 @@ def test_preprocess_batch_uses_configured_flatten_seq_len():
     assert tensors["seq_idx"].shape == (2, 4)
 
 
+def test_preprocess_batch_list_valued_fallback_correctness():
+    raw = {
+        "version": "1.0.0",
+        "sources": [
+            {"name": "u_tags", "dtype": {"list": {"dtype": "string", "length": 2}}, "default_val": "a"},
+            {"name": "i_tags", "dtype": {"list": {"dtype": "string", "length": 2}}, "default_val": "b"},
+        ],
+        "operators": [
+            {
+                "name": "cross",
+                "op_type": "CrossFeature",
+                "inputs": ["u_tags", "i_tags"],
+                "outputs": ["tag_cross"],
+                "params": {"cross_type": "cartesian"},
+            },
+            {
+                "name": "hash",
+                "op_type": "FeatureHash",
+                "inputs": ["tag_cross"],
+                "outputs": ["tag_cross_idx"],
+                "params": {"vocab_size": 16},
+                "embed": {"vocab_size": 16, "embed_dim": 4, "pooling": "mean"},
+            }
+        ],
+    }
+    dag = FeatureDag(FlowConfig.from_dict(raw))
+    rows = [
+        {"u_tags": ["u1", "u2"], "i_tags": ["i1"]},
+        {"u_tags": ["u3"], "i_tags": ["i2", "i3"]},
+    ]
+    tensors = dag.preprocess_batch(rows)
+    assert tensors["tag_cross_idx"].shape == (2, 4)
+    # Check that it matches execute for each row
+    for i, r in enumerate(rows):
+        res = dag.execute(r)
+        expected = res.features["tag_cross_idx"]
+        assert tensors["tag_cross_idx"][i].tolist()[:len(expected)] == expected
+
+
+def test_enum_source_can_be_mapped_to_embedding_index():
+    raw = {
+        "version": "1.0.0",
+        "sources": [
+            {
+                "name": "category",
+                "dtype": {
+                    "enum": {
+                        "values": ["unknown", "books", "fashion"],
+                        "default": "unknown",
+                        "oov": "unknown",
+                    }
+                },
+                "default_val": "unknown",
+            }
+        ],
+        "operators": [
+            {
+                "name": "category_map",
+                "op_type": "DictMapper",
+                "inputs": ["category"],
+                "outputs": ["category_idx"],
+                "params": {"mapping": {"books": 1, "fashion": 2}, "default_idx": 0},
+                "embed": {"vocab_size": 3, "embed_dim": 4},
+            }
+        ],
+    }
+    dag = FeatureDag(FlowConfig.from_dict(raw))
+
+    assert dag.feature_schemas["category"].dtype.tag == "enum"
+    assert dag.feature_schemas["category_idx"].dimension == 1
+    assert dag.preprocess_batch([{"category": "books"}, {"category": "unknown"}])[
+        "category_idx"
+    ].tolist() == [1, 0]
+
+
+def test_list_embedding_uses_schema_fixed_dimension_for_mean_pooling():
+    raw = {
+        "version": "1.0.0",
+        "sources": [
+            {
+                "name": "tags",
+                "dtype": {"list": {"item_dtype": "string", "max_len": 3}},
+                "default_val": "unknown",
+            }
+        ],
+        "operators": [
+            {
+                "name": "hash",
+                "op_type": "FeatureHash",
+                "inputs": ["tags"],
+                "outputs": ["tag_idx"],
+                "params": {"vocab_size": 16},
+                "embed": {"vocab_size": 16, "embed_dim": 4, "pooling": "mean"},
+            }
+        ],
+    }
+    dag = FeatureDag(FlowConfig.from_dict(raw))
+    tensors = dag.preprocess_batch(
+        [
+            {"tags": ["a"]},
+            {"tags": ["b", "c", "d", "e"]},
+        ]
+    )
+
+    assert dag.feature_schemas["tag_idx"].dimension == 3
+    assert dag.feature_seq_lens()["tag_idx"] == 3
+    assert tensors["tag_idx"].shape == (2, 3)
+
+
 def test_dag_rejects_fractional_int_default():
     raw = {
         "version": "1.0.0",

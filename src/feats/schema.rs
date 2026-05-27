@@ -12,6 +12,11 @@ pub enum FeatureDType {
     Int,
     Float,
     String,
+    Enum {
+        values: Vec<String>,
+        default: Option<String>,
+        oov: Option<String>,
+    },
     List {
         dtype: Box<FeatureDType>,
         length: Option<usize>,
@@ -38,6 +43,10 @@ impl FeatureDType {
             _ => None,
         }
     }
+
+    pub fn dimension(&self) -> usize {
+        self.list_len().unwrap_or(1)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,6 +54,7 @@ pub struct FeatureSchema {
     pub name: String,
     pub dtype: FeatureDType,
     pub rank: usize,
+    pub dimension: usize,
     pub nullable: bool,
     pub default_val: Option<String>,
     pub cardinality: Option<usize>,
@@ -70,6 +80,7 @@ pub fn infer_feature_schemas(
             FeatureSchema {
                 name: source.name.clone(),
                 rank: usize::from(dtype.is_list()),
+                dimension: dtype.dimension(),
                 dtype,
                 nullable: false,
                 default_val: Some(source.default_val.clone()),
@@ -102,6 +113,7 @@ pub fn infer_feature_schemas(
                 validate_embed(output, &schema.dtype, embed)?;
                 schema.cardinality = Some(embed.vocab_size);
                 schema.pooling = Some(embed.pooling);
+                schema.dimension = embedding_dimension(&schema.dtype, embed);
             }
             schemas.insert(output.clone(), schema);
         }
@@ -115,6 +127,15 @@ fn dtype_from_config(dtype: &DType) -> FeatureDType {
         DType::Int => FeatureDType::Int,
         DType::Float => FeatureDType::Float,
         DType::String => FeatureDType::String,
+        DType::Enum {
+            values,
+            default,
+            oov,
+        } => FeatureDType::Enum {
+            values: values.clone(),
+            default: default.clone(),
+            oov: oov.clone(),
+        },
         DType::List { dtype, length } => FeatureDType::List {
             dtype: Box::new(dtype_from_config(dtype)),
             length: Some(*length),
@@ -127,6 +148,11 @@ fn validate_default(name: &str, dtype: &FeatureDType, default_val: &str) -> Resu
         FeatureDType::Int => parse_int_strict(default_val).is_ok(),
         FeatureDType::Float => parse_float_strict(default_val).is_ok(),
         FeatureDType::String | FeatureDType::Unknown => true,
+        FeatureDType::Enum {
+            values,
+            default: _,
+            oov,
+        } => values.iter().any(|v| v == default_val) || oov.as_deref() == Some(default_val),
         FeatureDType::List { dtype, .. } => validate_default(name, dtype, default_val).is_ok(),
     };
     if ok {
@@ -172,9 +198,20 @@ fn infer_operator_output(
             if yaml_str(&op.params, "cross_type") == Some("inner_product") {
                 FeatureDType::Float
             } else {
+                let length = yaml_usize(&op.params, "max_len").or_else(|| {
+                    let mut product = 1usize;
+                    let mut saw_list = false;
+                    for schema in inputs {
+                        if let Some(len) = schema.dtype.list_len() {
+                            saw_list = true;
+                            product = product.saturating_mul(len);
+                        }
+                    }
+                    saw_list.then_some(product)
+                });
                 FeatureDType::List {
                     dtype: Box::new(FeatureDType::String),
-                    length: None,
+                    length,
                 }
             }
         }
@@ -217,6 +254,7 @@ fn infer_operator_output(
             .cloned()
             .unwrap_or_else(|| op.name.clone()),
         rank: usize::from(dtype.is_list()),
+        dimension: dtype.dimension(),
         dtype,
         nullable: false,
         default_val: None,
@@ -267,7 +305,21 @@ fn validate_embed(name: &str, dtype: &FeatureDType, embed: &EmbedConfig) -> Resu
     {
         return Err(format!("embed '{}' pooling flatten requires seq_len", name));
     }
+    if dtype.is_list() && embed.seq_len.or_else(|| dtype.list_len()).is_none() {
+        return Err(format!(
+            "embed '{}' list input requires fixed max_len or seq_len",
+            name
+        ));
+    }
     Ok(())
+}
+
+fn embedding_dimension(dtype: &FeatureDType, embed: &EmbedConfig) -> usize {
+    if dtype.is_list() {
+        embed.seq_len.or_else(|| dtype.list_len()).unwrap_or(1)
+    } else {
+        1
+    }
 }
 
 fn yaml_get<'a>(params: &'a serde_yaml::Value, key: &str) -> Option<&'a serde_yaml::Value> {

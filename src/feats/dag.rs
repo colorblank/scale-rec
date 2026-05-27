@@ -88,6 +88,18 @@ impl FeatureDag {
             DType::Int => Fv::Int(parse_int_strict(val_str).unwrap_or(0)),
             DType::Float => Fv::Float(parse_float_strict(val_str).unwrap_or(0.0)),
             DType::String => Fv::Str(val_str.to_string()),
+            DType::Enum {
+                values,
+                default,
+                oov,
+            } => {
+                let value = default.as_deref().unwrap_or(val_str);
+                if values.iter().any(|candidate| candidate == value) {
+                    Fv::Str(value.to_string())
+                } else {
+                    Fv::Str(oov.as_deref().unwrap_or(val_str).to_string())
+                }
+            }
             DType::List {
                 dtype: inner,
                 length,
@@ -97,6 +109,19 @@ impl FeatureDag {
                     Fv::FloatList(vec![parse_float_strict(val_str).unwrap_or(0.0); *length])
                 }
                 DType::String => Fv::StrList(vec![val_str.to_string(); *length]),
+                DType::Enum {
+                    values,
+                    default,
+                    oov,
+                } => {
+                    let value = default.as_deref().unwrap_or(val_str);
+                    let normalized = if values.iter().any(|candidate| candidate == value) {
+                        value
+                    } else {
+                        oov.as_deref().unwrap_or(val_str)
+                    };
+                    Fv::StrList(vec![normalized.to_string(); *length])
+                }
                 _ => Fv::Int(0),
             },
         }

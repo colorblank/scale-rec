@@ -101,7 +101,11 @@ impl ModelRegistry {
                 vocab_size: e.vocab_size,
                 embed_dim: e.embed_dim,
                 pooling: e.pooling,
-                seq_len: e.seq_len,
+                seq_len: e.seq_len.or_else(|| {
+                    dag.feature_schemas
+                        .get(*n)
+                        .and_then(|schema| schema.dtype.list_len())
+                }),
             })
             .collect();
 
@@ -195,18 +199,27 @@ impl ModelRegistry {
     }
 
     fn find_model_config(&self, model_name: &str) -> Result<PathBuf, String> {
-        // Look next to model_dir first, then alongside feature_config.
+        // Look in model_dir first, then alongside feature_config.
         // Canonical demo/example configs now live under examples/.
-        let demo_parent = self.model_dir.parent();
         let feature_parent = self.feature_config_path.parent();
-        let parent_candidates: Vec<Option<&Path>> = vec![demo_parent, feature_parent];
+        let parent_candidates: Vec<&Path> = vec![
+            self.model_dir.as_path(),
+            feature_parent.unwrap_or_else(|| Path::new(".")),
+        ];
         let model_key = model_name.strip_prefix("model_").unwrap_or(model_name);
         let config_key = model_key.strip_prefix("discover_").unwrap_or(model_key);
+        let demo_key = model_key.strip_suffix("_demo").unwrap_or(model_key);
         let config_names = vec![
             format!("model_{}.yaml", model_key),
             format!("model_{}.yaml", config_key),
+            format!("model_{}.yaml", demo_key),
+            format!("{}.yaml", model_key),
+            format!("{}.yaml", config_key),
+            format!("{}.yaml", demo_key),
+            format!("model_{}_demo.yaml", model_key),
+            format!("model_{}_demo.yaml", config_key),
         ];
-        for parent in parent_candidates.into_iter().flatten() {
+        for parent in parent_candidates {
             for name in &config_names {
                 let p = parent.join(name);
                 if p.exists() {

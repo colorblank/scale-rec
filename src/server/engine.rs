@@ -290,23 +290,15 @@ fn feature_column_to_tensor(spec: &FeatureSpec, col: &[Fv], n: usize) -> Result<
         spec.pooling != PoolingStrategy::First && col.iter().any(|v| matches!(v, Fv::IntList(_)));
 
     if use_sequence {
-        let seq_len = match spec.pooling {
-            PoolingStrategy::Flatten => spec.seq_len.ok_or_else(|| {
+        let seq_len = spec
+            .seq_len
+            .ok_or_else(|| {
                 format!(
-                    "feature '{}' pooling flatten requires seq_len > 0",
+                    "feature '{}' sequence pooling requires seq_len > 0",
                     spec.name
                 )
-            })?,
-            _ => col
-                .iter()
-                .filter_map(|v| match v {
-                    Fv::IntList(values) => Some(values.len()),
-                    _ => None,
-                })
-                .max()
-                .unwrap_or(1),
-        }
-        .max(1);
+            })?
+            .max(1);
         let mut flat = Vec::with_capacity(n * seq_len);
         for val in col.iter().take(n) {
             match val {
@@ -366,6 +358,7 @@ fn json_to_feature_typed(val: &serde_json::Value, dtype: &DType) -> Result<Featu
                     .ok_or_else(|| format!("invalid float value: {}", n))? as f32,
             )),
             DType::String => Ok(Fv::Str(n.to_string())),
+            DType::Enum { values, oov, .. } => normalize_enum_value(&n.to_string(), values, oov),
             _ => Err(format!("cannot convert scalar number to dtype {:?}", dtype)),
         },
         serde_json::Value::String(s) => match dtype {
@@ -378,6 +371,7 @@ fn json_to_feature_typed(val: &serde_json::Value, dtype: &DType) -> Result<Featu
                 .map(Fv::Float)
                 .map_err(|e| format!("parse float from '{}' failed: {}", s, e)),
             DType::String => Ok(Fv::Str(s.clone())),
+            DType::Enum { values, oov, .. } => normalize_enum_value(s, values, oov),
             _ => Err(format!("cannot convert string to dtype {:?}", dtype)),
         },
         serde_json::Value::Array(arr) => match dtype {
@@ -413,7 +407,7 @@ fn json_to_feature_typed(val: &serde_json::Value, dtype: &DType) -> Result<Featu
                         }
                         Ok(Fv::FloatList(floats))
                     }
-                    DType::String => {
+                    DType::String | DType::Enum { .. } => {
                         let mut strs = Vec::with_capacity(elements.len());
                         for el in elements {
                             if let Fv::Str(s) = el {
@@ -518,6 +512,16 @@ fn source_default(source: &SourceDef) -> FeatureValue {
         DType::Int => Fv::Int(source.default_val.parse::<i32>().unwrap_or(0)),
         DType::Float => Fv::Float(source.default_val.parse::<f32>().unwrap_or(0.0)),
         DType::String => Fv::Str(source.default_val.clone()),
+        DType::Enum {
+            values,
+            default,
+            oov,
+        } => normalize_enum_value(
+            default.as_deref().unwrap_or(&source.default_val),
+            values,
+            oov,
+        )
+        .unwrap_or_else(|_| Fv::Str(source.default_val.clone())),
         DType::List { dtype, length } => match dtype.as_ref() {
             DType::Int => Fv::IntList(vec![
                 source.default_val.parse::<i32>().unwrap_or(0);
@@ -528,7 +532,36 @@ fn source_default(source: &SourceDef) -> FeatureValue {
                 *length
             ]),
             DType::String => Fv::StrList(vec![source.default_val.clone(); *length]),
+            DType::Enum {
+                values,
+                default,
+                oov,
+            } => {
+                let value = match normalize_enum_value(
+                    default.as_deref().unwrap_or(&source.default_val),
+                    values,
+                    oov,
+                ) {
+                    Ok(Fv::Str(s)) => s,
+                    _ => source.default_val.clone(),
+                };
+                Fv::StrList(vec![value; *length])
+            }
             _ => Fv::Int(0),
         },
     }
+}
+
+fn normalize_enum_value(
+    value: &str,
+    values: &[String],
+    oov: &Option<String>,
+) -> Result<Fv, String> {
+    if values.iter().any(|candidate| candidate == value) {
+        return Ok(Fv::Str(value.to_string()));
+    }
+    if let Some(oov_value) = oov {
+        return Ok(Fv::Str(oov_value.clone()));
+    }
+    Err(format!("unknown enum value '{}'", value))
 }
