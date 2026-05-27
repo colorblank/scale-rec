@@ -56,6 +56,12 @@ class TestFeatureHashSingle:
         r2 = op.process(["user123"])
         assert r1 != r2  # "user_123" != "user123"
 
+    def test_mixed_list_and_scalar_inputs_match_batch(self):
+        op = FeatureHash(1000, 1, "|")
+        single = op.process(["user", ["a", "b"], None])
+        batch = op.process_batch([["user"], [["a", "b"]], [None]])[0]
+        assert single == batch
+
     def test_none_input(self):
         op = FeatureHash(100, 1)
         r = op.process([None, "hello"])

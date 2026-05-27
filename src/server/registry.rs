@@ -106,6 +106,7 @@ impl ModelRegistry {
                         .get(*n)
                         .and_then(|schema| schema.dtype.list_len())
                 }),
+                truncation: e.truncation,
             })
             .collect();
 

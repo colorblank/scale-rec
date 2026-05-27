@@ -150,7 +150,15 @@ pub enum PoolingStrategy {
     Max,
 }
 
-/// 嵌入层配置：词表大小、嵌入维度、池化策略、序列长度。
+/// 嵌入层配置：词表大小、嵌入维度、池化策略、序列长度、截断方向。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum TruncationSide {
+    #[default]
+    Head,
+    Tail,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbedConfig {
     pub vocab_size: usize,
@@ -159,6 +167,8 @@ pub struct EmbedConfig {
     pub pooling: PoolingStrategy,
     #[serde(default)]
     pub seq_len: Option<usize>,
+    #[serde(default)]
+    pub truncation: TruncationSide,
 }
 
 /// 原始输入源定义。`embed` 已弃用，全部 embedding 由算子输出配置。

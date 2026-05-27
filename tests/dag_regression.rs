@@ -172,3 +172,76 @@ operators:
     ));
     assert_eq!(dag.feature_schemas.get("tag_idx").unwrap().dimension, 3);
 }
+
+#[test]
+fn dag_rejects_cross_feature_with_too_many_inputs() {
+    let yaml = r#"
+version: 1.0.0
+sources:
+  - name: a
+    dtype:
+      list:
+        item_dtype: int
+        max_len: 2
+    default_val: "0"
+  - name: b
+    dtype:
+      list:
+        item_dtype: int
+        max_len: 2
+    default_val: "0"
+  - name: c
+    dtype:
+      list:
+        item_dtype: int
+        max_len: 2
+    default_val: "0"
+operators:
+  - name: cross
+    op_type: CrossFeature
+    inputs: [a, b, c]
+    outputs: [abc_cross]
+    params:
+      cross_type: cartesian
+"#;
+    let config = FlowConfig::from_yaml(yaml).unwrap();
+    let err = match FeatureDag::from_config(config, false, None) {
+        Ok(_) => panic!("expected CrossFeature arity validation to fail"),
+        Err(err) => err,
+    };
+    assert!(err.contains("exactly 2 inputs"));
+}
+
+#[test]
+fn dag_tracks_feature_hash_dimension_across_all_inputs() {
+    let yaml = r#"
+version: 1.0.0
+sources:
+  - name: tags
+    dtype:
+      list:
+        item_dtype: string
+        max_len: 2
+    default_val: unknown
+  - name: category
+    dtype: string
+    default_val: unknown
+  - name: user_id
+    dtype: int
+    default_val: "0"
+operators:
+  - name: hash
+    op_type: FeatureHash
+    inputs: [tags, category, user_id]
+    outputs: [mixed_idx]
+    params:
+      vocab_size: 16
+    embed:
+      vocab_size: 16
+      embed_dim: 4
+      pooling: mean
+"#;
+    let config = FlowConfig::from_yaml(yaml).unwrap();
+    let dag = FeatureDag::from_config(config, false, None).unwrap();
+    assert_eq!(dag.feature_schemas.get("mixed_idx").unwrap().dimension, 4);
+}

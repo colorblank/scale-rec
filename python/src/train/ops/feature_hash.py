@@ -27,9 +27,16 @@ class FeatureHash:
     # ── single-row ──
 
     def process(self, inputs: list[Any]) -> int | list[int]:
+        row_vals: list[str] = []
+        has_list = False
         for v in inputs:
             if isinstance(v, list):
-                return [self._hash_one(str(x)) for x in v]
+                has_list = True
+                row_vals.extend(str(x) if x is not None else "" for x in v)
+            elif v is not None:
+                row_vals.append(str(v))
+        if has_list:
+            return [self._hash_one(x) for x in row_vals]
         key = self.separator.join(str(v) if v is not None else "" for v in inputs)
         return self._hash_multi(key)
 

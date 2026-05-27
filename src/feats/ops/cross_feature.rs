@@ -15,6 +15,12 @@ impl CustomOp for CrossFeature {
         "CrossFeature"
     }
     fn process(&self, inputs: &[Fv]) -> Result<Fv, String> {
+        if inputs.len() != 2 {
+            return Err(format!(
+                "CrossFeature expects exactly 2 inputs, got {}",
+                inputs.len()
+            ));
+        }
         match self.cross_type.as_str() {
             "inner_product" => {
                 let a: Vec<f32> = match &inputs[0] {

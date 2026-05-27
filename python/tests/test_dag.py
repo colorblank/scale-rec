@@ -203,6 +203,132 @@ def test_list_embedding_uses_schema_fixed_dimension_for_mean_pooling():
     assert tensors["tag_idx"].shape == (2, 3)
 
 
+def test_feature_hash_uses_all_inputs_for_list_dimension():
+    raw = {
+        "version": "1.0.0",
+        "sources": [
+            {
+                "name": "tags",
+                "dtype": {"list": {"dtype": "string", "length": 2}},
+                "default_val": "unknown",
+            },
+            {
+                "name": "category",
+                "dtype": "string",
+                "default_val": "unknown",
+            },
+            {
+                "name": "user_id",
+                "dtype": "int",
+                "default_val": "0",
+            },
+        ],
+        "operators": [
+            {
+                "name": "hash",
+                "op_type": "FeatureHash",
+                "inputs": ["tags", "category", "user_id"],
+                "outputs": ["mixed_idx"],
+                "params": {"vocab_size": 16},
+                "embed": {"vocab_size": 16, "embed_dim": 4, "pooling": "mean"},
+            }
+        ],
+    }
+    dag = FeatureDag(FlowConfig.from_dict(raw))
+
+    assert dag.feature_schemas["mixed_idx"].dimension == 4
+    tensors = dag.preprocess_batch(
+        [
+            {"tags": ["a", "b"], "category": "books", "user_id": 1},
+            {"tags": ["c", "d"], "category": "fashion", "user_id": 2},
+        ]
+    )
+    assert tensors["mixed_idx"].shape == (2, 4)
+
+
+def test_cross_feature_rejects_more_than_two_inputs():
+    raw = {
+        "version": "1.0.0",
+        "sources": [
+            {"name": "a", "dtype": {"list": {"dtype": "int", "length": 2}}, "default_val": "0"},
+            {"name": "b", "dtype": {"list": {"dtype": "int", "length": 2}}, "default_val": "0"},
+            {"name": "c", "dtype": {"list": {"dtype": "int", "length": 2}}, "default_val": "0"},
+        ],
+        "operators": [
+            {
+                "name": "cross",
+                "op_type": "CrossFeature",
+                "inputs": ["a", "b", "c"],
+                "outputs": ["abc_cross"],
+                "params": {"cross_type": "cartesian"},
+            }
+        ],
+    }
+
+    with pytest.raises(ValueError, match="exactly 2 inputs"):
+        FeatureDag(FlowConfig.from_dict(raw))
+
+
+def test_list_embedding_respects_truncation_side():
+    raw_head = {
+        "version": "1.0.0",
+        "sources": [
+            {
+                "name": "tags",
+                "dtype": {"list": {"item_dtype": "string", "max_len": 3}},
+                "default_val": "unknown",
+            }
+        ],
+        "operators": [
+            {
+                "name": "hash",
+                "op_type": "FeatureHash",
+                "inputs": ["tags"],
+                "outputs": ["tag_idx"],
+                "params": {"vocab_size": 16},
+                "embed": {"vocab_size": 16, "embed_dim": 4, "pooling": "mean", "truncation": "head"},
+            }
+        ],
+    }
+    dag_head = FeatureDag(FlowConfig.from_dict(raw_head))
+    tensors_head = dag_head.preprocess_batch([{"tags": ["b", "c", "d", "e"]}])
+
+    raw_tail = {
+        "version": "1.0.0",
+        "sources": [
+            {
+                "name": "tags",
+                "dtype": {"list": {"item_dtype": "string", "max_len": 3}},
+                "default_val": "unknown",
+            }
+        ],
+        "operators": [
+            {
+                "name": "hash",
+                "op_type": "FeatureHash",
+                "inputs": ["tags"],
+                "outputs": ["tag_idx"],
+                "params": {"vocab_size": 16},
+                "embed": {"vocab_size": 16, "embed_dim": 4, "pooling": "mean", "truncation": "tail"},
+            }
+        ],
+    }
+    dag_tail = FeatureDag(FlowConfig.from_dict(raw_tail))
+    tensors_tail = dag_tail.preprocess_batch([{"tags": ["b", "c", "d", "e"]}])
+
+    head_vals = tensors_head["tag_idx"][0].tolist()
+    tail_vals = tensors_tail["tag_idx"][0].tolist()
+    assert head_vals != tail_vals
+
+    res_b = dag_head.execute({"tags": ["b"]}).features["tag_idx"]
+    res_c = dag_head.execute({"tags": ["c"]}).features["tag_idx"]
+    res_d = dag_head.execute({"tags": ["d"]}).features["tag_idx"]
+    res_e = dag_head.execute({"tags": ["e"]}).features["tag_idx"]
+
+    assert head_vals == [res_b[0], res_c[0], res_d[0]]
+    assert tail_vals == [res_c[0], res_d[0], res_e[0]]
+
+
 def test_dag_rejects_fractional_int_default():
     raw = {
         "version": "1.0.0",

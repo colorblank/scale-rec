@@ -195,6 +195,9 @@ fn infer_operator_output(
             length: yaml_usize(&op.params, "max_len").filter(|v| *v > 0),
         },
         "CrossFeature" => {
+            if inputs.len() != 2 {
+                return Err(format!("operator '{}' expects exactly 2 inputs", op.name));
+            }
             if yaml_str(&op.params, "cross_type") == Some("inner_product") {
                 FeatureDType::Float
             } else {
@@ -223,12 +226,24 @@ fn infer_operator_output(
         "ListOverlap" => FeatureDType::Int,
         "StringConcat" => FeatureDType::String,
         "FeatureHash" => {
-            let has_list_input = inputs.iter().any(|s| s.dtype.is_list());
+            let list_inputs: Vec<&FeatureSchema> =
+                inputs.iter().filter(|s| s.dtype.is_list()).collect();
             let num_hashes = yaml_usize(&op.params, "num_hashes").unwrap_or(1);
-            if has_list_input {
+            if !list_inputs.is_empty() {
+                let mut length = 0usize;
+                for schema in inputs {
+                    if let Some(len) = schema.dtype.list_len() {
+                        length = length.saturating_add(len);
+                    } else if schema.dtype.is_list() {
+                        length = 0;
+                        break;
+                    } else {
+                        length = length.saturating_add(1);
+                    }
+                }
                 FeatureDType::List {
                     dtype: Box::new(FeatureDType::Int),
-                    length: inputs.iter().find_map(|s| s.dtype.list_len()),
+                    length: (length > 0).then_some(length),
                 }
             } else if num_hashes > 1 {
                 FeatureDType::List {

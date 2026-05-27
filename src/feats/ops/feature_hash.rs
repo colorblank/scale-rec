@@ -69,28 +69,28 @@ impl CustomOp for FeatureHash {
 
     fn process(&self, inputs: &[Fv]) -> Result<Fv, String> {
         // 检测 list 输入 → 逐元素 hash
+        let mut elems: Vec<String> = Vec::new();
+        let mut has_list = false;
         for v in inputs {
             match v {
                 Fv::StrList(list) => {
-                    let indices: Vec<i32> = list.iter().map(|s| self.hash_one(s, 0)).collect();
-                    return Ok(Fv::IntList(indices));
+                    has_list = true;
+                    elems.extend(list.iter().cloned());
                 }
                 Fv::IntList(list) => {
-                    let indices: Vec<i32> = list
-                        .iter()
-                        .map(|i| self.hash_one(&i.to_string(), 0))
-                        .collect();
-                    return Ok(Fv::IntList(indices));
+                    has_list = true;
+                    elems.extend(list.iter().map(|i| i.to_string()));
                 }
                 Fv::FloatList(list) => {
-                    let indices: Vec<i32> = list
-                        .iter()
-                        .map(|f| self.hash_one(&f.to_string(), 0))
-                        .collect();
-                    return Ok(Fv::IntList(indices));
+                    has_list = true;
+                    elems.extend(list.iter().map(|f| f.to_string()));
                 }
-                _ => {}
+                other => elems.push(other.to_string()),
             }
+        }
+        if has_list {
+            let indices: Vec<i32> = elems.iter().map(|s| self.hash_one(s, 0)).collect();
+            return Ok(Fv::IntList(indices));
         }
         let key = build_key(inputs, &self.separator);
         self.cached_or_compute(&key)
@@ -374,6 +374,26 @@ mod tests {
             .unwrap();
         assert_eq!(results[0], single_0);
         assert_eq!(results[1], single_1);
+    }
+
+    #[test]
+    fn test_mixed_list_and_scalar_single_matches_batch() {
+        let op = FeatureHash::new(1000, 1, "|".into());
+        let single = op
+            .process(&[
+                Fv::Str("user".into()),
+                Fv::StrList(vec!["a".into(), "b".into()]),
+                Fv::Int(7),
+            ])
+            .unwrap();
+        let col_user = vec![Fv::Str("user".into())];
+        let col_tags = vec![Fv::StrList(vec!["a".into(), "b".into()])];
+        let col_id = vec![Fv::Int(7)];
+        let batch = op
+            .process_batch(&[&col_user, &col_tags, &col_id], 1)
+            .unwrap();
+        assert_eq!(batch[0], single);
+        assert!(matches!(single, Fv::IntList(ref values) if values.len() == 4));
     }
 
     #[test]

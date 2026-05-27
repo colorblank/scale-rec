@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use candle_core::{Device, Tensor};
 
-use crate::feats::config::{DType, PoolingStrategy, SourceDef};
+use crate::feats::config::{DType, PoolingStrategy, SourceDef, TruncationSide};
 use crate::feats::dag::{FeatureDag, FeatureValue};
 use crate::feats::ops::Fv;
 use crate::layers::embedding::FeatureSpec;
@@ -303,8 +303,16 @@ fn feature_column_to_tensor(spec: &FeatureSpec, col: &[Fv], n: usize) -> Result<
         for val in col.iter().take(n) {
             match val {
                 Fv::IntList(values) => {
+                    let start_offset =
+                        if spec.truncation == TruncationSide::Tail && values.len() > seq_len {
+                            values.len() - seq_len
+                        } else {
+                            0
+                        };
                     for idx in 0..seq_len {
-                        flat.push(values.get(idx).copied().unwrap_or(0).max(0) as u32);
+                        flat.push(
+                            values.get(start_offset + idx).copied().unwrap_or(0).max(0) as u32
+                        );
                     }
                 }
                 Fv::Int(i) => {
@@ -482,6 +490,7 @@ mod tests {
             embed_dim: 4,
             pooling: PoolingStrategy::Flatten,
             seq_len: Some(3),
+            truncation: TruncationSide::Head,
         };
         let col = vec![Fv::IntList(vec![1, 2]), Fv::IntList(vec![3, 4, 5, 6])];
 
@@ -498,12 +507,45 @@ mod tests {
             embed_dim: 4,
             pooling: PoolingStrategy::Flatten,
             seq_len: None,
+            truncation: TruncationSide::Head,
         };
         let col = vec![Fv::IntList(vec![1, 2])];
 
         let err = feature_column_to_tensor(&spec, &col, 1).unwrap_err();
 
         assert!(err.contains("requires seq_len"));
+    }
+
+    #[test]
+    fn test_feature_column_to_tensor_respects_truncation_side() {
+        let spec_head = FeatureSpec {
+            name: "seq".to_string(),
+            vocab_size: 16,
+            embed_dim: 4,
+            pooling: PoolingStrategy::Mean,
+            seq_len: Some(3),
+            truncation: TruncationSide::Head,
+        };
+        let col = vec![Fv::IntList(vec![10, 20, 30, 40])];
+        let tensor_head = feature_column_to_tensor(&spec_head, &col, 1).unwrap();
+        assert_eq!(
+            tensor_head.to_vec2::<u32>().unwrap(),
+            vec![vec![10, 20, 30]]
+        );
+
+        let spec_tail = FeatureSpec {
+            name: "seq".to_string(),
+            vocab_size: 16,
+            embed_dim: 4,
+            pooling: PoolingStrategy::Mean,
+            seq_len: Some(3),
+            truncation: TruncationSide::Tail,
+        };
+        let tensor_tail = feature_column_to_tensor(&spec_tail, &col, 1).unwrap();
+        assert_eq!(
+            tensor_tail.to_vec2::<u32>().unwrap(),
+            vec![vec![20, 30, 40]]
+        );
     }
 }
 

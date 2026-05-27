@@ -48,6 +48,7 @@ fn main() -> Result<()> {
                     .get(*name)
                     .and_then(|schema| schema.dtype.list_len())
             }),
+            truncation: emb.truncation,
         })
         .collect();
     println!(

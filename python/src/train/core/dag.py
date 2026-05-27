@@ -217,16 +217,28 @@ class FeatureDag:
             return parse_int_strict(val_str)
         elif dtype.tag == "float":
             return parse_float_strict(val_str)
-        elif dtype.tag in {"string", "enum"}:
+        elif dtype.tag == "string":
             return val_str
+        elif dtype.tag == "enum":
+            candidate = dtype.default if dtype.default is not None else val_str
+            if dtype.values and candidate in dtype.values:
+                return candidate
+            if dtype.oov is not None:
+                return dtype.oov
+            return candidate
         elif dtype.tag == "list":
             inner, length = dtype.inner, dtype.max_len or dtype.length
             if inner.tag == "int":
                 return [parse_int_strict(val_str)] * length
             elif inner.tag == "float":
                 return [parse_float_strict(val_str)] * length
-            elif inner.tag in {"string", "enum"}:
+            elif inner.tag == "string":
                 return [val_str] * length
+            elif inner.tag == "enum":
+                candidate = inner.default if inner.default is not None else val_str
+                if inner.values and candidate not in inner.values and inner.oov is not None:
+                    candidate = inner.oov
+                return [candidate] * length
         return 0
 
     @staticmethod
@@ -305,6 +317,7 @@ class FeatureDag:
                             embed_dim=op_def.embed.embed_dim,
                             pooling=op_def.embed.pooling,
                             seq_len=schema.dtype.length,
+                            truncation=op_def.embed.truncation,
                         )
                     else:
                         emb = op_def.embed
@@ -454,7 +467,11 @@ class FeatureDag:
                         raise ValueError(
                             f"feature '{name}' pooling '{pooling}' requires fixed max_len > 0"
                         )
-                padded = [v[:seq_len] + [0] * max(seq_len - len(v), 0) for v in vals]
+                trunc = embed_infos[name].truncation
+                if trunc == "tail":
+                    padded = [v[-seq_len:] + [0] * max(seq_len - len(v), 0) for v in vals]
+                else:
+                    padded = [v[:seq_len] + [0] * max(seq_len - len(v), 0) for v in vals]
                 tensors[name] = torch.tensor(padded, dtype=torch.long)
             else:
                 tensors[name] = torch.tensor(vals, dtype=torch.long)

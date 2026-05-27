@@ -2,7 +2,7 @@ use candle_core::{Result, Tensor};
 use candle_nn::{embedding, Embedding, Module, VarBuilder};
 use std::collections::HashMap;
 
-use crate::feats::config::PoolingStrategy;
+use crate::feats::config::{PoolingStrategy, TruncationSide};
 
 #[derive(Debug, Clone)]
 pub struct FeatureSpec {
@@ -11,6 +11,7 @@ pub struct FeatureSpec {
     pub embed_dim: usize,
     pub pooling: PoolingStrategy,
     pub seq_len: Option<usize>,
+    pub truncation: TruncationSide,
 }
 
 impl FeatureSpec {
@@ -21,6 +22,7 @@ impl FeatureSpec {
             embed_dim,
             pooling: PoolingStrategy::First,
             seq_len: None,
+            truncation: TruncationSide::Head,
         }
     }
 
@@ -31,6 +33,7 @@ impl FeatureSpec {
             embed_dim,
             pooling: self.pooling,
             seq_len: self.seq_len,
+            truncation: self.truncation,
         }
     }
 

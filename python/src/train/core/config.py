@@ -86,6 +86,7 @@ class EmbedConfig:
     embed_dim: int
     pooling: str = "first"  # first | flatten | mean | sum | max
     seq_len: Optional[int] = None  # pooling=flatten 时的序列长度
+    truncation: str = "head"  # head | tail
 
 
 @dataclass

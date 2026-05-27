@@ -173,6 +173,8 @@ def _infer_operator_output(op: OperatorDef, input_schemas: list[FeatureSchema]) 
             op, FeatureDType("list", FeatureDType("string"), int(params.get("max_len", 0)) or None)
         )
     if op_type == "CrossFeature":
+        if len(input_schemas) != 2:
+            raise ValueError(f"operator '{op.name}' expects exactly 2 inputs")
         if params.get("cross_type") == "inner_product":
             return _schema(op, FeatureDType("float"))
         max_len = params.get("max_len")
@@ -200,10 +202,18 @@ def _infer_operator_output(op: OperatorDef, input_schemas: list[FeatureSchema]) 
     if op_type == "StringConcat":
         return _schema(op, FeatureDType("string"))
     if op_type == "FeatureHash":
-        has_list_input = any(s.dtype.is_list for s in input_schemas)
+        list_inputs = [s for s in input_schemas if s.dtype.is_list]
         num_hashes = int(params.get("num_hashes", 1))
-        if has_list_input:
-            length = next((s.dtype.length for s in input_schemas if s.dtype.is_list), None)
+        if list_inputs:
+            length = 0
+            for schema in input_schemas:
+                if schema.dtype.is_list:
+                    if schema.dtype.length is None:
+                        length = None
+                        break
+                    length += schema.dtype.length
+                else:
+                    length += 1
             return _schema(op, FeatureDType("list", FeatureDType("int"), length))
         if num_hashes > 1:
             return _schema(op, FeatureDType("list", FeatureDType("int"), num_hashes))

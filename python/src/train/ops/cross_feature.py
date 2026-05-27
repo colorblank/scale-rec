@@ -13,6 +13,8 @@ class CrossFeature:
 
     def process(self, inputs: list[Any]) -> float | list[str]:
         """Compute cross: dot product (inner_product) or all-pairs concat (cartesian)."""
+        if len(inputs) != 2:
+            raise ValueError(f"CrossFeature expects exactly 2 inputs, got {len(inputs)}")
         a, b = inputs[0], inputs[1]
         if self.cross_type == "inner_product":
             va = [float(x) for x in a]
