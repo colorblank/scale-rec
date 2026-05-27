@@ -238,7 +238,9 @@ class TrainingArtifactManager:
             "artifact_root": str(self.paths.artifact_root),
             "feature_config_file": str(self.paths.feature_config_path),
             "model_config_file": str(self.paths.model_config_path),
-            "checkpoints": [asdict(record) | {"path": str(record.path)} for record in self._history],
+            "checkpoints": [
+                asdict(record) | {"path": str(record.path)} for record in self._history
+            ],
         }
         self.paths.run_manifest_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.paths.run_manifest_path, "w", encoding="utf-8") as f:

@@ -419,9 +419,7 @@ class FeatureDag:
                 if pooling == "flatten":
                     seq_len = embed_infos[name].seq_len
                     if not seq_len or seq_len <= 0:
-                        raise ValueError(
-                            f"feature '{name}' pooling flatten requires seq_len > 0"
-                        )
+                        raise ValueError(f"feature '{name}' pooling flatten requires seq_len > 0")
                 else:
                     seq_len = max(max(len(v) for v in vals), 1)
                 padded = [v[:seq_len] + [0] * max(seq_len - len(v), 0) for v in vals]

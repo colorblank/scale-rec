@@ -66,7 +66,9 @@ def add_runtime_args(parser: argparse.ArgumentParser) -> None:
 
 
 def add_artifact_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--model-name", default="", help="logical model name for published artifacts")
+    parser.add_argument(
+        "--model-name", default="", help="logical model name for published artifacts"
+    )
     parser.add_argument("--run-version", default="", help="version string for this training run")
     parser.add_argument("--keep-checkpoints", type=int, default=3)
 
