@@ -431,17 +431,17 @@ mod tests {
         let feature_config = config_dir.join("feature_config_legacy.yaml");
         let legacy_lr = config_dir.join("model_lr.yaml");
         let legacy_esmm = config_dir.join("model_esmm.yaml");
-        let discover_esmm = config_dir.join("model_discover_esmm.yaml");
+        let discover_gdcn_esmm = config_dir.join("model_gdcn_esmm.yaml");
         fs::write(&feature_config, "").unwrap();
         fs::write(&legacy_lr, "type: lr\n").unwrap();
         fs::write(&legacy_esmm, "type: esmm\n").unwrap();
-        fs::write(&discover_esmm, "type: esmm\n").unwrap();
+        fs::write(&discover_gdcn_esmm, "type: gdcn_esmm\n").unwrap();
 
         let registry = empty_registry(feature_config, artifact_dir);
         assert_eq!(registry.find_model_config("model_lr").unwrap(), legacy_lr);
         assert_eq!(
-            registry.find_model_config("model_discover_esmm").unwrap(),
-            discover_esmm
+            registry.find_model_config("model_discover_gdcn_esmm").unwrap(),
+            discover_gdcn_esmm
         );
 
         fs::remove_dir_all(root).unwrap();

@@ -24,8 +24,6 @@ import yaml
 
 VERSION = "1.0.0"
 FULL_CONFIG_FILE = "feature_config_discover.yaml"
-ITEM_CONFIG_FILE = "feature_config_item.yaml"
-USER_CONFIG_FILE = "feature_config_user.yaml"
 
 ConfigDict = dict[str, Any]
 SourceDef = ConfigDict
@@ -842,16 +840,6 @@ def main() -> None:
         f"[Config] {len(full['sources'])} sources, {len(full['operators'])} ops"
         f" → {n_feat} features → {path}"
     )
-
-    # Item 侧读取配置（Polars schema）
-    item = generate_item_config()
-    path = _write_yaml(item, ITEM_CONFIG_FILE)
-    print(f"[Item]  {len(item['sources'])} columns → {path}")
-
-    # User 侧读取配置（Polars schema + labels）
-    user = generate_user_config()
-    path = _write_yaml(user, USER_CONFIG_FILE)
-    print(f"[User]  {len(user['sources'])} columns → {path}")
 
 
 if __name__ == "__main__":

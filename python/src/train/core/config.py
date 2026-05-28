@@ -205,7 +205,7 @@ class ArtifactConfig:
     keep_checkpoints: int = 3
     publish_best: bool = True
     publish_latest: bool = True
-    copy_configs: bool = True
+    copy_configs: bool = False
 
 
 @dataclass

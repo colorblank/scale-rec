@@ -68,7 +68,7 @@ class TrainingArtifactManager:
     keep_checkpoints: int = 3
     publish_best_alias: bool = True
     publish_latest_alias: bool = True
-    copy_configs: bool = True
+    copy_configs: bool = False
     _history: list[CheckpointRecord] = field(default_factory=list, init=False)
     _best: CheckpointRecord | None = field(default=None, init=False)
     _latest: CheckpointRecord | None = field(default=None, init=False)

@@ -28,6 +28,9 @@ def test_training_artifacts_manage_run_best_and_published_versions(tmp_path):
         model_config_path=model_config,
     )
     manager.prepare(feature_config, model_config)
+    assert manager.paths.feature_config_path == feature_config
+    assert manager.paths.model_config_path == model_config
+    assert not manager.paths.configs_dir.exists()
 
     model = torch.nn.Linear(1, 1)
     manager.save_checkpoint(
@@ -72,4 +75,6 @@ def test_training_artifacts_manage_run_best_and_published_versions(tmp_path):
     assert run_data["model_name"] == "demo_model"
     assert run_data["model_version"] == "run-001"
     assert run_data["best_version"] == "epoch-0001-step-000001"
+    assert run_data["feature_config_file"] == str(feature_config)
+    assert run_data["model_config_file"] == str(model_config)
     assert run_data["published_source_file"].endswith("best.safetensors")
