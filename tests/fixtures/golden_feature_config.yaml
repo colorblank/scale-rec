@@ -15,6 +15,30 @@ sources:
   - name: session_id
     dtype: string
     default_val: unknown
+  - name: json_tags_src
+    dtype: string
+    default_val: ""
+  - name: split_src
+    dtype: string
+    default_val: ""
+  - name: expr_v0
+    dtype: float
+    default_val: "0.0"
+  - name: expr_v1
+    dtype: float
+    default_val: "0.0"
+  - name: seq_src
+    dtype:
+      list:
+        dtype: int
+        length: 3
+    default_val: "0"
+  - name: concat_src1
+    dtype: string
+    default_val: ""
+  - name: concat_src2
+    dtype: string
+    default_val: ""
 operators:
   - name: age_bucket_op
     op_type: Bucketing
@@ -102,3 +126,53 @@ operators:
     embed:
       vocab_size: 64
       embed_dim: 4
+  - name: json_tag_extract_op
+    op_type: JsonExtractList
+    inputs: [json_tags_src]
+    outputs: [json_tags]
+    params:
+      key: tag
+      pad_len: 3
+      pad_val: none
+  - name: list_string_parse_op
+    op_type: ListStringParser
+    inputs: [json_tags]
+    outputs: [list_parsed]
+    params:
+      sep: ":"
+      key_index: 0
+  - name: split_op
+    op_type: Split
+    inputs: [split_src]
+    outputs: [split_list]
+    params:
+      sep: "|"
+      max_len: 2
+      pad_val: unknown
+  - name: flat_split_op
+    op_type: FlatSplit
+    inputs: [split_list]
+    outputs: [flat_split_list]
+    params:
+      sep: ","
+      max_len: 4
+      pad_val: pad
+  - name: expr_op
+    op_type: ExpressionOp
+    inputs: [expr_v0, expr_v1]
+    outputs: [expr_out]
+    params:
+      script: v0 * v1 + log(v0 + 1.0)
+  - name: seq_op
+    op_type: SequenceOp
+    inputs: [seq_src]
+    outputs: [seq_out]
+    params:
+      max_len: 3
+      pad_val: -1
+  - name: concat_op
+    op_type: StringConcat
+    inputs: [concat_src1, concat_src2]
+    outputs: [concat_out]
+    params:
+      separator: "-"

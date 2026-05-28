@@ -2,8 +2,21 @@
   {
     "age_bucket": 2,
     "category_idx": 1,
-    "item_tag_keys": ["sports", "1"],
-    "session_idx": 24,
+    "user_tag_keys": [
+      "sports",
+      "1",
+      "0.8"
+    ],
+    "item_tag_keys": [
+      "sports",
+      "1"
+    ],
+    "user_tag_idx": [
+      1,
+      0,
+      0
+    ],
+    "tag_overlap": 1,
     "tag_cross": [
       "sports_sports",
       "sports_1",
@@ -12,16 +25,61 @@
       "0.8_sports",
       "0.8_1"
     ],
-    "tag_cross_idx": [105, 47, 47, 53, 52, 26],
-    "tag_overlap": 1,
-    "user_tag_idx": [1, 0, 0],
-    "user_tag_keys": ["sports", "1", "0.8"]
+    "tag_cross_idx": [
+      105,
+      47,
+      47,
+      53,
+      52,
+      26
+    ],
+    "session_idx": 24,
+    "json_tags": [
+      "sports:good",
+      "gaming:cool",
+      "none"
+    ],
+    "list_parsed": [
+      "sports",
+      "gaming",
+      "none"
+    ],
+    "split_list": [
+      "a",
+      "b"
+    ],
+    "flat_split_list": [
+      "a",
+      "b",
+      "pad",
+      "pad"
+    ],
+    "expr_out": 8.09861,
+    "seq_out": [
+      1,
+      2,
+      3
+    ],
+    "concat_out": "abc-def"
   },
   {
     "age_bucket": 0,
     "category_idx": 2,
-    "item_tag_keys": ["gaming", "1"],
-    "session_idx": 25,
+    "user_tag_keys": [
+      "music",
+      "1",
+      "unknown"
+    ],
+    "item_tag_keys": [
+      "gaming",
+      "1"
+    ],
+    "user_tag_idx": [
+      3,
+      0,
+      0
+    ],
+    "tag_overlap": 1,
     "tag_cross": [
       "music_gaming",
       "music_1",
@@ -30,9 +88,545 @@
       "unknown_gaming",
       "unknown_1"
     ],
-    "tag_cross_idx": [103, 101, 55, 53, 22, 52],
+    "tag_cross_idx": [
+      103,
+      101,
+      55,
+      53,
+      22,
+      52
+    ],
+    "session_idx": 25,
+    "json_tags": [
+      "music:pop",
+      "none",
+      "none"
+    ],
+    "list_parsed": [
+      "music",
+      "none",
+      "none"
+    ],
+    "split_list": [
+      "x",
+      "y"
+    ],
+    "flat_split_list": [
+      "x",
+      "y",
+      "pad",
+      "pad"
+    ],
+    "expr_out": 0.0,
+    "seq_out": [
+      10,
+      -1,
+      -1
+    ],
+    "concat_out": "-xyz"
+  },
+  {
+    "age_bucket": 3,
+    "category_idx": 0,
+    "user_tag_keys": [
+      "unknown",
+      "unknown",
+      "unknown"
+    ],
+    "item_tag_keys": [
+      "unknown",
+      "unknown"
+    ],
+    "user_tag_idx": [
+      0,
+      0,
+      0
+    ],
     "tag_overlap": 1,
-    "user_tag_idx": [3, 0, 0],
-    "user_tag_keys": ["music", "1", "unknown"]
+    "tag_cross": [
+      "unknown_unknown",
+      "unknown_unknown",
+      "unknown_unknown",
+      "unknown_unknown",
+      "unknown_unknown",
+      "unknown_unknown"
+    ],
+    "tag_cross_idx": [
+      51,
+      51,
+      51,
+      51,
+      51,
+      51
+    ],
+    "session_idx": 26,
+    "json_tags": [
+      "none",
+      "none",
+      "none"
+    ],
+    "list_parsed": [
+      "none",
+      "none",
+      "none"
+    ],
+    "split_list": [
+      "unknown",
+      "unknown"
+    ],
+    "flat_split_list": [
+      "unknown",
+      "unknown",
+      "pad",
+      "pad"
+    ],
+    "expr_out": 2.3979,
+    "seq_out": [
+      -1,
+      -1,
+      -1
+    ],
+    "concat_out": "  hello  -"
+  },
+  {
+    "age_bucket": 1,
+    "category_idx": 1,
+    "user_tag_keys": [
+      "sports ",
+      " 1 ",
+      " 0.8"
+    ],
+    "item_tag_keys": [
+      "sports ",
+      " 1"
+    ],
+    "user_tag_idx": [
+      0,
+      0,
+      0
+    ],
+    "tag_overlap": 1,
+    "tag_cross": [
+      "sports _sports ",
+      "sports _ 1",
+      " 1 _sports ",
+      " 1 _ 1",
+      " 0.8_sports ",
+      " 0.8_ 1"
+    ],
+    "tag_cross_idx": [
+      41,
+      15,
+      15,
+      53,
+      116,
+      122
+    ],
+    "session_idx": 27,
+    "json_tags": [
+      "  sports:fun  ",
+      "none",
+      "none"
+    ],
+    "list_parsed": [
+      "  sports",
+      "none",
+      "none"
+    ],
+    "split_list": [
+      "one",
+      "two"
+    ],
+    "flat_split_list": [
+      "one",
+      "two",
+      "pad",
+      "pad"
+    ],
+    "expr_out": 3.91629,
+    "seq_out": [
+      1,
+      2,
+      3
+    ],
+    "concat_out": "a-b"
+  },
+  {
+    "age_bucket": 2,
+    "category_idx": 2,
+    "user_tag_keys": [
+      "",
+      "unknown",
+      "unknown"
+    ],
+    "item_tag_keys": [
+      "",
+      ""
+    ],
+    "user_tag_idx": [
+      0,
+      0,
+      0
+    ],
+    "tag_overlap": 0,
+    "tag_cross": [
+      "_",
+      "_",
+      "unknown_",
+      "unknown_",
+      "unknown_",
+      "unknown_"
+    ],
+    "tag_cross_idx": [
+      51,
+      51,
+      35,
+      35,
+      35,
+      35
+    ],
+    "session_idx": 28,
+    "json_tags": [
+      "none",
+      "none",
+      "none"
+    ],
+    "list_parsed": [
+      "none",
+      "none",
+      "none"
+    ],
+    "split_list": [
+      "",
+      ""
+    ],
+    "flat_split_list": [
+      "pad",
+      "pad",
+      "pad",
+      "pad"
+    ],
+    "expr_out": 2.40547,
+    "seq_out": [
+      -5,
+      0,
+      -1
+    ],
+    "concat_out": "123-456"
+  },
+  {
+    "age_bucket": 3,
+    "category_idx": 1,
+    "user_tag_keys": [
+      "music",
+      "1",
+      "unknown"
+    ],
+    "item_tag_keys": [
+      "books",
+      "1"
+    ],
+    "user_tag_idx": [
+      3,
+      0,
+      0
+    ],
+    "tag_overlap": 1,
+    "tag_cross": [
+      "music_books",
+      "music_1",
+      "1_books",
+      "1_1",
+      "unknown_books",
+      "unknown_1"
+    ],
+    "tag_cross_idx": [
+      18,
+      101,
+      98,
+      53,
+      97,
+      52
+    ],
+    "session_idx": 29,
+    "json_tags": [
+      "none",
+      "none",
+      "none"
+    ],
+    "list_parsed": [
+      "none",
+      "none",
+      "none"
+    ],
+    "split_list": [
+      "a",
+      "unknown"
+    ],
+    "flat_split_list": [
+      "a",
+      "unknown",
+      "pad",
+      "pad"
+    ],
+    "expr_out": 12.19722,
+    "seq_out": [
+      9,
+      8,
+      7
+    ],
+    "concat_out": "---"
+  },
+  {
+    "age_bucket": 3,
+    "category_idx": 0,
+    "user_tag_keys": [
+      "gaming",
+      "1",
+      "unknown"
+    ],
+    "item_tag_keys": [
+      "gaming",
+      "1"
+    ],
+    "user_tag_idx": [
+      2,
+      0,
+      0
+    ],
+    "tag_overlap": 1,
+    "tag_cross": [
+      "gaming_gaming",
+      "gaming_1",
+      "1_gaming",
+      "1_1",
+      "unknown_gaming",
+      "unknown_1"
+    ],
+    "tag_cross_idx": [
+      121,
+      55,
+      55,
+      53,
+      22,
+      52
+    ],
+    "session_idx": 30,
+    "json_tags": [
+      "True",
+      "123.4",
+      "none"
+    ],
+    "list_parsed": [
+      "True",
+      "123.4",
+      "none"
+    ],
+    "split_list": [
+      "hello",
+      "unknown"
+    ],
+    "flat_split_list": [
+      "hello",
+      "unknown",
+      "pad",
+      "pad"
+    ],
+    "expr_out": 0.0,
+    "seq_out": [
+      0,
+      -1,
+      -1
+    ],
+    "concat_out": "-"
+  },
+  {
+    "age_bucket": 0,
+    "category_idx": 2,
+    "user_tag_keys": [
+      "sports",
+      "1",
+      "unknown"
+    ],
+    "item_tag_keys": [
+      "books",
+      "1"
+    ],
+    "user_tag_idx": [
+      1,
+      0,
+      0
+    ],
+    "tag_overlap": 1,
+    "tag_cross": [
+      "sports_books",
+      "sports_1",
+      "1_books",
+      "1_1",
+      "unknown_books",
+      "unknown_1"
+    ],
+    "tag_cross_idx": [
+      92,
+      47,
+      98,
+      53,
+      97,
+      52
+    ],
+    "session_idx": 31,
+    "json_tags": [
+      "",
+      "none",
+      "none"
+    ],
+    "list_parsed": [
+      "",
+      "none",
+      "none"
+    ],
+    "split_list": [
+      "a,b",
+      "c,d"
+    ],
+    "flat_split_list": [
+      "a",
+      "b",
+      "c",
+      "d"
+    ],
+    "expr_out": 1.69315,
+    "seq_out": [
+      99,
+      -1,
+      -1
+    ],
+    "concat_out": "user-999"
+  },
+  {
+    "age_bucket": 0,
+    "category_idx": 0,
+    "user_tag_keys": [
+      "unknown",
+      "unknown",
+      "unknown"
+    ],
+    "item_tag_keys": [
+      "unknown",
+      "unknown"
+    ],
+    "user_tag_idx": [
+      0,
+      0,
+      0
+    ],
+    "tag_overlap": 1,
+    "tag_cross": [
+      "unknown_unknown",
+      "unknown_unknown",
+      "unknown_unknown",
+      "unknown_unknown",
+      "unknown_unknown",
+      "unknown_unknown"
+    ],
+    "tag_cross_idx": [
+      51,
+      51,
+      51,
+      51,
+      51,
+      51
+    ],
+    "session_idx": 4,
+    "json_tags": [
+      "none",
+      "none",
+      "none"
+    ],
+    "list_parsed": [
+      "none",
+      "none",
+      "none"
+    ],
+    "split_list": [
+      "unknown",
+      "unknown"
+    ],
+    "flat_split_list": [
+      "unknown",
+      "unknown",
+      "pad",
+      "pad"
+    ],
+    "expr_out": 0.0,
+    "seq_out": [
+      0,
+      0,
+      0
+    ],
+    "concat_out": "-"
+  },
+  {
+    "age_bucket": 2,
+    "category_idx": 2,
+    "user_tag_keys": [
+      "sports",
+      "1",
+      "unknown"
+    ],
+    "item_tag_keys": [
+      "books",
+      "1"
+    ],
+    "user_tag_idx": [
+      1,
+      0,
+      0
+    ],
+    "tag_overlap": 1,
+    "tag_cross": [
+      "sports_books",
+      "sports_1",
+      "1_books",
+      "1_1",
+      "unknown_books",
+      "unknown_1"
+    ],
+    "tag_cross_idx": [
+      92,
+      47,
+      98,
+      53,
+      97,
+      52
+    ],
+    "session_idx": 8,
+    "json_tags": [
+      "sports:good",
+      "none",
+      "none"
+    ],
+    "list_parsed": [
+      "sports",
+      "none",
+      "none"
+    ],
+    "split_list": [
+      "a",
+      "b"
+    ],
+    "flat_split_list": [
+      "a",
+      "b",
+      "pad",
+      "pad"
+    ],
+    "expr_out": 13.38629,
+    "seq_out": [
+      1,
+      2,
+      -1
+    ],
+    "concat_out": "a-b"
   }
 ]

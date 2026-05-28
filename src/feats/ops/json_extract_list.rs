@@ -36,6 +36,8 @@ impl CustomOp for JsonExtractList {
                         if let Some(val) = item.get(k) {
                             if let Some(v_str) = val.as_str() {
                                 result.push(v_str.to_string());
+                            } else if let Some(b) = val.as_bool() {
+                                result.push(if b { "True".to_string() } else { "False".to_string() });
                             } else {
                                 // Fallback to raw string representation (e.g. for numbers)
                                 result.push(val.to_string());
@@ -44,6 +46,8 @@ impl CustomOp for JsonExtractList {
                     } else {
                         if let Some(v_str) = item.as_str() {
                             result.push(v_str.to_string());
+                        } else if let Some(b) = item.as_bool() {
+                            result.push(if b { "True".to_string() } else { "False".to_string() });
                         } else {
                             result.push(item.to_string());
                         }
@@ -74,6 +78,8 @@ impl CustomOp for JsonExtractList {
                             if let Some(val) = item.get(k) {
                                 if let Some(v_str) = val.as_str() {
                                     result.push(v_str.to_string());
+                                } else if let Some(b) = val.as_bool() {
+                                    result.push(if b { "True".to_string() } else { "False".to_string() });
                                 } else {
                                     result.push(val.to_string());
                                 }
@@ -81,8 +87,10 @@ impl CustomOp for JsonExtractList {
                         } else {
                             if let Some(v_str) = item.as_str() {
                                 result.push(v_str.to_string());
+                            } else if let Some(b) = item.as_bool() {
+                                result.push(if b { "True".to_string() } else { "False".to_string() });
                             } else {
-                                result.push(item.to_string());
+                                    result.push(item.to_string());
                             }
                         }
                     }
