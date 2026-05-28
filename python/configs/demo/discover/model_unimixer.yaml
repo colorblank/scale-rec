@@ -1,5 +1,5 @@
 type: unimixer
-token_dim: 64
+token_dim: 32
 num_tokens: 8
 num_blocks: 2
 use_lite: false
@@ -15,13 +15,13 @@ label_col_map:
   stay: stay_time
 task_config:
   towers:
-    - {name: click,  hidden_dims: [16, 8], output_dim: 1, activation: relu}
-    - {name: cvr,    hidden_dims: [16, 8], output_dim: 1, activation: relu}
-    - {name: detail, hidden_dims: [8],    output_dim: 1, activation: relu}
-    - {name: stock,  hidden_dims: [8],    output_dim: 1, activation: relu}
-    - {name: stay,   hidden_dims: [8],    output_dim: 1, activation: none}
+    - { name: click, hidden_dims: [16, 8], output_dim: 1, activation: relu }
+    - { name: cvr, hidden_dims: [16, 8], output_dim: 1, activation: relu }
+    - { name: detail, hidden_dims: [8], output_dim: 1, activation: relu }
+    - { name: stock, hidden_dims: [8], output_dim: 1, activation: relu }
+    - { name: stay, hidden_dims: [8], output_dim: 1, activation: none }
   relations:
-    - {target: ctcvr,    sources: [click, cvr],    op: multiply}
-    - {target: ctdetail, sources: [click, detail], op: multiply}
-    - {target: ctstock,  sources: [click, stock],  op: multiply}
-    - {target: ctstay,   sources: [detail, stay],  op: multiply}
+    - { target: ctcvr, sources: [click, cvr], op: multiply }
+    - { target: ctdetail, sources: [click, detail], op: multiply }
+    - { target: ctstock, sources: [click, stock], op: multiply }
+    - { target: ctstay, sources: [detail, stay], op: multiply }
