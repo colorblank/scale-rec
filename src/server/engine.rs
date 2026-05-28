@@ -297,11 +297,10 @@ impl InferenceEngine {
             let vals: Vec<f32> = outputs
                 .get(*key)
                 .unwrap()
-                .to_vec2::<f32>()
+                .flatten_all()
                 .map_err(|e| format!("{}", e))?
-                .iter()
-                .map(|row| row[0])
-                .collect();
+                .to_vec1::<f32>()
+                .map_err(|e| format!("{}", e))?;
             for (i, v) in vals.iter().enumerate() {
                 result[i].insert(key.to_string(), *v);
             }
