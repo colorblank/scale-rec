@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-use std::fs;
-use scale_rec::feats::config::{FlowConfig, DType};
+use scale_rec::feats::config::{DType, FlowConfig};
 use scale_rec::feats::dag::{FeatureDag, FeatureValue};
 use scale_rec::feats::ops::Fv;
 use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::fs;
 
 fn fixture_path(name: &str) -> String {
     format!("{}/tests/fixtures/{}", env!("CARGO_MANIFEST_DIR"), name)

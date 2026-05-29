@@ -163,9 +163,7 @@ def _make_user(user_id: int, rng: random.Random) -> dict[str, object]:
         "fav_securities": "|".join(
             f"{code},{rng.choice(['17', '33'])}#{rng.uniform(1, 15):.2f}" for code in fav_codes
         ),
-        "recent_stocks": "|".join(
-            f"{code},{rng.choice(['17', '33'])}" for code in recent_codes
-        ),
+        "recent_stocks": "|".join(f"{code},{rng.choice(['17', '33'])}" for code in recent_codes),
         "interest_keywords": _join_tagged(rng.sample(INTEREST_KEYWORDS, rng.randint(5, 10)), rng),
         "follow_authors": _join_tagged(rng.sample(FOLLOW_AUTHORS, rng.randint(3, 8)), rng),
         "is_new_user": "老用户" if rng.random() < 0.85 else "新用户",
@@ -241,7 +239,9 @@ def main() -> None:
                 row = _make_row(item_pool[item_id], uid, rng)
                 writer.writerow([row[name] for name in SOURCE_NAMES])
 
-    print(f"[Generate discover] {n_users * rows_per_user} rows, {len(SOURCE_NAMES)} cols -> {out_path}")
+    print(
+        f"[Generate discover] {n_users * rows_per_user} rows, {len(SOURCE_NAMES)} cols -> {out_path}"
+    )
 
 
 if __name__ == "__main__":

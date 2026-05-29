@@ -81,7 +81,9 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.verify_discove
 # 启动服务 (自动加载 python/artifacts/demo 下所有 .safetensors)
 cargo run --bin server --release -- \
   --model-dir python/artifacts/demo \
-  --feature-config examples/feature_config_discover.yaml
+  --feature-config examples/feature_config_discover.yaml \
+  --worker-threads 4 \
+  --blocking-threads 64
 
 # 健康检查
 curl http://localhost:8080/health
@@ -97,14 +99,48 @@ curl -X POST http://localhost:8080/predict/broadcast -H 'Content-Type: applicati
 
 ### 3. 压测
 
-```bash
-# 生产级压测 (batch=200, broadcast, 60s)
-cargo run --bin bench --release -- \
-  --target http://localhost:8080 \
-  --model model_gdcn_esmm --mode broadcast \
-  --concurrency 10 --batch-size 200 --duration-secs 60
+压测分两类：
 
-# 输出: Total / Errors / RPS / P50 / P95 / P99 / P99.9 / Min/Max
+- Synthetic 压测：不传 `--input-file`，bench 内部生成通用随机字段。只适合验证 HTTP 链路，不代表 discover 模型真实输入。
+- Discover 真实输入压测：传入 discover TSV 和 feature config，bench 会按 `source: User/Context/Item` 构造 `/predict/broadcast` 的 `{user, items}` 请求。性能结论以这个模式为准。
+
+```bash
+# Synthetic smoke，仅验证链路
+cargo run --release --bin bench -- \
+  --target http://localhost:8080 \
+  --model unimixer --mode broadcast \
+  --concurrency 10 --batch-size 200 --duration-secs 10 --target-qps 10
+
+# Discover 真实输入压测 (1 user/context + 200 candidates, 300 QPS, 60s)
+cargo run --release --bin bench -- \
+  --target http://localhost:8080 \
+  --model unimixer --mode broadcast \
+  --concurrency 300 --batch-size 200 \
+  --duration-secs 60 --target-qps 300 \
+  --input-file python/artifacts/demo/discover_train_data.txt \
+  --feature-config examples/feature_config_discover.yaml \
+  --no-header
+
+# 输出: Scheduled / Target QPS / Success / Errors / RPS / P50 / P95 / P99 / P99.9 / Min/Max
+```
+
+300 QPS 验收最低要求：`Scheduled=18000`、`Success=18000`、`Errors=0`、`RPS>=295`。如果压测总耗时明显超过 60 秒，说明服务端已经排队积压。
+
+Linux CPU 生产构建建议启用 MKL：
+
+```bash
+RUSTFLAGS="-C target-cpu=native" \
+cargo build --release --features cpu-mkl --bin server --bin bench
+
+RUST_LOG=warn \
+MKL_NUM_THREADS=1 \
+OMP_NUM_THREADS=1 \
+target/release/server \
+  --model-dir python/artifacts/demo \
+  --feature-config examples/feature_config_discover.yaml \
+  --port 8080 \
+  --worker-threads 4 \
+  --blocking-threads 64
 ```
 
 ### 3. Python 训练 + 导出

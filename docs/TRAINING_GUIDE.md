@@ -235,6 +235,42 @@ best AUC=0.7622
 cargo run --bin server -- --feature-config examples/feature_config_discover.yaml
 ```
 
+## HTTP 压测
+
+压测 discover 模型时不要只用 bench 默认随机数据。默认随机数据是通用 synthetic schema，只适合验证 HTTP 链路；真实性能压测必须使用 discover TSV + feature config，让 bench 按 `User/Context/Item` 拆分并构造 `/predict/broadcast` 请求。
+
+```bash
+# 启动 Rust HTTP 服务
+cargo run --release --bin server -- \
+  --model-dir python/artifacts/demo \
+  --feature-config examples/feature_config_discover.yaml \
+  --port 8080 \
+  --worker-threads 4 \
+  --blocking-threads 64
+
+# 真实 discover 输入压测: 1 user/context + 200 candidates, 300 QPS, 60s
+cargo run --release --bin bench -- \
+  --target http://127.0.0.1:8080 \
+  --model unimixer \
+  --mode broadcast \
+  --concurrency 300 \
+  --batch-size 200 \
+  --duration-secs 60 \
+  --target-qps 300 \
+  --input-file python/artifacts/demo/discover_train_data.txt \
+  --feature-config examples/feature_config_discover.yaml \
+  --no-header
+```
+
+验收最低要求：`Scheduled=18000`、`Success=18000`、`Errors=0`、`RPS>=295`。如果压测进程在 60 秒后仍长时间等待未完成请求，说明服务端已产生排队积压。
+
+Linux CPU 部署建议使用 MKL 后端：
+
+```bash
+RUSTFLAGS="-C target-cpu=native" \
+cargo build --release --features cpu-mkl --bin server --bin bench
+```
+
 ## 代码架构
 
 ```

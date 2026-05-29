@@ -125,24 +125,35 @@ async fn predict(
     Json(req): Json<PredictRequest>,
 ) -> Result<Json<PredictResponse>, ApiError> {
     let mut timer = RequestTimer::new();
+    let model = req.model;
+    let features = req.features;
+    let batch_size = features.len();
 
-    let engine: Arc<InferenceEngine> = reg.get(&req.model).ok_or_else(|| ApiError {
+    let engine: Arc<InferenceEngine> = reg.get(&model).ok_or_else(|| ApiError {
         code: "REGISTRY_ERROR".to_string(),
-        message: format!("model '{}' not found", req.model),
+        message: format!("model '{}' not found", model),
         request_id: None,
-        model_id: Some(req.model.clone()),
+        model_id: Some(model.clone()),
         details: None,
     })?;
 
-    let (result, metrics) = engine
-        .predict(&req.features)
-        .map_err(|e| map_predict_error(e, req.model.clone()))?;
+    let model_for_error = model.clone();
+    let (result, metrics) = tokio::task::spawn_blocking(move || engine.predict(&features))
+        .await
+        .map_err(|e| ApiError {
+            code: "INTERNAL_ERROR".to_string(),
+            message: format!("inference worker join error: {}", e),
+            request_id: None,
+            model_id: Some(model_for_error.clone()),
+            details: None,
+        })?
+        .map_err(|e| map_predict_error(e, model_for_error))?;
 
     timer.record(&metrics);
-    timer.finish("/predict", &req.model, req.features.len());
+    timer.finish("/predict", &model, batch_size);
 
     Ok(Json(PredictResponse {
-        model: req.model,
+        model,
         predictions: result,
     }))
 }
@@ -152,24 +163,37 @@ async fn predict_broadcast(
     Json(req): Json<BroadcastRequest>,
 ) -> Result<Json<PredictResponse>, ApiError> {
     let mut timer = RequestTimer::new();
+    let model = req.model;
+    let user = req.user;
+    let items = req.items;
+    let batch_size = items.len();
 
-    let engine: Arc<InferenceEngine> = reg.get(&req.model).ok_or_else(|| ApiError {
+    let engine: Arc<InferenceEngine> = reg.get(&model).ok_or_else(|| ApiError {
         code: "REGISTRY_ERROR".to_string(),
-        message: format!("model '{}' not found", req.model),
+        message: format!("model '{}' not found", model),
         request_id: None,
-        model_id: Some(req.model.clone()),
+        model_id: Some(model.clone()),
         details: None,
     })?;
 
-    let (result, metrics) = engine
-        .predict_broadcast(&req.user, &req.items)
-        .map_err(|e| map_predict_error(e, req.model.clone()))?;
+    let model_for_error = model.clone();
+    let (result, metrics) =
+        tokio::task::spawn_blocking(move || engine.predict_broadcast(&user, &items))
+            .await
+            .map_err(|e| ApiError {
+                code: "INTERNAL_ERROR".to_string(),
+                message: format!("inference worker join error: {}", e),
+                request_id: None,
+                model_id: Some(model_for_error.clone()),
+                details: None,
+            })?
+            .map_err(|e| map_predict_error(e, model_for_error))?;
 
     timer.record(&metrics);
-    timer.finish("/predict/broadcast", &req.model, req.items.len());
+    timer.finish("/predict/broadcast", &model, batch_size);
 
     Ok(Json(PredictResponse {
-        model: req.model,
+        model,
         predictions: result,
     }))
 }

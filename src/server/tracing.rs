@@ -1,6 +1,6 @@
 //! 请求耗时追踪：tracing spans 记录各阶段延迟。
 use std::time::Instant;
-use tracing::info;
+use tracing::debug;
 
 use super::engine::InferenceMetrics;
 
@@ -37,7 +37,7 @@ impl RequestTimer {
     /// 输出 span 日志。
     pub fn finish(self, route: &str, model: &str, batch_size: usize) {
         let total_us = self.start.elapsed().as_micros() as u64;
-        info!(
+        debug!(
             route = route,
             model = model,
             batch = batch_size,

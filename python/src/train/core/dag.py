@@ -403,9 +403,7 @@ class FeatureDag:
         """
         if isinstance(rows, dict):
             columns = {
-                name: list(values)
-                for name, values in rows.items()
-                if name in self._source_name_set
+                name: list(values) for name, values in rows.items() if name in self._source_name_set
             }
             n_rows = len(next(iter(columns.values()))) if columns else 0
         else:

@@ -437,11 +437,15 @@ mod tests {
 
         let registry = empty_registry(feature_config, artifact_dir);
         assert_eq!(
-            registry.find_model_config("model_discover_gdcn_esmm").unwrap(),
+            registry
+                .find_model_config("model_discover_gdcn_esmm")
+                .unwrap(),
             discover_gdcn_esmm
         );
         assert_eq!(
-            registry.find_model_config("model_discover_unimixer").unwrap(),
+            registry
+                .find_model_config("model_discover_unimixer")
+                .unwrap(),
             discover_unimixer
         );
 

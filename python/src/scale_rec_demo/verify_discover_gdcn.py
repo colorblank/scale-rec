@@ -20,7 +20,9 @@ from safetensors.torch import load_file
 
 from .paths import DEMO_ARTIFACT_DIR, DISCOVER_FEATURE_CONFIG, MODEL_CONFIGS, REPO_ROOT
 
-DISCOVER_SOURCE_NAMES = [source.name for source in FlowConfig.from_yaml(str(DISCOVER_FEATURE_CONFIG)).sources]
+DISCOVER_SOURCE_NAMES = [
+    source.name for source in FlowConfig.from_yaml(str(DISCOVER_FEATURE_CONFIG)).sources
+]
 
 
 def add_header_to_tsv(input_path: Path, output_path: Path) -> None:

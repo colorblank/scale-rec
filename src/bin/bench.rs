@@ -2,6 +2,7 @@
 use clap::Parser;
 use csv::StringRecord;
 use rand::Rng;
+use serde::Deserialize;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -26,6 +27,24 @@ struct Args {
     target_qps: usize,
     #[arg(long)]
     input_file: Option<PathBuf>,
+    #[arg(long)]
+    feature_config: Option<PathBuf>,
+    #[arg(long)]
+    no_header: bool,
+    #[arg(long, default_value = "\t")]
+    separator: char,
+}
+
+#[derive(Clone)]
+enum InputData {
+    Pointwise(Arc<Vec<serde_json::Value>>),
+    Broadcast(Arc<Vec<BroadcastSample>>),
+}
+
+#[derive(Clone)]
+struct BroadcastSample {
+    user: serde_json::Value,
+    item: serde_json::Value,
 }
 
 #[derive(Clone)]
@@ -34,7 +53,7 @@ struct RequestContext {
     model: String,
     mode: String,
     batch_size: usize,
-    input_rows: Option<Arc<Vec<serde_json::Value>>>,
+    input_data: Option<InputData>,
     next_row: Arc<AtomicU64>,
 }
 
@@ -49,10 +68,24 @@ impl RequestContext {
 
     fn body(&self) -> serde_json::Value {
         let mut rng = rand::thread_rng();
-        if let Some(rows) = &self.input_rows {
-            let idx = (self.next_row.fetch_add(1, Ordering::Relaxed) as usize) % rows.len();
-            let row = rows[idx].clone();
-            return serde_json::json!({"model": self.model, "features": [row]});
+        if let Some(input_data) = &self.input_data {
+            return match input_data {
+                InputData::Pointwise(rows) => {
+                    let idx = (self.next_row.fetch_add(1, Ordering::Relaxed) as usize) % rows.len();
+                    let features: Vec<serde_json::Value> = (0..self.batch_size)
+                        .map(|offset| rows[(idx + offset) % rows.len()].clone())
+                        .collect();
+                    serde_json::json!({"model": self.model, "features": features})
+                }
+                InputData::Broadcast(rows) => {
+                    let idx = (self.next_row.fetch_add(1, Ordering::Relaxed) as usize) % rows.len();
+                    let user = rows[idx].user.clone();
+                    let items: Vec<serde_json::Value> = (0..self.batch_size)
+                        .map(|offset| rows[(idx + offset) % rows.len()].item.clone())
+                        .collect();
+                    serde_json::json!({"model": self.model, "user": user, "items": items})
+                }
+            };
         }
         if self.mode == "broadcast" {
             let user = random_user(&mut rng);
@@ -74,6 +107,130 @@ fn csv_record_to_json(headers: &StringRecord, record: &StringRecord) -> serde_js
         row.insert(key.to_string(), csv_field_to_json(value));
     }
     serde_json::Value::Object(row)
+}
+
+#[derive(Debug, Deserialize)]
+struct FlowConfigForBench {
+    sources: Vec<SourceForBench>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SourceForBench {
+    name: String,
+    source: String,
+    dtype: String,
+    default_val: Option<String>,
+}
+
+fn load_input_data(args: &Args) -> Option<InputData> {
+    let path = args.input_file.as_ref()?;
+    if args.mode == "broadcast" {
+        let feature_config_path = args
+            .feature_config
+            .as_ref()
+            .expect("--feature-config is required with --input-file in broadcast mode");
+        let feature_yaml =
+            std::fs::read_to_string(feature_config_path).expect("failed to read feature config");
+        let flow: FlowConfigForBench =
+            serde_yaml::from_str(&feature_yaml).expect("failed to parse feature config");
+        let rows = load_broadcast_samples(path, &flow.sources, args.separator, args.no_header);
+        if rows.is_empty() {
+            eprintln!("input file contains no rows");
+            return None;
+        }
+        return Some(InputData::Broadcast(Arc::new(rows)));
+    }
+
+    let rows = load_pointwise_rows(path);
+    if rows.is_empty() {
+        eprintln!("input file contains no rows");
+        return None;
+    }
+    Some(InputData::Pointwise(Arc::new(rows)))
+}
+
+fn load_pointwise_rows(path: &PathBuf) -> Vec<serde_json::Value> {
+    let mut reader = csv::Reader::from_path(path).expect("failed to open input file");
+    let headers = reader
+        .headers()
+        .expect("failed to read csv headers")
+        .clone();
+    let mut rows = Vec::new();
+    for record in reader.records() {
+        let record = record.expect("failed to read csv row");
+        rows.push(csv_record_to_json(&headers, &record));
+    }
+    rows
+}
+
+fn load_broadcast_samples(
+    path: &PathBuf,
+    sources: &[SourceForBench],
+    separator: char,
+    no_header: bool,
+) -> Vec<BroadcastSample> {
+    let delimiter = separator as u32;
+    if delimiter > u8::MAX as u32 {
+        panic!("--separator must be a single-byte character");
+    }
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(!no_header)
+        .delimiter(delimiter as u8)
+        .from_path(path)
+        .expect("failed to open input file");
+    let mut rows = Vec::new();
+    for (row_idx, record) in reader.records().enumerate() {
+        let record = record.expect("failed to read input row");
+        if record.len() < sources.len() {
+            panic!(
+                "row {} has {} fields, expected at least {}",
+                row_idx + 1,
+                record.len(),
+                sources.len()
+            );
+        }
+
+        let mut user = serde_json::Map::new();
+        let mut item = serde_json::Map::new();
+        for (source, value) in sources.iter().zip(record.iter()) {
+            let target = if source.source.eq_ignore_ascii_case("item") {
+                &mut item
+            } else {
+                &mut user
+            };
+            target.insert(source.name.clone(), source_field_to_json(value, source));
+        }
+        rows.push(BroadcastSample {
+            user: serde_json::Value::Object(user),
+            item: serde_json::Value::Object(item),
+        });
+    }
+    rows
+}
+
+fn source_field_to_json(s: &str, source: &SourceForBench) -> serde_json::Value {
+    let trimmed = s.trim();
+    let value = if trimmed.is_empty() {
+        source.default_val.as_deref().unwrap_or("")
+    } else {
+        trimmed
+    };
+    match source.dtype.as_str() {
+        "int" => value
+            .parse::<i64>()
+            .map(serde_json::Value::from)
+            .unwrap_or_else(|_| serde_json::json!(0)),
+        "float" => value
+            .parse::<f64>()
+            .map(serde_json::Value::from)
+            .unwrap_or_else(|_| serde_json::json!(0.0)),
+        "bool" => match value {
+            "true" | "TRUE" | "1" => serde_json::json!(true),
+            "false" | "FALSE" | "0" => serde_json::json!(false),
+            _ => serde_json::json!(false),
+        },
+        _ => serde_json::json!(value),
+    }
 }
 
 fn csv_field_to_json(s: &str) -> serde_json::Value {
@@ -227,28 +384,13 @@ async fn issue_request(
 }
 
 async fn run_open_loop(args: Args) {
-    let input_rows = args.input_file.as_ref().map(|path| {
-        let mut reader = csv::Reader::from_path(path).expect("failed to open input file");
-        let headers = reader.headers().expect("failed to read csv headers").clone();
-        let mut rows = Vec::new();
-        for record in reader.records() {
-            let record = record.expect("failed to read csv row");
-            rows.push(csv_record_to_json(&headers, &record));
-        }
-        Arc::new(rows)
-    });
-    if let Some(rows) = &input_rows {
-        if rows.is_empty() {
-            eprintln!("input file contains no rows");
-            return;
-        }
-    }
+    let input_data = load_input_data(&args);
     let ctx = RequestContext {
         target: args.target.clone(),
         model: args.model.clone(),
         mode: args.mode.clone(),
         batch_size: args.batch_size,
-        input_rows,
+        input_data,
         next_row: Arc::new(AtomicU64::new(0)),
     };
     let client = reqwest::Client::new();
@@ -257,9 +399,7 @@ async fn run_open_loop(args: Args) {
     let errors = Arc::new(AtomicU64::new(0));
     let mut handles = Vec::new();
 
-    let total_requests = args
-        .duration_secs
-        .saturating_mul(args.target_qps as u64) as usize;
+    let total_requests = args.duration_secs.saturating_mul(args.target_qps as u64) as usize;
     let period = Duration::from_secs_f64(1.0 / args.target_qps as f64);
     let start = Instant::now();
     let mut interval = time::interval_at(time::Instant::now(), period);
@@ -282,7 +422,14 @@ async fn run_open_loop(args: Args) {
     }
 
     let elapsed = start.elapsed().as_secs_f64();
-    report(args, total_reqs, errors, latencies, elapsed, Some(total_requests));
+    report(
+        args,
+        total_reqs,
+        errors,
+        latencies,
+        elapsed,
+        Some(total_requests),
+    );
 }
 
 fn run_closed_loop(args: Args) {
@@ -389,7 +536,10 @@ fn report(
         args.batch_size, args.model, args.mode
     );
     println!("  ───────────────────────────────────────");
-    println!("  Success:     {}  Errors: {}  RPS: {:.0}", success, errors, rps);
+    println!(
+        "  Success:     {}  Errors: {}  RPS: {:.0}",
+        success, errors, rps
+    );
     println!("  P50:         {:.1} ms", p(&lats, 50.0));
     println!("  P95:         {:.1} ms", p(&lats, 95.0));
     println!("  P99:         {:.1} ms", p(&lats, 99.0));
