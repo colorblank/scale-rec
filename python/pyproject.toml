@@ -15,7 +15,7 @@ dependencies = [
 [project.scripts]
 train = "train.app.main:main"
 scale-rec-demo-discover-data = "scale_rec_demo.generate_discover_data:main"
-scale-rec-demo-verify = "scale_rec_demo.verify_all:main"
+scale-rec-demo-verify = "scale_rec_demo.verify_discover_gdcn:main"
 scale-rec-demo-verify-gdcn = "scale_rec_demo.verify_discover_gdcn:main"
 
 [tool.ruff]

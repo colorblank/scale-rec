@@ -55,31 +55,30 @@ scale-rec/
 
 ## 快速开始
 
-### 1. Demo 全流程
+### 1. Discover 全流程
 
 ```bash
-cd python
+# 生成 discover 合成数据 (2000 行, 38 列)
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.generate_discover_data
 
-# 生成 discover 合成数据 (2000 行, 多任务标签)
-uv run python -m scale_rec_demo.generate_discover_data
-
-# 训练 discover 主线模型
-uv run python -m train.main discover \
-  --feature-config ../examples/feature_config_discover.yaml \
-  --model-config ../examples/model_gdcn_esmm.yaml \
-  --data data/discover_train_data.txt \
+# 训练 discover 主线模型并导出权重
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.main discover \
+  --data python/artifacts/demo/discover_train_data.txt \
+  --feature-config examples/feature_config_discover.yaml \
+  --model-config examples/model_gdcn_esmm.yaml \
   --epochs 10 --batch-size 128 --no-header \
-  --artifact-dir artifacts/demo \
+  --artifact-dir python/artifacts/demo \
+  --publish-path python/artifacts/demo/model_gdcn_esmm.safetensors \
   --model-name model_gdcn_esmm
 
-# 验证 GDCN+ESMM 预处理与模型输出一致性 (发现流式模式数据)
-uv run python -m scale_rec_demo.verify_discover_gdcn
+# 端到端验证：训练、导出、PyTorch 推理、Rust 推理、结果比对
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.verify_discover_gdcn
 ```
 
 ### 2. HTTP 推理服务
 
 ```bash
-# 启动服务 (自动加载 temp/ 下所有 .safetensors)
+# 启动服务 (自动加载 python/artifacts/demo 下所有 .safetensors)
 cargo run --bin server --release -- \
   --model-dir python/artifacts/demo \
   --feature-config examples/feature_config_discover.yaml
@@ -108,26 +107,24 @@ cargo run --bin bench --release -- \
 # 输出: Total / Errors / RPS / P50 / P95 / P99 / P99.9 / Min/Max
 ```
 
-### 4. Python 训练 + 导出
+### 3. Python 训练 + 导出
 
 ```bash
-cd python
-uv run python -m train.main \
-  --feature-config ../examples/feature_config_discover.yaml \
-  --model-config ../examples/model_gdcn_esmm.yaml \
-  --data data/discover_train_data.txt \
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.main discover \
+  --data python/artifacts/demo/discover_train_data.txt \
+  --feature-config examples/feature_config_discover.yaml \
+  --model-config examples/model_gdcn_esmm.yaml \
   --epochs 10 --batch-size 128 --lr 0.005 --no-header \
-  --artifact-dir artifacts/demo \
-  --publish-path artifacts/demo/model_gdcn_esmm.safetensors \
+  --artifact-dir python/artifacts/demo \
+  --publish-path python/artifacts/demo/model_gdcn_esmm.safetensors \
   --model-name model_gdcn_esmm \
-  --run-version 20260526_120000 \
-  --keep-checkpoints 3
+  --run-version 20260526_120000
 ```
 
 训练产物会分成三层：
-- `artifacts/demo/model_gdcn_esmm/20260526_120000/checkpoints/`：每个 epoch 的 checkpoint
-- `artifacts/demo/model_gdcn_esmm/20260526_120000/{best,latest}.safetensors`：最佳与最新别名
-- `artifacts/demo/model_gdcn_esmm.safetensors` 和同目录 `.manifest.yaml`：最终发布权重与 manifest
+- `python/artifacts/demo/model_gdcn_esmm/20260526_120000/checkpoints/`：每个 epoch 的 checkpoint
+- `python/artifacts/demo/model_gdcn_esmm/20260526_120000/{best,latest}.safetensors`：最佳与最新别名
+- `python/artifacts/demo/model_gdcn_esmm.safetensors` 和同目录 `.manifest.yaml`：最终发布权重与 manifest
 
 ## API
 
@@ -210,7 +207,6 @@ cargo fmt && cargo check && cargo test   # 24 tests
 cargo run --bin server --release          # HTTP 服务
 
 # Python
-cd python
 uvx ruff check src/train/                 # Lint
 uvx ruff format src/train/                # 格式化
 uv run pytest tests/ -v                   # 14 tests

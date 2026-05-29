@@ -9,11 +9,16 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.generate_disco
 # 2. 训练
 PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.main discover \
   --data python/artifacts/demo/discover_train_data.txt \
+  --feature-config examples/feature_config_discover.yaml \
+  --model-config examples/model_gdcn_esmm.yaml \
   --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
   --artifact-dir python/artifacts/demo \
   --publish-path python/artifacts/demo/model_gdcn_esmm.safetensors \
   --model-name model_gdcn_esmm \
   --run-version 20260526_120000
+
+# 3. 端到端验证
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.verify_discover_gdcn
 ```
 
 ## 数据格式
@@ -242,7 +247,7 @@ python/src/train/
 └── ops/         — 特征算子
 python/src/scale_rec_demo/
 ├── generate_discover_data.py  — 合成数据生成
-├── verify_all.py              — discover 主线一致性验证
+├── verify_discover_gdcn.py    — discover 主线一致性验证
 └── paths.py                   — demo 路径常量
 python/artifacts/demo/         — 本地训练输出
 ```
