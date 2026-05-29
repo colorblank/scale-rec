@@ -100,7 +100,7 @@ fn main() -> Result<()> {
         .context("Failed to load safetensors")?;
     println!("[Rust] loaded weights from {}", safetensors_path);
 
-    let engine = InferenceEngine::new(dag, model, features);
+    let engine = InferenceEngine::new(dag, model, features, device);
 
     // 5. 读取 CSV，并复用服务端 InferenceEngine 的 source-aware 解析和 tensor 构造。
     let mut reader = csv::ReaderBuilder::new()

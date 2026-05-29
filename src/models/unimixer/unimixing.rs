@@ -171,24 +171,27 @@ impl UniMixing {
         let x_blocks = x.reshape((batch_size, n, b))?;
 
         // --- 2. 局部交互 (Local Interaction) ---
-        // 转置以避免扩展和克隆权重：[N, B, B_size] x [N, B_size, B_size] -> [N, B, B_size]
+        // 使用 Batch Matmul 计算局部混合: H_t = X_blocks_t * W_B
+        // x_blocks_t: [N, batch_size, B], w_b_proc: [N, B, B]
         let x_blocks_t = x_blocks.transpose(0, 1)?.contiguous()?;
         let h_t = x_blocks_t.matmul(&w_b_proc)?;
-        let h = h_t.transpose(0, 1)?; // 转置回 [B, N, B_size]
+        let h = h_t.transpose(0, 1)?; // [batch_size, N, B]
 
         // --- 3. 全局交互 (Global Interaction) ---
-        // 展平为二维矩阵以执行单个标准 GEMM，彻底避免 3D 广播和拷贝：
-        // [N, N] x [N, B * B_size] -> [N, B * B_size]
-        let h_trans = h.transpose(0, 1)?; // [N, B, B_size]
-        let h_reshaped = h_trans.reshape((n, batch_size * b))?; // [N, B * B_size]
+        // 使用 2D GEMM 计算全局交互，彻底避免 3D 广播和拷贝：
+        // w_g_proc: [N, N], h_trans: [N, batch_size * B] -> [N, batch_size * B]
+        let h_trans = h.transpose(0, 1)?.contiguous()?;
+        let h_reshaped = h_trans.reshape((n, batch_size * b))?;
         let out_reshaped = w_g_proc.matmul(&h_reshaped)?;
 
-        let out_trans = out_reshaped.reshape((n, batch_size, b))?; // [N, B, B_size]
-        let out_blocks = out_trans.transpose(0, 1)?; // [B, N, B_size]
+        let out_trans = out_reshaped.reshape((n, batch_size, b))?;
+        let out_blocks = out_trans.transpose(0, 1)?;
 
         // --- 4. 恢复输出维度 ---
         // [batch_size, N, B] -> [batch_size, L]
-        let out = out_blocks.reshape((batch_size, self.embed_dim))?;
+        let out = out_blocks
+            .contiguous()?
+            .reshape((batch_size, self.embed_dim))?;
 
         Ok(out)
     }

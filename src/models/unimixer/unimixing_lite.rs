@@ -137,9 +137,16 @@ impl UniMixingLite {
     }
 
     fn build_cached_mixing(&self, temperature: f64) -> Result<CachedMixing> {
-        let omega_exp = self.omega.unsqueeze(2)?.unsqueeze(3)?;
-        let z_exp = self.z.unsqueeze(0)?;
-        let w_b_logits = omega_exp.broadcast_mul(&z_exp)?.sum(1)?;
+        // w_b_logits[i, j, k] = sum_m omega[i, m] * z[m, j, k]
+        // 这等价于把 z 展平后做一次矩阵乘法，避免广播到 4D 张量。
+        let z_flat = self
+            .z
+            .reshape((self.num_basis, self.block_size * self.block_size))?;
+        let w_b_logits = self.omega.matmul(&z_flat)?.reshape((
+            self.num_blocks,
+            self.block_size,
+            self.block_size,
+        ))?;
         let w_b_t = w_b_logits.transpose(1, 2)?;
         let w_b_sym = ((w_b_logits + w_b_t)? * 0.5)?;
         let w_b_div = (&w_b_sym * (1.0 / temperature))?;
@@ -212,26 +219,116 @@ impl UniMixingLite {
         let x_blocks = x.reshape((batch_size, n, b))?; // (batch_size, N, B)
 
         // --- Step 2: 局部交互 ---
-        // 转置以避免扩展和克隆权重：[N, B, B_size] x [N, B_size, B_size] -> [N, B, B_size]
+        // 使用 Batch Matmul 计算局部混合: H_t = X_blocks_t * W_B_star
+        // x_blocks_t: [N, batch_size, B], w_b_star: [N, B, B]
         let x_blocks_t = x_blocks.transpose(0, 1)?.contiguous()?;
         let h_t = x_blocks_t.matmul(&w_b_star)?;
-        let h = h_t.transpose(0, 1)?; // 转置回 [B, N, B_size]
+        let h = h_t.transpose(0, 1)?; // (batch_size, N, B)
 
         // --- Step 3: 全局交互 ---
-        // 采用展平 2D GEMM，彻底消灭 3D 广播和拷贝：
-        let h_perm = h.transpose(1, 2)?; // (batch_size, B, N)
-        let w_r_t = w_r.transpose(0, 1)?; // (N, N)
+        // 使用 2D GEMM，彻底消灭 3D 广播和拷贝：
+        let h_trans = h.transpose(0, 1)?.contiguous()?;
+        let h_reshaped = h_trans.reshape((n, batch_size * b))?;
+        let out_reshaped = w_r.matmul(&h_reshaped)?;
 
-        let h_perm_flat = h_perm.reshape((batch_size * b, n))?; // (B * B_size, N)
-        let out_perm_flat = h_perm_flat.matmul(&w_r_t)?; // (B * B_size, N)
-        let out_perm = out_perm_flat.reshape((batch_size, b, n))?; // (batch_size, B, N)
+        let out_trans = out_reshaped.reshape((n, batch_size, b))?;
+        let out_blocks = out_trans.transpose(0, 1)?;
 
-        // --- Step 4: 恢复成块的顺序 out_blocks = out_perm.permute(0, 2, 1) -> (batch_size, N, B)
-        let out_blocks = out_perm.transpose(1, 2)?;
-
-        // --- Step 5: 恢复为原始输出维度 ---
-        let out = out_blocks.reshape((batch_size, l))?;
+        // --- Step 4: 恢复为原始输出维度 ---
+        let out = out_blocks.contiguous()?.reshape((batch_size, l))?;
 
         Ok(out)
+    }
+}
+
+#[cfg(test)]
+impl UniMixingLite {
+    fn build_cached_mixing_reference(&self, temperature: f64) -> Result<(Tensor, Tensor)> {
+        let omega_exp = self.omega.unsqueeze(2)?.unsqueeze(3)?;
+        let z_exp = self.z.unsqueeze(0)?;
+        let w_b_logits = omega_exp.broadcast_mul(&z_exp)?.sum(1)?;
+        let w_b_t = w_b_logits.transpose(1, 2)?;
+        let w_b_sym = ((w_b_logits + w_b_t)? * 0.5)?;
+        let w_b_div = (&w_b_sym * (1.0 / temperature))?;
+        let w_b_star = self.sinkhorn_knopp(&w_b_div, 3)?;
+
+        let w_g_logits = self.a_g.matmul(&self.b_g)?;
+        let w_g_t = w_g_logits.transpose(0, 1)?;
+        let w_g_sym = ((w_g_logits + w_g_t)? * 0.5)?;
+        let w_g_div = (&w_g_sym * (1.0 / temperature))?;
+        let w_r = self.sinkhorn_knopp(&w_g_div, 3)?;
+
+        Ok((w_b_star, w_r))
+    }
+
+    fn forward_reference(&self, x: &Tensor, temperature: f64) -> Result<Tensor> {
+        if temperature <= 0.0 {
+            candle_core::bail!("temperature must be > 0");
+        }
+        let (batch_size, _) = x.dims2()?;
+        let n = self.num_blocks;
+        let b = self.block_size;
+        let l = self.embed_dim;
+        let (w_b_star, w_r) = self.build_cached_mixing_reference(temperature)?;
+
+        let x_blocks = x.reshape((batch_size, n, b))?;
+        let x_blocks_t = x_blocks.transpose(0, 1)?.contiguous()?;
+        let h_t = x_blocks_t.matmul(&w_b_star)?;
+        let h = h_t.transpose(0, 1)?;
+
+        let h_trans = h.transpose(0, 1)?.contiguous()?;
+        let h_reshaped = h_trans.reshape((n, batch_size * b))?;
+        let out_reshaped = w_r.matmul(&h_reshaped)?;
+        let out_trans = out_reshaped.reshape((n, batch_size, b))?;
+        let out_blocks = out_trans.transpose(0, 1)?;
+
+        out_blocks.contiguous()?.reshape((batch_size, l))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use candle_core::{Device, Tensor};
+    use candle_nn::{VarBuilder, VarMap};
+
+    fn make_module() -> UniMixingLite {
+        let device = Device::Cpu;
+        let varmap = VarMap::new();
+        let vb = VarBuilder::from_varmap(&varmap, candle_core::DType::F32, &device);
+        let module = UniMixingLite::new(8, 4, 2, 3, vb).unwrap();
+        let _ = Box::leak(Box::new(varmap));
+        module
+    }
+
+    #[test]
+    fn optimized_forward_matches_reference() {
+        let module = make_module();
+        let device = Device::Cpu;
+        let x = Tensor::from_slice(
+            &[
+                0.1f32, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, //
+                1.0, -1.0, 2.0, -2.0, 3.0, -3.0, 4.0, -4.0, //
+            ],
+            (2, 8),
+            &device,
+        )
+        .unwrap();
+
+        let fast = module.forward(&x, 1.0).unwrap();
+        let reference = module.forward_reference(&x, 1.0).unwrap();
+        let diff = fast
+            .sub(&reference)
+            .unwrap()
+            .abs()
+            .unwrap()
+            .flatten_all()
+            .unwrap()
+            .max(0)
+            .unwrap()
+            .to_scalar::<f32>()
+            .unwrap();
+
+        assert!(diff <= 1e-6, "max abs diff too large: {diff}");
     }
 }

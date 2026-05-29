@@ -23,6 +23,7 @@ pub struct InferenceEngine {
     pub dag: FeatureDag,
     pub model: Box<dyn Model>,
     pub embed_features: Vec<FeatureSpec>,
+    pub device: Device,
     // Pre-cached plan data
     embed_ids: Vec<usize>,
     user_op_indices: HashSet<usize>,
@@ -33,7 +34,12 @@ pub type FeatureRow = HashMap<String, serde_json::Value>;
 pub type PredictionRow = HashMap<String, f32>;
 
 impl InferenceEngine {
-    pub fn new(dag: FeatureDag, model: Box<dyn Model>, embed_features: Vec<FeatureSpec>) -> Self {
+    pub fn new(
+        dag: FeatureDag,
+        model: Box<dyn Model>,
+        embed_features: Vec<FeatureSpec>,
+        device: Device,
+    ) -> Self {
         let embed_ids = dag.plan.embed_ids().to_vec();
         let op_kind = dag.op_source_kind();
         let user_ops: HashSet<String> = op_kind
@@ -59,6 +65,7 @@ impl InferenceEngine {
             dag,
             model,
             embed_features,
+            device,
             embed_ids,
             user_op_indices,
             broadcast_precompute_skip_indices,
@@ -277,7 +284,7 @@ impl InferenceEngine {
             let col = context
                 .get(cid)
                 .ok_or_else(|| format!("Feature '{}' missing", spec.name))?;
-            let tensor = feature_column_to_tensor(spec, col, n)?;
+            let tensor = feature_column_to_tensor(spec, col, n, &self.device)?;
             tensor_inputs.insert(spec.name.clone(), tensor);
         }
         let tensor_us = start_tensor.elapsed().as_micros() as u64;
@@ -311,7 +318,12 @@ impl InferenceEngine {
     }
 }
 
-fn feature_column_to_tensor(spec: &FeatureSpec, col: &[Fv], n: usize) -> Result<Tensor, String> {
+fn feature_column_to_tensor(
+    spec: &FeatureSpec,
+    col: &[Fv],
+    n: usize,
+    device: &Device,
+) -> Result<Tensor, String> {
     let use_sequence =
         spec.pooling != PoolingStrategy::First && col.iter().any(|v| matches!(v, Fv::IntList(_)));
 
@@ -348,8 +360,11 @@ fn feature_column_to_tensor(spec: &FeatureSpec, col: &[Fv], n: usize) -> Result<
                 _ => flat.extend(std::iter::repeat(0).take(seq_len)),
             }
         }
-        return Tensor::from_slice(flat.as_slice(), (n, seq_len), &Device::Cpu)
-            .map_err(|e| format!("tensor '{}': {}", spec.name, e));
+        let cpu_tensor = Tensor::from_slice(flat.as_slice(), (n, seq_len), &Device::Cpu)
+            .map_err(|e| format!("tensor '{}': {}", spec.name, e))?;
+        return cpu_tensor
+            .to_device(device)
+            .map_err(|e| format!("tensor '{}' to device: {}", spec.name, e));
     }
 
     let indices: Vec<u32> = col
@@ -361,8 +376,11 @@ fn feature_column_to_tensor(spec: &FeatureSpec, col: &[Fv], n: usize) -> Result<
             _ => 0,
         })
         .collect();
-    Tensor::from_slice(indices.as_slice(), indices.len(), &Device::Cpu)
-        .map_err(|e| format!("tensor '{}': {}", spec.name, e))
+    let cpu_tensor = Tensor::from_slice(indices.as_slice(), indices.len(), &Device::Cpu)
+        .map_err(|e| format!("tensor '{}': {}", spec.name, e))?;
+    cpu_tensor
+        .to_device(device)
+        .map_err(|e| format!("tensor '{}' to device: {}", spec.name, e))
 }
 
 fn json_to_feature_typed(val: &serde_json::Value, dtype: &DType) -> Result<FeatureValue, String> {
@@ -520,7 +538,7 @@ mod tests {
         };
         let col = vec![Fv::IntList(vec![1, 2]), Fv::IntList(vec![3, 4, 5, 6])];
 
-        let tensor = feature_column_to_tensor(&spec, &col, 2).unwrap();
+        let tensor = feature_column_to_tensor(&spec, &col, 2, &Device::Cpu).unwrap();
 
         assert_eq!(tensor.shape().dims(), &[2, 3]);
     }
@@ -537,7 +555,7 @@ mod tests {
         };
         let col = vec![Fv::IntList(vec![1, 2])];
 
-        let err = feature_column_to_tensor(&spec, &col, 1).unwrap_err();
+        let err = feature_column_to_tensor(&spec, &col, 1, &Device::Cpu).unwrap_err();
 
         assert!(err.contains("requires seq_len"));
     }
@@ -553,7 +571,7 @@ mod tests {
             truncation: TruncationSide::Head,
         };
         let col = vec![Fv::IntList(vec![10, 20, 30, 40])];
-        let tensor_head = feature_column_to_tensor(&spec_head, &col, 1).unwrap();
+        let tensor_head = feature_column_to_tensor(&spec_head, &col, 1, &Device::Cpu).unwrap();
         assert_eq!(
             tensor_head.to_vec2::<u32>().unwrap(),
             vec![vec![10, 20, 30]]
@@ -567,7 +585,7 @@ mod tests {
             seq_len: Some(3),
             truncation: TruncationSide::Tail,
         };
-        let tensor_tail = feature_column_to_tensor(&spec_tail, &col, 1).unwrap();
+        let tensor_tail = feature_column_to_tensor(&spec_tail, &col, 1, &Device::Cpu).unwrap();
         assert_eq!(
             tensor_tail.to_vec2::<u32>().unwrap(),
             vec![vec![20, 30, 40]]
@@ -628,7 +646,7 @@ operators:
         let vb = candle_nn::VarBuilder::from_varmap(&varmap, candle_core::DType::F32, &device);
 
         let model = Box::new(LogisticRegression::new(vb, &embed_specs).unwrap());
-        let engine = InferenceEngine::new(dag, model, embed_specs);
+        let engine = InferenceEngine::new(dag, model, embed_specs, device.clone());
 
         let mut user = HashMap::new();
         user.insert("user_id".to_string(), serde_json::json!(42));

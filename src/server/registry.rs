@@ -110,7 +110,19 @@ impl ModelRegistry {
             })
             .collect();
 
-        let device = Device::Cpu;
+        let device = {
+            #[cfg(feature = "macos-metal")]
+            {
+                let dev = Device::new_metal(0).unwrap_or(Device::Cpu);
+                info!("[registry] selected device: {:?}", dev);
+                dev
+            }
+            #[cfg(not(feature = "macos-metal"))]
+            {
+                info!("[registry] selected device: Cpu");
+                Device::Cpu
+            }
+        };
         let mut varmap = VarMap::new();
         let vb = VarBuilder::from_varmap(&varmap, DType::F32, &device);
 
@@ -141,7 +153,7 @@ impl ModelRegistry {
             .load(&safetensors_path)
             .map_err(|e| format!("load weights: {}", e))?;
 
-        let engine = Arc::new(InferenceEngine::new(dag, model, embed_features));
+        let engine = Arc::new(InferenceEngine::new(dag, model, embed_features, device));
 
         let mut engines = self.engines.write().unwrap();
         engines.insert(model_name.to_string(), engine);
