@@ -20,51 +20,7 @@ from safetensors.torch import load_file
 
 from .paths import DEMO_ARTIFACT_DIR, DISCOVER_FEATURE_CONFIG, MODEL_CONFIGS, REPO_ROOT
 
-ALL_COLS = [
-    "user_id",
-    "item_id",
-    "rec_algo",
-    "is_click",
-    "is_cvr",
-    "is_click_detail",
-    "is_click_stock",
-    "stay_time",
-    "p_date",
-    "fav_securities",
-    "recent_stocks",
-    "interest_keywords",
-    "follow_authors",
-    "is_new_user",
-    "hold_stocks",
-    "hist_hold_stocks",
-    "historical_click_items",
-    "asset_level",
-    "last_login_date",
-    "city",
-    "investment_horizon",
-    "invest_style",
-    "theme_interest",
-    "industry_interest",
-    "fund_favorites",
-    "item_type",
-    "roleneeds_first_label",
-    "roleneeds_second_label",
-    "invest_label",
-    "invest_label_second",
-    "invest_label_third",
-    "quality_score_label",
-    "stock_list",
-    "entity_words_label",
-    "item_entities_v3",
-    "author_id",
-    "author",
-    "source_name",
-    "emb_id",
-    "wordnum",
-    "answerscore",
-    "has_picture",
-    "has_video",
-]
+DISCOVER_SOURCE_NAMES = [source.name for source in FlowConfig.from_yaml(str(DISCOVER_FEATURE_CONFIG)).sources]
 
 
 def add_header_to_tsv(input_path: Path, output_path: Path) -> None:
@@ -72,7 +28,7 @@ def add_header_to_tsv(input_path: Path, output_path: Path) -> None:
     with open(input_path, "r", encoding="utf-8") as f:
         content = f.read()
     with open(output_path, "w", encoding="utf-8") as f:
-        f.write("\t".join(ALL_COLS) + "\n")
+        f.write("\t".join(DISCOVER_SOURCE_NAMES) + "\n")
         f.write(content)
     print(f"[Prep] Prepended header to TSV dataset: {output_path}")
 

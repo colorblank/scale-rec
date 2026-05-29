@@ -18,9 +18,9 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.main discover \
 
 ## 数据格式
 
-43 列 Tab 分隔 TSV，无 header。列定义见 `examples/feature_config_discover.yaml`。
+38 列 Tab 分隔 TSV，无 header。列定义见 `examples/feature_config_discover.yaml`。
 
-**生成合成数据**：`scale_rec_demo.generate_discover_data` 输出 2000 行 × 43 列。
+**生成合成数据**：`scale_rec_demo.generate_discover_data` 输出 2000 行 × 38 列。
 
 | 参数 | 默认 | 说明 |
 |------|------|------|
@@ -38,7 +38,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.main discover \
 
 `examples/feature_config_discover.yaml` 定义三部分：
 
-- **sources**（43 列）：列名、类型、默认值、角色
+- **sources**（38 列）：列名、类型、默认值、角色
 - **operators**（68 个）：14 种算子组成的 DAG
 - **role 标记**：`feature`（入模型）、`label`（入 loss）、`discard`（读后丢弃）
 
