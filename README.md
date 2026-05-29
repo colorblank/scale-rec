@@ -104,6 +104,20 @@ curl -X POST http://localhost:8080/predict/broadcast -H 'Content-Type: applicati
 - Synthetic 压测：不传 `--input-file`，bench 内部生成通用随机字段。只适合验证 HTTP 链路，不代表 discover 模型真实输入。
 - Discover 真实输入压测：传入 discover TSV 和 feature config，bench 会按 `source: User/Context/Item` 构造 `/predict/broadcast` 的 `{user, items}` 请求。性能结论以这个模式为准。
 
+压测前先把服务和 bench 按目标平台重建成对应后端。当前仓库支持的常用组合如下：
+
+| 平台 | 后端 | 构建特征 | 说明 |
+|---|---|---|---|
+| macOS | Accelerate CPU | `macos-accelerate` | 当前仓库在 macOS 上常用的 CPU 后端 |
+| macOS | Metal GPU | `macos-metal` | 需要可用的 Apple GPU，适合看 GPU 推理上限 |
+| Linux | MKL CPU | `cpu-mkl` | Linux CPU 压测的推荐后端 |
+
+统一构建命令：
+
+```bash
+cargo build --release --features <backend-feature> --bin server --bin bench
+```
+
 ```bash
 # Synthetic smoke，仅验证链路
 cargo run --release --bin bench -- \
@@ -126,7 +140,19 @@ cargo run --release --bin bench -- \
 
 300 QPS 验收最低要求：`Scheduled=18000`、`Success=18000`、`Errors=0`、`RPS>=295`。如果压测总耗时明显超过 60 秒，说明服务端已经排队积压。
 
-Linux CPU 生产构建建议启用 MKL：
+不同平台的启动方式：
+
+```bash
+RUST_LOG=warn \
+target/release/server \
+  --model-dir python/artifacts/demo \
+  --feature-config examples/feature_config_discover.yaml \
+  --port 8080 \
+  --worker-threads 4 \
+  --blocking-threads 64
+```
+
+Linux + MKL 时建议补充：
 
 ```bash
 RUSTFLAGS="-C target-cpu=native" \
@@ -142,6 +168,28 @@ target/release/server \
   --worker-threads 4 \
   --blocking-threads 64
 ```
+
+macOS + Accelerate 时建议显式构建：
+
+```bash
+cargo build --release --features macos-accelerate --bin server --bin bench
+```
+
+macOS + Metal 时建议显式构建并启动：
+
+```bash
+cargo build --release --features macos-metal --bin server --bin bench
+
+RUST_LOG=warn \
+target/release/server \
+  --model-dir python/artifacts/demo \
+  --feature-config examples/feature_config_discover.yaml \
+  --port 8080 \
+  --worker-threads 4 \
+  --blocking-threads 64
+```
+
+压测时保持 `server` 和 `bench` 使用同一套二进制和同一后端特征，只比较同类结果。不要把 `Accelerate`、`MKL`、`Metal` 的数据直接混在一起看。
 
 ### 3. Python 训练 + 导出
 

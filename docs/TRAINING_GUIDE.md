@@ -239,6 +239,14 @@ cargo run --bin server -- --feature-config examples/feature_config_discover.yaml
 
 压测 discover 模型时不要只用 bench 默认随机数据。默认随机数据是通用 synthetic schema，只适合验证 HTTP 链路；真实性能压测必须使用 discover TSV + feature config，让 bench 按 `User/Context/Item` 拆分并构造 `/predict/broadcast` 请求。
 
+压测前先按目标平台重建 server 和 bench，并保持两者使用同一套后端特征。常用组合如下：
+
+| 平台 | 后端 | 构建特征 | 说明 |
+|---|---|---|---|
+| macOS | Accelerate CPU | `macos-accelerate` | macOS 上的默认 CPU 压测选择 |
+| macOS | Metal GPU | `macos-metal` | 适合验证 GPU 推理上限 |
+| Linux | MKL CPU | `cpu-mkl` | Linux CPU 压测的推荐后端 |
+
 ```bash
 # 启动 Rust HTTP 服务
 cargo run --release --bin server -- \
@@ -264,12 +272,48 @@ cargo run --release --bin bench -- \
 
 验收最低要求：`Scheduled=18000`、`Success=18000`、`Errors=0`、`RPS>=295`。如果压测进程在 60 秒后仍长时间等待未完成请求，说明服务端已产生排队积压。
 
-Linux CPU 部署建议使用 MKL 后端：
+平台/后端构建方式：
 
 ```bash
+# macOS + Accelerate
+cargo build --release --features macos-accelerate --bin server --bin bench
+
+# macOS + Metal
+cargo build --release --features macos-metal --bin server --bin bench
+
+# Linux + MKL
 RUSTFLAGS="-C target-cpu=native" \
 cargo build --release --features cpu-mkl --bin server --bin bench
 ```
+
+平台/后端启动方式：
+
+```bash
+# 通用启动参数，适用于 macOS Accelerate / macOS Metal / Linux MKL
+RUST_LOG=warn \
+target/release/server \
+  --model-dir python/artifacts/demo \
+  --feature-config examples/feature_config_discover.yaml \
+  --port 8080 \
+  --worker-threads 4 \
+  --blocking-threads 64
+```
+
+Linux + MKL 时建议设置：
+
+```bash
+RUST_LOG=warn \
+MKL_NUM_THREADS=1 \
+OMP_NUM_THREADS=1 \
+target/release/server \
+  --model-dir python/artifacts/demo \
+  --feature-config examples/feature_config_discover.yaml \
+  --port 8080 \
+  --worker-threads 4 \
+  --blocking-threads 64
+```
+
+压测时只比较同一平台、同一后端、同一构建参数下的结果。不要把 `Accelerate`、`Metal`、`MKL` 的结果混用。
 
 ## 代码架构
 
