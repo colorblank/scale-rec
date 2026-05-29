@@ -7,7 +7,7 @@
 PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.generate_discover_data
 
 # 2. 训练
-PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.main discover \
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.app.main discover \
   --data python/artifacts/demo/discover_train_data.txt \
   --feature-config examples/feature_config_discover.yaml \
   --model-config examples/model_gdcn_esmm.yaml \

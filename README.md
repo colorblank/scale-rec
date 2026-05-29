@@ -62,7 +62,7 @@ scale-rec/
 PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.generate_discover_data
 
 # 训练 discover 主线模型并导出权重
-PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.main discover \
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.app.main discover \
   --data python/artifacts/demo/discover_train_data.txt \
   --feature-config examples/feature_config_discover.yaml \
   --model-config examples/model_gdcn_esmm.yaml \
@@ -194,7 +194,7 @@ target/release/server \
 ### 3. Python 训练 + 导出
 
 ```bash
-PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.main discover \
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.app.main discover \
   --data python/artifacts/demo/discover_train_data.txt \
   --feature-config examples/feature_config_discover.yaml \
   --model-config examples/model_gdcn_esmm.yaml \

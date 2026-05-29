@@ -215,27 +215,25 @@ impl UniMixingLite {
         let l = self.embed_dim;
         let (w_b_star, w_r) = self.cached_mixing(temperature)?;
 
-        // --- Step 1: 将输入划分为块 ---
-        let x_blocks = x.reshape((batch_size, n, b))?; // (batch_size, N, B)
+        // --- Step 1: 分割 + 转置 ---
+        let x_blocks = x.reshape((batch_size, n, b))?;
+        let x_t = x_blocks.transpose(0, 1)?.contiguous()?;
 
         // --- Step 2: 局部交互 ---
-        // 使用 Batch Matmul 计算局部混合: H_t = X_blocks_t * W_B_star
-        // x_blocks_t: [N, batch_size, B], w_b_star: [N, B, B]
-        let x_blocks_t = x_blocks.transpose(0, 1)?.contiguous()?;
-        let h_t = x_blocks_t.matmul(&w_b_star)?;
-        let h = h_t.transpose(0, 1)?; // (batch_size, N, B)
+        // [N, batch_size, B] × [N, B, B] → [N, batch_size, B]
+        let h_t = x_t.matmul(&w_b_star)?;
 
         // --- Step 3: 全局交互 ---
-        // 使用 2D GEMM，彻底消灭 3D 广播和拷贝：
-        let h_trans = h.transpose(0, 1)?.contiguous()?;
-        let h_reshaped = h_trans.reshape((n, batch_size * b))?;
-        let out_reshaped = w_r.matmul(&h_reshaped)?;
+        // h_t 来自 matmul 已连续，直接 reshape 做 2D GEMM
+        let h_flat = h_t.reshape((n, batch_size * b))?;
+        let out_flat = w_r.matmul(&h_flat)?;
 
-        let out_trans = out_reshaped.reshape((n, batch_size, b))?;
-        let out_blocks = out_trans.transpose(0, 1)?;
-
-        // --- Step 4: 恢复为原始输出维度 ---
-        let out = out_blocks.contiguous()?.reshape((batch_size, l))?;
+        // --- Step 4: 恢复输出维度 ---
+        let out = out_flat
+            .reshape((n, batch_size, b))?
+            .transpose(0, 1)?
+            .contiguous()?
+            .reshape((batch_size, l))?;
 
         Ok(out)
     }

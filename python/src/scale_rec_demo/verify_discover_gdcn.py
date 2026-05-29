@@ -41,9 +41,9 @@ def run_training(
     """Train GDCN+ESMM model for 1 epoch to save safetensors weights."""
     print("[Train] Training discover gdcn_esmm for 1 epoch...")
     cmd = [
-        "python",
+        sys.executable,
         "-m",
-        "train.main",
+        "train.app.main",
         "discover",
         "--data",
         str(data_path),
@@ -60,7 +60,12 @@ def run_training(
         "--export-path",
         str(weights_path),
     ]
-    subprocess.run(cmd, cwd=str(REPO_ROOT), check=True)
+    env = os.environ.copy()
+    python_src = str(REPO_ROOT / "python" / "src")
+    env["PYTHONPATH"] = (
+        f"{python_src}{os.pathsep}{env['PYTHONPATH']}" if env.get("PYTHONPATH") else python_src
+    )
+    subprocess.run(cmd, cwd=str(REPO_ROOT), env=env, check=True)
 
 
 def generate_pytorch_predictions(
