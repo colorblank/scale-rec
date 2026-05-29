@@ -8,12 +8,12 @@ import sys
 import numpy as np
 import pandas as pd
 
-from .paths import DEMO_ARTIFACT_DIR, LEGACY_FEATURE_CONFIG, MODEL_CONFIGS, PYTHON_DIR
+from .paths import DEMO_ARTIFACT_DIR, DISCOVER_FEATURE_CONFIG, MODEL_CONFIGS, PYTHON_DIR
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-FEATURE_CONFIG = str(LEGACY_FEATURE_CONFIG)
+FEATURE_CONFIG = str(DISCOVER_FEATURE_CONFIG)
 
-MODEL_TYPES = ["lr", "deepfm", "mmoe", "esmm", "unimixer"]
+MODEL_TYPES = ["discover_gdcn_esmm", "discover_unimixer"]
 
 
 def _make_inference_config(base_path: str) -> str:

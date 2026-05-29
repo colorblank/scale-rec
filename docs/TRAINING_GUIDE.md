@@ -62,27 +62,7 @@ sources:
 
 ## 模型配置
 
-### 1. 5 任务 ESMM 概率关系配置
-
-`examples/model_esmm.yaml`：
-
-```yaml
-type: esmm
-shared_bottom_dims: [32, 16]
-click_hidden_dims: [16, 8]
-cvr_hidden_dims: [16, 8]
-detail_hidden_dims: [8]
-stock_hidden_dims: [8]
-stay_hidden_dims: [8]
-```
-
-5 任务 ESMM 概率关系：
-- P(detail) = σ(click) × σ(detail)
-- P(stock) = σ(click) × σ(stock)
-- P(cvr) = σ(click) × σ(cvr)
-- P(stay) = σ(detail) × σ(stay)
-
-### 2. GDCN+ESMM 门控交叉网络配置
+### GDCN+ESMM 门控交叉网络配置
 
 `examples/model_gdcn_esmm.yaml`：
 
@@ -257,12 +237,12 @@ python/src/train/
 ├── core/        — FlowConfig、FeatureDag、TaskSpec、schema
 ├── app/         — CLI、入口、artifact/manifest 管理
 ├── training/    — trainer、loss、metrics、eval、optim、quality
-├── models/      — ESMM、MMoE、DeepFM、LR、UniMixer、GDCN+ESMM
+├── models/      — discover 主线模型 (GDCN+ESMM / UniMixer)
 ├── layers/      — MLP、Embedding、Tokenizer、Towers
 └── ops/         — 特征算子
 python/src/scale_rec_demo/
 ├── generate_discover_data.py  — 合成数据生成
-├── verify_all.py              — PyTorch vs Rust 一致性验证
+├── verify_all.py              — discover 主线一致性验证
 └── paths.py                   — demo 路径常量
 python/artifacts/demo/         — 本地训练输出
 ```

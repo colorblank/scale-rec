@@ -41,7 +41,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python examples/gen_discover_config.py
 PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.train_discover \
   --data python/demo/temp/discover_train_data.txt \
   --feature-config examples/feature_config_discover.yaml \
-  --model-config python/configs/demo/discover/model_esmm.yaml \
+  --model-config examples/model_gdcn_esmm.yaml \
   --epochs 30 --batch-size 128 --lr 0.005
 
 # ── 训练 (生产流式模式) ──
@@ -49,16 +49,10 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.train_discover
   --user-data data/user_20260331.txt \
   --item-files data/items/20260325.txt,data/items/20260326.txt,...,data/items/20260331.txt \
   --feature-config examples/feature_config_discover.yaml \
-  --model-config python/configs/demo/discover/model_esmm.yaml \
+  --model-config examples/model_gdcn_esmm.yaml \
   --epochs 10 --batch-size 1024 \
   --no-header --null-markers 'NULL' '\N' \
   --skip-missing-item --eval-samples 2000
-
-# ── 训练 (旧 demo 配置) ──
-PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.train_all \
-  --feature-config python/configs/demo/legacy/feature_config.yaml \
-  --data python/demo/temp/train_data.csv \
-  --epochs 50 --batch-size 64
 
 # ── 生成合成数据 ──
 PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.generate_data
@@ -94,7 +88,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.verify_discove
 
 ### Feature preprocessing (shared between Rust and Python)
 
-Both sides parse the same `examples/feature_config.yaml` which defines:
+Both sides parse the same `examples/feature_config_discover.yaml` which defines:
 - **sources**: raw input features (NO embed — all embedding through operators)
 - **operators**: a DAG of 14 operator types
 

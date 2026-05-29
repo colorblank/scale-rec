@@ -1,11 +1,14 @@
-//! 压测工具：对推理服务进行并发压测，输出 P50/P95/P99 延迟和吞吐量。
+//! 压测工具：支持 open-loop 固定到达率和 legacy 闭环压测。
 use clap::Parser;
+use csv::StringRecord;
 use rand::Rng;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tokio::time::{self, MissedTickBehavior};
 
-#[derive(Parser)]
+#[derive(Parser, Clone)]
 struct Args {
     #[arg(long, default_value = "http://localhost:8080")]
     target: String,
@@ -20,7 +23,75 @@ struct Args {
     #[arg(long, default_value = "10")]
     duration_secs: u64,
     #[arg(long, default_value = "0")]
-    target_qps: usize, // rate-limited mode: 0 = unlimited
+    target_qps: usize,
+    #[arg(long)]
+    input_file: Option<PathBuf>,
+}
+
+#[derive(Clone)]
+struct RequestContext {
+    target: String,
+    model: String,
+    mode: String,
+    batch_size: usize,
+    input_rows: Option<Arc<Vec<serde_json::Value>>>,
+    next_row: Arc<AtomicU64>,
+}
+
+impl RequestContext {
+    fn url(&self) -> String {
+        if self.mode == "broadcast" {
+            format!("{}/predict/broadcast", self.target)
+        } else {
+            format!("{}/predict", self.target)
+        }
+    }
+
+    fn body(&self) -> serde_json::Value {
+        let mut rng = rand::thread_rng();
+        if let Some(rows) = &self.input_rows {
+            let idx = (self.next_row.fetch_add(1, Ordering::Relaxed) as usize) % rows.len();
+            let row = rows[idx].clone();
+            return serde_json::json!({"model": self.model, "features": [row]});
+        }
+        if self.mode == "broadcast" {
+            let user = random_user(&mut rng);
+            let items: Vec<serde_json::Value> = (0..self.batch_size)
+                .map(|_| random_item(&mut rng))
+                .collect();
+            serde_json::json!({"model": self.model, "user": user, "items": items})
+        } else {
+            let features: Vec<serde_json::Value> =
+                (0..self.batch_size).map(|_| random_row(&mut rng)).collect();
+            serde_json::json!({"model": self.model, "features": features})
+        }
+    }
+}
+
+fn csv_record_to_json(headers: &StringRecord, record: &StringRecord) -> serde_json::Value {
+    let mut row = serde_json::Map::new();
+    for (key, value) in headers.iter().zip(record.iter()) {
+        row.insert(key.to_string(), csv_field_to_json(value));
+    }
+    serde_json::Value::Object(row)
+}
+
+fn csv_field_to_json(s: &str) -> serde_json::Value {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return serde_json::Value::Null;
+    }
+    if let Ok(v) = trimmed.parse::<i64>() {
+        return serde_json::json!(v);
+    }
+    if let Ok(v) = trimmed.parse::<f64>() {
+        return serde_json::json!(v);
+    }
+    match trimmed {
+        "true" | "TRUE" => serde_json::json!(true),
+        "false" | "FALSE" => serde_json::json!(false),
+        _ => serde_json::json!(trimmed),
+    }
 }
 
 fn random_user(rng: &mut impl Rng) -> serde_json::Value {
@@ -61,7 +132,6 @@ fn random_user(rng: &mut impl Rng) -> serde_json::Value {
         })
         .collect();
     row.insert("user_history".into(), serde_json::json!(hist.join(",")));
-    // Context features (source=Context → broadcast group)
     row.insert("ctx_hour".into(), serde_json::json!(rng.gen_range(0..24)));
     let devices = ["phone", "pad", "pc"];
     let platforms = ["ios", "android", "web"];
@@ -113,7 +183,6 @@ fn random_item(rng: &mut impl Rng) -> serde_json::Value {
             .collect();
         row.insert(format!("item_tags_{}", i), serde_json::json!(s.join("|")));
     }
-    // ItemStats (source=ItemStats → item group)
     for name in [
         "item_ctr_7d",
         "item_cvr_7d",
@@ -138,20 +207,90 @@ fn random_row(rng: &mut impl Rng) -> serde_json::Value {
     serde_json::Value::Object(row)
 }
 
-fn main() {
-    let args = Args::parse();
-    println!(
-        "Benchmark: target={} model={} mode={} concur={} batch={} dur={}s",
-        args.target, args.model, args.mode, args.concurrency, args.batch_size, args.duration_secs
-    );
+async fn issue_request(
+    client: reqwest::Client,
+    ctx: RequestContext,
+    latencies: Arc<Mutex<Vec<f64>>>,
+    total: Arc<AtomicU64>,
+    errors: Arc<AtomicU64>,
+) {
+    let body = ctx.body();
+    let start = Instant::now();
+    let result = client.post(ctx.url()).json(&body).send().await;
+    let ms = start.elapsed().as_secs_f64() * 1000.0;
+    if result.map_or(false, |r| r.status().is_success()) {
+        latencies.lock().unwrap().push(ms);
+        total.fetch_add(1, Ordering::Relaxed);
+    } else {
+        errors.fetch_add(1, Ordering::Relaxed);
+    }
+}
 
+async fn run_open_loop(args: Args) {
+    let input_rows = args.input_file.as_ref().map(|path| {
+        let mut reader = csv::Reader::from_path(path).expect("failed to open input file");
+        let headers = reader.headers().expect("failed to read csv headers").clone();
+        let mut rows = Vec::new();
+        for record in reader.records() {
+            let record = record.expect("failed to read csv row");
+            rows.push(csv_record_to_json(&headers, &record));
+        }
+        Arc::new(rows)
+    });
+    if let Some(rows) = &input_rows {
+        if rows.is_empty() {
+            eprintln!("input file contains no rows");
+            return;
+        }
+    }
+    let ctx = RequestContext {
+        target: args.target.clone(),
+        model: args.model.clone(),
+        mode: args.mode.clone(),
+        batch_size: args.batch_size,
+        input_rows,
+        next_row: Arc::new(AtomicU64::new(0)),
+    };
+    let client = reqwest::Client::new();
+    let latencies = Arc::new(Mutex::new(Vec::<f64>::new()));
+    let total_reqs = Arc::new(AtomicU64::new(0));
+    let errors = Arc::new(AtomicU64::new(0));
+    let mut handles = Vec::new();
+
+    let total_requests = args
+        .duration_secs
+        .saturating_mul(args.target_qps as u64) as usize;
+    let period = Duration::from_secs_f64(1.0 / args.target_qps as f64);
+    let start = Instant::now();
+    let mut interval = time::interval_at(time::Instant::now(), period);
+    interval.set_missed_tick_behavior(MissedTickBehavior::Burst);
+
+    for _ in 0..total_requests {
+        interval.tick().await;
+        let client = client.clone();
+        let ctx = ctx.clone();
+        let lats = latencies.clone();
+        let total = total_reqs.clone();
+        let errs = errors.clone();
+        handles.push(tokio::spawn(async move {
+            issue_request(client, ctx, lats, total, errs).await;
+        }));
+    }
+
+    for handle in handles {
+        let _ = handle.await;
+    }
+
+    let elapsed = start.elapsed().as_secs_f64();
+    report(args, total_reqs, errors, latencies, elapsed, Some(total_requests));
+}
+
+fn run_closed_loop(args: Args) {
     let client = reqwest::blocking::Client::new();
     let latencies = Arc::new(Mutex::new(Vec::<f64>::new()));
     let total_reqs = Arc::new(AtomicU64::new(0));
     let errors = Arc::new(AtomicU64::new(0));
-    let running = Arc::new(AtomicBool::new(true));
-
-    // Rate limiting: per-worker interval in ms
+    let running = Arc::new(AtomicU64::new(1));
     let rate_interval_ms = if args.target_qps > 0 {
         (args.concurrency as f64 * 1000.0 / args.target_qps as f64) as u64
     } else {
@@ -172,7 +311,7 @@ fn main() {
 
         handles.push(std::thread::spawn(move || {
             let mut rng = rand::thread_rng();
-            while run.load(Ordering::Relaxed) {
+            while run.load(Ordering::Relaxed) != 0 {
                 let t0 = Instant::now();
                 let url = if mode == "broadcast" {
                     format!("{}/predict/broadcast", target)
@@ -198,7 +337,6 @@ fn main() {
                 } else {
                     errs.fetch_add(1, Ordering::Relaxed);
                 }
-                // Rate limiting
                 if rate_interval_ms > 0 {
                     let elapsed = t0.elapsed().as_millis() as u64;
                     if elapsed < rate_interval_ms {
@@ -210,11 +348,23 @@ fn main() {
     }
 
     std::thread::sleep(Duration::from_secs(args.duration_secs));
-    running.store(false, Ordering::Relaxed);
+    running.store(0, Ordering::Relaxed);
     for h in handles {
         let _ = h.join();
     }
 
+    let elapsed = args.duration_secs as f64;
+    report(args, total_reqs, errors, latencies, elapsed, None);
+}
+
+fn report(
+    args: Args,
+    total_reqs: Arc<AtomicU64>,
+    errors: Arc<AtomicU64>,
+    latencies: Arc<Mutex<Vec<f64>>>,
+    elapsed_secs: f64,
+    scheduled: Option<usize>,
+) {
     let mut lats = latencies.lock().unwrap().clone();
     if lats.is_empty() {
         println!("No successful requests.");
@@ -222,25 +372,24 @@ fn main() {
     }
     lats.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let n = lats.len();
-    let total = total_reqs.load(Ordering::Relaxed);
     let sum: f64 = lats.iter().sum();
+    let success = total_reqs.load(Ordering::Relaxed);
+    let errors = errors.load(Ordering::Relaxed);
+    let rps = success as f64 / elapsed_secs.max(1e-9);
 
-    let rps = total as f64 / args.duration_secs as f64;
     println!("\n  ═══════════════════════════════════════");
+    if let Some(s) = scheduled {
+        println!("  Scheduled:   {}", s);
+    }
     if args.target_qps > 0 {
         println!("  Target QPS:  {}", args.target_qps);
     }
     println!(
-        "  Batch:       {}  Concur: {}  Model: {}  Mode: {}",
-        args.batch_size, args.concurrency, args.model, args.mode
+        "  Batch:       {}  Model: {}  Mode: {}",
+        args.batch_size, args.model, args.mode
     );
     println!("  ───────────────────────────────────────");
-    println!(
-        "  Total:       {}  Errors: {}  RPS: {:.0}",
-        total,
-        errors.load(Ordering::Relaxed),
-        rps
-    );
+    println!("  Success:     {}  Errors: {}  RPS: {:.0}", success, errors, rps);
     println!("  P50:         {:.1} ms", p(&lats, 50.0));
     println!("  P95:         {:.1} ms", p(&lats, 95.0));
     println!("  P99:         {:.1} ms", p(&lats, 99.0));
@@ -250,7 +399,22 @@ fn main() {
     println!("  ═══════════════════════════════════════");
 }
 
-fn p(s: &[f64], pct: f64) -> f64 {
-    let i = ((pct / 100.0) * (s.len() - 1) as f64).round() as usize;
-    s[i.min(s.len() - 1)]
+fn p(samples: &[f64], pct: f64) -> f64 {
+    let i = ((pct / 100.0) * (samples.len() - 1) as f64).round() as usize;
+    samples[i.min(samples.len() - 1)]
+}
+
+#[tokio::main(flavor = "multi_thread")]
+async fn main() {
+    let args = Args::parse();
+    println!(
+        "Benchmark: target={} model={} mode={} concur={} batch={} dur={}s",
+        args.target, args.model, args.mode, args.concurrency, args.batch_size, args.duration_secs
+    );
+
+    if args.target_qps > 0 {
+        run_open_loop(args).await;
+    } else {
+        run_closed_loop(args);
+    }
 }

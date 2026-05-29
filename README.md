@@ -13,7 +13,7 @@ scale-rec/
 │   │   ├── debug/                   # 特征预处理 Debug 追踪器
 │   │   └── ops/                    # 9 个特征算子
 │   ├── layers/                      # 神经网络层 (Embedding, FM, MLP, Towers)
-│   ├── models/                      # 6 个推荐模型 (LR/DeepFM/MMoE/ESMM/UniMixer/GDCNESMM)
+│   ├── models/                      # discover 主线模型 (GDCN+ESMM / UniMixer)
 │   ├── server/                      # HTTP 推理服务
 │   │   ├── engine.rs               #   推理引擎 (DAG + Model 封装)
 │   │   ├── registry.rs             #   多模型管理 + 热加载
@@ -34,22 +34,9 @@ scale-rec/
 │       ├── ops/                     #   特征算子
 │       ├── layers/                  #   神经网络层
 │       └── models/                  #   推荐模型 (注册表模式)
-├── examples/feature_config.yaml     # 共享特征配置 (完整示例: 82 特征, 85 算子)
+├── examples/feature_config_discover.yaml  # 共享特征配置 (discover 示例)
 └── Cargo.toml
 ```
-
-## 模型
-
-| 模型 | 类型 | 输出 | 特点 |
-|------|------|------|------|
-| **LR** | 单任务 | `pred` | Embedding + Linear，最简基线 |
-| **DeepFM** | 单任务 | `pred` | FM 一阶 + 二阶交互 + Deep MLP |
-| **MMoE** | 多任务 | 自定义 (ctr, cvr) | 多门控专家混合 |
-| **ESMM** | 多任务 | ctr, cvr, ctcvr | CTR×CVR 乘积链，全量空间消除 SSB |
-| **UniMixer** | 多任务 | 自定义 (ctr, cvr, ctcvr) | Token 化 + 双随机矩阵交互 + SiameseNorm |
-| **GDCN+ESMM** | 多任务 | click, cvr, detail, stock, stay 及乘积关系 | 门控交叉网络 (GCN) + 共享表示层 + 5 任务预测塔 |
-
-新增模型无需修改现有文件：使用 Python `@register_model` + Rust `REGISTRY` 注册即可。
 
 ## 特征算子
 
@@ -73,32 +60,20 @@ scale-rec/
 ```bash
 cd python
 
-# 生成合成数据 (2000 行, ctr+cvr 标签)
-uv run python -m scale_rec_demo.generate_data
+# 生成 discover 合成数据 (2000 行, 多任务标签)
+uv run python -m scale_rec_demo.generate_discover_data
 
-# 训练所有模型 (5 epochs)
-uv run python -m train.main all \
+# 训练 discover 主线模型
+uv run python -m train.main discover \
   --feature-config ../examples/feature_config_discover.yaml \
-  --data data/train.parquet \
-  --epochs 5 \
-  --artifact-dir artifacts/demo
-
-# 验证 PyTorch vs Rust 推理一致性
-uv run python -m scale_rec_demo.verify_all
+  --model-config ../examples/model_gdcn_esmm.yaml \
+  --data data/discover_train_data.txt \
+  --epochs 10 --batch-size 128 --no-header \
+  --artifact-dir artifacts/demo \
+  --model-name model_gdcn_esmm
 
 # 验证 GDCN+ESMM 预处理与模型输出一致性 (发现流式模式数据)
 uv run python -m scale_rec_demo.verify_discover_gdcn
-
-# Debug 追踪 (逐算子 I/O)
-uv run python -m train.main single \
-  --feature-config ../examples/feature_config_discover.yaml \
-  --model-config ../examples/model_lr.yaml \
-  --data data/train.parquet \
-  --epochs 1 \
-  --debug 10 \
-  --artifact-dir artifacts/demo \
-  --model-name model_lr \
-  --run-version 20260526_120000
 ```
 
 ### 2. HTTP 推理服务
@@ -114,11 +89,11 @@ curl http://localhost:8080/health
 
 # Pointwise 推理 (每行一个完整样本)
 curl -X POST http://localhost:8080/predict -H 'Content-Type: application/json' \
-  -d '{"model":"model_lr","features":[{"user_id":42,"item_id":500}]}'
+  -d '{"model":"model_gdcn_esmm","features":[{"user_id":42,"item_id":500}]}'
 
 # Broadcast 推理 (一个用户 + N 个物品)
 curl -X POST http://localhost:8080/predict/broadcast -H 'Content-Type: application/json' \
-  -d '{"model":"model_lr","user":{"user_id":42},"items":[{"item_id":500},{"item_id":501}]}'
+  -d '{"model":"model_gdcn_esmm","user":{"user_id":42},"items":[{"item_id":500},{"item_id":501}]}'
 ```
 
 ### 3. 压测
@@ -127,7 +102,7 @@ curl -X POST http://localhost:8080/predict/broadcast -H 'Content-Type: applicati
 # 生产级压测 (batch=200, broadcast, 60s)
 cargo run --bin bench --release -- \
   --target http://localhost:8080 \
-  --model model_lr --mode broadcast \
+  --model model_gdcn_esmm --mode broadcast \
   --concurrency 10 --batch-size 200 --duration-secs 60
 
 # 输出: Total / Errors / RPS / P50 / P95 / P99 / P99.9 / Min/Max
@@ -138,45 +113,21 @@ cargo run --bin bench --release -- \
 ```bash
 cd python
 uv run python -m train.main \
-  --feature-config ../examples/feature_config.yaml \
-  --model-config ../examples/model_lr.yaml \
-  --data data/train.parquet \
-  --epochs 10 --batch-size 64 --lr 0.001 \
+  --feature-config ../examples/feature_config_discover.yaml \
+  --model-config ../examples/model_gdcn_esmm.yaml \
+  --data data/discover_train_data.txt \
+  --epochs 10 --batch-size 128 --lr 0.005 --no-header \
   --artifact-dir artifacts/demo \
-  --publish-path artifacts/demo/model_lr.safetensors \
-  --model-name model_lr \
+  --publish-path artifacts/demo/model_gdcn_esmm.safetensors \
+  --model-name model_gdcn_esmm \
   --run-version 20260526_120000 \
   --keep-checkpoints 3
 ```
 
 训练产物会分成三层：
-- `artifacts/demo/model_lr/20260526_120000/checkpoints/`：每个 epoch 的 checkpoint
-- `artifacts/demo/model_lr/20260526_120000/{best,latest}.safetensors`：最佳与最新别名
-- `artifacts/demo/model_lr.safetensors` 和同目录 `.manifest.yaml`：最终发布权重与 manifest
-
-## 性能 (Release build)
-
-### 优化历程 (LR, batch=64, concur=10)
-
-| 阶段 | 技术 | P50 | P99 | 提速 |
-|------|------|-----|-----|------|
-| 串行逐行 | execute() per row | 239ms | 620ms | 1× |
-| 列式批量 | execute_batch + process_batch | 75ms | 192ms | 3.2× |
-| Fv 枚举 | 消除 `Arc<dyn Any>` vtable | 73ms | 181ms | 3.4× |
-| 广播预计算 | 用户特征一次处理 + skip_ops | 43ms | 93ms | 6.7× |
-| 预编译计划 | 零 HashMap 查找 (整数列索引) | 10.9ms | 18.9ms | 33× |
-
-### 生产级 (batch=200, broadcast, 60s, 0 errors)
-
-| 模型 | RPS | P50 | P99 | P99.9 |
-|------|-----|-----|-----|-------|
-| **LR** | 349 | 20.5ms | 30.5ms | 48.0ms |
-| **DeepFM** | 323 | 22.7ms | 34.6ms | 55.5ms |
-| **MMoE** | 356 | 20.4ms | 28.5ms | 34.9ms |
-| **ESMM** | 356 | 20.4ms | 28.7ms | 37.3ms |
-| **UniMixer** | 345 | 21.3ms | 29.9ms | 37.8ms |
-
-**全部模型 P99 < 35ms，满足 300 QPS × 200 候选物品生产要求。**
+- `artifacts/demo/model_gdcn_esmm/20260526_120000/checkpoints/`：每个 epoch 的 checkpoint
+- `artifacts/demo/model_gdcn_esmm/20260526_120000/{best,latest}.safetensors`：最佳与最新别名
+- `artifacts/demo/model_gdcn_esmm.safetensors` 和同目录 `.manifest.yaml`：最终发布权重与 manifest
 
 ## API
 
@@ -191,9 +142,9 @@ uv run python -m train.main \
 
 ```json
 {
-  "model": "model_lr",
+  "model": "model_gdcn_esmm",
   "features": [
-    {"user_id": 42, "user_age": 28.5, "item_id": 500, "item_category": "electronics"}
+    {"user_id": 42, "item_id": 500}
   ]
 }
 ```
@@ -202,11 +153,11 @@ uv run python -m train.main \
 
 ```json
 {
-  "model": "model_lr",
-  "user": {"user_id": 42, "user_age": 28.5},
+  "model": "model_gdcn_esmm",
+  "user": {"user_id": 42},
   "items": [
-    {"item_id": 500, "item_category": "electronics"},
-    {"item_id": 501, "item_category": "books"}
+    {"item_id": 500},
+    {"item_id": 501}
   ]
 }
 ```
@@ -215,34 +166,17 @@ uv run python -m train.main \
 
 ```json
 {
-  "model": "model_lr",
+  "model": "model_gdcn_esmm",
   "predictions": [
-    {"pred": 0.73},
-    {"pred": 0.21}
+    {"click": 0.73},
+    {"click": 0.21}
   ]
 }
 ```
 
 ## 特征配置
 
-特征流水线由 YAML 定义，Rust/Python 共享。示例包含 72 个可嵌入特征和 85 个算子：
-
-```yaml
-version: "1.0.0"
-sources:
-  - name: user_id
-    dtype: int
-    embed: {vocab_size: 500, embed_dim: 16}
-  - name: user_age
-    dtype: float
-operators:
-  - name: age_bucket_op
-    op_type: Bucketing
-    inputs: [user_age]
-    outputs: [user_age_bucket]
-    params: {boundaries: [18, 25, 35, 45, 55]}
-    embed: {vocab_size: 6, embed_dim: 4}
-```
+特征流水线由 `examples/feature_config_discover.yaml` 定义，Rust/Python 共享同一份 discover schema。
 
 `FeatureDag.embeddable_features()` 提供模型所需的所有特征规格，模型配置中不重复声明。
 

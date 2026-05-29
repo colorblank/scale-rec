@@ -17,8 +17,8 @@ use std::collections::HashMap;
 
 fn main() -> Result<()> {
     println!("=== scale-rec: FeatFlow + UniMixer ===");
-    let yaml =
-        std::fs::read_to_string("examples/feature_config.yaml").expect("Failed to read config");
+    let yaml = std::fs::read_to_string("examples/feature_config_discover.yaml")
+        .expect("Failed to read config");
     let flow_config = FlowConfig::from_yaml(&yaml).expect("Invalid YAML");
     println!("[Config] version={}", flow_config.version);
 

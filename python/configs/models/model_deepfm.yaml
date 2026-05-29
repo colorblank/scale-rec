@@ -1,3 +1,0 @@
-type: deepfm
-fm_k: 16
-deep_hidden_dims: [32]

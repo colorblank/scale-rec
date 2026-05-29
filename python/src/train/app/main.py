@@ -404,11 +404,8 @@ def _run_all(args: argparse.Namespace) -> None:
     logger.info("[Data] train=%d test=%d", len(train_df), len(test_df))
 
     model_specs = [
-        ("lr", args.model_config_lr),
-        ("deepfm", args.model_config_deepfm),
-        ("mmoe", args.model_config_mmoe),
-        ("esmm", args.model_config_esmm),
-        ("unimixer", args.model_config_unimixer),
+        ("discover_gdcn_esmm", args.model_config_discover_gdcn_esmm),
+        ("discover_unimixer", args.model_config_discover_unimixer),
     ]
     if args.models == "all":
         selected = model_specs
@@ -508,7 +505,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     single = sub.add_parser("single", help="train a single model on a CSV/Parquet dataset")
     single.add_argument(
-        "--feature-config", default=str(EXAMPLES_DIR / "feature_config_legacy.yaml")
+        "--feature-config", default=str(EXAMPLES_DIR / "feature_config_discover.yaml")
     )
     single.add_argument("--model-config", required=True)
     single.add_argument("--data", required=True)
@@ -539,18 +536,22 @@ def build_parser() -> argparse.ArgumentParser:
     add_runtime_args(discover)
 
     all_ = sub.add_parser("all", help="train multiple models on one dataset")
-    all_.add_argument("--feature-config", default=str(EXAMPLES_DIR / "feature_config_legacy.yaml"))
+    all_.add_argument(
+        "--feature-config", default=str(EXAMPLES_DIR / "feature_config_discover.yaml")
+    )
     all_.add_argument("--data", required=True)
     all_.add_argument(
         "--artifact-dir", "--export-dir", dest="artifact_dir", default=str(DEMO_ARTIFACT_DIR)
     )
     all_.add_argument("--publish-path", "--export-path", dest="publish_path")
     all_.add_argument("--models", default="all")
-    all_.add_argument("--model-config-lr", default=str(EXAMPLES_DIR / "model_lr.yaml"))
-    all_.add_argument("--model-config-deepfm", default=str(EXAMPLES_DIR / "model_deepfm.yaml"))
-    all_.add_argument("--model-config-mmoe", default=str(EXAMPLES_DIR / "model_mmoe.yaml"))
-    all_.add_argument("--model-config-esmm", default=str(EXAMPLES_DIR / "model_esmm.yaml"))
-    all_.add_argument("--model-config-unimixer", default=str(EXAMPLES_DIR / "model_unimixer.yaml"))
+    all_.add_argument(
+        "--model-config-discover-gdcn-esmm", default=str(EXAMPLES_DIR / "model_gdcn_esmm.yaml")
+    )
+    all_.add_argument(
+        "--model-config-discover-unimixer",
+        default=str(EXAMPLES_DIR / "model_discover_unimixer.yaml"),
+    )
     all_.add_argument("--debug", type=int, default=0)
     add_training_args(all_, lr=0.005, batch_size=64)
     add_artifact_args(all_)

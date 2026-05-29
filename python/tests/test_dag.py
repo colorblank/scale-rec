@@ -1,65 +1,91 @@
+from pathlib import Path
+
 import pytest
 
 from train.core.config import FlowConfig
 from train.core.dag import FeatureDag
 
 
+FIXTURE_DIR = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
+
+
 def test_dag_from_yaml():
-    config = FlowConfig.from_yaml("examples/feature_config.yaml")
+    config = FlowConfig.from_yaml(str(FIXTURE_DIR / "golden_feature_config.yaml"))
     dag = FeatureDag(config)
     features = dag.feature_tuples()
     assert len(features) == 5
     names = [f[0] for f in features]
-    assert "user_id_idx" in names
-    assert "user_age_bucket" in names
-    assert "item_category_idx" in names
-    assert "user_tag_mapped" in names
-    assert "user_category_cross" in names
-    assert dag.feature_schemas["user_id_idx"].dtype.tag == "int"
-    assert dag.feature_schemas["user_tag_mapped"].dtype.tag == "list"
-    assert dag.feature_schemas["user_tag_mapped"].cardinality == 6
-    assert dag.validation_report.source_count == 5
+    assert "age_bucket" in names
+    assert "category_idx" in names
+    assert "user_tag_idx" in names
+    assert "tag_cross_idx" in names
+    assert "session_idx" in names
+    assert dag.feature_schemas["category_idx"].dtype.tag == "int"
+    assert dag.feature_schemas["user_tag_idx"].dtype.tag == "list"
+    assert dag.feature_schemas["user_tag_idx"].cardinality == 4
+    assert dag.validation_report.source_count == 12
     assert any(issue.code == "orphan_output" for issue in dag.validation_report.warnings)
 
 
 def test_dag_execute():
-    config = FlowConfig.from_yaml("examples/feature_config.yaml")
+    config = FlowConfig.from_yaml(str(FIXTURE_DIR / "golden_feature_config.yaml"))
     dag = FeatureDag(config)
     raw = {
-        "user_id": 42,
         "user_age": 28.5,
         "item_category": "electronics",
         "user_tags": "sports#1|gaming#0.8",
-        "item_price": 5999.0,
+        "item_tags": "sports#1",
+        "session_id": "abc",
+        "json_tags_src": '[{"tag":"x"}]',
+        "split_src": "a|b",
+        "expr_v0": 1.5,
+        "expr_v1": 2.0,
+        "seq_src": [1, 2, 3],
+        "concat_src1": "foo",
+        "concat_src2": "bar",
     }
     result = dag.execute(raw)
-    assert result.features["user_age_bucket"] == 2
-    assert result.features["item_category_idx"] == 1
+    assert result.features["age_bucket"] == 2
+    assert result.features["category_idx"] == 1
 
 
 def test_preprocess_batch():
-    config = FlowConfig.from_yaml("examples/feature_config.yaml")
+    config = FlowConfig.from_yaml(str(FIXTURE_DIR / "golden_feature_config.yaml"))
     dag = FeatureDag(config)
     rows = [
         {
-            "user_id": 42,
             "user_age": 28.5,
             "item_category": "electronics",
             "user_tags": "sports#1",
-            "item_price": 5999.0,
+            "item_tags": "sports#1",
+            "session_id": "abc",
+            "json_tags_src": '[{"tag":"x"}]',
+            "split_src": "a|b",
+            "expr_v0": 1.5,
+            "expr_v1": 2.0,
+            "seq_src": [1, 2, 3],
+            "concat_src1": "foo",
+            "concat_src2": "bar",
         },
         {
-            "user_id": 7,
             "user_age": 20.0,
             "item_category": "books",
             "user_tags": "music#1",
-            "item_price": 100.0,
+            "item_tags": "music#1",
+            "session_id": "def",
+            "json_tags_src": '[{"tag":"y"}]',
+            "split_src": "c|d",
+            "expr_v0": 2.0,
+            "expr_v1": 3.0,
+            "seq_src": [4, 5, 6],
+            "concat_src1": "baz",
+            "concat_src2": "qux",
         },
     ]
     tensors = dag.preprocess_batch(rows)
-    assert "user_id_idx" in tensors
-    assert tensors["user_id_idx"].shape == (2,)
-    assert str(tensors["user_id_idx"].dtype) == "torch.int64"
+    assert "category_idx" in tensors
+    assert tensors["category_idx"].shape == (2,)
+    assert str(tensors["category_idx"].dtype) == "torch.int64"
 
 
 def test_preprocess_batch_uses_configured_flatten_seq_len():
@@ -98,8 +124,16 @@ def test_preprocess_batch_list_valued_fallback_correctness():
     raw = {
         "version": "1.0.0",
         "sources": [
-            {"name": "u_tags", "dtype": {"list": {"dtype": "string", "length": 2}}, "default_val": "a"},
-            {"name": "i_tags", "dtype": {"list": {"dtype": "string", "length": 2}}, "default_val": "b"},
+            {
+                "name": "u_tags",
+                "dtype": {"list": {"dtype": "string", "length": 2}},
+                "default_val": "a",
+            },
+            {
+                "name": "i_tags",
+                "dtype": {"list": {"dtype": "string", "length": 2}},
+                "default_val": "b",
+            },
         ],
         "operators": [
             {
@@ -116,7 +150,7 @@ def test_preprocess_batch_list_valued_fallback_correctness():
                 "outputs": ["tag_cross_idx"],
                 "params": {"vocab_size": 16},
                 "embed": {"vocab_size": 16, "embed_dim": 4, "pooling": "mean"},
-            }
+            },
         ],
     }
     dag = FeatureDag(FlowConfig.from_dict(raw))
@@ -130,7 +164,7 @@ def test_preprocess_batch_list_valued_fallback_correctness():
     for i, r in enumerate(rows):
         res = dag.execute(r)
         expected = res.features["tag_cross_idx"]
-        assert tensors["tag_cross_idx"][i].tolist()[:len(expected)] == expected
+        assert tensors["tag_cross_idx"][i].tolist()[: len(expected)] == expected
 
 
 def test_enum_source_can_be_mapped_to_embedding_index():
@@ -286,7 +320,12 @@ def test_list_embedding_respects_truncation_side():
                 "inputs": ["tags"],
                 "outputs": ["tag_idx"],
                 "params": {"vocab_size": 16},
-                "embed": {"vocab_size": 16, "embed_dim": 4, "pooling": "mean", "truncation": "head"},
+                "embed": {
+                    "vocab_size": 16,
+                    "embed_dim": 4,
+                    "pooling": "mean",
+                    "truncation": "head",
+                },
             }
         ],
     }
@@ -309,7 +348,12 @@ def test_list_embedding_respects_truncation_side():
                 "inputs": ["tags"],
                 "outputs": ["tag_idx"],
                 "params": {"vocab_size": 16},
-                "embed": {"vocab_size": 16, "embed_dim": 4, "pooling": "mean", "truncation": "tail"},
+                "embed": {
+                    "vocab_size": 16,
+                    "embed_dim": 4,
+                    "pooling": "mean",
+                    "truncation": "tail",
+                },
             }
         ],
     }
