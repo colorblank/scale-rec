@@ -7,11 +7,11 @@ use candle_nn::{Init, VarBuilder};
 /// 应用特定于 Token 的 SwiGLU 变换来建模特征的异质性。
 /// 公式: pSwiGLU(o_i) = W_down^i * ((W_up^i * o_i + b_up^i) ⊙ Swish(W_gate^i * o_i + b_gate^i)) + b_down^i
 pub struct PerTokenSwiGlu {
-    w_up: Tensor,
+    w_up_t: Tensor,
     b_up: Tensor,
-    w_gate: Tensor,
+    w_gate_t: Tensor,
     b_gate: Tensor,
-    w_down: Tensor,
+    w_down_t: Tensor,
     b_down: Tensor,
 }
 
@@ -71,12 +71,16 @@ impl PerTokenSwiGlu {
         )?;
         let b_down = vb.get_with_hints((1, num_tokens, token_dim), "b_down", Init::Const(0.0))?;
 
+        let w_up_t = w_up.transpose(1, 2)?.contiguous()?;
+        let w_gate_t = w_gate.transpose(1, 2)?.contiguous()?;
+        let w_down_t = w_down.transpose(1, 2)?.contiguous()?;
+
         Ok(Self {
-            w_up,
+            w_up_t,
             b_up,
-            w_gate,
+            w_gate_t,
             b_gate,
-            w_down,
+            w_down_t,
             b_down,
         })
     }
@@ -89,31 +93,19 @@ impl PerTokenSwiGlu {
 
     /// 执行 Per-Token 爱因斯坦求和乘法：'btd,thd->bth' (或对应 'bth,thd->btd')
     ///
-    /// Candle 目前缺乏原生复杂的爱因斯坦求和算子，因此这里利用 broadcast 和 batch matmul 绕过。
+    /// 通过转置输入并使用批量矩阵乘法绕过，避免了动态复制/广播权重。
     /// - x: shape [B, T, D]
-    /// - w: shape [T, H, D]
+    /// - w_t: shape [T, D, H] (已在初始化时预转置并 contiguous)
     /// 返回: shape [B, T, H]
-    fn einsum_btd_thd_bth(x: &Tensor, w: &Tensor) -> Result<Tensor> {
-        let (batch_size, t, d) = x.dims3()?;
-        let (_, h, _) = w.dims3()?;
+    fn einsum_btd_thd_bth(x: &Tensor, w_t: &Tensor) -> Result<Tensor> {
+        // 1. 转置 X 至 [T, B, D]
+        let x_t = x.transpose(0, 1)?.contiguous()?;
 
-        // 1. 将 W 转置以适应右侧乘法 [T, D, H]
-        let w_t = w.transpose(1, 2)?;
+        // 2. 批量矩阵乘法 [T, B, D] x [T, D, H] = [T, B, H]
+        let out_t = x_t.matmul(w_t)?;
 
-        // 2. 将 X 重塑并扩展以便作为批量矩阵相乘 [B, T, 1, D]
-        let x_unsqueezed = x.unsqueeze(2)?.contiguous()?;
-
-        // 3. 将 W 扩展以便带有 Batch 维度 [B, T, D, H]
-        let w_bcasted = w_t
-            .unsqueeze(0)?
-            .broadcast_as((batch_size, t, d, h))?
-            .contiguous()?;
-
-        // 4. Batch Matmul [B, T, 1, D] x [B, T, D, H] = [B, T, 1, H]
-        let out_unsqueezed = x_unsqueezed.matmul(&w_bcasted)?;
-
-        // 5. 移除维度 2: [B, T, H]
-        out_unsqueezed.squeeze(2)
+        // 3. 转置回 [B, T, H] 并 contiguous
+        out_t.transpose(0, 1)?.contiguous()
     }
 
     /// 前向传播
@@ -125,11 +117,11 @@ impl PerTokenSwiGlu {
     /// - 形状为 (batch_size, T, D) 的输出张量
     pub fn forward(&self, x: &Tensor) -> Result<Tensor> {
         // Up projection (batch_size, T, H)
-        let up_proj = Self::einsum_btd_thd_bth(x, &self.w_up)?;
+        let up_proj = Self::einsum_btd_thd_bth(x, &self.w_up_t)?;
         let up = up_proj.broadcast_add(&self.b_up)?;
 
         // Gate projection (batch_size, T, H)
-        let gate_proj = Self::einsum_btd_thd_bth(x, &self.w_gate)?;
+        let gate_proj = Self::einsum_btd_thd_bth(x, &self.w_gate_t)?;
         let gate = gate_proj.broadcast_add(&self.b_gate)?;
 
         // Swish activation
@@ -139,7 +131,7 @@ impl PerTokenSwiGlu {
         let hidden = up.mul(&gate_activated)?;
 
         // Down projection (batch_size, T, D)
-        let down_proj = Self::einsum_btd_thd_bth(&hidden, &self.w_down)?;
+        let down_proj = Self::einsum_btd_thd_bth(&hidden, &self.w_down_t)?;
         let output = down_proj.broadcast_add(&self.b_down)?;
 
         Ok(output)

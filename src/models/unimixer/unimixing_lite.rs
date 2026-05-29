@@ -212,27 +212,19 @@ impl UniMixingLite {
         let x_blocks = x.reshape((batch_size, n, b))?; // (batch_size, N, B)
 
         // --- Step 2: 局部交互 ---
-        // H = einsum('bnd,nde->bne', x_blocks, W_B_star)
-        // 使用批量矩阵乘法实现 [batch_size, N, 1, B] matmul [batch_size, N, B, B]
-        let x_blocks_unsqueezed = x_blocks.unsqueeze(2)?.contiguous()?;
-        let w_b_star_bcasted = w_b_star
-            .unsqueeze(0)?
-            .broadcast_as((batch_size, n, b, b))?
-            .contiguous()?;
-        let h_unsqueezed = x_blocks_unsqueezed.matmul(&w_b_star_bcasted)?;
-        let h = h_unsqueezed.squeeze(2)?; // (batch_size, N, B)
+        // 转置以避免扩展和克隆权重：[N, B, B_size] x [N, B_size, B_size] -> [N, B, B_size]
+        let x_blocks_t = x_blocks.transpose(0, 1)?.contiguous()?;
+        let h_t = x_blocks_t.matmul(&w_b_star)?;
+        let h = h_t.transpose(0, 1)?; // 转置回 [B, N, B_size]
 
         // --- Step 3: 全局交互 ---
-        // H_perm = H.permute(0, 2, 1) -> (batch_size, B, N)
-        let h_perm = h.transpose(1, 2)?;
-        let w_r_t = w_r.transpose(0, 1)?;
-        // 批处理矩阵乘法 [batch_size, B, N] matmul [batch_size, N, N]
-        let w_r_t_bcasted = w_r_t
-            .unsqueeze(0)?
-            .broadcast_as((batch_size, n, n))?
-            .contiguous()?;
-        let h_perm_cont = h_perm.contiguous()?;
-        let out_perm = h_perm_cont.matmul(&w_r_t_bcasted)?; // (batch_size, B, N)
+        // 采用展平 2D GEMM，彻底消灭 3D 广播和拷贝：
+        let h_perm = h.transpose(1, 2)?; // (batch_size, B, N)
+        let w_r_t = w_r.transpose(0, 1)?; // (N, N)
+
+        let h_perm_flat = h_perm.reshape((batch_size * b, n))?; // (B * B_size, N)
+        let out_perm_flat = h_perm_flat.matmul(&w_r_t)?; // (B * B_size, N)
+        let out_perm = out_perm_flat.reshape((batch_size, b, n))?; // (batch_size, B, N)
 
         // --- Step 4: 恢复成块的顺序 out_blocks = out_perm.permute(0, 2, 1) -> (batch_size, N, B)
         let out_blocks = out_perm.transpose(1, 2)?;
