@@ -255,6 +255,8 @@ target/release/server \
 
 压测 discover 模型时不要只用 bench 默认随机数据。默认随机数据是通用 synthetic schema，只适合验证 HTTP 链路；真实性能压测必须使用 discover TSV + feature config，让 bench 按 `User/Context/Item` 拆分并构造 `/predict/broadcast` 请求。
 
+GDCN+ESMM 和 UniMixer 实测报告见 `docs/http_benchmark_report.md`。
+
 压测前先按目标平台重建 server 和 bench，并保持两者使用同一套后端特征。常用组合如下：
 
 | 平台 | 后端 | 构建特征 | 说明 |
