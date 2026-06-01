@@ -118,19 +118,66 @@ curl -X POST http://localhost:8080/predict/broadcast -H 'Content-Type: applicati
 cargo build --release --features <backend-feature> --bin server --bin bench
 ```
 
-```bash
-# Synthetic smoke，仅验证链路
-cargo run --release --bin bench -- \
-  --target http://localhost:8080 \
-  --model unimixer --mode broadcast \
-  --concurrency 10 --batch-size 200 --duration-secs 10 --target-qps 10
+下面以 demo 发布权重为例。HTTP 请求里的 `model` 是服务实际加载的模型名；先用 `/health` 确认返回列表里包含对应模型，再用同名参数压测：
 
-# Discover 真实输入压测 (1 user/context + 200 candidates, 300 QPS, 60s)
-cargo run --release --bin bench -- \
-  --target http://localhost:8080 \
-  --model unimixer --mode broadcast \
-  --concurrency 300 --batch-size 200 \
-  --duration-secs 60 --target-qps 300 \
+- `python/artifacts/demo/model_gdcn_esmm.safetensors` → `model_gdcn_esmm`
+- `python/artifacts/demo/model_discover_unimixer.safetensors` → `model_discover_unimixer`
+
+```bash
+# 启动 Rust HTTP 推理服务
+RUST_LOG=warn \
+target/release/server \
+  --model-dir python/artifacts/demo \
+  --feature-config examples/feature_config_discover.yaml \
+  --port 8080 \
+  --worker-threads 4 \
+  --blocking-threads 64
+
+# 确认模型已加载
+curl http://127.0.0.1:8080/health
+
+# GDCN+ESMM synthetic smoke，仅验证 HTTP 链路
+target/release/bench \
+  --target http://127.0.0.1:8080 \
+  --model model_gdcn_esmm \
+  --mode broadcast \
+  --concurrency 10 \
+  --batch-size 200 \
+  --duration-secs 10 \
+  --target-qps 10
+
+# GDCN+ESMM 真实输入压测 (1 user/context + 200 candidates, 300 QPS, 60s)
+target/release/bench \
+  --target http://127.0.0.1:8080 \
+  --model model_gdcn_esmm \
+  --mode broadcast \
+  --concurrency 300 \
+  --batch-size 200 \
+  --duration-secs 60 \
+  --target-qps 300 \
+  --input-file python/artifacts/demo/discover_train_data.txt \
+  --feature-config examples/feature_config_discover.yaml \
+  --no-header
+
+# UniMixer synthetic smoke，仅验证 HTTP 链路
+target/release/bench \
+  --target http://127.0.0.1:8080 \
+  --model model_discover_unimixer \
+  --mode broadcast \
+  --concurrency 10 \
+  --batch-size 200 \
+  --duration-secs 10 \
+  --target-qps 10
+
+# UniMixer 真实输入压测 (1 user/context + 200 candidates, 300 QPS, 60s)
+target/release/bench \
+  --target http://127.0.0.1:8080 \
+  --model model_discover_unimixer \
+  --mode broadcast \
+  --concurrency 300 \
+  --batch-size 200 \
+  --duration-secs 60 \
+  --target-qps 300 \
   --input-file python/artifacts/demo/discover_train_data.txt \
   --feature-config examples/feature_config_discover.yaml \
   --no-header

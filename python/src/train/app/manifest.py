@@ -119,4 +119,4 @@ def _relative_to_manifest(path: Path, manifest_dir: Path) -> str:
     try:
         return str(path.resolve().relative_to(manifest_dir.resolve()))
     except ValueError:
-        return str(path)
+        return str(path.resolve())

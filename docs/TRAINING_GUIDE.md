@@ -17,6 +17,17 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.app.main discover \
   --model-name model_gdcn_esmm \
   --run-version 20260526_120000
 
+# 2b. 可选：训练 UniMixer
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.app.main discover \
+  --data python/artifacts/demo/discover_train_data.txt \
+  --feature-config examples/feature_config_discover.yaml \
+  --model-config examples/model_discover_unimixer.yaml \
+  --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
+  --artifact-dir python/artifacts/demo \
+  --publish-path python/artifacts/demo/model_discover_unimixer.safetensors \
+  --model-name model_discover_unimixer \
+  --run-version 20260526_120000
+
 # 3. 端到端验证
 PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.verify_discover_gdcn
 ```
@@ -232,7 +243,12 @@ best AUC=0.7622
 - run 目录：保留 checkpoint、best/latest 别名、复制后的配置和 run manifest
 
 ```bash
-cargo run --bin server -- --feature-config examples/feature_config_discover.yaml
+target/release/server \
+  --model-dir python/artifacts/demo \
+  --feature-config examples/feature_config_discover.yaml \
+  --port 8080 \
+  --worker-threads 4 \
+  --blocking-threads 64
 ```
 
 ## HTTP 压测
@@ -247,19 +263,61 @@ cargo run --bin server -- --feature-config examples/feature_config_discover.yaml
 | macOS | Metal GPU | `macos-metal` | 适合验证 GPU 推理上限 |
 | Linux | MKL CPU | `cpu-mkl` | Linux CPU 压测的推荐后端 |
 
+下面以快速开始生成的发布权重为例。HTTP 请求里的 `model` 是服务实际加载的模型名；先用 `/health` 确认返回列表里包含对应模型，再用同名参数压测：
+
+- `python/artifacts/demo/model_gdcn_esmm.safetensors` → `model_gdcn_esmm`
+- `python/artifacts/demo/model_discover_unimixer.safetensors` → `model_discover_unimixer`
+
 ```bash
-# 启动 Rust HTTP 服务
-cargo run --release --bin server -- \
+# 启动 Rust HTTP 推理服务
+RUST_LOG=warn \
+target/release/server \
   --model-dir python/artifacts/demo \
   --feature-config examples/feature_config_discover.yaml \
   --port 8080 \
   --worker-threads 4 \
   --blocking-threads 64
 
-# 真实 discover 输入压测: 1 user/context + 200 candidates, 300 QPS, 60s
-cargo run --release --bin bench -- \
+# 确认模型已加载；如果执行了 UniMixer 训练，应同时看到 model_discover_unimixer
+curl http://127.0.0.1:8080/health
+
+# GDCN+ESMM synthetic smoke，仅验证 HTTP 链路
+target/release/bench \
   --target http://127.0.0.1:8080 \
-  --model unimixer \
+  --model model_gdcn_esmm \
+  --mode broadcast \
+  --concurrency 10 \
+  --batch-size 200 \
+  --duration-secs 10 \
+  --target-qps 10
+
+# GDCN+ESMM 真实 discover 输入压测: 1 user/context + 200 candidates, 300 QPS, 60s
+target/release/bench \
+  --target http://127.0.0.1:8080 \
+  --model model_gdcn_esmm \
+  --mode broadcast \
+  --concurrency 300 \
+  --batch-size 200 \
+  --duration-secs 60 \
+  --target-qps 300 \
+  --input-file python/artifacts/demo/discover_train_data.txt \
+  --feature-config examples/feature_config_discover.yaml \
+  --no-header
+
+# UniMixer synthetic smoke，仅验证 HTTP 链路
+target/release/bench \
+  --target http://127.0.0.1:8080 \
+  --model model_discover_unimixer \
+  --mode broadcast \
+  --concurrency 10 \
+  --batch-size 200 \
+  --duration-secs 10 \
+  --target-qps 10
+
+# UniMixer 真实 discover 输入压测: 1 user/context + 200 candidates, 300 QPS, 60s
+target/release/bench \
+  --target http://127.0.0.1:8080 \
+  --model model_discover_unimixer \
   --mode broadcast \
   --concurrency 300 \
   --batch-size 200 \

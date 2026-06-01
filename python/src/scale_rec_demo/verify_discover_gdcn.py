@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """统一验证脚本：针对新增的 GDCN+ESMM 校验特征预处理和模型输出的一致性。"""
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -36,10 +37,14 @@ def add_header_to_tsv(input_path: Path, output_path: Path) -> None:
 
 
 def run_training(
-    data_path: Path, feature_config: Path, model_config: Path, weights_path: Path
+    data_path: Path,
+    feature_config: Path,
+    model_config: Path,
+    artifact_dir: Path,
+    weights_path: Path,
 ) -> None:
     """Train GDCN+ESMM model for 1 epoch to save safetensors weights."""
-    print("[Train] Training discover gdcn_esmm for 1 epoch...")
+    print("[Train] Training discover model_gdcn_esmm for 1 epoch...")
     cmd = [
         sys.executable,
         "-m",
@@ -57,8 +62,12 @@ def run_training(
         "128",
         "--lr",
         "0.005",
-        "--export-path",
+        "--artifact-dir",
+        str(artifact_dir),
+        "--publish-path",
         str(weights_path),
+        "--model-name",
+        "model_gdcn_esmm",
     ]
     env = os.environ.copy()
     python_src = str(REPO_ROOT / "python" / "src")
@@ -184,14 +193,20 @@ def main() -> None:
 
     feature_cfg_path = DISCOVER_FEATURE_CONFIG
     model_cfg_path = MODEL_CONFIGS["discover_gdcn_esmm"]
-    weights_path = DEMO_ARTIFACT_DIR / "gdcn_esmm.safetensors"
+    weights_path = DEMO_ARTIFACT_DIR / "model_gdcn_esmm.safetensors"
 
     # 1. Run 1-epoch training
-    run_training(data_header_path, feature_cfg_path, model_cfg_path, weights_path)
+    run_training(
+        data_header_path,
+        feature_cfg_path,
+        model_cfg_path,
+        DEMO_ARTIFACT_DIR,
+        weights_path,
+    )
 
-    test_csv = DEMO_ARTIFACT_DIR / "gdcn_esmm_test.csv"
-    py_preds_csv = DEMO_ARTIFACT_DIR / "gdcn_esmm_py_preds.csv"
-    rust_preds_csv = DEMO_ARTIFACT_DIR / "gdcn_esmm_rust_preds.csv"
+    test_csv = DEMO_ARTIFACT_DIR / "model_gdcn_esmm_test.csv"
+    py_preds_csv = DEMO_ARTIFACT_DIR / "model_gdcn_esmm_py_preds.csv"
+    rust_preds_csv = DEMO_ARTIFACT_DIR / "model_gdcn_esmm_rust_preds.csv"
 
     # 2. PyTorch predictions
     generate_pytorch_predictions(
