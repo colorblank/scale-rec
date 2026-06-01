@@ -1,0 +1,3460 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "name": "scale-rec",
+    "languages": [
+      "json",
+      "jsonl",
+      "markdown",
+      "python",
+      "rust",
+      "toml",
+      "unknown",
+      "yaml"
+    ],
+    "frameworks": [
+      "axum",
+      "candle-core",
+      "candle-nn",
+      "tokio",
+      "serde",
+      "PyTorch",
+      "pytest"
+    ],
+    "description": "推荐系统特征预处理与模型训练/推理框架。Rust (Candle) 负责推理引擎与 HTTP 服务，Python (PyTorch) 负责训练管线与权重导出，双端共享同一份 YAML 特征配置。",
+    "analyzedAt": "2026-05-31T13:52:07.987Z",
+    "gitCommitHash": "9b2c5cd1a8f9f9a95fe8f73223271575407abf97"
+  },
+  "nodes": [
+    {
+      "id": "document:.claude/CLAUDE.md",
+      "type": "document",
+      "name": "CLAUDE.md",
+      "filePath": ".claude/CLAUDE.md",
+      "summary": "项目文档",
+      "complexity": "complex",
+      "tags": [
+        "documentation",
+        "markdown"
+      ]
+    },
+    {
+      "id": "document:.claude/rules/code-style.md",
+      "type": "document",
+      "name": "code-style.md",
+      "filePath": ".claude/rules/code-style.md",
+      "summary": "项目文档",
+      "complexity": "simple",
+      "tags": [
+        "documentation",
+        "markdown"
+      ]
+    },
+    {
+      "id": "config:.claude/settings.json",
+      "type": "config",
+      "name": "settings.json",
+      "filePath": ".claude/settings.json",
+      "summary": "config 文件",
+      "complexity": "simple",
+      "tags": [
+        "json"
+      ]
+    },
+    {
+      "id": "file:.understand-anything/.understandignore",
+      "type": "file",
+      "name": ".understandignore",
+      "filePath": ".understand-anything/.understandignore",
+      "summary": "源代码文件",
+      "complexity": "simple",
+      "tags": [
+        "unknown"
+      ]
+    },
+    {
+      "id": "config:.understand-anything/config.json",
+      "type": "config",
+      "name": "config.json",
+      "filePath": ".understand-anything/config.json",
+      "summary": "config 文件",
+      "complexity": "simple",
+      "tags": [
+        "json"
+      ]
+    },
+    {
+      "id": "document:AGENTS.md",
+      "type": "document",
+      "name": "AGENTS.md",
+      "filePath": "AGENTS.md",
+      "summary": "AI Agent 协作规范与代码库指导文档",
+      "complexity": "moderate",
+      "tags": [
+        "documentation",
+        "markdown"
+      ]
+    },
+    {
+      "id": "config:Cargo.toml",
+      "type": "config",
+      "name": "Cargo.toml",
+      "filePath": "Cargo.toml",
+      "summary": "Rust 项目依赖与构建设置",
+      "complexity": "simple",
+      "tags": [
+        "configuration",
+        "build-system"
+      ]
+    },
+    {
+      "id": "document:docs/design_improvements.md",
+      "type": "document",
+      "name": "design_improvements.md",
+      "filePath": "docs/design_improvements.md",
+      "summary": "项目文档",
+      "complexity": "complex",
+      "tags": [
+        "documentation",
+        "markdown"
+      ]
+    },
+    {
+      "id": "document:docs/feature_operators.md",
+      "type": "document",
+      "name": "feature_operators.md",
+      "filePath": "docs/feature_operators.md",
+      "summary": "项目文档",
+      "complexity": "complex",
+      "tags": [
+        "documentation",
+        "markdown"
+      ]
+    },
+    {
+      "id": "document:docs/TRAINING_GUIDE.md",
+      "type": "document",
+      "name": "TRAINING_GUIDE.md",
+      "filePath": "docs/TRAINING_GUIDE.md",
+      "summary": "项目文档",
+      "complexity": "complex",
+      "tags": [
+        "documentation",
+        "markdown"
+      ]
+    },
+    {
+      "id": "config:examples/feature_config_discover.yaml",
+      "type": "config",
+      "name": "feature_config_discover.yaml",
+      "filePath": "examples/feature_config_discover.yaml",
+      "summary": "YAML 配置文件",
+      "complexity": "complex",
+      "tags": [
+        "configuration"
+      ]
+    },
+    {
+      "id": "file:examples/gen_discover_config.py",
+      "type": "file",
+      "name": "gen_discover_config.py",
+      "filePath": "examples/gen_discover_config.py",
+      "summary": "示例配置文件",
+      "complexity": "complex",
+      "tags": [
+        "example",
+        "configuration",
+        "python"
+      ]
+    },
+    {
+      "id": "config:examples/model_discover_unimixer.yaml",
+      "type": "config",
+      "name": "model_discover_unimixer.yaml",
+      "filePath": "examples/model_discover_unimixer.yaml",
+      "summary": "YAML 配置文件",
+      "complexity": "simple",
+      "tags": [
+        "configuration"
+      ]
+    },
+    {
+      "id": "config:examples/model_gdcn_esmm.yaml",
+      "type": "config",
+      "name": "model_gdcn_esmm.yaml",
+      "filePath": "examples/model_gdcn_esmm.yaml",
+      "summary": "YAML 配置文件",
+      "complexity": "simple",
+      "tags": [
+        "configuration"
+      ]
+    },
+    {
+      "id": "file:python/.python-version",
+      "type": "file",
+      "name": ".python-version",
+      "filePath": "python/.python-version",
+      "summary": "源代码文件",
+      "complexity": "simple",
+      "tags": [
+        "unknown"
+      ]
+    },
+    {
+      "id": "config:python/pyproject.toml",
+      "type": "config",
+      "name": "pyproject.toml",
+      "filePath": "python/pyproject.toml",
+      "summary": "Python 项目依赖与工具链配置",
+      "complexity": "simple",
+      "tags": [
+        "configuration",
+        "build-system"
+      ]
+    },
+    {
+      "id": "file:python/src/scale_rec_demo/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "python/src/scale_rec_demo/__init__.py",
+      "summary": "Python 包初始化模块",
+      "complexity": "simple",
+      "tags": [
+        "barrel",
+        "entry-point",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/scale_rec_demo/_metrics.py",
+      "type": "file",
+      "name": "_metrics.py",
+      "filePath": "python/src/scale_rec_demo/_metrics.py",
+      "summary": "Demo 与验证脚本",
+      "complexity": "simple",
+      "tags": [
+        "demo",
+        "verification",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/scale_rec_demo/generate_discover_data.py",
+      "type": "file",
+      "name": "generate_discover_data.py",
+      "filePath": "python/src/scale_rec_demo/generate_discover_data.py",
+      "summary": "Demo 与验证脚本",
+      "complexity": "complex",
+      "tags": [
+        "demo",
+        "verification",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/scale_rec_demo/paths.py",
+      "type": "file",
+      "name": "paths.py",
+      "filePath": "python/src/scale_rec_demo/paths.py",
+      "summary": "Demo 与验证脚本",
+      "complexity": "simple",
+      "tags": [
+        "demo",
+        "verification",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/scale_rec_demo/verify_all.py",
+      "type": "file",
+      "name": "verify_all.py",
+      "filePath": "python/src/scale_rec_demo/verify_all.py",
+      "summary": "Demo 与验证脚本",
+      "complexity": "moderate",
+      "tags": [
+        "demo",
+        "verification",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/scale_rec_demo/verify_discover_gdcn.py",
+      "type": "file",
+      "name": "verify_discover_gdcn.py",
+      "filePath": "python/src/scale_rec_demo/verify_discover_gdcn.py",
+      "summary": "Demo 与验证脚本",
+      "complexity": "complex",
+      "tags": [
+        "demo",
+        "verification",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "python/src/train/__init__.py",
+      "summary": "Python 包初始化模块",
+      "complexity": "simple",
+      "tags": [
+        "barrel",
+        "entry-point",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/app/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "python/src/train/app/__init__.py",
+      "summary": "Python 包初始化模块",
+      "complexity": "simple",
+      "tags": [
+        "barrel",
+        "entry-point",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/app/artifacts.py",
+      "type": "file",
+      "name": "artifacts.py",
+      "filePath": "python/src/train/app/artifacts.py",
+      "summary": "源代码文件",
+      "complexity": "complex",
+      "tags": [
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/app/cli.py",
+      "type": "file",
+      "name": "cli.py",
+      "filePath": "python/src/train/app/cli.py",
+      "summary": "源代码文件",
+      "complexity": "complex",
+      "tags": [
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/app/data.py",
+      "type": "file",
+      "name": "data.py",
+      "filePath": "python/src/train/app/data.py",
+      "summary": "源代码文件",
+      "complexity": "complex",
+      "tags": [
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/app/export.py",
+      "type": "file",
+      "name": "export.py",
+      "filePath": "python/src/train/app/export.py",
+      "summary": "源代码文件",
+      "complexity": "simple",
+      "tags": [
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/app/main.py",
+      "type": "file",
+      "name": "main.py",
+      "filePath": "python/src/train/app/main.py",
+      "summary": "源代码文件",
+      "complexity": "complex",
+      "tags": [
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/app/manifest.py",
+      "type": "file",
+      "name": "manifest.py",
+      "filePath": "python/src/train/app/manifest.py",
+      "summary": "源代码文件",
+      "complexity": "moderate",
+      "tags": [
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/core/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "python/src/train/core/__init__.py",
+      "summary": "Python 包初始化模块",
+      "complexity": "simple",
+      "tags": [
+        "barrel",
+        "entry-point",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/core/config.py",
+      "type": "file",
+      "name": "config.py",
+      "filePath": "python/src/train/core/config.py",
+      "summary": "源代码文件",
+      "complexity": "complex",
+      "tags": [
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/core/dag.py",
+      "type": "file",
+      "name": "dag.py",
+      "filePath": "python/src/train/core/dag.py",
+      "summary": "源代码文件",
+      "complexity": "complex",
+      "tags": [
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/core/schema.py",
+      "type": "file",
+      "name": "schema.py",
+      "filePath": "python/src/train/core/schema.py",
+      "summary": "源代码文件",
+      "complexity": "complex",
+      "tags": [
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/core/task.py",
+      "type": "file",
+      "name": "task.py",
+      "filePath": "python/src/train/core/task.py",
+      "summary": "源代码文件",
+      "complexity": "simple",
+      "tags": [
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/debug/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "python/src/train/debug/__init__.py",
+      "summary": "Python 包初始化模块",
+      "complexity": "simple",
+      "tags": [
+        "barrel",
+        "entry-point",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/debug/tracer.py",
+      "type": "file",
+      "name": "tracer.py",
+      "filePath": "python/src/train/debug/tracer.py",
+      "summary": "源代码文件",
+      "complexity": "moderate",
+      "tags": [
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/layers/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "python/src/train/layers/__init__.py",
+      "summary": "Python 包初始化模块",
+      "complexity": "simple",
+      "tags": [
+        "barrel",
+        "entry-point",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/layers/embedding.py",
+      "type": "file",
+      "name": "embedding.py",
+      "filePath": "python/src/train/layers/embedding.py",
+      "summary": "神经网络层实现",
+      "complexity": "simple",
+      "tags": [
+        "neural-network",
+        "layer",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/layers/fm.py",
+      "type": "file",
+      "name": "fm.py",
+      "filePath": "python/src/train/layers/fm.py",
+      "summary": "神经网络层实现",
+      "complexity": "simple",
+      "tags": [
+        "neural-network",
+        "layer",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/layers/gdcn.py",
+      "type": "file",
+      "name": "gdcn.py",
+      "filePath": "python/src/train/layers/gdcn.py",
+      "summary": "神经网络层实现",
+      "complexity": "simple",
+      "tags": [
+        "neural-network",
+        "layer",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/layers/mlp.py",
+      "type": "file",
+      "name": "mlp.py",
+      "filePath": "python/src/train/layers/mlp.py",
+      "summary": "神经网络层实现",
+      "complexity": "simple",
+      "tags": [
+        "neural-network",
+        "layer",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/layers/towers.py",
+      "type": "file",
+      "name": "towers.py",
+      "filePath": "python/src/train/layers/towers.py",
+      "summary": "神经网络层实现",
+      "complexity": "moderate",
+      "tags": [
+        "neural-network",
+        "layer",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/main/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "python/src/train/main/__init__.py",
+      "summary": "Python 包初始化模块",
+      "complexity": "simple",
+      "tags": [
+        "barrel",
+        "entry-point",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/main/__main__.py",
+      "type": "file",
+      "name": "__main__.py",
+      "filePath": "python/src/train/main/__main__.py",
+      "summary": "Python 训练入口",
+      "complexity": "simple",
+      "tags": [
+        "entry-point",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/models/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "python/src/train/models/__init__.py",
+      "summary": "Python 包初始化模块",
+      "complexity": "complex",
+      "tags": [
+        "barrel",
+        "entry-point",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/models/deepfm.py",
+      "type": "file",
+      "name": "deepfm.py",
+      "filePath": "python/src/train/models/deepfm.py",
+      "summary": "推荐模型定义",
+      "complexity": "simple",
+      "tags": [
+        "model",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/models/esmm.py",
+      "type": "file",
+      "name": "esmm.py",
+      "filePath": "python/src/train/models/esmm.py",
+      "summary": "推荐模型定义",
+      "complexity": "moderate",
+      "tags": [
+        "model",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/models/gdcn_esmm.py",
+      "type": "file",
+      "name": "gdcn_esmm.py",
+      "filePath": "python/src/train/models/gdcn_esmm.py",
+      "summary": "推荐模型定义",
+      "complexity": "moderate",
+      "tags": [
+        "model",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/models/lr.py",
+      "type": "file",
+      "name": "lr.py",
+      "filePath": "python/src/train/models/lr.py",
+      "summary": "推荐模型定义",
+      "complexity": "simple",
+      "tags": [
+        "model",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/models/mmoe.py",
+      "type": "file",
+      "name": "mmoe.py",
+      "filePath": "python/src/train/models/mmoe.py",
+      "summary": "推荐模型定义",
+      "complexity": "simple",
+      "tags": [
+        "model",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/models/unimixer/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "python/src/train/models/unimixer/__init__.py",
+      "summary": "Python 包初始化模块",
+      "complexity": "simple",
+      "tags": [
+        "barrel",
+        "entry-point",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/models/unimixer/block.py",
+      "type": "file",
+      "name": "block.py",
+      "filePath": "python/src/train/models/unimixer/block.py",
+      "summary": "推荐模型定义",
+      "complexity": "simple",
+      "tags": [
+        "model",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/models/unimixer/model.py",
+      "type": "file",
+      "name": "model.py",
+      "filePath": "python/src/train/models/unimixer/model.py",
+      "summary": "推荐模型定义",
+      "complexity": "moderate",
+      "tags": [
+        "model",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/models/unimixer/norm.py",
+      "type": "file",
+      "name": "norm.py",
+      "filePath": "python/src/train/models/unimixer/norm.py",
+      "summary": "推荐模型定义",
+      "complexity": "simple",
+      "tags": [
+        "model",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/models/unimixer/swiglu.py",
+      "type": "file",
+      "name": "swiglu.py",
+      "filePath": "python/src/train/models/unimixer/swiglu.py",
+      "summary": "推荐模型定义",
+      "complexity": "simple",
+      "tags": [
+        "model",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/models/unimixer/tokenizer.py",
+      "type": "file",
+      "name": "tokenizer.py",
+      "filePath": "python/src/train/models/unimixer/tokenizer.py",
+      "summary": "推荐模型定义",
+      "complexity": "simple",
+      "tags": [
+        "model",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/models/unimixer/unimixing.py",
+      "type": "file",
+      "name": "unimixing.py",
+      "filePath": "python/src/train/models/unimixer/unimixing.py",
+      "summary": "推荐模型定义",
+      "complexity": "moderate",
+      "tags": [
+        "model",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/ops/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "python/src/train/ops/__init__.py",
+      "summary": "Python 包初始化模块",
+      "complexity": "simple",
+      "tags": [
+        "barrel",
+        "entry-point",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/ops/bucketing.py",
+      "type": "file",
+      "name": "bucketing.py",
+      "filePath": "python/src/train/ops/bucketing.py",
+      "summary": "特征变换算子实现",
+      "complexity": "simple",
+      "tags": [
+        "feature-engineering",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/ops/cross_feature.py",
+      "type": "file",
+      "name": "cross_feature.py",
+      "filePath": "python/src/train/ops/cross_feature.py",
+      "summary": "特征变换算子实现",
+      "complexity": "simple",
+      "tags": [
+        "feature-engineering",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/ops/dict_mapper.py",
+      "type": "file",
+      "name": "dict_mapper.py",
+      "filePath": "python/src/train/ops/dict_mapper.py",
+      "summary": "特征变换算子实现",
+      "complexity": "simple",
+      "tags": [
+        "feature-engineering",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/ops/expression.py",
+      "type": "file",
+      "name": "expression.py",
+      "filePath": "python/src/train/ops/expression.py",
+      "summary": "特征变换算子实现",
+      "complexity": "simple",
+      "tags": [
+        "feature-engineering",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/ops/feature_hash.py",
+      "type": "file",
+      "name": "feature_hash.py",
+      "filePath": "python/src/train/ops/feature_hash.py",
+      "summary": "特征变换算子实现",
+      "complexity": "moderate",
+      "tags": [
+        "feature-engineering",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/ops/flat_split.py",
+      "type": "file",
+      "name": "flat_split.py",
+      "filePath": "python/src/train/ops/flat_split.py",
+      "summary": "特征变换算子实现",
+      "complexity": "simple",
+      "tags": [
+        "feature-engineering",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/ops/json_extract_list.py",
+      "type": "file",
+      "name": "json_extract_list.py",
+      "filePath": "python/src/train/ops/json_extract_list.py",
+      "summary": "特征变换算子实现",
+      "complexity": "simple",
+      "tags": [
+        "feature-engineering",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/ops/list_overlap.py",
+      "type": "file",
+      "name": "list_overlap.py",
+      "filePath": "python/src/train/ops/list_overlap.py",
+      "summary": "特征变换算子实现",
+      "complexity": "simple",
+      "tags": [
+        "feature-engineering",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/ops/list_string_parser.py",
+      "type": "file",
+      "name": "list_string_parser.py",
+      "filePath": "python/src/train/ops/list_string_parser.py",
+      "summary": "特征变换算子实现",
+      "complexity": "simple",
+      "tags": [
+        "feature-engineering",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/ops/sequence.py",
+      "type": "file",
+      "name": "sequence.py",
+      "filePath": "python/src/train/ops/sequence.py",
+      "summary": "特征变换算子实现",
+      "complexity": "simple",
+      "tags": [
+        "feature-engineering",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/ops/split.py",
+      "type": "file",
+      "name": "split.py",
+      "filePath": "python/src/train/ops/split.py",
+      "summary": "特征变换算子实现",
+      "complexity": "simple",
+      "tags": [
+        "feature-engineering",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/ops/string_concat.py",
+      "type": "file",
+      "name": "string_concat.py",
+      "filePath": "python/src/train/ops/string_concat.py",
+      "summary": "特征变换算子实现",
+      "complexity": "simple",
+      "tags": [
+        "feature-engineering",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/ops/string_parser.py",
+      "type": "file",
+      "name": "string_parser.py",
+      "filePath": "python/src/train/ops/string_parser.py",
+      "summary": "特征变换算子实现",
+      "complexity": "simple",
+      "tags": [
+        "feature-engineering",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/training/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "python/src/train/training/__init__.py",
+      "summary": "Python 包初始化模块",
+      "complexity": "simple",
+      "tags": [
+        "barrel",
+        "entry-point",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/training/eval/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "python/src/train/training/eval/__init__.py",
+      "summary": "Python 包初始化模块",
+      "complexity": "simple",
+      "tags": [
+        "barrel",
+        "entry-point",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/training/eval/evaluator.py",
+      "type": "file",
+      "name": "evaluator.py",
+      "filePath": "python/src/train/training/eval/evaluator.py",
+      "summary": "训练管线组件",
+      "complexity": "moderate",
+      "tags": [
+        "training",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/training/loss/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "python/src/train/training/loss/__init__.py",
+      "summary": "Python 包初始化模块",
+      "complexity": "simple",
+      "tags": [
+        "barrel",
+        "entry-point",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/training/loss/multi_task.py",
+      "type": "file",
+      "name": "multi_task.py",
+      "filePath": "python/src/train/training/loss/multi_task.py",
+      "summary": "训练管线组件",
+      "complexity": "moderate",
+      "tags": [
+        "training",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/training/metrics/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "python/src/train/training/metrics/__init__.py",
+      "summary": "Python 包初始化模块",
+      "complexity": "moderate",
+      "tags": [
+        "barrel",
+        "entry-point",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/training/metrics/auc.py",
+      "type": "file",
+      "name": "auc.py",
+      "filePath": "python/src/train/training/metrics/auc.py",
+      "summary": "训练管线组件",
+      "complexity": "simple",
+      "tags": [
+        "training",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/training/metrics/classification.py",
+      "type": "file",
+      "name": "classification.py",
+      "filePath": "python/src/train/training/metrics/classification.py",
+      "summary": "训练管线组件",
+      "complexity": "simple",
+      "tags": [
+        "training",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/training/metrics/regression.py",
+      "type": "file",
+      "name": "regression.py",
+      "filePath": "python/src/train/training/metrics/regression.py",
+      "summary": "训练管线组件",
+      "complexity": "simple",
+      "tags": [
+        "training",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/training/optim/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "python/src/train/training/optim/__init__.py",
+      "summary": "Python 包初始化模块",
+      "complexity": "simple",
+      "tags": [
+        "barrel",
+        "entry-point",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/training/optim/scheduler.py",
+      "type": "file",
+      "name": "scheduler.py",
+      "filePath": "python/src/train/training/optim/scheduler.py",
+      "summary": "训练管线组件",
+      "complexity": "simple",
+      "tags": [
+        "training",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/training/quality.py",
+      "type": "file",
+      "name": "quality.py",
+      "filePath": "python/src/train/training/quality.py",
+      "summary": "训练管线组件",
+      "complexity": "moderate",
+      "tags": [
+        "training",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/src/train/training/trainer.py",
+      "type": "file",
+      "name": "trainer.py",
+      "filePath": "python/src/train/training/trainer.py",
+      "summary": "训练管线组件",
+      "complexity": "complex",
+      "tags": [
+        "training",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/tests/generate_golden_expected.py",
+      "type": "file",
+      "name": "generate_golden_expected.py",
+      "filePath": "python/tests/generate_golden_expected.py",
+      "summary": "测试文件",
+      "complexity": "simple",
+      "tags": [
+        "test",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/tests/test_artifacts.py",
+      "type": "file",
+      "name": "test_artifacts.py",
+      "filePath": "python/tests/test_artifacts.py",
+      "summary": "测试文件",
+      "complexity": "simple",
+      "tags": [
+        "test",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/tests/test_cli_config.py",
+      "type": "file",
+      "name": "test_cli_config.py",
+      "filePath": "python/tests/test_cli_config.py",
+      "summary": "测试文件",
+      "complexity": "moderate",
+      "tags": [
+        "test",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/tests/test_dag.py",
+      "type": "file",
+      "name": "test_dag.py",
+      "filePath": "python/tests/test_dag.py",
+      "summary": "测试文件",
+      "complexity": "complex",
+      "tags": [
+        "test",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/tests/test_data.py",
+      "type": "file",
+      "name": "test_data.py",
+      "filePath": "python/tests/test_data.py",
+      "summary": "测试文件",
+      "complexity": "simple",
+      "tags": [
+        "test",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/tests/test_demo_configs.py",
+      "type": "file",
+      "name": "test_demo_configs.py",
+      "filePath": "python/tests/test_demo_configs.py",
+      "summary": "测试文件",
+      "complexity": "simple",
+      "tags": [
+        "test",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/tests/test_feature_hash.py",
+      "type": "file",
+      "name": "test_feature_hash.py",
+      "filePath": "python/tests/test_feature_hash.py",
+      "summary": "测试文件",
+      "complexity": "complex",
+      "tags": [
+        "test",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/tests/test_gen_discover_config.py",
+      "type": "file",
+      "name": "test_gen_discover_config.py",
+      "filePath": "python/tests/test_gen_discover_config.py",
+      "summary": "测试文件",
+      "complexity": "simple",
+      "tags": [
+        "test",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/tests/test_golden_consistency.py",
+      "type": "file",
+      "name": "test_golden_consistency.py",
+      "filePath": "python/tests/test_golden_consistency.py",
+      "summary": "测试文件",
+      "complexity": "simple",
+      "tags": [
+        "test",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/tests/test_manifest.py",
+      "type": "file",
+      "name": "test_manifest.py",
+      "filePath": "python/tests/test_manifest.py",
+      "summary": "测试文件",
+      "complexity": "simple",
+      "tags": [
+        "test",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/tests/test_models.py",
+      "type": "file",
+      "name": "test_models.py",
+      "filePath": "python/tests/test_models.py",
+      "summary": "测试文件",
+      "complexity": "complex",
+      "tags": [
+        "test",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/tests/test_ops.py",
+      "type": "file",
+      "name": "test_ops.py",
+      "filePath": "python/tests/test_ops.py",
+      "summary": "测试文件",
+      "complexity": "moderate",
+      "tags": [
+        "test",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/tests/test_string_concat.py",
+      "type": "file",
+      "name": "test_string_concat.py",
+      "filePath": "python/tests/test_string_concat.py",
+      "summary": "测试文件",
+      "complexity": "simple",
+      "tags": [
+        "test",
+        "python"
+      ]
+    },
+    {
+      "id": "file:python/tests/test_training_utils.py",
+      "type": "file",
+      "name": "test_training_utils.py",
+      "filePath": "python/tests/test_training_utils.py",
+      "summary": "测试文件",
+      "complexity": "moderate",
+      "tags": [
+        "test",
+        "python"
+      ]
+    },
+    {
+      "id": "document:README.md",
+      "type": "document",
+      "name": "README.md",
+      "filePath": "README.md",
+      "summary": "项目总览与架构说明文档",
+      "complexity": "complex",
+      "tags": [
+        "documentation",
+        "entry-point",
+        "markdown"
+      ]
+    },
+    {
+      "id": "file:src/bin/bench.rs",
+      "type": "file",
+      "name": "bench.rs",
+      "filePath": "src/bin/bench.rs",
+      "summary": "源代码文件",
+      "complexity": "complex",
+      "tags": [
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/bin/demo_inference.rs",
+      "type": "file",
+      "name": "demo_inference.rs",
+      "filePath": "src/bin/demo_inference.rs",
+      "summary": "源代码文件",
+      "complexity": "moderate",
+      "tags": [
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/bin/server.rs",
+      "type": "file",
+      "name": "server.rs",
+      "filePath": "src/bin/server.rs",
+      "summary": "源代码文件",
+      "complexity": "moderate",
+      "tags": [
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/feats/config.rs",
+      "type": "file",
+      "name": "config.rs",
+      "filePath": "src/feats/config.rs",
+      "summary": "源代码文件",
+      "complexity": "complex",
+      "tags": [
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/feats/dag.rs",
+      "type": "file",
+      "name": "dag.rs",
+      "filePath": "src/feats/dag.rs",
+      "summary": "源代码文件",
+      "complexity": "complex",
+      "tags": [
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/feats/debug/mod.rs",
+      "type": "file",
+      "name": "mod.rs",
+      "filePath": "src/feats/debug/mod.rs",
+      "summary": "Rust 模块声明文件",
+      "complexity": "simple",
+      "tags": [
+        "barrel",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/feats/debug/tracer.rs",
+      "type": "file",
+      "name": "tracer.rs",
+      "filePath": "src/feats/debug/tracer.rs",
+      "summary": "源代码文件",
+      "complexity": "complex",
+      "tags": [
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/feats/metrics.rs",
+      "type": "file",
+      "name": "metrics.rs",
+      "filePath": "src/feats/metrics.rs",
+      "summary": "源代码文件",
+      "complexity": "simple",
+      "tags": [
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/feats/mod.rs",
+      "type": "file",
+      "name": "mod.rs",
+      "filePath": "src/feats/mod.rs",
+      "summary": "Rust 模块声明文件",
+      "complexity": "simple",
+      "tags": [
+        "barrel",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/feats/ops/bucketing.rs",
+      "type": "file",
+      "name": "bucketing.rs",
+      "filePath": "src/feats/ops/bucketing.rs",
+      "summary": "特征变换算子实现",
+      "complexity": "moderate",
+      "tags": [
+        "feature-engineering",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/feats/ops/cross_feature.rs",
+      "type": "file",
+      "name": "cross_feature.rs",
+      "filePath": "src/feats/ops/cross_feature.rs",
+      "summary": "特征变换算子实现",
+      "complexity": "simple",
+      "tags": [
+        "feature-engineering",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/feats/ops/dict_mapper.rs",
+      "type": "file",
+      "name": "dict_mapper.rs",
+      "filePath": "src/feats/ops/dict_mapper.rs",
+      "summary": "特征变换算子实现",
+      "complexity": "simple",
+      "tags": [
+        "feature-engineering",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/feats/ops/expression.rs",
+      "type": "file",
+      "name": "expression.rs",
+      "filePath": "src/feats/ops/expression.rs",
+      "summary": "特征变换算子实现",
+      "complexity": "simple",
+      "tags": [
+        "feature-engineering",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/feats/ops/feature_hash.rs",
+      "type": "file",
+      "name": "feature_hash.rs",
+      "filePath": "src/feats/ops/feature_hash.rs",
+      "summary": "特征变换算子实现",
+      "complexity": "complex",
+      "tags": [
+        "feature-engineering",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/feats/ops/flat_split.rs",
+      "type": "file",
+      "name": "flat_split.rs",
+      "filePath": "src/feats/ops/flat_split.rs",
+      "summary": "特征变换算子实现",
+      "complexity": "moderate",
+      "tags": [
+        "feature-engineering",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/feats/ops/json_extract_list.rs",
+      "type": "file",
+      "name": "json_extract_list.rs",
+      "filePath": "src/feats/ops/json_extract_list.rs",
+      "summary": "特征变换算子实现",
+      "complexity": "moderate",
+      "tags": [
+        "feature-engineering",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/feats/ops/list_overlap.rs",
+      "type": "file",
+      "name": "list_overlap.rs",
+      "filePath": "src/feats/ops/list_overlap.rs",
+      "summary": "特征变换算子实现",
+      "complexity": "simple",
+      "tags": [
+        "feature-engineering",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/feats/ops/list_string_parser.rs",
+      "type": "file",
+      "name": "list_string_parser.rs",
+      "filePath": "src/feats/ops/list_string_parser.rs",
+      "summary": "特征变换算子实现",
+      "complexity": "simple",
+      "tags": [
+        "feature-engineering",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/feats/ops/mod.rs",
+      "type": "file",
+      "name": "mod.rs",
+      "filePath": "src/feats/ops/mod.rs",
+      "summary": "Rust 模块声明文件",
+      "complexity": "moderate",
+      "tags": [
+        "barrel",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/feats/ops/plugin.rs",
+      "type": "file",
+      "name": "plugin.rs",
+      "filePath": "src/feats/ops/plugin.rs",
+      "summary": "特征变换算子实现",
+      "complexity": "simple",
+      "tags": [
+        "feature-engineering",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/feats/ops/sequence.rs",
+      "type": "file",
+      "name": "sequence.rs",
+      "filePath": "src/feats/ops/sequence.rs",
+      "summary": "特征变换算子实现",
+      "complexity": "simple",
+      "tags": [
+        "feature-engineering",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/feats/ops/split.rs",
+      "type": "file",
+      "name": "split.rs",
+      "filePath": "src/feats/ops/split.rs",
+      "summary": "特征变换算子实现",
+      "complexity": "moderate",
+      "tags": [
+        "feature-engineering",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/feats/ops/string_concat.rs",
+      "type": "file",
+      "name": "string_concat.rs",
+      "filePath": "src/feats/ops/string_concat.rs",
+      "summary": "特征变换算子实现",
+      "complexity": "moderate",
+      "tags": [
+        "feature-engineering",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/feats/ops/string_parser.rs",
+      "type": "file",
+      "name": "string_parser.rs",
+      "filePath": "src/feats/ops/string_parser.rs",
+      "summary": "特征变换算子实现",
+      "complexity": "moderate",
+      "tags": [
+        "feature-engineering",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/feats/schema.rs",
+      "type": "file",
+      "name": "schema.rs",
+      "filePath": "src/feats/schema.rs",
+      "summary": "源代码文件",
+      "complexity": "complex",
+      "tags": [
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/layers/embedding.rs",
+      "type": "file",
+      "name": "embedding.rs",
+      "filePath": "src/layers/embedding.rs",
+      "summary": "神经网络层实现",
+      "complexity": "moderate",
+      "tags": [
+        "neural-network",
+        "layer",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/layers/fm.rs",
+      "type": "file",
+      "name": "fm.rs",
+      "filePath": "src/layers/fm.rs",
+      "summary": "神经网络层实现",
+      "complexity": "simple",
+      "tags": [
+        "neural-network",
+        "layer",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/layers/gdcn.rs",
+      "type": "file",
+      "name": "gdcn.rs",
+      "filePath": "src/layers/gdcn.rs",
+      "summary": "神经网络层实现",
+      "complexity": "simple",
+      "tags": [
+        "neural-network",
+        "layer",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/layers/mlp.rs",
+      "type": "file",
+      "name": "mlp.rs",
+      "filePath": "src/layers/mlp.rs",
+      "summary": "神经网络层实现",
+      "complexity": "simple",
+      "tags": [
+        "neural-network",
+        "layer",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/layers/mod.rs",
+      "type": "file",
+      "name": "mod.rs",
+      "filePath": "src/layers/mod.rs",
+      "summary": "Rust 模块声明文件",
+      "complexity": "simple",
+      "tags": [
+        "barrel",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/layers/towers.rs",
+      "type": "file",
+      "name": "towers.rs",
+      "filePath": "src/layers/towers.rs",
+      "summary": "神经网络层实现",
+      "complexity": "complex",
+      "tags": [
+        "neural-network",
+        "layer",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/lib.rs",
+      "type": "file",
+      "name": "lib.rs",
+      "filePath": "src/lib.rs",
+      "summary": "Rust 推理引擎入口",
+      "complexity": "simple",
+      "tags": [
+        "entry-point",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/main.rs",
+      "type": "file",
+      "name": "main.rs",
+      "filePath": "src/main.rs",
+      "summary": "Rust 推理引擎入口",
+      "complexity": "moderate",
+      "tags": [
+        "entry-point",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/models/deepfm.rs",
+      "type": "file",
+      "name": "deepfm.rs",
+      "filePath": "src/models/deepfm.rs",
+      "summary": "推荐模型定义",
+      "complexity": "simple",
+      "tags": [
+        "model",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/models/esmm.rs",
+      "type": "file",
+      "name": "esmm.rs",
+      "filePath": "src/models/esmm.rs",
+      "summary": "推荐模型定义",
+      "complexity": "complex",
+      "tags": [
+        "model",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/models/gdcn_esmm.rs",
+      "type": "file",
+      "name": "gdcn_esmm.rs",
+      "filePath": "src/models/gdcn_esmm.rs",
+      "summary": "推荐模型定义",
+      "complexity": "moderate",
+      "tags": [
+        "model",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/models/lr.rs",
+      "type": "file",
+      "name": "lr.rs",
+      "filePath": "src/models/lr.rs",
+      "summary": "推荐模型定义",
+      "complexity": "simple",
+      "tags": [
+        "model",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/models/mmoe.rs",
+      "type": "file",
+      "name": "mmoe.rs",
+      "filePath": "src/models/mmoe.rs",
+      "summary": "推荐模型定义",
+      "complexity": "moderate",
+      "tags": [
+        "model",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/models/mod.rs",
+      "type": "file",
+      "name": "mod.rs",
+      "filePath": "src/models/mod.rs",
+      "summary": "Rust 模块声明文件",
+      "complexity": "complex",
+      "tags": [
+        "barrel",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/models/unimixer/mod.rs",
+      "type": "file",
+      "name": "mod.rs",
+      "filePath": "src/models/unimixer/mod.rs",
+      "summary": "Rust 模块声明文件",
+      "complexity": "simple",
+      "tags": [
+        "barrel",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/models/unimixer/model.rs",
+      "type": "file",
+      "name": "model.rs",
+      "filePath": "src/models/unimixer/model.rs",
+      "summary": "推荐模型定义",
+      "complexity": "moderate",
+      "tags": [
+        "model",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/models/unimixer/per_token_swiglu.rs",
+      "type": "file",
+      "name": "per_token_swiglu.rs",
+      "filePath": "src/models/unimixer/per_token_swiglu.rs",
+      "summary": "推荐模型定义",
+      "complexity": "complex",
+      "tags": [
+        "model",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/models/unimixer/siamese_norm.rs",
+      "type": "file",
+      "name": "siamese_norm.rs",
+      "filePath": "src/models/unimixer/siamese_norm.rs",
+      "summary": "推荐模型定义",
+      "complexity": "simple",
+      "tags": [
+        "model",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/models/unimixer/tokenizer.rs",
+      "type": "file",
+      "name": "tokenizer.rs",
+      "filePath": "src/models/unimixer/tokenizer.rs",
+      "summary": "推荐模型定义",
+      "complexity": "moderate",
+      "tags": [
+        "model",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/models/unimixer/unimixer_block.rs",
+      "type": "file",
+      "name": "unimixer_block.rs",
+      "filePath": "src/models/unimixer/unimixer_block.rs",
+      "summary": "推荐模型定义",
+      "complexity": "moderate",
+      "tags": [
+        "model",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/models/unimixer/unimixing_lite.rs",
+      "type": "file",
+      "name": "unimixing_lite.rs",
+      "filePath": "src/models/unimixer/unimixing_lite.rs",
+      "summary": "推荐模型定义",
+      "complexity": "complex",
+      "tags": [
+        "model",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/models/unimixer/unimixing.rs",
+      "type": "file",
+      "name": "unimixing.rs",
+      "filePath": "src/models/unimixer/unimixing.rs",
+      "summary": "推荐模型定义",
+      "complexity": "moderate",
+      "tags": [
+        "model",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/server/engine.rs",
+      "type": "file",
+      "name": "engine.rs",
+      "filePath": "src/server/engine.rs",
+      "summary": "HTTP 推理服务组件",
+      "complexity": "complex",
+      "tags": [
+        "server",
+        "api",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/server/manifest.rs",
+      "type": "file",
+      "name": "manifest.rs",
+      "filePath": "src/server/manifest.rs",
+      "summary": "HTTP 推理服务组件",
+      "complexity": "moderate",
+      "tags": [
+        "server",
+        "api",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/server/mod.rs",
+      "type": "file",
+      "name": "mod.rs",
+      "filePath": "src/server/mod.rs",
+      "summary": "Rust 模块声明文件",
+      "complexity": "simple",
+      "tags": [
+        "barrel",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/server/registry.rs",
+      "type": "file",
+      "name": "registry.rs",
+      "filePath": "src/server/registry.rs",
+      "summary": "HTTP 推理服务组件",
+      "complexity": "complex",
+      "tags": [
+        "server",
+        "api",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/server/routes.rs",
+      "type": "file",
+      "name": "routes.rs",
+      "filePath": "src/server/routes.rs",
+      "summary": "HTTP 推理服务组件",
+      "complexity": "moderate",
+      "tags": [
+        "server",
+        "api",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:src/server/tracing.rs",
+      "type": "file",
+      "name": "tracing.rs",
+      "filePath": "src/server/tracing.rs",
+      "summary": "HTTP 推理服务组件",
+      "complexity": "simple",
+      "tags": [
+        "server",
+        "api",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:tests/dag_regression.rs",
+      "type": "file",
+      "name": "dag_regression.rs",
+      "filePath": "tests/dag_regression.rs",
+      "summary": "测试文件",
+      "complexity": "complex",
+      "tags": [
+        "test",
+        "rust"
+      ]
+    },
+    {
+      "id": "config:tests/fixtures/golden_expected.json",
+      "type": "config",
+      "name": "golden_expected.json",
+      "filePath": "tests/fixtures/golden_expected.json",
+      "summary": "测试文件",
+      "complexity": "complex",
+      "tags": [
+        "test"
+      ]
+    },
+    {
+      "id": "config:tests/fixtures/golden_feature_config.yaml",
+      "type": "config",
+      "name": "golden_feature_config.yaml",
+      "filePath": "tests/fixtures/golden_feature_config.yaml",
+      "summary": "YAML 配置文件",
+      "complexity": "moderate",
+      "tags": [
+        "configuration"
+      ]
+    },
+    {
+      "id": "file:tests/fixtures/golden_rows.jsonl",
+      "type": "file",
+      "name": "golden_rows.jsonl",
+      "filePath": "tests/fixtures/golden_rows.jsonl",
+      "summary": "测试文件",
+      "complexity": "simple",
+      "tags": [
+        "test"
+      ]
+    },
+    {
+      "id": "file:tests/golden_consistency.rs",
+      "type": "file",
+      "name": "golden_consistency.rs",
+      "filePath": "tests/golden_consistency.rs",
+      "summary": "测试文件",
+      "complexity": "moderate",
+      "tags": [
+        "test",
+        "rust"
+      ]
+    },
+    {
+      "id": "file:tests/model_smoke.rs",
+      "type": "file",
+      "name": "model_smoke.rs",
+      "filePath": "tests/model_smoke.rs",
+      "summary": "测试文件",
+      "complexity": "complex",
+      "tags": [
+        "test",
+        "rust"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:python/src/scale_rec_demo/generate_discover_data.py",
+      "target": "file:python/src/scale_rec_demo/paths.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/scale_rec_demo/generate_discover_data.py",
+      "target": "file:python/src/train/core/config.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/scale_rec_demo/verify_all.py",
+      "target": "file:python/src/scale_rec_demo/paths.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/scale_rec_demo/verify_discover_gdcn.py",
+      "target": "file:python/src/scale_rec_demo/paths.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/scale_rec_demo/verify_discover_gdcn.py",
+      "target": "file:python/src/train/core/config.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/scale_rec_demo/verify_discover_gdcn.py",
+      "target": "file:python/src/train/core/dag.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/app/artifacts.py",
+      "target": "file:python/src/train/app/export.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/app/artifacts.py",
+      "target": "file:python/src/train/app/manifest.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/app/artifacts.py",
+      "target": "file:python/src/train/core/config.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/app/cli.py",
+      "target": "file:python/src/train/core/config.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/app/cli.py",
+      "target": "file:python/src/train/core/dag.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/app/cli.py",
+      "target": "file:python/src/train/models/__init__.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/app/data.py",
+      "target": "file:python/src/train/core/config.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/app/main.py",
+      "target": "file:python/src/train/app/artifacts.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/app/main.py",
+      "target": "file:python/src/train/app/cli.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/app/main.py",
+      "target": "file:python/src/train/core/config.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/app/main.py",
+      "target": "file:python/src/train/core/dag.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/app/main.py",
+      "target": "file:python/src/train/training/trainer.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/core/config.py",
+      "target": "file:python/src/train/core/task.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/core/config.py",
+      "target": "file:python/src/train/layers/embedding.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/core/dag.py",
+      "target": "file:python/src/train/core/config.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/core/dag.py",
+      "target": "file:python/src/train/core/schema.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/core/dag.py",
+      "target": "file:python/src/train/ops/__init__.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/core/schema.py",
+      "target": "file:python/src/train/core/config.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/debug/__init__.py",
+      "target": "file:python/src/train/debug/tracer.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/layers/mlp.py",
+      "target": "file:python/src/train/layers/towers.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/main/__init__.py",
+      "target": "file:python/src/train/app/main.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/main/__main__.py",
+      "target": "file:python/src/train/app/main.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/__init__.py",
+      "target": "file:python/src/train/core/task.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/__init__.py",
+      "target": "file:python/src/train/layers/embedding.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/__init__.py",
+      "target": "file:python/src/train/layers/towers.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/__init__.py",
+      "target": "file:python/src/train/models/deepfm.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/__init__.py",
+      "target": "file:python/src/train/models/esmm.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/__init__.py",
+      "target": "file:python/src/train/models/gdcn_esmm.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/__init__.py",
+      "target": "file:python/src/train/models/lr.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/__init__.py",
+      "target": "file:python/src/train/models/mmoe.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/__init__.py",
+      "target": "file:python/src/train/models/unimixer/model.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/deepfm.py",
+      "target": "file:python/src/train/layers/embedding.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/deepfm.py",
+      "target": "file:python/src/train/layers/fm.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/deepfm.py",
+      "target": "file:python/src/train/layers/mlp.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/deepfm.py",
+      "target": "file:python/src/train/layers/towers.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/esmm.py",
+      "target": "file:python/src/train/layers/embedding.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/esmm.py",
+      "target": "file:python/src/train/layers/mlp.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/esmm.py",
+      "target": "file:python/src/train/layers/towers.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/gdcn_esmm.py",
+      "target": "file:python/src/train/layers/embedding.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/gdcn_esmm.py",
+      "target": "file:python/src/train/layers/gdcn.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/gdcn_esmm.py",
+      "target": "file:python/src/train/layers/mlp.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/gdcn_esmm.py",
+      "target": "file:python/src/train/layers/towers.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/gdcn_esmm.py",
+      "target": "file:python/src/train/models/esmm.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/lr.py",
+      "target": "file:python/src/train/layers/embedding.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/lr.py",
+      "target": "file:python/src/train/layers/mlp.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/lr.py",
+      "target": "file:python/src/train/layers/towers.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/mmoe.py",
+      "target": "file:python/src/train/layers/embedding.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/mmoe.py",
+      "target": "file:python/src/train/layers/mlp.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/mmoe.py",
+      "target": "file:python/src/train/layers/towers.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/unimixer/block.py",
+      "target": "file:python/src/train/models/unimixer/norm.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/unimixer/block.py",
+      "target": "file:python/src/train/models/unimixer/swiglu.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/unimixer/block.py",
+      "target": "file:python/src/train/models/unimixer/unimixing.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/unimixer/model.py",
+      "target": "file:python/src/train/layers/embedding.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/unimixer/model.py",
+      "target": "file:python/src/train/layers/towers.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/unimixer/model.py",
+      "target": "file:python/src/train/models/unimixer/block.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/unimixer/model.py",
+      "target": "file:python/src/train/models/unimixer/norm.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/unimixer/model.py",
+      "target": "file:python/src/train/models/unimixer/tokenizer.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/models/unimixer/tokenizer.py",
+      "target": "file:python/src/train/layers/embedding.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/ops/__init__.py",
+      "target": "file:python/src/train/ops/bucketing.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/ops/__init__.py",
+      "target": "file:python/src/train/ops/cross_feature.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/ops/__init__.py",
+      "target": "file:python/src/train/ops/dict_mapper.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/ops/__init__.py",
+      "target": "file:python/src/train/ops/expression.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/ops/__init__.py",
+      "target": "file:python/src/train/ops/feature_hash.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/ops/__init__.py",
+      "target": "file:python/src/train/ops/flat_split.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/ops/__init__.py",
+      "target": "file:python/src/train/ops/json_extract_list.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/ops/__init__.py",
+      "target": "file:python/src/train/ops/list_overlap.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/ops/__init__.py",
+      "target": "file:python/src/train/ops/list_string_parser.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/ops/__init__.py",
+      "target": "file:python/src/train/ops/sequence.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/ops/__init__.py",
+      "target": "file:python/src/train/ops/split.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/ops/__init__.py",
+      "target": "file:python/src/train/ops/string_concat.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/ops/__init__.py",
+      "target": "file:python/src/train/ops/string_parser.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/training/eval/evaluator.py",
+      "target": "file:python/src/train/core/config.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/training/eval/evaluator.py",
+      "target": "file:python/src/train/core/dag.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/training/eval/evaluator.py",
+      "target": "file:python/src/train/training/loss/multi_task.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/training/eval/evaluator.py",
+      "target": "file:python/src/train/training/metrics/__init__.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/training/loss/multi_task.py",
+      "target": "file:python/src/train/core/task.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/training/metrics/__init__.py",
+      "target": "file:python/src/train/core/dag.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/training/metrics/__init__.py",
+      "target": "file:python/src/train/training/loss/multi_task.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/training/metrics/__init__.py",
+      "target": "file:python/src/train/training/metrics/auc.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/training/metrics/__init__.py",
+      "target": "file:python/src/train/training/metrics/classification.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/training/metrics/__init__.py",
+      "target": "file:python/src/train/training/metrics/regression.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/training/quality.py",
+      "target": "file:python/src/train/core/dag.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/training/trainer.py",
+      "target": "file:python/src/train/app/artifacts.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/training/trainer.py",
+      "target": "file:python/src/train/app/data.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/training/trainer.py",
+      "target": "file:python/src/train/app/export.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/training/trainer.py",
+      "target": "file:python/src/train/core/config.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/training/trainer.py",
+      "target": "file:python/src/train/core/dag.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/training/trainer.py",
+      "target": "file:python/src/train/core/task.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/training/trainer.py",
+      "target": "file:python/src/train/training/eval/evaluator.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/training/trainer.py",
+      "target": "file:python/src/train/training/loss/multi_task.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/training/trainer.py",
+      "target": "file:python/src/train/training/optim/scheduler.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:python/src/train/training/trainer.py",
+      "target": "file:python/src/train/training/quality.py",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/dag.rs",
+      "target": "file:src/feats/config.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/dag.rs",
+      "target": "file:src/feats/debug/mod.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/dag.rs",
+      "target": "file:src/feats/schema.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/debug/mod.rs",
+      "target": "file:src/feats/debug/tracer.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/mod.rs",
+      "target": "file:src/feats/config.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/mod.rs",
+      "target": "file:src/feats/dag.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/mod.rs",
+      "target": "file:src/feats/debug/mod.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/mod.rs",
+      "target": "file:src/feats/metrics.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/mod.rs",
+      "target": "file:src/feats/ops/mod.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/mod.rs",
+      "target": "file:src/feats/schema.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/ops/feature_hash.rs",
+      "target": "file:src/feats/ops/mod.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/ops/flat_split.rs",
+      "target": "file:src/feats/ops/mod.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/ops/mod.rs",
+      "target": "file:src/feats/ops/bucketing.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/ops/mod.rs",
+      "target": "file:src/feats/ops/cross_feature.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/ops/mod.rs",
+      "target": "file:src/feats/ops/dict_mapper.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/ops/mod.rs",
+      "target": "file:src/feats/ops/expression.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/ops/mod.rs",
+      "target": "file:src/feats/ops/feature_hash.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/ops/mod.rs",
+      "target": "file:src/feats/ops/flat_split.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/ops/mod.rs",
+      "target": "file:src/feats/ops/json_extract_list.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/ops/mod.rs",
+      "target": "file:src/feats/ops/list_overlap.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/ops/mod.rs",
+      "target": "file:src/feats/ops/list_string_parser.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/ops/mod.rs",
+      "target": "file:src/feats/ops/plugin.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/ops/mod.rs",
+      "target": "file:src/feats/ops/sequence.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/ops/mod.rs",
+      "target": "file:src/feats/ops/split.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/ops/mod.rs",
+      "target": "file:src/feats/ops/string_concat.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/ops/mod.rs",
+      "target": "file:src/feats/ops/string_parser.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/ops/split.rs",
+      "target": "file:src/feats/ops/mod.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/ops/string_concat.rs",
+      "target": "file:src/feats/ops/mod.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/feats/schema.rs",
+      "target": "file:src/feats/config.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/layers/embedding.rs",
+      "target": "file:src/feats/config.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/layers/mod.rs",
+      "target": "file:src/layers/embedding.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/layers/mod.rs",
+      "target": "file:src/layers/fm.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/layers/mod.rs",
+      "target": "file:src/layers/gdcn.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/layers/mod.rs",
+      "target": "file:src/layers/mlp.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/layers/mod.rs",
+      "target": "file:src/layers/towers.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/lib.rs",
+      "target": "file:src/feats/mod.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/lib.rs",
+      "target": "file:src/layers/mod.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/lib.rs",
+      "target": "file:src/models/mod.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/lib.rs",
+      "target": "file:src/server/mod.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/main.rs",
+      "target": "file:src/feats/mod.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/main.rs",
+      "target": "file:src/layers/mod.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/main.rs",
+      "target": "file:src/models/mod.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/deepfm.rs",
+      "target": "file:src/layers/embedding.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/deepfm.rs",
+      "target": "file:src/layers/fm.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/deepfm.rs",
+      "target": "file:src/layers/mlp.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/deepfm.rs",
+      "target": "file:src/layers/towers.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/esmm.rs",
+      "target": "file:src/layers/embedding.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/esmm.rs",
+      "target": "file:src/layers/mlp.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/esmm.rs",
+      "target": "file:src/layers/towers.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/gdcn_esmm.rs",
+      "target": "file:src/layers/embedding.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/gdcn_esmm.rs",
+      "target": "file:src/layers/gdcn.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/gdcn_esmm.rs",
+      "target": "file:src/layers/mlp.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/gdcn_esmm.rs",
+      "target": "file:src/layers/towers.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/gdcn_esmm.rs",
+      "target": "file:src/models/esmm.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/lr.rs",
+      "target": "file:src/layers/embedding.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/lr.rs",
+      "target": "file:src/layers/mlp.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/lr.rs",
+      "target": "file:src/layers/towers.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/mmoe.rs",
+      "target": "file:src/layers/embedding.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/mmoe.rs",
+      "target": "file:src/layers/mlp.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/mmoe.rs",
+      "target": "file:src/layers/towers.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/mod.rs",
+      "target": "file:src/layers/embedding.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/mod.rs",
+      "target": "file:src/layers/towers.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/mod.rs",
+      "target": "file:src/models/deepfm.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/mod.rs",
+      "target": "file:src/models/esmm.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/mod.rs",
+      "target": "file:src/models/gdcn_esmm.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/mod.rs",
+      "target": "file:src/models/lr.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/mod.rs",
+      "target": "file:src/models/mmoe.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/mod.rs",
+      "target": "file:src/models/unimixer/mod.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/mod.rs",
+      "target": "file:src/models/unimixer/tokenizer.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/unimixer/mod.rs",
+      "target": "file:src/models/unimixer/model.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/unimixer/mod.rs",
+      "target": "file:src/models/unimixer/per_token_swiglu.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/unimixer/mod.rs",
+      "target": "file:src/models/unimixer/siamese_norm.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/unimixer/mod.rs",
+      "target": "file:src/models/unimixer/tokenizer.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/unimixer/mod.rs",
+      "target": "file:src/models/unimixer/unimixer_block.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/unimixer/mod.rs",
+      "target": "file:src/models/unimixer/unimixing_lite.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/unimixer/mod.rs",
+      "target": "file:src/models/unimixer/unimixing.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/unimixer/model.rs",
+      "target": "file:src/layers/towers.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/unimixer/model.rs",
+      "target": "file:src/models/mod.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/unimixer/tokenizer.rs",
+      "target": "file:src/feats/config.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/models/unimixer/tokenizer.rs",
+      "target": "file:src/layers/embedding.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/server/engine.rs",
+      "target": "file:src/feats/config.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/server/engine.rs",
+      "target": "file:src/feats/dag.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/server/engine.rs",
+      "target": "file:src/feats/ops/mod.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/server/engine.rs",
+      "target": "file:src/layers/embedding.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/server/engine.rs",
+      "target": "file:src/models/mod.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/server/mod.rs",
+      "target": "file:src/server/engine.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/server/mod.rs",
+      "target": "file:src/server/manifest.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/server/mod.rs",
+      "target": "file:src/server/registry.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/server/mod.rs",
+      "target": "file:src/server/routes.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/server/mod.rs",
+      "target": "file:src/server/tracing.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/server/registry.rs",
+      "target": "file:src/feats/config.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/server/registry.rs",
+      "target": "file:src/feats/dag.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/server/registry.rs",
+      "target": "file:src/layers/embedding.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/server/registry.rs",
+      "target": "file:src/models/mod.rs",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:src/server/registry.rs",
+      "target": "file:src/models/unimixer/tokenizer.rs",
+      "type": "imports",
+      "weight": 0.7
+    }
+  ],
+  "layers": [
+    {
+      "id": "layer:rust-inference",
+      "name": "Rust 推理引擎",
+      "description": "Candle 推理核心：特征处理 DAG、模型定义、HTTP 推理服务、压测工具",
+      "nodeIds": [
+        "file:src/bin/bench.rs",
+        "file:src/bin/demo_inference.rs",
+        "file:src/bin/server.rs",
+        "file:src/feats/config.rs",
+        "file:src/feats/dag.rs",
+        "file:src/feats/debug/mod.rs",
+        "file:src/feats/debug/tracer.rs",
+        "file:src/feats/metrics.rs",
+        "file:src/feats/mod.rs",
+        "file:src/feats/ops/bucketing.rs",
+        "file:src/feats/ops/cross_feature.rs",
+        "file:src/feats/ops/dict_mapper.rs",
+        "file:src/feats/ops/expression.rs",
+        "file:src/feats/ops/feature_hash.rs",
+        "file:src/feats/ops/flat_split.rs",
+        "file:src/feats/ops/json_extract_list.rs",
+        "file:src/feats/ops/list_overlap.rs",
+        "file:src/feats/ops/list_string_parser.rs",
+        "file:src/feats/ops/mod.rs",
+        "file:src/feats/ops/plugin.rs",
+        "file:src/feats/ops/sequence.rs",
+        "file:src/feats/ops/split.rs",
+        "file:src/feats/ops/string_concat.rs",
+        "file:src/feats/ops/string_parser.rs",
+        "file:src/feats/schema.rs",
+        "file:src/layers/embedding.rs",
+        "file:src/layers/fm.rs",
+        "file:src/layers/gdcn.rs",
+        "file:src/layers/mlp.rs",
+        "file:src/layers/mod.rs",
+        "file:src/layers/towers.rs",
+        "file:src/lib.rs",
+        "file:src/main.rs",
+        "file:src/models/deepfm.rs",
+        "file:src/models/esmm.rs",
+        "file:src/models/gdcn_esmm.rs",
+        "file:src/models/lr.rs",
+        "file:src/models/mmoe.rs",
+        "file:src/models/mod.rs",
+        "file:src/models/unimixer/mod.rs",
+        "file:src/models/unimixer/model.rs",
+        "file:src/models/unimixer/per_token_swiglu.rs",
+        "file:src/models/unimixer/siamese_norm.rs",
+        "file:src/models/unimixer/tokenizer.rs",
+        "file:src/models/unimixer/unimixer_block.rs",
+        "file:src/models/unimixer/unimixing_lite.rs",
+        "file:src/models/unimixer/unimixing.rs",
+        "file:src/server/engine.rs",
+        "file:src/server/manifest.rs",
+        "file:src/server/mod.rs",
+        "file:src/server/registry.rs",
+        "file:src/server/routes.rs",
+        "file:src/server/tracing.rs"
+      ]
+    },
+    {
+      "id": "layer:python-training",
+      "name": "Python 训练管线",
+      "description": "PyTorch 训练与权重导出：特征算子、神经网络层、推荐模型、训练器、损失函数与指标",
+      "nodeIds": [
+        "file:python/src/train/__init__.py",
+        "file:python/src/train/app/__init__.py",
+        "file:python/src/train/app/artifacts.py",
+        "file:python/src/train/app/cli.py",
+        "file:python/src/train/app/data.py",
+        "file:python/src/train/app/export.py",
+        "file:python/src/train/app/main.py",
+        "file:python/src/train/app/manifest.py",
+        "file:python/src/train/core/__init__.py",
+        "file:python/src/train/core/config.py",
+        "file:python/src/train/core/dag.py",
+        "file:python/src/train/core/schema.py",
+        "file:python/src/train/core/task.py",
+        "file:python/src/train/debug/__init__.py",
+        "file:python/src/train/debug/tracer.py",
+        "file:python/src/train/layers/__init__.py",
+        "file:python/src/train/layers/embedding.py",
+        "file:python/src/train/layers/fm.py",
+        "file:python/src/train/layers/gdcn.py",
+        "file:python/src/train/layers/mlp.py",
+        "file:python/src/train/layers/towers.py",
+        "file:python/src/train/main/__init__.py",
+        "file:python/src/train/main/__main__.py",
+        "file:python/src/train/models/__init__.py",
+        "file:python/src/train/models/deepfm.py",
+        "file:python/src/train/models/esmm.py",
+        "file:python/src/train/models/gdcn_esmm.py",
+        "file:python/src/train/models/lr.py",
+        "file:python/src/train/models/mmoe.py",
+        "file:python/src/train/models/unimixer/__init__.py",
+        "file:python/src/train/models/unimixer/block.py",
+        "file:python/src/train/models/unimixer/model.py",
+        "file:python/src/train/models/unimixer/norm.py",
+        "file:python/src/train/models/unimixer/swiglu.py",
+        "file:python/src/train/models/unimixer/tokenizer.py",
+        "file:python/src/train/models/unimixer/unimixing.py",
+        "file:python/src/train/ops/__init__.py",
+        "file:python/src/train/ops/bucketing.py",
+        "file:python/src/train/ops/cross_feature.py",
+        "file:python/src/train/ops/dict_mapper.py",
+        "file:python/src/train/ops/expression.py",
+        "file:python/src/train/ops/feature_hash.py",
+        "file:python/src/train/ops/flat_split.py",
+        "file:python/src/train/ops/json_extract_list.py",
+        "file:python/src/train/ops/list_overlap.py",
+        "file:python/src/train/ops/list_string_parser.py",
+        "file:python/src/train/ops/sequence.py",
+        "file:python/src/train/ops/split.py",
+        "file:python/src/train/ops/string_concat.py",
+        "file:python/src/train/ops/string_parser.py",
+        "file:python/src/train/training/__init__.py",
+        "file:python/src/train/training/eval/__init__.py",
+        "file:python/src/train/training/eval/evaluator.py",
+        "file:python/src/train/training/loss/__init__.py",
+        "file:python/src/train/training/loss/multi_task.py",
+        "file:python/src/train/training/metrics/__init__.py",
+        "file:python/src/train/training/metrics/auc.py",
+        "file:python/src/train/training/metrics/classification.py",
+        "file:python/src/train/training/metrics/regression.py",
+        "file:python/src/train/training/optim/__init__.py",
+        "file:python/src/train/training/optim/scheduler.py",
+        "file:python/src/train/training/quality.py",
+        "file:python/src/train/training/trainer.py"
+      ]
+    },
+    {
+      "id": "layer:rust-tests",
+      "name": "Rust 测试",
+      "description": "Rust 集成测试与冒烟测试",
+      "nodeIds": [
+        "file:tests/dag_regression.rs",
+        "config:tests/fixtures/golden_expected.json",
+        "config:tests/fixtures/golden_feature_config.yaml",
+        "file:tests/fixtures/golden_rows.jsonl",
+        "file:tests/golden_consistency.rs",
+        "file:tests/model_smoke.rs"
+      ]
+    },
+    {
+      "id": "layer:python-demo",
+      "name": "Python Demo 与验证",
+      "description": "合成数据生成、训练示例、PyTorch vs Rust 推理一致性验证",
+      "nodeIds": [
+        "file:python/src/scale_rec_demo/__init__.py",
+        "file:python/src/scale_rec_demo/_metrics.py",
+        "file:python/src/scale_rec_demo/generate_discover_data.py",
+        "file:python/src/scale_rec_demo/paths.py",
+        "file:python/src/scale_rec_demo/verify_all.py",
+        "file:python/src/scale_rec_demo/verify_discover_gdcn.py"
+      ]
+    },
+    {
+      "id": "layer:python-tests",
+      "name": "Python 测试",
+      "description": "Python 单元测试与 Golden Consistency 测试",
+      "nodeIds": [
+        "file:python/tests/generate_golden_expected.py",
+        "file:python/tests/test_artifacts.py",
+        "file:python/tests/test_cli_config.py",
+        "file:python/tests/test_dag.py",
+        "file:python/tests/test_data.py",
+        "file:python/tests/test_demo_configs.py",
+        "file:python/tests/test_feature_hash.py",
+        "file:python/tests/test_gen_discover_config.py",
+        "file:python/tests/test_golden_consistency.py",
+        "file:python/tests/test_manifest.py",
+        "file:python/tests/test_models.py",
+        "file:python/tests/test_ops.py",
+        "file:python/tests/test_string_concat.py",
+        "file:python/tests/test_training_utils.py"
+      ]
+    },
+    {
+      "id": "layer:configs",
+      "name": "配置文件",
+      "description": "特征编排配置、模型配置、项目构建配置",
+      "nodeIds": [
+        "config:.claude/settings.json",
+        "config:.understand-anything/config.json",
+        "config:Cargo.toml",
+        "config:examples/feature_config_discover.yaml",
+        "config:examples/model_discover_unimixer.yaml",
+        "config:examples/model_gdcn_esmm.yaml",
+        "config:python/pyproject.toml",
+        "config:tests/fixtures/golden_expected.json",
+        "config:tests/fixtures/golden_feature_config.yaml"
+      ]
+    },
+    {
+      "id": "layer:docs",
+      "name": "文档",
+      "description": "项目文档、设计改进路线图、特征算子说明",
+      "nodeIds": [
+        "document:.claude/CLAUDE.md",
+        "document:.claude/rules/code-style.md",
+        "document:AGENTS.md",
+        "document:docs/design_improvements.md",
+        "document:docs/feature_operators.md",
+        "document:docs/TRAINING_GUIDE.md",
+        "document:README.md"
+      ]
+    },
+    {
+      "id": "layer:rust-binaries",
+      "name": "Rust 二进制入口",
+      "description": "Server、Bench、Demo Inference 等可执行入口",
+      "nodeIds": [
+        "file:src/bin/bench.rs",
+        "file:src/bin/demo_inference.rs",
+        "file:src/bin/server.rs"
+      ]
+    }
+  ],
+  "tour": [
+    {
+      "order": 1,
+      "title": "项目概览",
+      "description": "从 README 了解项目整体架构：Rust 推理引擎 + Python 训练管线，双端共享特征配置",
+      "nodeIds": [
+        "document:README.md",
+        "document:AGENTS.md"
+      ]
+    },
+    {
+      "order": 2,
+      "title": "特征配置与 DAG",
+      "description": "理解共享的特征配置格式（YAML）以及 Rust/Python 双端的 DAG 执行引擎是如何构建的",
+      "nodeIds": [
+        "config:examples/feature_config_discover.yaml",
+        "file:src/feats/config.rs",
+        "file:src/feats/dag.rs",
+        "file:python/src/train/core/config.py",
+        "file:python/src/train/core/dag.py"
+      ]
+    },
+    {
+      "order": 3,
+      "title": "特征算子",
+      "description": "查看双端 10 个特征算子的实现，了解特征工程 pipeline",
+      "nodeIds": [
+        "file:python/src/train/ops/__init__.py",
+        "file:python/src/train/ops/bucketing.py",
+        "file:python/src/train/ops/cross_feature.py",
+        "file:python/src/train/ops/dict_mapper.py",
+        "file:python/src/train/ops/expression.py",
+        "file:python/src/train/ops/feature_hash.py",
+        "file:python/src/train/ops/flat_split.py",
+        "file:python/src/train/ops/json_extract_list.py"
+      ]
+    },
+    {
+      "order": 4,
+      "title": "推荐模型",
+      "description": "Explore 模型定义：LR、DeepFM、MMoE、ESMM、GDCN+ESMM、UniMixer",
+      "nodeIds": [
+        "file:python/src/train/models/__init__.py",
+        "file:python/src/train/models/deepfm.py",
+        "file:python/src/train/models/esmm.py",
+        "file:python/src/train/models/gdcn_esmm.py",
+        "file:python/src/train/models/lr.py",
+        "file:python/src/train/models/mmoe.py",
+        "file:src/models/deepfm.rs",
+        "file:src/models/esmm.rs",
+        "file:src/models/gdcn_esmm.rs",
+        "file:src/models/lr.rs",
+        "file:src/models/mmoe.rs",
+        "file:src/models/mod.rs"
+      ]
+    },
+    {
+      "order": 5,
+      "title": "UniMixer 架构",
+      "description": "深入理解 UniMixer 的 Tokenization、双随机矩阵交互、SwiGLU 激活、SiameseNorm 归一化",
+      "nodeIds": [
+        "config:examples/model_discover_unimixer.yaml",
+        "file:python/src/train/models/unimixer/__init__.py",
+        "file:python/src/train/models/unimixer/block.py",
+        "file:python/src/train/models/unimixer/model.py",
+        "file:python/src/train/models/unimixer/norm.py",
+        "file:python/src/train/models/unimixer/swiglu.py",
+        "file:python/src/train/models/unimixer/tokenizer.py",
+        "file:python/src/train/models/unimixer/unimixing.py",
+        "file:src/models/unimixer/mod.rs",
+        "file:src/models/unimixer/model.rs",
+        "file:src/models/unimixer/per_token_swiglu.rs",
+        "file:src/models/unimixer/siamese_norm.rs",
+        "file:src/models/unimixer/tokenizer.rs",
+        "file:src/models/unimixer/unimixer_block.rs",
+        "file:src/models/unimixer/unimixing_lite.rs",
+        "file:src/models/unimixer/unimixing.rs"
+      ]
+    },
+    {
+      "order": 6,
+      "title": "Rust 推理服务",
+      "description": "HTTP 推理服务的核心：引擎封装、多模型热加载、Axum 路由、性能追踪",
+      "nodeIds": [
+        "file:src/server/engine.rs",
+        "file:src/server/manifest.rs",
+        "file:src/server/mod.rs",
+        "file:src/server/registry.rs",
+        "file:src/server/routes.rs",
+        "file:src/server/tracing.rs"
+      ]
+    },
+    {
+      "order": 7,
+      "title": "Python 训练管线",
+      "description": "训练入口、CLI、数据加载、权重导出、Trainer、多任务损失与评估指标",
+      "nodeIds": [
+        "file:python/src/train/app/__init__.py",
+        "file:python/src/train/app/artifacts.py",
+        "file:python/src/train/app/cli.py",
+        "file:python/src/train/app/data.py",
+        "file:python/src/train/app/export.py",
+        "file:python/src/train/app/main.py",
+        "file:python/src/train/app/manifest.py",
+        "file:python/src/train/training/__init__.py",
+        "file:python/src/train/training/eval/__init__.py",
+        "file:python/src/train/training/eval/evaluator.py"
+      ]
+    },
+    {
+      "order": 8,
+      "title": "测试与验证",
+      "description": "Rust 集成测试、Python 单元测试、Golden Consistency 跨语言一致性验证",
+      "nodeIds": [
+        "file:python/tests/generate_golden_expected.py",
+        "file:python/tests/test_artifacts.py",
+        "file:python/tests/test_cli_config.py",
+        "file:python/tests/test_dag.py",
+        "file:python/tests/test_data.py",
+        "file:python/tests/test_demo_configs.py",
+        "file:python/tests/test_feature_hash.py",
+        "file:python/tests/test_gen_discover_config.py",
+        "file:python/tests/test_golden_consistency.py",
+        "file:python/tests/test_manifest.py",
+        "file:python/tests/test_models.py",
+        "file:python/tests/test_ops.py",
+        "file:python/tests/test_string_concat.py",
+        "file:python/tests/test_training_utils.py",
+        "config:tests/fixtures/golden_expected.json",
+        "config:tests/fixtures/golden_feature_config.yaml",
+        "file:tests/fixtures/golden_rows.jsonl",
+        "file:tests/golden_consistency.rs"
+      ]
+    }
+  ]
+}
