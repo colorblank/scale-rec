@@ -4,8 +4,9 @@ use std::time::Instant;
 
 use candle_core::{Device, Tensor};
 
-use crate::feats::config::{DType, PoolingStrategy, SourceDef, TruncationSide};
+use crate::feats::config::{DType, PoolingStrategy, TruncationSide};
 use crate::feats::dag::{FeatureDag, FeatureValue};
+use crate::feats::defaults::parse_source_default;
 use crate::feats::ops::Fv;
 use crate::layers::embedding::FeatureSpec;
 use crate::models::Model;
@@ -18,6 +19,68 @@ pub struct InferenceMetrics {
     pub forward_us: u64,
     pub response_us: u64,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InferenceErrorKind {
+    BadRequest,
+    Feature,
+    Model,
+    Internal,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InferenceError {
+    kind: InferenceErrorKind,
+    message: String,
+}
+
+impl InferenceError {
+    pub fn bad_request(message: impl Into<String>) -> Self {
+        Self {
+            kind: InferenceErrorKind::BadRequest,
+            message: message.into(),
+        }
+    }
+
+    pub fn feature(message: impl Into<String>) -> Self {
+        Self {
+            kind: InferenceErrorKind::Feature,
+            message: message.into(),
+        }
+    }
+
+    pub fn model(message: impl Into<String>) -> Self {
+        Self {
+            kind: InferenceErrorKind::Model,
+            message: message.into(),
+        }
+    }
+
+    pub fn internal(message: impl Into<String>) -> Self {
+        Self {
+            kind: InferenceErrorKind::Internal,
+            message: message.into(),
+        }
+    }
+
+    pub fn kind(&self) -> InferenceErrorKind {
+        self.kind
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+impl std::fmt::Display for InferenceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for InferenceError {}
+
+type InferenceResult<T> = Result<T, InferenceError>;
 
 pub struct InferenceEngine {
     pub dag: FeatureDag,
@@ -75,7 +138,7 @@ impl InferenceEngine {
     pub fn predict(
         &self,
         features: &[FeatureRow],
-    ) -> Result<(Vec<PredictionRow>, InferenceMetrics), String> {
+    ) -> InferenceResult<(Vec<PredictionRow>, InferenceMetrics)> {
         let mut metrics = InferenceMetrics::default();
         if features.is_empty() {
             return Ok((vec![], metrics));
@@ -92,7 +155,7 @@ impl InferenceEngine {
             .dag
             .plan
             .execute_plan(&columns, &HashSet::new(), &HashMap::new())
-            .map_err(|e| format!("DAG: {}", e))?;
+            .map_err(|e| InferenceError::feature(format!("DAG: {}", e)))?;
         metrics.dag_us = start_dag.elapsed().as_micros() as u64;
 
         let (predictions, tensor_us, forward_us, response_us) =
@@ -107,13 +170,13 @@ impl InferenceEngine {
     fn rows_to_columns(
         &self,
         rows: &[FeatureRow],
-    ) -> Result<HashMap<String, Vec<FeatureValue>>, String> {
+    ) -> InferenceResult<HashMap<String, Vec<FeatureValue>>> {
         let n = rows.len();
         let mut columns: HashMap<String, Vec<FeatureValue>> = self
             .dag
             .source_defs()
             .iter()
-            .map(|(name, source)| (name.clone(), vec![source_default(source); n]))
+            .map(|(name, source)| (name.clone(), vec![parse_source_default(source); n]))
             .collect();
 
         let mut default_hits = 0;
@@ -130,8 +193,12 @@ impl InferenceEngine {
             for (key, val) in row {
                 if let Some(col) = columns.get_mut(key) {
                     let source = self.dag.source_defs().get(key).unwrap();
-                    let fv = json_to_feature_typed(val, &source.dtype)
-                        .map_err(|err| format!("column '{}' row {}: {}", key, row_idx, err))?;
+                    let fv = json_to_feature_typed(val, &source.dtype).map_err(|err| {
+                        InferenceError::bad_request(format!(
+                            "column '{}' row {}: {}",
+                            key, row_idx, err
+                        ))
+                    })?;
 
                     match &fv {
                         Fv::IntList(v) if v.is_empty() => {
@@ -174,7 +241,7 @@ impl InferenceEngine {
         &self,
         user: &FeatureRow,
         items: &[FeatureRow],
-    ) -> Result<(Vec<PredictionRow>, InferenceMetrics), String> {
+    ) -> InferenceResult<(Vec<PredictionRow>, InferenceMetrics)> {
         let mut metrics = InferenceMetrics::default();
         if items.is_empty() {
             return Ok((vec![], metrics));
@@ -186,8 +253,9 @@ impl InferenceEngine {
         let mut one: HashMap<String, Vec<FeatureValue>> = HashMap::new();
         for (k, v) in user {
             if let Some(source) = self.dag.source_defs().get(k) {
-                let fv = json_to_feature_typed(v, &source.dtype)
-                    .map_err(|err| format!("user field '{}': {}", k, err))?;
+                let fv = json_to_feature_typed(v, &source.dtype).map_err(|err| {
+                    InferenceError::bad_request(format!("user field '{}': {}", k, err))
+                })?;
                 one.insert(k.clone(), vec![fv]);
             }
         }
@@ -202,7 +270,7 @@ impl InferenceEngine {
                 &self.broadcast_precompute_skip_indices,
                 &HashMap::new(),
             )
-            .map_err(|e| format!("precompute: {}", e))?;
+            .map_err(|e| InferenceError::feature(format!("precompute: {}", e)))?;
 
         // Extract user-derived outputs (column IDs from user-only ops)
         let mut precomputed: HashMap<usize, Fv> = HashMap::new();
@@ -227,7 +295,7 @@ impl InferenceEngine {
             .dag
             .source_defs()
             .iter()
-            .map(|(name, source)| (name.clone(), vec![source_default(source); n]))
+            .map(|(name, source)| (name.clone(), vec![parse_source_default(source); n]))
             .collect();
 
         // 1. Broadcast pre-parsed user-side features to all n rows
@@ -246,8 +314,12 @@ impl InferenceEngine {
             for (key, val) in item {
                 if let Some(col) = columns.get_mut(key) {
                     let source = self.dag.source_defs().get(key).unwrap();
-                    let fv = json_to_feature_typed(val, &source.dtype)
-                        .map_err(|err| format!("item column '{}' row {}: {}", key, row_idx, err))?;
+                    let fv = json_to_feature_typed(val, &source.dtype).map_err(|err| {
+                        InferenceError::bad_request(format!(
+                            "item column '{}' row {}: {}",
+                            key, row_idx, err
+                        ))
+                    })?;
                     col[row_idx] = fv;
                 }
             }
@@ -259,7 +331,7 @@ impl InferenceEngine {
             .dag
             .plan
             .execute_plan(&columns, &self.user_op_indices, &precomputed)
-            .map_err(|e| format!("DAG: {}", e))?;
+            .map_err(|e| InferenceError::feature(format!("DAG: {}", e)))?;
         metrics.dag_us = dag1_us + start_dag2.elapsed().as_micros() as u64;
 
         let (predictions, tensor_us, forward_us, response_us) =
@@ -275,16 +347,17 @@ impl InferenceEngine {
         &self,
         context: &[Vec<Fv>],
         n: usize,
-    ) -> Result<(Vec<PredictionRow>, u64, u64, u64), String> {
+    ) -> InferenceResult<(Vec<PredictionRow>, u64, u64, u64)> {
         let start_tensor = Instant::now();
         let mut tensor_inputs: HashMap<String, Tensor> =
             HashMap::with_capacity(self.embed_features.len());
         for (i, spec) in self.embed_features.iter().enumerate() {
             let cid = self.embed_ids[i];
-            let col = context
-                .get(cid)
-                .ok_or_else(|| format!("Feature '{}' missing", spec.name))?;
-            let tensor = feature_column_to_tensor(spec, col, n, &self.device)?;
+            let col = context.get(cid).ok_or_else(|| {
+                InferenceError::feature(format!("feature '{}' missing", spec.name))
+            })?;
+            let tensor = feature_column_to_tensor(spec, col, n, &self.device)
+                .map_err(InferenceError::model)?;
             tensor_inputs.insert(spec.name.clone(), tensor);
         }
         let tensor_us = start_tensor.elapsed().as_micros() as u64;
@@ -293,7 +366,7 @@ impl InferenceEngine {
         let outputs = self
             .model
             .forward(&tensor_inputs)
-            .map_err(|e| format!("Model: {}", e))?;
+            .map_err(|e| InferenceError::model(format!("model forward: {}", e)))?;
         let forward_us = start_forward.elapsed().as_micros() as u64;
 
         let start_response = Instant::now();
@@ -305,9 +378,9 @@ impl InferenceEngine {
                 .get(*key)
                 .unwrap()
                 .flatten_all()
-                .map_err(|e| format!("{}", e))?
+                .map_err(|e| InferenceError::model(format!("flatten output '{}': {}", key, e)))?
                 .to_vec1::<f32>()
-                .map_err(|e| format!("{}", e))?;
+                .map_err(|e| InferenceError::model(format!("copy output '{}': {}", key, e)))?;
             for (i, v) in vals.iter().enumerate() {
                 result[i].insert(key.to_string(), *v);
             }
@@ -661,51 +734,6 @@ operators:
 
         let (preds, _metrics) = engine.predict_broadcast(&user, &items).unwrap();
         assert_eq!(preds.len(), 2);
-    }
-}
-
-fn source_default(source: &SourceDef) -> FeatureValue {
-    match &source.dtype {
-        DType::Int => Fv::Int(source.default_val.parse::<i32>().unwrap_or(0)),
-        DType::Float => Fv::Float(source.default_val.parse::<f32>().unwrap_or(0.0)),
-        DType::String => Fv::Str(source.default_val.clone()),
-        DType::Enum {
-            values,
-            default,
-            oov,
-        } => normalize_enum_value(
-            default.as_deref().unwrap_or(&source.default_val),
-            values,
-            oov,
-        )
-        .unwrap_or_else(|_| Fv::Str(source.default_val.clone())),
-        DType::List { dtype, length } => match dtype.as_ref() {
-            DType::Int => Fv::IntList(vec![
-                source.default_val.parse::<i32>().unwrap_or(0);
-                *length
-            ]),
-            DType::Float => Fv::FloatList(vec![
-                source.default_val.parse::<f32>().unwrap_or(0.0);
-                *length
-            ]),
-            DType::String => Fv::StrList(vec![source.default_val.clone(); *length]),
-            DType::Enum {
-                values,
-                default,
-                oov,
-            } => {
-                let value = match normalize_enum_value(
-                    default.as_deref().unwrap_or(&source.default_val),
-                    values,
-                    oov,
-                ) {
-                    Ok(Fv::Str(s)) => s,
-                    _ => source.default_val.clone(),
-                };
-                Fv::StrList(vec![value; *length])
-            }
-            _ => Fv::Int(0),
-        },
     }
 }
 

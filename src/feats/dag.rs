@@ -4,10 +4,9 @@ use super::ops::{
     JsonExtractList, ListOverlap, ListStringParser, PluginOp, SequenceOp, Split, StringConcat,
     StringParser,
 };
-use crate::feats::config::{
-    parse_float_strict, parse_int_strict, DType, FlowConfig, OperatorDef, SourceDef,
-};
+use crate::feats::config::{FlowConfig, OperatorDef, SourceDef};
 use crate::feats::debug::DebugTracer;
+use crate::feats::defaults::parse_default;
 use crate::feats::schema::{infer_feature_schemas, FeatureSchema};
 use petgraph::algo::toposort;
 use petgraph::prelude::DiGraph;
@@ -83,50 +82,6 @@ pub struct FeatureDag {
 }
 
 impl FeatureDag {
-    fn parse_default(val_str: &str, dtype: &DType) -> FeatureValue {
-        match dtype {
-            DType::Int => Fv::Int(parse_int_strict(val_str).unwrap_or(0)),
-            DType::Float => Fv::Float(parse_float_strict(val_str).unwrap_or(0.0)),
-            DType::String => Fv::Str(val_str.to_string()),
-            DType::Enum {
-                values,
-                default,
-                oov,
-            } => {
-                let value = default.as_deref().unwrap_or(val_str);
-                if values.iter().any(|candidate| candidate == value) {
-                    Fv::Str(value.to_string())
-                } else {
-                    Fv::Str(oov.as_deref().unwrap_or(val_str).to_string())
-                }
-            }
-            DType::List {
-                dtype: inner,
-                length,
-            } => match inner.as_ref() {
-                DType::Int => Fv::IntList(vec![parse_int_strict(val_str).unwrap_or(0); *length]),
-                DType::Float => {
-                    Fv::FloatList(vec![parse_float_strict(val_str).unwrap_or(0.0); *length])
-                }
-                DType::String => Fv::StrList(vec![val_str.to_string(); *length]),
-                DType::Enum {
-                    values,
-                    default,
-                    oov,
-                } => {
-                    let value = default.as_deref().unwrap_or(val_str);
-                    let normalized = if values.iter().any(|candidate| candidate == value) {
-                        value
-                    } else {
-                        oov.as_deref().unwrap_or(val_str)
-                    };
-                    Fv::StrList(vec![normalized.to_string(); *length])
-                }
-                _ => Fv::Int(0),
-            },
-        }
-    }
-
     pub fn from_config(
         config: FlowConfig,
         debug_mode: bool,
@@ -210,10 +165,7 @@ impl FeatureDag {
             source_names.push(s.clone());
             col_names[i] = Some(s.clone());
             let source_def = sources.get(s).unwrap();
-            source_defaults.push(Self::parse_default(
-                &source_def.default_val,
-                &source_def.dtype,
-            ));
+            source_defaults.push(parse_default(&source_def.default_val, &source_def.dtype));
         }
         let mut col_count = sources.len();
         // Assign IDs to operator outputs
@@ -612,7 +564,7 @@ impl FeatureDag {
         // Stage 2: fill defaults only for missing keys
         for (name, source_def) in &self.sources {
             if !context.contains_key(name) {
-                let default_val = Self::parse_default(&source_def.default_val, &source_def.dtype);
+                let default_val = parse_default(&source_def.default_val, &source_def.dtype);
                 context.insert(name.clone(), default_val);
             }
         }
@@ -689,7 +641,7 @@ impl FeatureDag {
         // Stage 2: fill defaults for missing keys
         for (name, source_def) in &self.sources {
             if !context.contains_key(name) {
-                let default = Self::parse_default(&source_def.default_val, &source_def.dtype);
+                let default = parse_default(&source_def.default_val, &source_def.dtype);
                 context.insert(name.clone(), vec![default; n_rows]);
             }
         }

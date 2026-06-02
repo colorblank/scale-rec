@@ -11,7 +11,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::engine::InferenceEngine;
+use super::engine::{InferenceEngine, InferenceError, InferenceErrorKind};
 use super::registry::ModelRegistry;
 use super::tracing::RequestTimer;
 
@@ -67,31 +67,19 @@ impl axum::response::IntoResponse for ApiError {
     }
 }
 
-fn map_predict_error(err: String, model_id: String) -> ApiError {
-    if err.contains("column '") || err.contains("field '") || err.contains("value") {
-        ApiError {
-            code: "BAD_REQUEST".to_string(),
-            message: err,
-            request_id: None,
-            model_id: Some(model_id),
-            details: None,
-        }
-    } else if err.contains("Model:") {
-        ApiError {
-            code: "MODEL_ERROR".to_string(),
-            message: err,
-            request_id: None,
-            model_id: Some(model_id),
-            details: None,
-        }
-    } else {
-        ApiError {
-            code: "FEATURE_ERROR".to_string(),
-            message: err,
-            request_id: None,
-            model_id: Some(model_id),
-            details: None,
-        }
+fn map_predict_error(err: InferenceError, model_id: String) -> ApiError {
+    let code = match err.kind() {
+        InferenceErrorKind::BadRequest => "BAD_REQUEST",
+        InferenceErrorKind::Feature => "FEATURE_ERROR",
+        InferenceErrorKind::Model => "MODEL_ERROR",
+        InferenceErrorKind::Internal => "INTERNAL_ERROR",
+    };
+    ApiError {
+        code: code.to_string(),
+        message: err.message().to_string(),
+        request_id: None,
+        model_id: Some(model_id),
+        details: None,
     }
 }
 
