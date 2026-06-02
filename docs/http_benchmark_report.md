@@ -16,6 +16,12 @@
 
 UniMixer 的中位数延迟稳定在 `12.2 ms`，但尾延迟波动高于 GDCN+ESMM。上一轮单次测试出现的 1s 级 P99.9 尖峰未在本次 3 轮复测中复现。
 
+2026-06-02 补充了不同 CPU 后端的对比压测，并在 Rust 侧优化了 GDCN cross/gate GEMM 与 UniMixer token/block 小矩阵乘路径。结论：
+
+- macOS Accelerate 后端下，UniMixer P50 为 `12.7 ms`，GDCN+ESMM P50 为 `9.3 ms`。
+- macOS native CPU 后端下，UniMixer P50 为 `27.6 ms`，比 Accelerate 慢约 `2.2x`；GDCN+ESMM P50 为 `10.4 ms`，与 Accelerate 接近。
+- 用户在 Linux native CPU 后端观测到 UniMixer P50 约 `8s`、P99 约 `16s`，而 GDCN+ESMM 仍接近 macOS 结果。该现象与 UniMixer 原先依赖大量 3D batched/small matmul 的后端敏感性一致；当前代码已将相关路径改为更稳定的 2D GEMM loop，但 Linux native 结果仍需在目标机器复测。
+
 ## 测试环境
 
 | 项目 | 值 |
@@ -31,6 +37,63 @@ UniMixer 的中位数延迟稳定在 `12.2 ms`，但尾延迟波动高于 GDCN+E
 | 请求模式 | broadcast |
 | Batch size | 200 candidates/request |
 | 目标负载 | 300 QPS / 60s |
+
+## 后端对比
+
+### 构建命令
+
+macOS Accelerate:
+
+```bash
+cargo build --release --features macos-accelerate --bin server --bin bench
+```
+
+macOS native CPU:
+
+```bash
+cargo build --release --bin server --bin bench
+```
+
+Linux native CPU:
+
+```bash
+cargo build --release --bin server --bin bench
+```
+
+Linux MKL CPU:
+
+```bash
+cargo build --release --features cpu-mkl --bin server --bin bench
+```
+
+### 2026-06-02 单轮对比结果
+
+同参数：`300 QPS / 60s / broadcast / batch-size=200 / concurrency=300`。
+
+| 平台 / 后端 | 模型 | Success | Errors | RPS | P50 | P95 | P99 | P99.9 | Mean | Min / Max | 说明 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| macOS / Accelerate | `model_gdcn_esmm` | 18000 | 0 | 300 | 9.3 ms | 22.3 ms | 41.8 ms | 73.3 ms | 11.5 ms | 6.9 / 114.7 ms | GDCN cross/gate GEMM 融合后 |
+| macOS / Accelerate | `model_discover_unimixer` | 18000 | 0 | 300 | 12.7 ms | 27.0 ms | 42.6 ms | 75.8 ms | 14.9 ms | 10.2 / 135.6 ms | UniMixer 小矩阵乘优化后 |
+| macOS / native CPU | `model_gdcn_esmm` | 18000 | 0 | 300 | 10.4 ms | 25.6 ms | 43.3 ms | 75.4 ms | 12.8 ms | 7.9 / 121.5 ms | 默认 release，无 Accelerate |
+| macOS / native CPU | `model_discover_unimixer` | 18000 | 0 | 300 | 27.6 ms | 65.6 ms | 97.8 ms | 140.6 ms | 33.3 ms | 19.0 / 181.3 ms | 默认 release，无 Accelerate |
+| Linux / native CPU | `model_discover_unimixer` | - | - | - | 约 8s | - | 约 16s | - | - | - | 用户环境观测，需按当前优化后代码复测 |
+
+### 后端差异分析
+
+GDCN+ESMM 主要由普通 2D dense GEMM 构成，native CPU 与 Accelerate 的差异较小。UniMixer 对后端更敏感，原因是模型结构包含 token/block 维度上的小矩阵乘：
+
+- `PerTokenSwiGlu`: token-specific `up/gate/down` projection。
+- `UniMixingLite`: block-local mixing。
+- `UniMixing`: standard block-local mixing。
+
+Rust 实现已做以下优化：
+
+- `PerTokenSwiGlu` 将 `up` 和 `gate` 投影融合成一次投影，再按 hidden 维切分。
+- `PerTokenSwiGlu` token projection 从 3D batched matmul 改为 token-wise 2D GEMM loop。
+- `UniMixingLite` 和 `UniMixing` 的 local mixing 从 3D batched matmul 改为 block-wise 2D GEMM loop。
+- `GatedCrossNetwork` 将 cross/gate 两次 GEMM 融合为一次 GEMM，再按输出维切分。
+
+这些优化不改变 safetensors 权重 key，也不需要重新训练模型。UniMixer Rust/Python 输出一致性已验证，最大 logits 差异为 `4e-08`。
 
 ## 模型与产物
 

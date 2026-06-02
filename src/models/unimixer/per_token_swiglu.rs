@@ -8,8 +8,7 @@ use std::sync::Mutex;
 /// 应用特定于 Token 的 SwiGLU 变换来建模特征的异质性。
 /// 公式: pSwiGLU(o_i) = W_down^i * ((W_up^i * o_i + b_up^i) ⊙ Swish(W_gate^i * o_i + b_gate^i)) + b_down^i
 struct CachedWeights {
-    w_up_t: Tensor,
-    w_gate_t: Tensor,
+    w_up_gate_t: Tensor,
     w_down_t: Tensor,
 }
 
@@ -20,6 +19,7 @@ pub struct PerTokenSwiGlu {
     b_gate: Tensor,
     w_down: Tensor,
     b_down: Tensor,
+    hidden_dim: usize,
     cached_weights: Mutex<Option<CachedWeights>>,
 }
 
@@ -86,6 +86,7 @@ impl PerTokenSwiGlu {
             b_gate,
             w_down,
             b_down,
+            hidden_dim,
             cached_weights: Mutex::new(None),
         })
     }
@@ -96,36 +97,38 @@ impl PerTokenSwiGlu {
         x.mul(&sig)
     }
 
-    /// Token 维度 batch matmul：`[B, T, D] × [T, D, H] → [B, T, H]`
+    /// Token 维度投影：`[B, T, D] × [T, D, H] → [B, T, H]`。
     ///
-    /// `w_t` 必须是预转置后的权重，省去每次前向都重新转置权重的拷贝开销。
-    fn batched_token_matmul(x: &Tensor, w_t: &Tensor) -> Result<Tensor> {
-        let x_t = x.transpose(0, 1)?.contiguous()?;
-        let out_t = x_t.matmul(w_t)?;
-        out_t.transpose(0, 1)
+    /// Candle native CPU 后端对 3D batched matmul 的性能很差；按 token 拆成
+    /// 普通 2D GEMM 可以走更稳定的矩阵乘路径。
+    fn token_matmul_2d_loop(x: &Tensor, w_t: &Tensor) -> Result<Tensor> {
+        let (_, num_tokens, _) = x.dims3()?;
+        let mut outputs = Vec::with_capacity(num_tokens);
+        for token_idx in 0..num_tokens {
+            let x_token = x.narrow(1, token_idx, 1)?.squeeze(1)?.contiguous()?;
+            let w_token = w_t.narrow(0, token_idx, 1)?.squeeze(0)?;
+            outputs.push(x_token.matmul(&w_token)?.unsqueeze(1)?);
+        }
+        Tensor::cat(&outputs, 1)
     }
 
-    fn transposed_weights(&self) -> Result<(Tensor, Tensor, Tensor)> {
+    fn transposed_weights(&self) -> Result<(Tensor, Tensor)> {
         let mut guard = self
             .cached_weights
             .lock()
             .expect("PerTokenSwiGlu cache mutex poisoned");
         if let Some(cached) = guard.as_ref() {
-            return Ok((
-                cached.w_up_t.clone(),
-                cached.w_gate_t.clone(),
-                cached.w_down_t.clone(),
-            ));
+            return Ok((cached.w_up_gate_t.clone(), cached.w_down_t.clone()));
         }
         let w_up_t = self.w_up.transpose(1, 2)?.contiguous()?;
         let w_gate_t = self.w_gate.transpose(1, 2)?.contiguous()?;
+        let w_up_gate_t = Tensor::cat(&[w_up_t, w_gate_t], 2)?;
         let w_down_t = self.w_down.transpose(1, 2)?.contiguous()?;
         *guard = Some(CachedWeights {
-            w_up_t: w_up_t.clone(),
-            w_gate_t: w_gate_t.clone(),
+            w_up_gate_t: w_up_gate_t.clone(),
             w_down_t: w_down_t.clone(),
         });
-        Ok((w_up_t, w_gate_t, w_down_t))
+        Ok((w_up_gate_t, w_down_t))
     }
 
     /// 前向传播
@@ -136,13 +139,17 @@ impl PerTokenSwiGlu {
     /// 返回:
     /// - 形状为 (batch_size, T, D) 的输出张量
     pub fn forward(&self, x: &Tensor) -> Result<Tensor> {
-        let (w_up_t, w_gate_t, w_down_t) = self.transposed_weights()?;
+        let (w_up_gate_t, w_down_t) = self.transposed_weights()?;
 
-        let up = Self::batched_token_matmul(x, &w_up_t)?.broadcast_add(&self.b_up)?;
-        let gate = Self::batched_token_matmul(x, &w_gate_t)?.broadcast_add(&self.b_gate)?;
+        let up_gate = Self::token_matmul_2d_loop(x, &w_up_gate_t)?;
+        let up = up_gate
+            .narrow(2, 0, self.hidden_dim)?
+            .broadcast_add(&self.b_up)?;
+        let gate = up_gate
+            .narrow(2, self.hidden_dim, self.hidden_dim)?
+            .broadcast_add(&self.b_gate)?;
         let hidden = up.mul(&self.swish(&gate)?)?;
-        let output =
-            Self::batched_token_matmul(&hidden, &w_down_t)?.broadcast_add(&self.b_down)?;
+        let output = Self::token_matmul_2d_loop(&hidden, &w_down_t)?.broadcast_add(&self.b_down)?;
 
         Ok(output)
     }

@@ -149,6 +149,18 @@ impl UniMixing {
         Ok((w_b_star, w_r))
     }
 
+    fn local_mix_2d_loop(&self, x: &Tensor, w_b_proc: &Tensor) -> Result<Tensor> {
+        let (batch_size, _) = x.dims2()?;
+        let x_blocks = x.reshape((batch_size, self.num_blocks, self.block_size))?;
+        let mut outputs = Vec::with_capacity(self.num_blocks);
+        for block_idx in 0..self.num_blocks {
+            let x_block = x_blocks.narrow(1, block_idx, 1)?.squeeze(1)?.contiguous()?;
+            let w_block = w_b_proc.narrow(0, block_idx, 1)?.squeeze(0)?;
+            outputs.push(x_block.matmul(&w_block)?.unsqueeze(1)?);
+        }
+        Tensor::cat(&outputs, 1)
+    }
+
     /// 执行前向传播。
     ///
     /// # 参数
@@ -166,21 +178,19 @@ impl UniMixing {
         let b = self.block_size;
         let (w_b_proc, w_g_proc) = self.cached_mixing(temperature)?;
 
-        // --- 1. 分割 + 转置 ---
-        // X: [batch_size, L] → [N, batch_size, B]
-        let x_blocks = x.reshape((batch_size, n, b))?;
-        let x_t = x_blocks.transpose(0, 1)?.contiguous()?;
+        // --- 1. 局部交互 ---
+        // [batch_size, N, B] × [N, B, B] → [batch_size, N, B]。
+        // 避免 Candle native CPU 后端的 3D batched matmul 慢路径。
+        let h = self.local_mix_2d_loop(x, &w_b_proc)?;
 
-        // --- 2. 局部交互 ---
-        // [N, batch_size, B] × [N, B, B] → [N, batch_size, B]
-        let h_t = x_t.matmul(&w_b_proc)?;
-
-        // --- 3. 全局交互 ---
-        // h_t 来自 matmul 已连续，直接 reshape 做 2D GEMM
-        let h_flat = h_t.reshape((n, batch_size * b))?;
+        // --- 2. 全局交互 ---
+        let h_flat = h
+            .transpose(0, 1)?
+            .contiguous()?
+            .reshape((n, batch_size * b))?;
         let out_flat = w_g_proc.matmul(&h_flat)?;
 
-        // --- 4. 恢复输出维度 ---
+        // --- 3. 恢复输出维度 ---
         // [N, batch_size, B] → [batch_size, N, B] → [batch_size, L]
         let out = out_flat
             .reshape((n, batch_size, b))?
