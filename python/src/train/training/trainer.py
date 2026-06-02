@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, Optional, Union
 
 import torch
 
@@ -69,10 +69,10 @@ class Trainer:
         flow_config: FlowConfig,
         has_header: bool = True,
         sep: str = "\t",
-        null_markers: set[str] | None = None,
-        task_specs: list[TaskSpec] | None = None,
-        artifact_manager: TrainingArtifactManager | None = None,
-        repo_root: str | Path | None = None,
+        null_markers: Optional[set[str]] = None,
+        task_specs: Optional[list[TaskSpec]] = None,
+        artifact_manager: Optional[TrainingArtifactManager] = None,
+        repo_root: Union[str, Path, None] = None,
     ) -> None:
         self.model = model
         self.dag = dag
@@ -97,7 +97,7 @@ class Trainer:
 
         self.eval_batches: list[Batch] = []
         self._n_eval_batches = 0
-        self.feature_quality: FeatureQualityReport | None = None
+        self.feature_quality: Optional[FeatureQualityReport] = None
         self.loss_fn = MultiTaskLoss(
             self.task_names,
             self.label_map,
@@ -105,9 +105,9 @@ class Trainer:
             task_weights=config.task_weights,
             task_specs=self.task_specs,
         )
-        self.lr_scheduler: LRScheduler | None = None
-        self.optimizer: torch.optim.Optimizer | None = None
-        self.ema: _EMA | None = None
+        self.lr_scheduler: Optional[LRScheduler] = None
+        self.optimizer: Optional[torch.optim.Optimizer] = None
+        self.ema: Optional[_EMA] = None
         self.evaluator = Evaluator(config.eval)
         self._best_score = float("-inf")
         self._stale_epochs = 0

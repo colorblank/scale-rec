@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import torch
@@ -32,7 +32,7 @@ class Evaluator:
         batches: list[dict[str, Any]],
         task_names: list[str],
         label_map: dict[str, str],
-        device: torch.device | None = None,
+        device: Optional[torch.device] = None,
     ) -> dict[str, dict[str, float]]:
         """评估所有 task × metric。
 
@@ -55,7 +55,7 @@ class Evaluator:
                 outputs = model(_to_device(dag.preprocess_batch(rows), device))
 
                 # 提取分组特征
-                group_ids: np.ndarray | None = None
+                group_ids: Optional[np.ndarray] = None
                 has_gauc = "gauc" in self.cfg.metrics
                 if has_gauc:
                     gf = self.cfg.gauc_group_feature

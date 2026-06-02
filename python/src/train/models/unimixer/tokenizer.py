@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 """FeatureTokenizer：分组 Conv1d 特征投影。"""
+from typing import Optional
 import torch
 import torch.nn as nn
 
@@ -15,8 +16,8 @@ class FeatureTokenizer(nn.Module):
         features: list[FeatureTuple],
         token_dim: int,
         num_tokens: int,
-        pooling_map: dict[str, str] | None = None,
-        seq_len_map: dict[str, int] | None = None,
+        pooling_map: Optional[dict[str, str]] = None,
+        seq_len_map: Optional[dict[str, int]] = None,
     ) -> None:
         super().__init__()
         if num_tokens <= 0:

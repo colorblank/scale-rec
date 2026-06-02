@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 """Static feature schema inference and validation for FlowConfig."""
+from typing import Optional
 
 from dataclasses import dataclass
 
@@ -18,11 +19,11 @@ from .config import (
 @dataclass(frozen=True)
 class FeatureDType:
     tag: str
-    inner: "FeatureDType | None" = None
-    length: int | None = None
-    values: tuple[str, ...] | None = None
-    default: str | None = None
-    oov: str | None = None
+    inner: 'Optional[FeatureDType]' = None
+    length: Optional[int] = None
+    values: Optional[tuple[str, ...]] = None
+    default: Optional[str] = None
+    oov: Optional[str] = None
 
     @property
     def is_list(self) -> bool:
@@ -54,9 +55,9 @@ class FeatureSchema:
     rank: int
     dimension: int
     nullable: bool = False
-    default_val: str | None = None
-    cardinality: int | None = None
-    pooling: str | None = None
+    default_val: Optional[str] = None
+    cardinality: Optional[int] = None
+    pooling: Optional[str] = None
 
 
 def infer_feature_schemas(config: FlowConfig) -> dict[str, FeatureSchema]:
@@ -232,7 +233,7 @@ def _schema(op: OperatorDef, dtype: FeatureDType) -> FeatureSchema:
     )
 
 
-def _require_scalar_number(op: OperatorDef, schema: FeatureSchema | None) -> None:
+def _require_scalar_number(op: OperatorDef, schema: Optional[FeatureSchema]) -> None:
     if schema is None or schema.dtype.tag not in {"int", "float"}:
         got = "missing" if schema is None else str(schema.dtype)
         raise ValueError(f"operator '{op.name}' expects numeric scalar input, got {got}")

@@ -5,12 +5,12 @@ from __future__ import annotations
 import hashlib
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Union
 
 import yaml
 
 
-def sha256_file(path: str | Path) -> str:
+def sha256_file(path: Union[str, Path]) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
@@ -18,7 +18,7 @@ def sha256_file(path: str | Path) -> str:
     return h.hexdigest()
 
 
-def current_git_commit(repo_root: str | Path | None = None) -> str:
+def current_git_commit(repo_root: Union[str, Path, None] = None) -> str:
     cmd = ["git", "rev-parse", "HEAD"]
     try:
         return subprocess.check_output(
@@ -33,31 +33,31 @@ def current_git_commit(repo_root: str | Path | None = None) -> str:
 
 def write_model_manifest(
     *,
-    manifest_path: str | Path,
+    manifest_path: Union[str, Path],
     model_id: str,
     model_version: str,
     model_type: str,
-    weights_path: str | Path,
-    feature_config_path: str | Path,
-    model_config_path: str | Path,
+    weights_path: Union[str, Path],
+    feature_config_path: Union[str, Path],
+    model_config_path: Union[str, Path],
     tasks: list[str],
     label_col_map: dict[str, str],
     metrics: dict[str, float],
-    repo_root: str | Path | None = None,
-    run_version: str | None = None,
-    published_version: str | None = None,
-    best_version: str | None = None,
-    best_epoch: int | None = None,
-    best_step: int | None = None,
-    best_score: float | None = None,
-    latest_version: str | None = None,
-    latest_epoch: int | None = None,
-    latest_step: int | None = None,
-    checkpoint_dir: str | Path | None = None,
-    run_manifest_file: str | Path | None = None,
-    published_weights_file: str | Path | None = None,
-    best_weights_file: str | Path | None = None,
-    latest_weights_file: str | Path | None = None,
+    repo_root: Union[str, Path, None] = None,
+    run_version: Optional[str] = None,
+    published_version: Optional[str] = None,
+    best_version: Optional[str] = None,
+    best_epoch: Optional[int] = None,
+    best_step: Optional[int] = None,
+    best_score: Optional[float] = None,
+    latest_version: Optional[str] = None,
+    latest_epoch: Optional[int] = None,
+    latest_step: Optional[int] = None,
+    checkpoint_dir: Union[str, Path, None] = None,
+    run_manifest_file: Union[str, Path, None] = None,
+    published_weights_file: Union[str, Path, None] = None,
+    best_weights_file: Union[str, Path, None] = None,
+    latest_weights_file: Union[str, Path, None] = None,
 ) -> Path:
     manifest_path = Path(manifest_path)
     manifest_dir = manifest_path.parent

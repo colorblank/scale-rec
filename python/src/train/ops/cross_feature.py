@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 """特征交叉算子：内积或笛卡尔积。"""
-from typing import Any
+from typing import Any, Union
 
 
 class CrossFeature:
@@ -11,7 +11,7 @@ class CrossFeature:
         """Initialize with "inner_product" or "cartesian" mode."""
         self.cross_type = cross_type
 
-    def process(self, inputs: list[Any]) -> float | list[str]:
+    def process(self, inputs: list[Any]) -> Union[float, list[str]]:
         """Compute cross: dot product (inner_product) or all-pairs concat (cartesian)."""
         if len(inputs) != 2:
             raise ValueError(f"CrossFeature expects exactly 2 inputs, got {len(inputs)}")

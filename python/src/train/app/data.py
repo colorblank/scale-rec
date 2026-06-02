@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, Optional
 
 import pandas as pd
 
@@ -97,7 +97,7 @@ def build_item_index(
     item_sources: list[dict],
     has_header: bool = True,
     separator: str = "\t",
-    null_markers: set[str] | None = None,
+    null_markers: Optional[set[str]] = None,
 ) -> dict[str, dict[str, str]]:
     """用 pandas 读取多日物品文件，按 item_id 去重后构建索引。
 
@@ -166,7 +166,7 @@ def stream_file_batches(
     *,
     has_header: bool = True,
     sep: str = "\t",
-    null_markers: set[str] | None = None,
+    null_markers: Optional[set[str]] = None,
 ) -> Iterator[dict[str, Any]]:
     """pandas chunk read 流式读取单文件，按 role 分离 feature/label/discard。
 

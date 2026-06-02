@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 """多任务不确定性加权损失 (MultiTaskLoss)。"""
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import torch
@@ -41,10 +41,10 @@ class MultiTaskLoss(nn.Module):
         label_map: dict[str, str],
         *,
         mode: str = "static",
-        task_weights: dict[str, float] | None = None,
-        pos_weights: dict[str, float] | None = None,
+        task_weights: Optional[dict[str, float]] = None,
+        pos_weights: Optional[dict[str, float]] = None,
         reg_weight: float = 0.1,
-        task_specs: list[TaskSpec] | None = None,
+        task_specs: Optional[list[TaskSpec]] = None,
     ) -> None:
         super().__init__()
         if mode not in {"static", "equal", "uncertainty"}:
@@ -66,8 +66,8 @@ class MultiTaskLoss(nn.Module):
 
     def forward(
         self, outputs: dict[str, torch.Tensor], batch_labels: dict[str, list[Any]]
-    ) -> torch.Tensor | None:
-        total: torch.Tensor | None = None
+    ) -> Optional[torch.Tensor]:
+        total: Optional[torch.Tensor] = None
         self._last_raw_losses: dict[str, float] = {}
         self._last_pos_rates: dict[str, float] = {}
         for task, logits in outputs.items():
@@ -160,5 +160,5 @@ def compute_loss(
     outputs: dict[str, torch.Tensor],
     batch_labels: dict[str, list[Any]],
     label_map: dict[str, str],
-) -> torch.Tensor | None:
+) -> Optional[torch.Tensor]:
     return MultiTaskLoss(list(outputs), label_map, mode="equal")(outputs, batch_labels)

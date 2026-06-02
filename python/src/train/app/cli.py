@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Union
 
 import torch
 
@@ -77,10 +77,10 @@ def configure_logging(
     level: str,
     *,
     file_level: str = "DEBUG",
-    log_dir: str | Path | None = None,
-    log_file: str | Path | None = None,
+    log_dir: Union[str, Path, None] = None,
+    log_file: Union[str, Path, None] = None,
     run_name: str = "train",
-) -> Path | None:
+) -> Optional[Path]:
     """Configure console and optional file logging for training commands."""
 
     root = logging.getLogger()
@@ -120,10 +120,10 @@ def _parse_log_level(level: str) -> int:
 
 def _resolve_log_file(
     *,
-    log_file: str | Path | None,
-    log_dir: str | Path | None,
+    log_file: Union[str, Path, None],
+    log_dir: Union[str, Path, None],
     run_name: str,
-) -> Path | None:
+) -> Optional[Path]:
     if log_file:
         return Path(log_file)
     if not log_dir:
@@ -147,7 +147,7 @@ def split_csv(value: str) -> list[str]:
     return [x.strip() for x in value.split(",") if x.strip()]
 
 
-def train_config_from_args(args: argparse.Namespace, *, export_path: str | Path) -> TrainConfig:
+def train_config_from_args(args: argparse.Namespace, *, export_path: Union[str, Path]) -> TrainConfig:
     return TrainConfig(
         epochs=args.epochs,
         batch_size=args.batch_size,
@@ -184,7 +184,7 @@ def train_config_from_args(args: argparse.Namespace, *, export_path: str | Path)
 
 
 def build_model_for_dag(
-    model_config_path: str | Path,
+    model_config_path: Union[str, Path],
     dag: FeatureDag,
     device: torch.device,
 ) -> BuiltModel:
@@ -241,7 +241,7 @@ def wrap_unimixer_for_rust_names(model: torch.nn.Module) -> torch.nn.Module:
     def _forward(
         self: torch.nn.Module,
         x_inputs: dict[str, torch.Tensor],
-        temperature: float | None = None,
+        temperature: Optional[float] = None,
     ) -> dict[str, torch.Tensor]:
         t = temperature if temperature is not None else self.temperature
         if t <= 0:

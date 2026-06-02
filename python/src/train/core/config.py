@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import torch.nn as nn
 import yaml
@@ -25,17 +25,17 @@ class Role:
 class DType:
     tag: str
     inner: Optional["DType"] = None
-    max_len: int | None = None
-    values: list[str] | None = None
-    default: str | None = None
-    oov: str | None = None
+    max_len: Optional[int] = None
+    values: Optional[list[str]] = None
+    default: Optional[str] = None
+    oov: Optional[str] = None
 
     @property
     def length(self) -> int:
         return self.max_len or 0
 
     @classmethod
-    def from_dict(cls, raw: str | dict) -> "DType":
+    def from_dict(cls, raw: Union[str, dict]) -> "DType":
         if isinstance(raw, str):
             return cls(tag=raw)
         if isinstance(raw, dict) and "list" in raw:
@@ -187,8 +187,8 @@ class OptimConfig:
     lr: float = 0.005
     weight_decay: float = 1e-4
     momentum: float = 0.0
-    emb_lr: float | None = None
-    emb_weight_decay: float | None = None
+    emb_lr: Optional[float] = None
+    emb_weight_decay: Optional[float] = None
 
 
 @dataclass
@@ -213,16 +213,16 @@ class TrainConfig:
     epochs: int = 30
     batch_size: int = 64
     export_path: str = ""
-    artifacts: ArtifactConfig | dict[str, Any] = field(default_factory=ArtifactConfig)
-    optim: OptimConfig | dict[str, Any] = field(default_factory=OptimConfig)
-    lr_schedule: LRScheduleConfig | dict[str, Any] = field(default_factory=LRScheduleConfig)
-    eval: EvalConfig | dict[str, Any] = field(default_factory=EvalConfig)
+    artifacts: Union[ArtifactConfig, dict[str, Any]] = field(default_factory=ArtifactConfig)
+    optim: Union[OptimConfig, dict[str, Any]] = field(default_factory=OptimConfig)
+    lr_schedule: Union[LRScheduleConfig, dict[str, Any]] = field(default_factory=LRScheduleConfig)
+    eval: Union[EvalConfig, dict[str, Any]] = field(default_factory=EvalConfig)
     eval_samples: int = 2000
     eval_interval: int = 50
     log_interval: int = 10
     loss_weighting: str = "static"
-    task_weights: dict[str, float] | None = None
-    tasks: list[TaskSpec] | list[dict[str, Any]] = field(default_factory=list)
+    task_weights: Optional[dict[str, float]] = None
+    tasks: Union[list[TaskSpec], list[dict[str, Any]]] = field(default_factory=list)
     grad_max_norm: float = 1.0
     ema_decay: float = 0.999
     early_stopping_patience: int = 5
@@ -246,7 +246,7 @@ class TrainConfig:
         return cls(**raw)
 
     @classmethod
-    def from_yaml(cls, path: str | Path) -> "TrainConfig":
+    def from_yaml(cls, path: Union[str, Path]) -> "TrainConfig":
         with open(path, encoding="utf-8") as f:
             raw = yaml.safe_load(f)
         return cls.from_dict(raw)
@@ -284,7 +284,7 @@ class ModelConfig:
     params: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_yaml(cls, path: str | Path) -> "ModelConfig":
+    def from_yaml(cls, path: Union[str, Path]) -> "ModelConfig":
         with open(path, encoding="utf-8") as f:
             raw = yaml.safe_load(f)
         return cls.from_dict(raw)
@@ -298,9 +298,9 @@ class ModelConfig:
     def build(
         self,
         features: list[FeatureTuple],
-        tokenizer: nn.Module | None = None,
-        pooling_map: dict[str, str] | None = None,
-        total_dim: int | None = None,
+        tokenizer: Optional[nn.Module] = None,
+        pooling_map: Optional[dict[str, str]] = None,
+        total_dim: Optional[int] = None,
     ) -> nn.Module:
         from ..models import build_model
 

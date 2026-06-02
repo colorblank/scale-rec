@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import yaml
 
@@ -56,8 +56,8 @@ def _op(
     op_type: str,
     inputs: list[str],
     outputs: list[str],
-    params: ConfigDict | None = None,
-    embed: EmbedDef | None = None,
+    params: Optional[ConfigDict] = None,
+    embed: Optional[EmbedDef] = None,
 ) -> OperatorDef:
     op: OperatorDef = {
         "name": name,
@@ -78,7 +78,7 @@ def feature_hash(
     vocab_size: int,
     *,
     num_hashes: int = 1,
-    embed: EmbedDef | None = None,
+    embed: Optional[EmbedDef] = None,
 ) -> OperatorDef:
     return _op(
         name,
@@ -96,7 +96,7 @@ def single_feature_hash(
     output: str,
     vocab_size: int,
     *,
-    embed: EmbedDef | None = None,
+    embed: Optional[EmbedDef] = None,
 ) -> OperatorDef:
     return feature_hash(name, [input_name], output, vocab_size, embed=embed)
 
@@ -107,7 +107,7 @@ def bucket(
     output: str,
     boundaries: list[float],
     *,
-    embed: EmbedDef | None = None,
+    embed: Optional[EmbedDef] = None,
 ) -> OperatorDef:
     return _op(
         name, "Bucketing", [input_name], [output], {"boundaries": boundaries}, embed
@@ -123,7 +123,7 @@ def json_extract_list(
     input_name: str,
     output: str,
     *,
-    key: str | None,
+    key: Optional[str],
     pad_len: int,
     pad_val: str = "",
 ) -> OperatorDef:
@@ -208,7 +208,7 @@ def list_overlap(
     right: str,
     output: str,
     *,
-    embed: EmbedDef | None = None,
+    embed: Optional[EmbedDef] = None,
 ) -> OperatorDef:
     return _op(name, "ListOverlap", [left, right], [output], {}, embed)
 
@@ -438,7 +438,7 @@ def _build_operators() -> list[OperatorDef]:
         out: str,
         vocab_size: int,
         num_hashes: int = 1,
-        embed: EmbedDef | None = None,
+        embed: Optional[EmbedDef] = None,
     ) -> None:
         add(
             feature_hash(
@@ -447,7 +447,7 @@ def _build_operators() -> list[OperatorDef]:
         )
 
     def single_fh(
-        name: str, inp: str, out: str, vocab_size: int, embed: EmbedDef | None = None
+        name: str, inp: str, out: str, vocab_size: int, embed: Optional[EmbedDef] = None
     ) -> None:
         add(single_feature_hash(name, inp, out, vocab_size, embed=embed))
 
@@ -456,7 +456,7 @@ def _build_operators() -> list[OperatorDef]:
         inp: str,
         out: str,
         boundaries: list[float],
-        embed: EmbedDef | None = None,
+        embed: Optional[EmbedDef] = None,
     ) -> None:
         add(bucket(name, inp, out, boundaries, embed=embed))
 
@@ -506,7 +506,7 @@ def _build_operators() -> list[OperatorDef]:
         add(flat_split(name, inp, out, sep=sep, max_len=max_len, pad_val=pad_val))
 
     def lo(
-        name: str, inp1: str, inp2: str, out: str, embed: EmbedDef | None = None
+        name: str, inp1: str, inp2: str, out: str, embed: Optional[EmbedDef] = None
     ) -> None:
         add(list_overlap(name, inp1, inp2, out, embed=embed))
 

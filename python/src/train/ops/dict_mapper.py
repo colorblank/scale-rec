@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 """字典映射算子：字符串/整数到索引的映射。"""
-from typing import Any
+from typing import Any, Union
 
 
 class DictMapper:
@@ -16,7 +16,7 @@ class DictMapper:
         self.mapping = mapping
         self.default_idx = default_idx
 
-    def process(self, inputs: list[Any]) -> int | list[int]:
+    def process(self, inputs: list[Any]) -> Union[int, list[int]]:
         """Map string key to integer index; list input -> list output, single -> single."""
         val = inputs[0]
         if isinstance(val, list):
@@ -30,7 +30,7 @@ class DictMapper:
             val = str(val)
         return self.mapping.get(val, self.default_idx) if isinstance(val, str) else self.default_idx
 
-    def process_batch(self, inputs: list[Any]) -> list[int] | list[list[int]]:
+    def process_batch(self, inputs: list[Any]) -> Union[list[int], list[list[int]]]:
         """Batch map: N values -> N results. Single call for entire column."""
         vals = inputs[0]
         if not vals:

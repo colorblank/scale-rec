@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from collections import deque
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ class ValidationIssue:
     severity: str
     code: str
     message: str
-    feature: str | None = None
+    feature: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -80,7 +80,7 @@ class FeatureDag:
         self,
         config: FlowConfig,
         debug_mode: bool = False,
-        tracer: "DebugTracer | None" = None,
+        tracer: 'Optional[DebugTracer]' = None,
         strict_validation: bool = False,
     ) -> None:
         self.sources: dict[str, SourceDef] = {}
@@ -397,7 +397,7 @@ class FeatureDag:
 
         return context
 
-    def preprocess_batch(self, rows: list[dict] | dict[str, list]) -> dict[str, torch.Tensor]:
+    def preprocess_batch(self, rows: Union[list[dict], dict[str, list]]) -> dict[str, torch.Tensor]:
         """Execute DAG and build feature tensors. List-valued features with
         pooling!=flatten are stacked as 2D (batch, seq_len) tensors.
         """

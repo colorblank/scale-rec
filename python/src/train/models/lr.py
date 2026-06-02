@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 """逻辑回归基线：Embedding + Linear。"""
+from typing import Optional
 import torch
 import torch.nn as nn
 
@@ -15,8 +16,8 @@ class LogisticRegression(nn.Module):
     def __init__(
         self,
         features: list[FeatureTuple],
-        pooling_map: dict[str, str] | None = None,
-        total_dim: int | None = None,
+        pooling_map: Optional[dict[str, str]] = None,
+        total_dim: Optional[int] = None,
     ) -> None:
         super().__init__()
         self.embeddings = FeatureEmbeddings(features, pooling_map, total_dim=total_dim)

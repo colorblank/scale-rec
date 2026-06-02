@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 """UniMixerBlock：交互 + 激活 + 归一 + 残差。"""
+from typing import Optional, Union
 import torch
 import torch.nn as nn
 
@@ -46,9 +47,9 @@ class UniMixerBlock(nn.Module):
         self,
         x: torch.Tensor,
         temperature: float,
-        x_bar_opt: torch.Tensor | None = None,
-        y_bar_opt: torch.Tensor | None = None,
-    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        x_bar_opt: Optional[torch.Tensor] = None,
+        y_bar_opt: Optional[torch.Tensor] = None,
+    ) -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
         bs = x.shape[0]
         if self.use_siamese:
             if x_bar_opt is None or y_bar_opt is None:

@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Union
 
 import yaml
 
@@ -70,8 +70,8 @@ class TrainingArtifactManager:
     publish_latest_alias: bool = True
     copy_configs: bool = False
     _history: list[CheckpointRecord] = field(default_factory=list, init=False)
-    _best: CheckpointRecord | None = field(default=None, init=False)
-    _latest: CheckpointRecord | None = field(default=None, init=False)
+    _best: Optional[CheckpointRecord] = field(default=None, init=False)
+    _latest: Optional[CheckpointRecord] = field(default=None, init=False)
 
     @classmethod
     def from_config(
@@ -80,10 +80,10 @@ class TrainingArtifactManager:
         *,
         model_name: str,
         model_type: str,
-        artifact_root: str | Path,
-        publish_path: str | Path | None,
-        feature_config_path: str | Path,
-        model_config_path: str | Path,
+        artifact_root: Union[str, Path],
+        publish_path: Union[str, Path, None],
+        feature_config_path: Union[str, Path],
+        model_config_path: Union[str, Path],
     ) -> "TrainingArtifactManager":
         resolved_model_name = _safe_name(artifact_config.model_name or model_name or model_type)
         run_version = artifact_config.run_version or _utc_version()
@@ -119,7 +119,7 @@ class TrainingArtifactManager:
             copy_configs=artifact_config.copy_configs,
         )
 
-    def prepare(self, feature_config_path: str | Path, model_config_path: str | Path) -> None:
+    def prepare(self, feature_config_path: Union[str, Path], model_config_path: Union[str, Path]) -> None:
         self.paths.run_dir.mkdir(parents=True, exist_ok=True)
         self.paths.checkpoints_dir.mkdir(parents=True, exist_ok=True)
         if self.copy_configs:
@@ -167,25 +167,25 @@ class TrainingArtifactManager:
         return list(self._history)
 
     @property
-    def best(self) -> CheckpointRecord | None:
+    def best(self) -> Optional[CheckpointRecord]:
         return self._best
 
     @property
-    def latest(self) -> CheckpointRecord | None:
+    def latest(self) -> Optional[CheckpointRecord]:
         return self._latest
 
     def finalize(
         self,
         *,
-        model: Any | None,
+        model: Optional[Any],
         model_type: str,
         tasks: list[str],
         label_col_map: dict[str, str],
         metrics: dict[str, float],
-        repo_root: str | Path | None,
-        published_version: str | None = None,
-        best_score: float | None = None,
-        published_source: str | Path | None = None,
+        repo_root: Union[str, Path, None],
+        published_version: Optional[str] = None,
+        best_score: Optional[float] = None,
+        published_source: Union[str, Path, None] = None,
     ) -> None:
         if published_source is not None:
             shutil.copy2(published_source, self.paths.published_weights_path)
@@ -211,9 +211,9 @@ class TrainingArtifactManager:
         self,
         *,
         model_type: str,
-        best_score: float | None,
-        published_version: str | None,
-        published_source: str | Path | None,
+        best_score: Optional[float],
+        published_version: Optional[str],
+        published_source: Union[str, Path, None],
     ) -> None:
         data: dict[str, Any] = {
             "schema_version": 1,
@@ -253,9 +253,9 @@ class TrainingArtifactManager:
         tasks: list[str],
         label_col_map: dict[str, str],
         metrics: dict[str, float],
-        repo_root: str | Path | None,
-        published_version: str | None,
-        best_score: float | None,
+        repo_root: Union[str, Path, None],
+        published_version: Optional[str],
+        best_score: Optional[float],
     ) -> None:
         manifest_metrics = dict(metrics)
         if best_score is not None:

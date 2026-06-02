@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 """GDCN + ESMM: gated cross network shared representation with ESMM task towers."""
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -19,16 +20,16 @@ class GDCNESMM(nn.Module):
         self,
         features: list[FeatureTuple],
         cross_layers: int = 3,
-        deep_hidden_dims: list[int] | None = None,
-        shared_bottom_dims: list[int] | None = None,
-        click_hidden_dims: list[int] | None = None,
-        cvr_hidden_dims: list[int] | None = None,
-        detail_hidden_dims: list[int] | None = None,
-        stock_hidden_dims: list[int] | None = None,
-        stay_hidden_dims: list[int] | None = None,
-        task_config: MultiTaskConfig | None = None,
-        pooling_map: dict[str, str] | None = None,
-        total_dim: int | None = None,
+        deep_hidden_dims: Optional[list[int]] = None,
+        shared_bottom_dims: Optional[list[int]] = None,
+        click_hidden_dims: Optional[list[int]] = None,
+        cvr_hidden_dims: Optional[list[int]] = None,
+        detail_hidden_dims: Optional[list[int]] = None,
+        stock_hidden_dims: Optional[list[int]] = None,
+        stay_hidden_dims: Optional[list[int]] = None,
+        task_config: Optional[MultiTaskConfig] = None,
+        pooling_map: Optional[dict[str, str]] = None,
+        total_dim: Optional[int] = None,
     ) -> None:
         super().__init__()
         deep_hidden_dims = deep_hidden_dims or []

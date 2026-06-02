@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 """MMoE：多门控专家混合。"""
+from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -21,8 +22,8 @@ class MMoE(nn.Module):
         expert_hidden_dims: list[int],
         expert_output_dim: int,
         task_configs: list[tuple[str, list[int]]],
-        pooling_map: dict[str, str] | None = None,
-        total_dim: int | None = None,
+        pooling_map: Optional[dict[str, str]] = None,
+        total_dim: Optional[int] = None,
     ) -> None:
         """Build MMoE: embeddings + optional shared_bottom + N experts + K gates + K towers."""
         super().__init__()

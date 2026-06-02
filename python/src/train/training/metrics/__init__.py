@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 """评估指标注册表与批量计算。"""
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import torch
@@ -36,7 +36,7 @@ def compute_metrics(
     y_true: np.ndarray,
     y_pred: np.ndarray,
     metric_names: list[str],
-    group_ids: np.ndarray | None = None,
+    group_ids: Optional[np.ndarray] = None,
 ) -> dict[str, float]:
     """批量计算多个指标。
 
@@ -70,7 +70,7 @@ def compute_aucs(
     batches: list[Batch],
     task_names: list[str],
     label_map: dict[str, str],
-    device: torch.device | None = None,
+    device: Optional[torch.device] = None,
 ) -> dict[str, float]:
     """兼容旧 API：在多个 batch 上计算各分类任务的 AUC。"""
     if device is None:

@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 
 class StageType(Enum):
@@ -76,7 +76,7 @@ class DebugTracer:
     def __init__(self, config: DebugConfig) -> None:
         self.config = config
         self.traces: list[SampleTrace] = []
-        self._current: SampleTrace | None = None
+        self._current: Optional[SampleTrace] = None
         self._total_seen = 0  # global counter across all batches
 
     # ── called by FeatureDag.execute() ──

@@ -7,6 +7,7 @@ from __future__ import annotations
 2. `discover`：discover-main-sort 训练，使用单文件 TSV
 3. `all`：同一数据集上批量训练多个模型
 """
+from typing import Optional
 
 import argparse
 import logging
@@ -95,7 +96,7 @@ def _train_epoch_single(
     dag: FeatureDag,
     df: pd.DataFrame,
     batch_size: int,
-    label_col_map: dict[str, str] | None = None,
+    label_col_map: Optional[dict[str, str]] = None,
 ) -> float:
     if label_col_map is None:
         label_col_map = {}
@@ -131,7 +132,7 @@ def _evaluate_single(
     dag: FeatureDag,
     df: pd.DataFrame,
     batch_size: int,
-    label_col_map: dict[str, str] | None = None,
+    label_col_map: Optional[dict[str, str]] = None,
 ) -> dict[str, dict[str, float]]:
     if label_col_map is None:
         label_col_map = {}

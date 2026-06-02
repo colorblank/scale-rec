@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 """SiameseNorm：双流归一化 RMSNorm + 融合。"""
+from typing import Optional, Union
 import torch
 import torch.nn as nn
 
@@ -29,8 +30,8 @@ class SiameseNorm(nn.Module):
         self,
         x_bar: torch.Tensor,
         y_bar: torch.Tensor,
-        output: torch.Tensor | None = None,
-    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        output: Optional[torch.Tensor] = None,
+    ) -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         if output is not None:
             return self.rmsnorm(x_bar + output), y_bar + output
         else:
