@@ -1,6 +1,6 @@
 //! FeatureTokenizer：分组 Conv1d 将离散特征投影为 Token 序列。
 use candle_core::{Result, Tensor};
-use candle_nn::{conv1d, embedding, Conv1d, Conv1dConfig, Embedding, Module, VarBuilder};
+use candle_nn::{conv1d, embedding, Conv1d, Conv1dConfig, Embedding, Linear, Module, VarBuilder};
 use std::collections::HashMap;
 
 use crate::feats::config::PoolingStrategy;
@@ -11,7 +11,8 @@ pub struct FeatureTokenizer {
     ordered_feature_names: Vec<String>,
     feature_specs: Vec<FeatureSpec>,
     embeddings: Vec<Embedding>,
-    token_projections: Conv1d,
+    token_projection_linears: Vec<Linear>,
+    token_input_dim: usize,
     pub num_tokens: usize,
     pub token_dim: usize,
 }
@@ -64,12 +65,16 @@ impl FeatureTokenizer {
             conv_config,
             vb.pp("token_projections"),
         )?;
+        let token_input_dim = total_embed_dim / num_tokens;
+        let token_projection_linears =
+            build_token_projection_linears(&token_projections, num_tokens, token_dim)?;
         Ok(Self {
             feature_to_emb_idx,
             ordered_feature_names,
             feature_specs,
             embeddings,
-            token_projections,
+            token_projection_linears,
+            token_input_dim,
             token_dim,
             num_tokens,
         })
@@ -108,12 +113,42 @@ impl FeatureTokenizer {
         }
         let concat_embeds = Tensor::cat(&embeds, 1)?;
         let batch_size = concat_embeds.dim(0)?;
-        let conv_in = concat_embeds.unsqueeze(2)?;
-        let conv_out = self.token_projections.forward(&conv_in)?;
-        let squeezed = conv_out.squeeze(2)?;
-        let output_tokens = squeezed.reshape((batch_size, self.num_tokens, self.token_dim))?;
-        Ok(output_tokens)
+        let token_inputs =
+            concat_embeds.reshape((batch_size, self.num_tokens, self.token_input_dim))?;
+        let mut outputs = Vec::with_capacity(self.num_tokens);
+        for token_idx in 0..self.num_tokens {
+            let token_input = token_inputs
+                .narrow(1, token_idx, 1)?
+                .squeeze(1)?
+                .contiguous()?;
+            outputs.push(
+                self.token_projection_linears[token_idx]
+                    .forward(&token_input)?
+                    .unsqueeze(1)?,
+            );
+        }
+        Tensor::cat(&outputs, 1)
     }
+}
+
+fn build_token_projection_linears(
+    token_projections: &Conv1d,
+    num_tokens: usize,
+    token_dim: usize,
+) -> Result<Vec<Linear>> {
+    let weight = token_projections.weight();
+    let bias = token_projections.bias();
+    let mut linears = Vec::with_capacity(num_tokens);
+    for token_idx in 0..num_tokens {
+        let offset = token_idx * token_dim;
+        let token_weight = weight.narrow(0, offset, token_dim)?.squeeze(2)?;
+        let token_bias = match bias {
+            Some(bias) => Some(bias.narrow(0, offset, token_dim)?),
+            None => None,
+        };
+        linears.push(Linear::new(token_weight, token_bias));
+    }
+    Ok(linears)
 }
 
 fn feature_output_dim(spec: &FeatureSpec) -> Result<usize> {
@@ -126,5 +161,89 @@ fn feature_output_dim(spec: &FeatureSpec) -> Result<usize> {
             )
         }
         _ => Ok(spec.embed_dim),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use candle_core::{DType, Device, Tensor};
+    use candle_nn::{VarBuilder, VarMap};
+
+    #[test]
+    fn linear_token_projection_matches_grouped_conv1d() {
+        let device = Device::Cpu;
+        let varmap = VarMap::new();
+        let vb = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+        let num_tokens = 2;
+        let token_dim = 3;
+        let total_embed_dim = 4;
+        let token_input_dim = total_embed_dim / num_tokens;
+        let conv_config = Conv1dConfig {
+            groups: num_tokens,
+            ..Default::default()
+        };
+        let token_projections = conv1d(
+            total_embed_dim,
+            num_tokens * token_dim,
+            1,
+            conv_config,
+            vb.pp("token_projections"),
+        )
+        .unwrap();
+        let linears =
+            build_token_projection_linears(&token_projections, num_tokens, token_dim).unwrap();
+        let concat_embeds = Tensor::from_slice(
+            &[
+                0.1f32, -0.2, 0.3, -0.4, //
+                1.0, 2.0, -1.0, -2.0,
+            ],
+            (2, total_embed_dim),
+            &device,
+        )
+        .unwrap();
+
+        let conv_out = token_projections
+            .forward(&concat_embeds.unsqueeze(2).unwrap())
+            .unwrap()
+            .squeeze(2)
+            .unwrap()
+            .reshape((2, num_tokens, token_dim))
+            .unwrap();
+
+        let token_inputs = concat_embeds
+            .reshape((2, num_tokens, token_input_dim))
+            .unwrap();
+        let mut linear_outputs = Vec::with_capacity(num_tokens);
+        for token_idx in 0..num_tokens {
+            let token_input = token_inputs
+                .narrow(1, token_idx, 1)
+                .unwrap()
+                .squeeze(1)
+                .unwrap()
+                .contiguous()
+                .unwrap();
+            linear_outputs.push(
+                linears[token_idx]
+                    .forward(&token_input)
+                    .unwrap()
+                    .unsqueeze(1)
+                    .unwrap(),
+            );
+        }
+        let linear_out = Tensor::cat(&linear_outputs, 1).unwrap();
+
+        let diff = linear_out
+            .sub(&conv_out)
+            .unwrap()
+            .abs()
+            .unwrap()
+            .flatten_all()
+            .unwrap()
+            .max(0)
+            .unwrap()
+            .to_scalar::<f32>()
+            .unwrap();
+        assert!(diff <= 1e-6, "max abs diff too large: {diff}");
     }
 }
