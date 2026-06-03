@@ -1,4 +1,5 @@
 //! UniMixingLite：轻量版基组合 + 低秩近似 Token 交互。
+use super::profile;
 use candle_core::{Result, Tensor};
 use candle_nn::{Init, VarBuilder};
 use std::sync::Mutex;
@@ -197,6 +198,10 @@ impl UniMixingLite {
         Ok((w_b_star, w_r))
     }
 
+    pub fn warmup(&self, temperature: f64) -> Result<()> {
+        self.cached_mixing(temperature).map(|_| ())
+    }
+
     fn local_mix_2d_loop(&self, x: &Tensor, w_b_star: &Tensor) -> Result<Tensor> {
         let (batch_size, _) = x.dims2()?;
         let x_blocks = x.reshape((batch_size, self.num_blocks, self.block_size))?;
@@ -221,31 +226,41 @@ impl UniMixingLite {
         if temperature <= 0.0 {
             candle_core::bail!("temperature must be > 0");
         }
+        let total_timer = profile::start();
         let (batch_size, _) = x.dims2()?;
         let n = self.num_blocks;
         let b = self.block_size;
         let l = self.embed_dim;
+        let cache_timer = profile::start();
         let (w_b_star, w_r) = self.cached_mixing(temperature)?;
+        profile::log("unimixing_lite.cached_mixing", cache_timer);
 
         // --- Step 1: 局部交互 ---
         // [batch_size, N, B] × [N, B, B] → [batch_size, N, B]。
         // 避免 Candle native CPU 后端的 3D batched matmul 慢路径。
+        let local_timer = profile::start();
         let h = self.local_mix_2d_loop(x, &w_b_star)?;
+        profile::log("unimixing_lite.local_mix", local_timer);
 
         // --- Step 2: 全局交互 ---
+        let global_timer = profile::start();
         let h_flat = h
             .transpose(0, 1)?
             .contiguous()?
             .reshape((n, batch_size * b))?;
         let out_flat = w_r.matmul(&h_flat)?;
+        profile::log("unimixing_lite.global_mix", global_timer);
 
         // --- Step 3: 恢复输出维度 ---
+        let reshape_timer = profile::start();
         let out = out_flat
             .reshape((n, batch_size, b))?
             .transpose(0, 1)?
             .contiguous()?
             .reshape((batch_size, l))?;
+        profile::log("unimixing_lite.output_reshape", reshape_timer);
 
+        profile::log("unimixing_lite.total", total_timer);
         Ok(out)
     }
 }

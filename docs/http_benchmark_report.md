@@ -16,6 +16,12 @@
 
 UniMixer 的中位数延迟稳定在 `12.2 ms`，但尾延迟波动高于 GDCN+ESMM。上一轮单次测试出现的 1s 级 P99.9 尖峰未在本次 3 轮复测中复现。
 
+2026-06-03 重新压测了 UniMixer 的 native CPU 路径，并补充了内部分段 profiler。结论：
+
+- UniMixer 内部单次 100 行推理 `model.total` 约 `8.8 ms`，其中 `pswiglu` 仍是主要耗时段，但 `cached_mixing` 和 `cached_linears` 已被 warmup 移出真实推理路径。
+- HTTP 端到端压测在 `300 QPS / 30s / batch-size=200 / concurrency=300` 下得到 `P50 27.5 ms`、`P95 58.8 ms`、`P99 103.3 ms`、`P99.9 156.8 ms`，`Errors=0`。
+- 这说明当前优化主要改善了模型内部冷启动和稳定态计算，但端到端 HTTP 延迟仍主要受请求解析、批处理和服务端调度影响；与上一轮 native CPU 的 `P50 27.6 ms` 基本持平。
+
 2026-06-02 补充了不同 CPU 后端的对比压测，并在 Rust 侧优化了 GDCN cross/gate GEMM 与 UniMixer token/block 小矩阵乘路径。结论：
 
 - macOS Accelerate 后端下，UniMixer P50 为 `12.7 ms`，GDCN+ESMM P50 为 `9.3 ms`。

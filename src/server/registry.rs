@@ -152,6 +152,9 @@ impl ModelRegistry {
         varmap
             .load(&safetensors_path)
             .map_err(|e| format!("load weights: {}", e))?;
+        model
+            .warmup()
+            .map_err(|e| format!("warm up model caches: {}", e))?;
 
         let engine = Arc::new(InferenceEngine::new(dag, model, embed_features, device));
 

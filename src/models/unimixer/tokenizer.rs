@@ -1,4 +1,5 @@
 //! FeatureTokenizer：分组 Conv1d 将离散特征投影为 Token 序列。
+use super::profile;
 use candle_core::{Result, Tensor};
 use candle_nn::{conv1d, embedding, Conv1d, Conv1dConfig, Embedding, Linear, Module, VarBuilder};
 use std::collections::HashMap;
@@ -102,16 +103,24 @@ impl FeatureTokenizer {
     }
 
     pub fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<Tensor> {
+        let total_timer = profile::start();
+        let embedding_timer = profile::start();
         let mut embeds = Vec::with_capacity(self.ordered_feature_names.len());
         for name in &self.ordered_feature_names {
+            let feature_timer = profile::verbose().then(std::time::Instant::now);
             let input_tensor = x_inputs
                 .get(name)
                 .ok_or_else(|| candle_core::Error::Msg(format!("Feature '{}' not found", name)))?;
             let emb_idx = *self.feature_to_emb_idx.get(name).unwrap();
             let emb_out = self.embeddings[emb_idx].forward(input_tensor)?;
             embeds.push(self.pool(emb_idx, emb_out)?);
+            profile::log(&format!("tokenizer.feature.{name}"), feature_timer);
         }
+        profile::log("tokenizer.embedding_pool", embedding_timer);
+        let cat_timer = profile::start();
         let concat_embeds = Tensor::cat(&embeds, 1)?;
+        profile::log("tokenizer.concat_embeds", cat_timer);
+        let projection_timer = profile::start();
         let batch_size = concat_embeds.dim(0)?;
         let token_inputs =
             concat_embeds.reshape((batch_size, self.num_tokens, self.token_input_dim))?;
@@ -127,7 +136,10 @@ impl FeatureTokenizer {
                     .unsqueeze(1)?,
             );
         }
-        Tensor::cat(&outputs, 1)
+        let output = Tensor::cat(&outputs, 1)?;
+        profile::log("tokenizer.token_projection", projection_timer);
+        profile::log("tokenizer.total", total_timer);
+        Ok(output)
     }
 }
 

@@ -18,6 +18,10 @@ pub mod unimixer;
 
 pub trait Model: Send + Sync {
     fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<HashMap<String, Tensor>>;
+
+    fn warmup(&self) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

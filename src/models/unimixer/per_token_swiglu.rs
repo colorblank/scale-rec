@@ -1,4 +1,5 @@
 //! PerTokenSwiGLU：Token 维度的 SwiGLU 激活与投影。
+use super::profile;
 use candle_core::{Result, Tensor};
 use candle_nn::{Init, Linear, Module, VarBuilder};
 use std::sync::Mutex;
@@ -19,6 +20,8 @@ pub struct PerTokenSwiGlu {
     b_gate: Tensor,
     w_down: Tensor,
     b_down: Tensor,
+    num_tokens: usize,
+    token_dim: usize,
     hidden_dim: usize,
     cached_weights: Mutex<Option<CachedWeights>>,
 }
@@ -86,6 +89,8 @@ impl PerTokenSwiGlu {
             b_gate,
             w_down,
             b_down,
+            num_tokens,
+            token_dim,
             hidden_dim,
             cached_weights: Mutex::new(None),
         })
@@ -145,6 +150,10 @@ impl PerTokenSwiGlu {
         Ok((up_gate_linears, down_linears))
     }
 
+    pub fn warmup(&self) -> Result<()> {
+        self.cached_linears().map(|_| ())
+    }
+
     /// 前向传播
     ///
     /// 参数:
@@ -153,14 +162,35 @@ impl PerTokenSwiGlu {
     /// 返回:
     /// - 形状为 (batch_size, T, D) 的输出张量
     pub fn forward(&self, x: &Tensor) -> Result<Tensor> {
+        let total_timer = profile::start();
+        let cache_timer = profile::start();
         let (up_gate_linears, down_linears) = self.cached_linears()?;
+        profile::log("pswiglu.cached_linears", cache_timer);
 
+        let up_gate_timer = profile::start();
+        let (batch_size, num_tokens, token_dim) = x.dims3()?;
+        if num_tokens != self.num_tokens || token_dim != self.token_dim {
+            candle_core::bail!(
+                "PerTokenSwiGlu input shape mismatch: expected (*, {}, {}), got ({}, {}, {})",
+                self.num_tokens,
+                self.token_dim,
+                batch_size,
+                num_tokens,
+                token_dim
+            );
+        }
         let up_gate = Self::apply_token_linears(x, &up_gate_linears)?;
+        profile::log("pswiglu.up_gate_linear", up_gate_timer);
+        let activation_timer = profile::start();
         let up = up_gate.narrow(2, 0, self.hidden_dim)?;
         let gate = up_gate.narrow(2, self.hidden_dim, self.hidden_dim)?;
         let hidden = up.mul(&self.swish(&gate)?)?;
+        profile::log("pswiglu.swish_mul", activation_timer);
+        let down_timer = profile::start();
         let output = Self::apply_token_linears(&hidden, &down_linears)?;
+        profile::log("pswiglu.down_linear", down_timer);
 
+        profile::log("pswiglu.total", total_timer);
         Ok(output)
     }
 }

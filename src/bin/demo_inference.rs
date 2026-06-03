@@ -98,6 +98,7 @@ fn main() -> Result<()> {
     varmap
         .load(safetensors_path)
         .context("Failed to load safetensors")?;
+    model.warmup().context("Failed to warm up model caches")?;
     println!("[Rust] loaded weights from {}", safetensors_path);
 
     let engine = InferenceEngine::new(dag, model, features, device);

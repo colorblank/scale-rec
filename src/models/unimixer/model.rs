@@ -1,4 +1,5 @@
 //! UniMixerModel：完整的 UniMixer 架构，特征分词 → Token 交互 → 多任务塔。
+use super::profile;
 use super::siamese_norm::{SiameseNorm, SiameseNormOutput};
 use super::tokenizer::FeatureTokenizer;
 use super::unimixer_block::{BlockOutput, UniMixerBlock};
@@ -110,14 +111,21 @@ impl UniMixerModel {
         if temperature <= 0.0 {
             candle_core::bail!("temperature must be > 0");
         }
+        let total_timer = profile::start();
+        let tokenizer_timer = profile::start();
         let tokens = self.tokenizer.forward(x_inputs)?;
+        profile::log("model.tokenizer", tokenizer_timer);
+        let reshape_timer = profile::start();
         let (batch_size, _, _) = tokens.dims3()?;
         let mut x = tokens.reshape((batch_size, self.embed_dim))?;
+        profile::log("model.tokens_reshape", reshape_timer);
         let output = if self.use_siamese {
             let mut x_bar = x.clone();
             let mut y_bar = x.clone();
-            for block in &self.blocks {
+            for (idx, block) in self.blocks.iter().enumerate() {
+                let block_timer = profile::start();
                 let res = block.forward(&x, temperature, Some(&x_bar), Some(&y_bar), true)?;
+                profile::log(&format!("model.block.{idx}.total"), block_timer);
                 if let BlockOutput::Siamese(new_x_bar, new_y_bar) = res {
                     x_bar = new_x_bar;
                     y_bar = new_y_bar;
@@ -126,16 +134,20 @@ impl UniMixerModel {
                     candle_core::bail!("Expected Siamese output");
                 }
             }
+            let final_norm_timer = profile::start();
             let final_norm = self.final_norm.as_ref().unwrap();
             let fusion_res = final_norm.forward(&x_bar, &y_bar, None)?;
+            profile::log("model.final_norm", final_norm_timer);
             if let SiameseNormOutput::Fused(fused_out) = fusion_res {
                 fused_out
             } else {
                 candle_core::bail!("Expected Fused output");
             }
         } else {
-            for block in &self.blocks {
+            for (idx, block) in self.blocks.iter().enumerate() {
+                let block_timer = profile::start();
                 let res = block.forward(&x, temperature, None, None, false)?;
+                profile::log(&format!("model.block.{idx}.total"), block_timer);
                 if let BlockOutput::Standard(new_x) = res {
                     x = new_x;
                 } else {
@@ -144,12 +156,23 @@ impl UniMixerModel {
             }
             x
         };
-        self.task_towers.forward(&output)
+        let towers_timer = profile::start();
+        let outputs = self.task_towers.forward(&output)?;
+        profile::log("model.task_towers", towers_timer);
+        profile::log("model.total", total_timer);
+        Ok(outputs)
     }
 }
 
 impl Model for UniMixerModel {
     fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<HashMap<String, Tensor>> {
         self.forward_with_temperature(x_inputs, self.temperature)
+    }
+
+    fn warmup(&self) -> Result<()> {
+        for block in &self.blocks {
+            block.warmup(self.temperature)?;
+        }
+        Ok(())
     }
 }
