@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import yaml
 
-from train.app.manifest import sha256_file, write_model_manifest
+from train.app.manifest import default_weight_binding, sha256_file, write_model_manifest
 
 
 def test_write_model_manifest_records_relative_files_and_hashes(tmp_path):
@@ -33,6 +33,7 @@ def test_write_model_manifest_records_relative_files_and_hashes(tmp_path):
     assert data["weights_file"] == "model.safetensors"
     assert data["feature_config_sha256"] == sha256_file(feature_config)
     assert data["model_config_sha256"] == sha256_file(model_config)
+    assert data["weight_binding"] == default_weight_binding()
     assert data["tasks"] == ["pred"]
     assert data["metrics"] == {"best_auc": 0.5}
 
@@ -68,3 +69,41 @@ def test_write_model_manifest_records_external_configs_as_absolute_paths(tmp_pat
     assert data["weights_file"] == "model.safetensors"
     assert data["feature_config_file"] == str(feature_config.resolve())
     assert data["model_config_file"] == str(model_config.resolve())
+
+
+def test_write_model_manifest_records_custom_weight_binding(tmp_path):
+    weights = tmp_path / "model.safetensors"
+    feature_config = tmp_path / "feature.yaml"
+    model_config = tmp_path / "model.yaml"
+    manifest = tmp_path / "model.manifest.yaml"
+    weights.write_bytes(b"weights")
+    feature_config.write_text("sources: []\noperators: []\n", encoding="utf-8")
+    model_config.write_text("type: unimixer\n", encoding="utf-8")
+
+    weight_binding = {
+        "format": "safetensors",
+        "schema": "candle-varbuilder-v1",
+        "root_prefix": "serving",
+        "tokenizer_prefix": "feature_tokenizer",
+        "unimixer_prefix": "scorer",
+        "strict": False,
+        "allow_extra_tensors": True,
+    }
+
+    write_model_manifest(
+        manifest_path=manifest,
+        model_id="model",
+        model_version="v1",
+        model_type="unimixer",
+        weights_path=weights,
+        feature_config_path=feature_config,
+        model_config_path=model_config,
+        tasks=["click"],
+        label_col_map={"click": "is_click"},
+        metrics={},
+        weight_binding=weight_binding,
+    )
+
+    data = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+
+    assert data["weight_binding"] == weight_binding

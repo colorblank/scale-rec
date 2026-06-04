@@ -58,6 +58,7 @@ def write_model_manifest(
     published_weights_file: Union[str, Path, None] = None,
     best_weights_file: Union[str, Path, None] = None,
     latest_weights_file: Union[str, Path, None] = None,
+    weight_binding: Optional[dict[str, Any]] = None,
 ) -> Path:
     manifest_path = Path(manifest_path)
     manifest_dir = manifest_path.parent
@@ -75,6 +76,7 @@ def write_model_manifest(
         "code_commit": current_git_commit(repo_root),
         "weights_file": _relative_to_manifest(weights_path, manifest_dir),
         "weights_sha256": sha256_file(weights_path),
+        "weight_binding": weight_binding or default_weight_binding(),
         "feature_config_file": _relative_to_manifest(feature_config_path, manifest_dir),
         "feature_config_sha256": sha256_file(feature_config_path),
         "model_config_file": _relative_to_manifest(model_config_path, manifest_dir),
@@ -113,6 +115,18 @@ def write_model_manifest(
     with open(manifest_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
     return manifest_path
+
+
+def default_weight_binding() -> dict[str, Any]:
+    return {
+        "format": "safetensors",
+        "schema": "candle-varbuilder-v1",
+        "root_prefix": "",
+        "tokenizer_prefix": "tokenizer",
+        "unimixer_prefix": "unimixer",
+        "strict": True,
+        "allow_extra_tensors": True,
+    }
 
 
 def _relative_to_manifest(path: Path, manifest_dir: Path) -> str:
