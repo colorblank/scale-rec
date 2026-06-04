@@ -7,31 +7,30 @@ from __future__ import annotations
 2. `discover`：discover-main-sort 训练，使用单文件 TSV
 3. `all`：同一数据集上批量训练多个模型
 """
-from typing import Optional
-
 import argparse
 import logging
 import os
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
 
+from ..core.config import FlowConfig
+from ..core.dag import FeatureDag
+from ..training.trainer import Trainer
+from .artifacts import TrainingArtifactManager
 from .cli import (
+    add_artifact_args,
     add_runtime_args,
     add_training_args,
-    add_artifact_args,
     build_model_for_dag,
     configure_logging,
     resolve_device,
     train_config_from_args,
 )
-from .artifacts import TrainingArtifactManager
-from ..core.config import FlowConfig
-from ..core.dag import FeatureDag
-from ..training.trainer import Trainer
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "examples"
@@ -45,6 +44,7 @@ logger = logging.getLogger("train")
 def _wrap_unimixer(model):
     """Wrap UniMixer so state_dict matches Rust vb.pp("unimixer") prefix."""
     import types
+
     import torch.nn as nn
 
     blocks = model.blocks

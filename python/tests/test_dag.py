@@ -5,7 +5,6 @@ import pytest
 from train.core.config import FlowConfig
 from train.core.dag import FeatureDag
 
-
 FIXTURE_DIR = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
 
 

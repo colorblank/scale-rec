@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """逻辑回归基线：Embedding + Linear。"""
 from typing import Optional
+
 import torch
 import torch.nn as nn
 

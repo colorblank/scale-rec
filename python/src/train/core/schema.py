@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 """Static feature schema inference and validation for FlowConfig."""
-from typing import Optional
-
 from dataclasses import dataclass
+from typing import Optional
 
 from .config import (
     DType,

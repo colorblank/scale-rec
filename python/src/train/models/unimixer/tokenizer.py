@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """FeatureTokenizer：分组 Conv1d 特征投影。"""
 from typing import Optional
+
 import torch
 import torch.nn as nn
 

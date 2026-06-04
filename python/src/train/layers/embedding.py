@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """FeatureEmbeddings：离散特征索引 → 稠密嵌入拼接，支持变长序列池化。"""
 from typing import Optional
+
 import torch
 import torch.nn as nn
 

@@ -14,7 +14,6 @@ from ...core.dag import FeatureDag
 from ..loss.multi_task import _pick_labels, _to_device
 from ..metrics import compute_metrics, get_available_metrics
 
-
 logger = logging.getLogger(__name__)
 
 

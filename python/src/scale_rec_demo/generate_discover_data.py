@@ -240,16 +240,8 @@ def _make_labels(
 
     click_score = (
         float(click_policy["quality_weight"]) * quality
-        + sum(
-            float(v)
-            for k, v in click_policy["item_type_bonus"].items()
-            if item_type == k
-        )
-        + sum(
-            float(v)
-            for k, v in click_policy["source_name_bonus"].items()
-            if source_name == k
-        )
+        + sum(float(v) for k, v in click_policy["item_type_bonus"].items() if item_type == k)
+        + sum(float(v) for k, v in click_policy["source_name_bonus"].items() if source_name == k)
         + (float(click_policy["scene_bonus"]) if scene <= int(click_policy["scene_max"]) else 0.0)
         + (
             float(click_policy["new_user_bonus"])

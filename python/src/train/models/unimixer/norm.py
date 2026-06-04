@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """SiameseNorm：双流归一化 RMSNorm + 融合。"""
 from typing import Optional, Union
+
 import torch
 import torch.nn as nn
 

@@ -2,17 +2,17 @@ from __future__ import annotations
 
 """训练产物与 checkpoint 管理。"""
 
+import shutil
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-import shutil
 from pathlib import Path
 from typing import Any, Optional, Union
 
 import yaml
 
+from ..core.config import ArtifactConfig
 from .export import export_to_safetensors
 from .manifest import write_model_manifest
-from ..core.config import ArtifactConfig
 
 
 def _utc_version() -> str:

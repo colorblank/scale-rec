@@ -8,8 +8,8 @@ import torch
 
 from ...core.dag import FeatureDag
 from ..loss.multi_task import MultiTaskLoss as MultiTaskLoss
-from ..loss.multi_task import compute_loss as compute_loss
 from ..loss.multi_task import _pick_labels, _to_device
+from ..loss.multi_task import compute_loss as compute_loss
 from .auc import _auc, _sigmoid, gauc
 from .classification import accuracy, f1_score, logloss, recall
 from .regression import mae, mse

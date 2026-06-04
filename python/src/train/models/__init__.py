@@ -6,10 +6,10 @@ from typing import Any, Callable, Optional
 
 import torch.nn as nn
 
-from ..layers.embedding import FeatureTuple
-from ..layers.towers import Activation, MultiTaskConfig, TaskRelation, TowerConfig
 from ..core.task import label_map as task_label_map
 from ..core.task import parse_task_specs, task_names
+from ..layers.embedding import FeatureTuple
+from ..layers.towers import Activation, MultiTaskConfig, TaskRelation, TowerConfig
 from .deepfm import DeepFM
 from .esmm import ESMM, default_task_config
 from .gdcn_esmm import GDCNESMM

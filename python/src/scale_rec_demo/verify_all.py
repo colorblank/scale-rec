@@ -2,11 +2,12 @@ from __future__ import annotations
 
 """Unified verification script comparing PyTorch vs Rust inference outputs."""
 
-import os
-import sys
-import subprocess
 import contextlib
+import os
+import subprocess
+import sys
 from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import torch
@@ -18,9 +19,10 @@ if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
 
 from train.app.cli import build_model_for_dag
+from train.app.data import DTYPE_PANDAS, _parse_default
 from train.core.config import FlowConfig
 from train.core.dag import FeatureDag
-from train.app.data import DTYPE_PANDAS, _parse_default
+
 from .paths import DEMO_ARTIFACT_DIR, DISCOVER_FEATURE_CONFIG, MODEL_CONFIGS, REPO_ROOT
 
 

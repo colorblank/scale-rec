@@ -4,7 +4,6 @@ from pathlib import Path
 from train.core.config import FlowConfig
 from train.core.dag import FeatureDag
 
-
 FIXTURE_DIR = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
 
 
@@ -16,6 +15,7 @@ def round_floats(val):
     if isinstance(val, dict):
         return {k: round_floats(v) for k, v in val.items()}
     return val
+
 
 def test_python_dag_matches_golden_fixture():
     dag = FeatureDag(FlowConfig.from_yaml(str(FIXTURE_DIR / "golden_feature_config.yaml")))

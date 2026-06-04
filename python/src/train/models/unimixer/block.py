@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """UniMixerBlock：交互 + 激活 + 归一 + 残差。"""
 from typing import Optional, Union
+
 import torch
 import torch.nn as nn
 

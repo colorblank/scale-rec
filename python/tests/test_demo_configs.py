@@ -6,7 +6,6 @@ import yaml
 
 from train.core.config import FlowConfig
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "examples"
 
@@ -71,7 +70,9 @@ def test_demo_model_configs_exist_and_are_current():
     assert unimixer["tasks"][0]["metrics"] == ["auc", "logloss"]
     assert unimixer["label_col_map"]["stay"] == "stay_time_label"
 
-    label_policy = yaml.safe_load((EXAMPLES_DIR / "discover_label_policy.yaml").read_text(encoding="utf-8"))
+    label_policy = yaml.safe_load(
+        (EXAMPLES_DIR / "discover_label_policy.yaml").read_text(encoding="utf-8")
+    )
     assert label_policy["click"]["threshold"] == 0.42
     assert label_policy["stay_time_label"]["noise_min"] == -25
 

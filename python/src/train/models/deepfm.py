@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """DeepFM：FM 一阶 + FM 二阶 + Deep MLP。"""
 from typing import Optional
+
 import torch
 import torch.nn as nn
 

@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import argparse
 import logging
-from datetime import datetime, timezone
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Union
 
 import torch
-import yaml
 
 from ..core.config import ArtifactConfig, EvalConfig, ModelConfig, TrainConfig
 from ..core.dag import FeatureDag
@@ -49,9 +48,7 @@ def add_training_args(parser: argparse.ArgumentParser, *, lr: float, batch_size:
     parser.add_argument("--early-stopping", type=int)
     parser.add_argument("--no-ema", action="store_true")
     parser.add_argument("--ema-decay", type=float)
-    parser.add_argument(
-        "--loss-weighting", choices=["equal", "static", "uncertainty"]
-    )
+    parser.add_argument("--loss-weighting", choices=["equal", "static", "uncertainty"])
     parser.add_argument("--tb-dir")
     parser.add_argument("--eval-metrics")
     parser.add_argument("--monitor-metric")
@@ -244,6 +241,7 @@ def build_model_for_dag(
 
 def wrap_unimixer_for_rust_names(model: torch.nn.Module) -> torch.nn.Module:
     import types
+
     import torch.nn as nn
 
     wrapper = nn.Module()

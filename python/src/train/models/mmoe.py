@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """MMoE：多门控专家混合。"""
 from typing import Optional
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

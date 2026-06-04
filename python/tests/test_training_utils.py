@@ -5,11 +5,11 @@ import torch
 
 from train.core.config import EvalConfig, FlowConfig, LRScheduleConfig, OptimConfig, TrainConfig
 from train.core.dag import FeatureDag
+from train.core.task import TaskSpec, parse_task_specs
 from train.training.eval.evaluator import Evaluator
 from train.training.loss.multi_task import MultiTaskLoss
 from train.training.optim.scheduler import LRScheduler
 from train.training.quality import summarize_feature_quality
-from train.core.task import TaskSpec, parse_task_specs
 from train.training.trainer import Trainer
 
 

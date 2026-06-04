@@ -10,16 +10,6 @@ logger = logging.getLogger(__name__)
 
 import torch
 
-from .config import (
-    DType,
-    EmbedConfig,
-    FlowConfig,
-    OperatorDef,
-    Role,
-    SourceDef,
-    parse_float_strict,
-    parse_int_strict,
-)
 from ..ops import (
     Bucketing,
     CrossFeature,
@@ -35,6 +25,16 @@ from ..ops import (
     Split,
     StringConcat,
     StringParser,
+)
+from .config import (
+    DType,
+    EmbedConfig,
+    FlowConfig,
+    OperatorDef,
+    Role,
+    SourceDef,
+    parse_float_strict,
+    parse_int_strict,
 )
 from .schema import FeatureSchema, infer_feature_schemas
 
