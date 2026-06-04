@@ -60,7 +60,6 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.generate_disco
 
 # ── PyTorch vs Rust 推理一致性验证 ──
 PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.verify_all
-PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.verify_discover_gdcn
 
 ```
 

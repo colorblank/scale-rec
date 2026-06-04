@@ -8,9 +8,9 @@ pub struct GatedCrossNetwork {
 }
 
 struct GatedCrossLayer {
-    cross_gate_weight: Tensor,
+    cross: Linear,
+    gate: Linear,
     bias: Tensor,
-    input_dim: usize,
 }
 
 impl GatedCrossNetwork {
@@ -33,23 +33,13 @@ impl GatedCrossNetwork {
 }
 
 impl GatedCrossLayer {
-    fn new(cross: Linear, gate: Linear, bias: Tensor, input_dim: usize) -> Result<Self> {
-        let cross_gate_weight = Tensor::cat(&[cross.weight(), gate.weight()], 0)?;
-        Ok(Self {
-            cross_gate_weight,
-            bias,
-            input_dim,
-        })
+    fn new(cross: Linear, gate: Linear, bias: Tensor, _input_dim: usize) -> Result<Self> {
+        Ok(Self { cross, gate, bias })
     }
 
     fn forward(&self, x0: &Tensor, xi: &Tensor) -> Result<Tensor> {
-        let combined = xi.matmul(&self.cross_gate_weight.t()?)?;
-        let last_dim = combined.rank() - 1;
-        let crossed = combined
-            .narrow(last_dim, 0, self.input_dim)?
-            .broadcast_add(&self.bias)?;
-        let gate = combined.narrow(last_dim, self.input_dim, self.input_dim)?;
-        let weight = candle_nn::ops::sigmoid(&gate)?;
+        let crossed = self.cross.forward(xi)?.broadcast_add(&self.bias)?;
+        let weight = candle_nn::ops::sigmoid(&self.gate.forward(xi)?)?;
         x0.mul(&crossed)?.mul(&weight)?.broadcast_add(xi)
     }
 }
@@ -72,7 +62,7 @@ mod tests {
     use candle_nn::VarMap;
 
     #[test]
-    fn fused_cross_gate_matches_separate_linear_outputs() -> Result<()> {
+    fn cross_layer_matches_gated_formula() -> Result<()> {
         let device = Device::Cpu;
         let varmap = VarMap::new();
         let vb = VarBuilder::from_varmap(&varmap, DType::F32, &device);
@@ -83,15 +73,13 @@ mod tests {
         let layer = GatedCrossLayer::new(cross.clone(), gate.clone(), bias, 3)?;
         let x = Tensor::new(&[[0.2f32, 0.4, 0.6], [0.8, 1.0, 1.2]], &device)?;
 
-        let combined = x.matmul(&layer.cross_gate_weight.t()?)?;
-        let fused_cross = combined.narrow(1, 0, 3)?;
-        let fused_gate = combined.narrow(1, 3, 3)?;
+        let expected = x
+            .mul(&cross.forward(&x)?.broadcast_add(&layer.bias)?)?
+            .mul(&candle_nn::ops::sigmoid(&gate.forward(&x)?)?)?
+            .broadcast_add(&x)?;
+        let diff = layer.forward(&x, &x)?.sub(&expected)?.abs()?.max_all()?;
 
-        let cross_diff = fused_cross.sub(&cross.forward(&x)?)?.abs()?.max_all()?;
-        let gate_diff = fused_gate.sub(&gate.forward(&x)?)?.abs()?.max_all()?;
-
-        assert!(cross_diff.to_scalar::<f32>()? <= 1e-6);
-        assert!(gate_diff.to_scalar::<f32>()? <= 1e-6);
+        assert!(diff.to_scalar::<f32>()? <= 1e-6);
         Ok(())
     }
 }

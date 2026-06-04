@@ -19,7 +19,7 @@ from .config import (
 @dataclass(frozen=True)
 class FeatureDType:
     tag: str
-    inner: 'Optional[FeatureDType]' = None
+    inner: "Optional[FeatureDType]" = None
     length: Optional[int] = None
     values: Optional[tuple[str, ...]] = None
     default: Optional[str] = None

@@ -147,7 +147,9 @@ def split_csv(value: str) -> list[str]:
     return [x.strip() for x in value.split(",") if x.strip()]
 
 
-def train_config_from_args(args: argparse.Namespace, *, export_path: Union[str, Path]) -> TrainConfig:
+def train_config_from_args(
+    args: argparse.Namespace, *, export_path: Union[str, Path]
+) -> TrainConfig:
     return TrainConfig(
         epochs=args.epochs,
         batch_size=args.batch_size,

@@ -145,7 +145,7 @@ uv run --project python mypy
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m scale_rec_demo.verify_discover_gdcn
+  python -m scale_rec_demo.verify_all --models discover_gdcn_esmm --force-train
 ```
 
 验证全部 demo 主线：
@@ -188,7 +188,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 ```bash
 cargo test --test model_smoke
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m scale_rec_demo.verify_discover_gdcn
+  python -m scale_rec_demo.verify_all --models discover_gdcn_esmm --force-train
 ```
 
 ## 注意事项

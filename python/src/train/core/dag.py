@@ -80,7 +80,7 @@ class FeatureDag:
         self,
         config: FlowConfig,
         debug_mode: bool = False,
-        tracer: 'Optional[DebugTracer]' = None,
+        tracer: "Optional[DebugTracer]" = None,
         strict_validation: bool = False,
     ) -> None:
         self.sources: dict[str, SourceDef] = {}

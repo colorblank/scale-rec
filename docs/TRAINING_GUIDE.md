@@ -47,7 +47,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 # 3. 端到端验证
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m scale_rec_demo.verify_discover_gdcn
+  python -m scale_rec_demo.verify_all --models discover_gdcn_esmm --force-train
 ```
 
 ## 数据格式
@@ -504,7 +504,7 @@ python/src/train/
 └── ops/         — 特征算子
 python/src/scale_rec_demo/
 ├── generate_discover_data.py  — 合成数据生成
-├── verify_discover_gdcn.py    — discover 主线一致性验证
+├── verify_all.py              — discover 主线与 UniMixer 一致性验证
 └── paths.py                   — demo 路径常量
 python/artifacts/demo/         — 本地训练输出
 ```

@@ -98,7 +98,9 @@ def _parse_mmoe_task_configs(raw: dict[str, Any]) -> list[TaskConfigEntry]:
 # ── register built-in models ──
 
 
-def _spec_pred(model: Optional[nn.Module] = None, params: Optional[dict[str, Any]] = None) -> OutputSpec:
+def _spec_pred(
+    model: Optional[nn.Module] = None, params: Optional[dict[str, Any]] = None
+) -> OutputSpec:
     specs = parse_task_specs((params or {}).get("tasks"))
     if specs:
         return {
@@ -145,7 +147,9 @@ def _build_mmoe(
     )
 
 
-def _spec_mmoe(model: Optional[nn.Module] = None, params: Optional[dict[str, Any]] = None) -> OutputSpec:
+def _spec_mmoe(
+    model: Optional[nn.Module] = None, params: Optional[dict[str, Any]] = None
+) -> OutputSpec:
     specs = parse_task_specs((params or {}).get("tasks"))
     if specs:
         return {
@@ -195,7 +199,9 @@ def _build_gdcn_esmm(
     )
 
 
-def _spec_esmm(model: Optional[nn.Module] = None, params: Optional[dict[str, Any]] = None) -> OutputSpec:
+def _spec_esmm(
+    model: Optional[nn.Module] = None, params: Optional[dict[str, Any]] = None
+) -> OutputSpec:
     params = params or {}
     specs = parse_task_specs(params.get("tasks"))
     if specs:

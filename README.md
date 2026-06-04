@@ -165,7 +165,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python pytest python/tests/ -
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m scale_rec_demo.verify_discover_gdcn
+  python -m scale_rec_demo.verify_all --models discover_gdcn_esmm --force-train
 ```
 
 更多环境配置和命令见 [开发环境](docs/DEVELOPMENT.md)。
