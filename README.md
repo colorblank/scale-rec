@@ -50,7 +50,8 @@ scale-rec/
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m scale_rec_demo.generate_discover_data
+  python -m scale_rec_demo.generate_discover_data \
+  --label-policy examples/discover_label_policy.yaml
 ```
 
 ### 2. 训练并发布模型
@@ -61,12 +62,15 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --data python/artifacts/demo/discover_train_data.txt \
   --feature-config examples/feature_config_discover.yaml \
   --model-config examples/model_gdcn_esmm.yaml \
-  --epochs 10 --batch-size 128 --no-header \
+  --train-config examples/train_defaults.yaml \
+  --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
   --artifact-dir python/artifacts/demo \
   --publish-path python/artifacts/demo/model_gdcn_esmm.safetensors \
   --model-name model_gdcn_esmm \
   --run-version 20260526_120000
 ```
+
+`train_defaults.yaml` 负责训练默认值，`model_gdcn_esmm.yaml` 负责任务定义，`discover_label_policy.yaml` 只负责 demo 数据标签生成。三者职责分离，训练流程和评估指标都从配置读取，不再在代码里写死。
 
 训练完成后会生成：
 

@@ -9,7 +9,8 @@
 | [快速开始](#快速开始) | 生成 demo 数据、训练 GDCN+ESMM / UniMixer、跑端到端验证 |
 | [数据格式](#数据格式) | discover TSV 和训练输入参数 |
 | [特征配置](#特征配置) | feature config 的 sources、operators、role |
-| [模型配置](#模型配置) | GDCN+ESMM 示例配置 |
+| [训练流程](#训练流程) | 数据、标签、模型、训练配置如何组合 |
+| [模型配置](#模型配置) | GDCN+ESMM / UniMixer 的任务级配置 |
 | [训练参数](#训练参数) / [训练技巧](#训练技巧) / [评估监控](#评估监控) | 训练超参、优化策略、日志与评估 |
 | [保存与推理导出](#保存与推理导出) | checkpoint、发布权重、serving manifest、加载规则 |
 | [HTTP 压测](#http-压测) | bench 使用方式和后端构建建议 |
@@ -53,11 +54,37 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m scale_rec_demo.verify_all --models discover_gdcn_esmm --force-train
 ```
 
+## 训练流程
+
+训练链路分成 4 层配置，默认优先级从低到高是：`train_defaults.yaml` < 模型 YAML < 命令行参数。
+
+1. `examples/feature_config_discover.yaml`
+   定义原始输入列、特征算子 DAG、每个列的 `role`。它决定哪些列进入模型，哪些列作为标签，哪些列只是中间产物。
+2. `examples/discover_label_policy.yaml`
+   定义 demo 数据生成时的标签规则。它只影响合成数据，不参与模型前向。
+3. `examples/train_defaults.yaml`
+   定义训练默认值，包括 batch size、optimizer、eval 样本数、warmup、early stopping、EMA、TensorBoard 等。CLI 可以覆盖其中任意项。
+4. `examples/model_*.yaml`
+   定义模型结构和任务语义。`tasks:` 是训练和评估的单一事实来源，决定每个任务用哪个 label、什么 loss、统计哪些 metrics。
+
+典型执行顺序如下：
+
+1. 先生成 demo 数据，写出 TSV 和标签列。
+2. 再加载 feature config，把原始列编排成模型输入。
+3. 再读取 model config，解析 `tasks:` 和 `task_config:`。
+4. 再读取 train config，合并 CLI 覆盖项。
+5. 训练时按 task 计算 loss，评估时按 task 计算 metrics。
+6. 最终导出 safetensors 权重和 manifest。
+
 ## 数据格式
 
-38 列 Tab 分隔 TSV，无 header。列定义见 `examples/feature_config_discover.yaml`。
+45 列 Tab 分隔 TSV，无 header。列定义见 `examples/feature_config_discover.yaml`。
 
-**生成合成数据**：`scale_rec_demo.generate_discover_data` 输出 2000 行 × 38 列。
+**生成合成数据**：`scale_rec_demo.generate_discover_data` 输出 2000 行 × 45 列，其中 38 列是特征输入，7 列是监督标签。
+
+标签列包含 `is_click`、`is_cvr`、`is_click_detail`、`is_click_stock`、`stay_time_label` 等字段；具体是否启用某个派生标签，由 `examples/discover_label_policy.yaml` 控制。
+
+如果你要同时训练 GDCN+ESMM 和 UniMixer，建议保留完整标签集合，复用同一份 TSV。
 
 | 参数 | 默认 | 说明 |
 |------|------|------|
@@ -71,12 +98,13 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 | `--run-version` | 自动生成 | 训练 run 版本号 |
 | `--keep-checkpoints` | 3 | 保留的 checkpoint 数量 |
 | `--train-config` | `examples/train_defaults.yaml` | 训练超参、优化器、评估默认值 |
+| `--label-policy` | `examples/discover_label_policy.yaml` | 仅用于合成数据生成的标签规则 |
 
 ## 特征配置
 
 `examples/feature_config_discover.yaml` 定义三部分：
 
-- **sources**（38 列）：列名、类型、默认值、角色
+- **sources**（45 列）：列名、类型、默认值、角色
 - **operators**（68 个）：14 种算子组成的 DAG
 - **role 标记**：`feature`（入模型）、`label`（入 loss）、`discard`（读后丢弃）
 
@@ -129,10 +157,35 @@ task_config:
     - {target: ctstay, sources: [detail, stay], op: multiply}
 ```
 
-GDCN+ESMM 将门控交叉网络 (GCN) 与 ESMM 多任务预测塔相结合。底层利用 3 层门控交叉层捕捉高阶显式特征交叉，并行使用两层全连接深层网络提取隐式非线性特征；最终通过 5 个独立的预测塔预测单任务 logits，并通过乘积算子 (multiply) 计算多任务联合概率输出。
+`tasks:` 是训练配置的核心，字段含义如下：
+
+| 字段 | 说明 |
+|---|---|
+| `name` | 任务名，同时也是日志、metric、tower 的主键 |
+| `label` | 该任务对应的标签列 |
+| `loss` | 该任务使用的 loss 名称，必须由训练代码注册 |
+| `metrics` | 该任务评估时统计的指标列表 |
+
+`label_col_map` 负责把任务名映射到真实列名，训练、导出和 manifest 都会使用它。`task_config` 负责定义 tower 和关系结构，属于模型前向的一部分。两者职责不同，不要混用。
+
+GDCN+ESMM 将门控交叉网络与 ESMM 多任务预测塔相结合。底层利用 3 层门控交叉层捕捉高阶显式特征交叉，并行使用两层全连接深层网络提取隐式非线性特征；最终通过 5 个独立的预测塔输出任务 logits，并通过乘积关系计算联合概率。
+
+### UniMixer 配置
+
+`examples/model_discover_unimixer.yaml` 复用同一套 `tasks:` 约定，区别在于 `type: unimixer`，以及 UniMixer 自身的 token、block、rank 等结构参数。训练、评估和导出层面对它的处理方式与 GDCN+ESMM 一致。
+
+### 任务定义建议
+
+- 分类任务常用 `loss: bce`，`metrics: [auc, logloss]`
+- 回归任务常用 `loss: mse` 或业务自定义回归 loss，`metrics: [mae, mse]`
+- 如果某个任务没有可用标签，就不要放进 `tasks:`，不要依赖代码里的默认兜底
+
+模型配置是训练流程里的第一手任务定义。后续的 trainer、evaluator、manifest 都只读这里，不再根据模型类型猜测任务。
 
 
 ## 训练参数
+
+下面这些参数来自 `examples/train_defaults.yaml`，CLI 只负责覆盖，不再在代码里写死。
 
 | 参数 | 默认 | 说明 |
 |------|------|------|
@@ -141,39 +194,129 @@ GDCN+ESMM 将门控交叉网络 (GCN) 与 ESMM 多任务预测塔相结合。底
 | `--lr` | 0.005 | 初始学习率 |
 | `--weight-decay` | 1e-4 | AdamW 权重衰减 |
 | `--device` | auto | cpu/cuda/mps/auto |
+| `--eval-samples` | 400 | 从文件头部切出的验证样本数 |
+| `--eval-interval` | 50 | 训练中每隔 N batch 触发一次评估 |
+| `--log-interval` | 10 | 训练中每隔 N batch 打一次日志 |
+| `--warmup-steps` | 200 | 学习率 warmup 步数 |
+| `--min-lr-ratio` | 0.01 | Cosine annealing 最低学习率比例 |
+| `--grad-max-norm` | 1.0 | 梯度裁剪阈值 |
+| `--early-stopping-patience` | 5 | 验证指标连续多少次不提升后停止 |
+| `--ema-decay` | 0.999 | EMA 衰减率 |
+| `--loss-weighting` | static | 多任务 loss 的加权策略 |
+
+### 训练默认配置
+
+`examples/train_defaults.yaml` 是训练超参的基线配置。它控制训练行为，但不定义模型结构：
+
+```yaml
+epochs: 30
+batch_size: 64
+optim:
+  name: adamw
+  lr: 0.005
+  weight_decay: 0.0001
+  emb_lr: null
+  emb_weight_decay: null
+eval_samples: 400
+eval_interval: 50
+log_interval: 10
+lr_schedule:
+  warmup_steps: 200
+  min_lr_ratio: 0.01
+grad_max_norm: 1.0
+early_stopping_patience: 5
+ema_decay: 0.999
+loss_weighting: static
+tb_dir: ""
+eval:
+  metrics: [auc]
+  monitor_metric: auc
+  log_path: ""
+  gauc_group_feature: user_id
+```
+
+字段含义：
+
+- `epochs` 和 `batch_size`：控制训练轮数和每次喂入模型的 batch 大小
+- `optim`：优化器类型和学习率参数，`emb_lr`、`emb_weight_decay` 允许把 embedding 参数和其它参数分开优化
+- `eval_samples`：从文件头部切出的验证样本数
+- `eval_interval`：训练中每隔多少个 batch 做一次评估
+- `log_interval`：训练中每隔多少个 batch 打一次进度日志
+- `lr_schedule.warmup_steps`：学习率线性 warmup 的步数
+- `lr_schedule.min_lr_ratio`：cosine 衰减的最低学习率比例
+- `grad_max_norm`：梯度裁剪阈值
+- `early_stopping_patience`：验证指标连续多少次不提升后停止
+- `ema_decay`：EMA 影子权重的更新衰减率
+- `loss_weighting`：多任务 loss 的加权策略，当前支持 `equal`、`static`、`uncertainty`
+- `tb_dir`：TensorBoard 输出目录，空字符串表示不写
+- `eval.metrics`：默认验证指标列表。对于已经在 `tasks:` 里声明 metrics 的模型，这里主要作为兜底和兼容配置
+- `eval.monitor_metric`：early stopping 监控的主指标。训练器会在所有任务里取这个 metric 的最好值作为监控分数
+- `eval.log_path`：额外保存评估日志的路径
+- `eval.gauc_group_feature`：GAUC 分组特征名
+
+### 标签策略配置
+
+`examples/discover_label_policy.yaml` 只参与 demo 数据生成，不影响模型结构和推理。它的作用是把原始字段转成监督标签：
+
+```yaml
+version: 1.0.0
+click:
+  quality_weight: 0.45
+  item_type_bonus:
+    news: 0.12
+    report: 0.12
+  source_name_bonus:
+    同花顺: 0.10
+    东方财富: 0.10
+  scene_max: 3
+  scene_bonus: 0.08
+  new_user_label: 新用户
+  new_user_bonus: 0.06
+  stay_time_threshold: 180
+  stay_time_bonus: 0.05
+  threshold: 0.42
+detail:
+  quality_threshold: 0.58
+  item_types: [news, report]
+stock:
+  min_stock_count: 3
+  source_name: 雪球
+cvr:
+  quality_threshold: 0.68
+  stay_time_threshold: 240
+stay_time_label:
+  click_multiplier: [0.85, 0.15]
+  noise_min: -25
+  noise_max: 45
+```
+
+字段含义：
+
+- `click`：点击标签的打分规则，综合质量、来源、场景、新用户偏置等因素
+- `detail`：细分点击标签，通常只对特定 `item_types` 生效
+- `stock`：股票类点击标签，依赖最小持仓数和来源名
+- `cvr`：转化标签，结合质量阈值和停留时间阈值
+- `stay_time_label`：停留时长标签，基于点击信号叠加噪声生成
 
 ## 训练技巧
 
-全部默认启用，可通过参数调整或禁用。
+这些策略的具体数值默认来自 `examples/train_defaults.yaml`。是否启用、采用什么阈值，都应从配置读取。
 
-### LR Warmup + Cosine Annealing
+### 学习率调度
 
-前 N epoch 线性升温，后续 cosine 降至 `lr × min_lr_ratio`。
-
-| 参数 | 默认 | 说明 |
-|------|------|------|
-| `--warmup-epochs` | 2 | 预热 epoch 数 |
-| `--min-lr-ratio` | 0.01 | 最终 lr 比例 |
+前 `warmup_steps` 个 step 线性升温，之后使用 cosine 衰减到 `lr × min_lr_ratio`。这里按 step 而不是按 epoch 计算，避免不同 batch size 下调度节奏漂移。
 
 ### Gradient Clipping
 
 每 batch 裁剪梯度范数，防止爆炸。
 
-| 参数 | 默认 | 说明 |
-|------|------|------|
-| `--grad-max-norm` | 1.0 | 裁剪阈值（0=禁用） |
-
 ### Early Stopping
 
-验证指标连续 N 个 epoch 不提升时自动停止。训练过程中会保存每个 epoch 的 checkpoint，并维护：
+验证指标连续 `early_stopping_patience` 次评估不提升时自动停止。训练过程中会保存每个 checkpoint，并维护：
 
 - `best.safetensors`：当前最优 checkpoint
 - `latest.safetensors`：最新 checkpoint
 - `checkpoints/*.safetensors`：按 epoch/step 编号的历史 checkpoint
-
-| 参数 | 默认 | 说明 |
-|------|------|------|
-| `--early-stopping` | 5 | patience（0=禁用） |
 
 ### EMA (Exponential Moving Average)
 
@@ -182,11 +325,6 @@ GDCN+ESMM 将门控交叉网络 (GCN) 与 ESMM 多任务预测塔相结合。底
 ```
 θ_ema = 0.999 × θ_ema + 0.001 × θ
 ```
-
-| 参数 | 默认 | 说明 |
-|------|------|------|
-| `--no-ema` | off | 禁用 EMA |
-| `--ema-decay` | 0.999 | 衰减率 |
 
 ### 不确定性加权损失 (MultiTaskLoss)
 
@@ -212,12 +350,7 @@ L = Σ exp(-log_var_i) × L_i + 0.5 × log_var_i
 
 ### 验证策略
 
-文件头部取 `--eval-samples` 行作为验证集，训练时跳过避免数据泄漏。大数据场景建议预 shuffle 或使用独立验证文件。
-
-| 参数 | 默认 | 说明 |
-|------|------|------|
-| `--eval-samples` | 2000 | 验证集样本数 |
-| `--eval-interval` | 50 | 训练中每隔 N batch 计算 AUC |
+文件头部取 `eval_samples` 行作为验证集，训练时跳过避免数据泄漏。大数据场景建议预 shuffle 或使用独立验证文件。`eval_interval` 控制的是触发评估的频率，不限定评估指标。
 
 ### TensorBoard
 
@@ -234,7 +367,7 @@ tensorboard --logdir runs/
 | 类型 | 指标 | 频率 |
 |------|------|------|
 | scalar | `train/loss`、`train/lr` | 每 epoch |
-| scalar | `val/auc_{task}` | 每 epoch |
+| scalar | `val/{task}_{metric}` | 每次评估 |
 | scalar | `grad/pre_clip_norm`、`post_clip_norm` | 每 batch |
 | histogram | `grad/{layer}.weight`、`grad/{layer}.bias` | 每 100 batch |
 
@@ -248,13 +381,15 @@ validation: 512 samples (4 batches)
     per_batch: data=17ms(8%) preproc=35ms(17%) forward=19ms(9%)
     loss=46ms(22%) backward=94ms(45%)
 epoch   1/10  loss=3.195845  lr=2.50e-03
-  click: auc=0.5075  cvr: auc=0.5123  detail: auc=0.4880  stock: auc=0.5317
+  click: auc=0.5075  logloss=0.6812  cvr: auc=0.5123  logloss=0.6734
+  detail: auc=0.4880  logloss=0.6911  stock: auc=0.5317  logloss=0.6658
+  stay: mae=285.8082  mse=148712.9375
   [uncertainty] σ(click)=1.015  σ(cvr)=1.015  σ(detail)=1.013
     σ(stay)=1.015  σ(stock)=1.014
-checkpoint saved to model.safetensors (best auc=0.5317)
-early stopping at epoch 8 (patience=5, best=0.7622@epoch3)
+checkpoint saved to model.safetensors (best val/click_auc=0.5317)
+early stopping at epoch 8 (patience=5, best=val/click_auc=0.7622@epoch3)
 EMA weights exported to model.safetensors
-best AUC=0.7622
+best metric=val/click_auc=0.7622
 ```
 
 ## 保存与推理导出

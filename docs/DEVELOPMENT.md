@@ -95,7 +95,8 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m scale_rec_demo.generate_discover_data
+  python -m scale_rec_demo.generate_discover_data \
+  --label-policy examples/discover_label_policy.yaml
 ```
 
 训练 demo 模型：
@@ -106,11 +107,14 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --data python/artifacts/demo/discover_train_data.txt \
   --feature-config examples/feature_config_discover.yaml \
   --model-config examples/model_gdcn_esmm.yaml \
-  --epochs 10 --batch-size 128 --no-header \
+  --train-config examples/train_defaults.yaml \
+  --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
   --artifact-dir python/artifacts/demo \
   --publish-path python/artifacts/demo/model_gdcn_esmm.safetensors \
   --model-name model_gdcn_esmm
 ```
+
+这里的配置分层和 [训练手册](TRAINING_GUIDE.md#训练流程) 保持一致：`feature_config` 管特征编排，`label_policy` 只管 demo 标签，`model_config` 定义任务和 loss，`train_config` 定义训练默认值和评估策略。
 
 ## Python 测试与格式化
 

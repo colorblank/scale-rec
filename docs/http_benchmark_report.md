@@ -39,7 +39,7 @@ UniMixer 的中位数延迟稳定在 `12.2 ms`，但尾延迟波动高于 GDCN+E
 | 压测二进制 | `target/release/bench` |
 | Feature config | `examples/feature_config_discover.yaml` |
 | 输入数据 | `python/artifacts/demo/discover_train_data.txt` |
-| 输入格式 | 38 列 TSV，无 header |
+| 输入格式 | 45 列 TSV，无 header；bench 只读取 feature config 需要的输入列，标签列随文件保留 |
 | 请求模式 | broadcast |
 | Batch size | 200 candidates/request |
 | 目标负载 | 300 QPS / 60s |
