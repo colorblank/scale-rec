@@ -201,6 +201,23 @@ def _infer_operator_output(op: OperatorDef, input_schemas: list[FeatureSchema]) 
         return _schema(op, FeatureDType("int"))
     if op_type == "StringConcat":
         return _schema(op, FeatureDType("string"))
+    if op_type == "ParsedFeatureHash":
+        mode = str(params.get("parse_mode", "json"))
+        if mode in {"json", "structured", "structured_list_split"}:
+            length = int(params.get("pad_len", 0)) or None
+        elif mode in {"split", "flat_split", "structured_flat_split"}:
+            length = int(params.get("max_len", 0)) or None
+        elif mode == "list_split":
+            length = first.dtype.length if first and first.dtype.is_list else None
+            if not length:
+                length = int(params.get("pad_len", 0)) or None
+        else:
+            raise ValueError(f"Unsupported ParsedFeatureHash mode: {mode}")
+        return _schema(op, FeatureDType("list", FeatureDType("int"), length))
+    if op_type == "ConcatHash":
+        if int(params.get("num_hashes", 1)) > 1:
+            return _schema(op, FeatureDType("list", FeatureDType("int"), int(params.get("num_hashes", 1))))
+        return _schema(op, FeatureDType("int"))
     if op_type == "FeatureHash":
         list_inputs = [s for s in input_schemas if s.dtype.is_list]
         num_hashes = int(params.get("num_hashes", 1))

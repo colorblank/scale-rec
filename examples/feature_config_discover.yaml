@@ -354,138 +354,124 @@ operators:
   embed:
     vocab_size: 5
     embed_dim: 4
-- name: roleneeds_first_parse
-  op_type: JsonExtractList
+- name: roleneeds_first_hash
+  op_type: ParsedFeatureHash
   inputs:
   - roleneeds_first_label
   outputs:
-  - roleneeds_first_tags
+  - roleneeds_first_ids
   params:
+    parse_mode: json
     key: tag
     pad_len: 3
     pad_val: ''
-- name: roleneeds_first_hash
-  op_type: FeatureHash
-  inputs:
-  - roleneeds_first_tags
-  outputs:
-  - roleneeds_first_ids
-  params:
     vocab_size: 100
     num_hashes: 1
   embed:
     vocab_size: 100
     embed_dim: 4
-- name: roleneeds_second_parse
-  op_type: JsonExtractList
+    pooling: flatten
+- name: roleneeds_second_hash
+  op_type: ParsedFeatureHash
   inputs:
   - roleneeds_second_label
   outputs:
-  - roleneeds_second_tags
+  - roleneeds_second_ids
   params:
+    parse_mode: json
     key: tag
     pad_len: 3
     pad_val: ''
-- name: roleneeds_second_hash
-  op_type: FeatureHash
-  inputs:
-  - roleneeds_second_tags
-  outputs:
-  - roleneeds_second_ids
-  params:
     vocab_size: 100
     num_hashes: 1
   embed:
     vocab_size: 100
     embed_dim: 4
-- name: invest_label_parse
-  op_type: JsonExtractList
+    pooling: flatten
+- name: invest_label_hash
+  op_type: ParsedFeatureHash
   inputs:
   - invest_label
   outputs:
-  - invest_label_tags
+  - invest_label_ids
   params:
+    parse_mode: json
     key: tag
     pad_len: 3
     pad_val: ''
-- name: invest_label_hash
-  op_type: FeatureHash
-  inputs:
-  - invest_label_tags
-  outputs:
-  - invest_label_ids
-  params:
     vocab_size: 100
     num_hashes: 1
   embed:
     vocab_size: 100
     embed_dim: 4
-- name: invest_label_second_parse
-  op_type: JsonExtractList
+    pooling: flatten
+- name: invest_label_second_hash
+  op_type: ParsedFeatureHash
   inputs:
   - invest_label_second
   outputs:
-  - invest_label_second_tags
+  - invest_label_second_ids
   params:
+    parse_mode: json
     key: tag
     pad_len: 3
     pad_val: ''
-- name: invest_label_second_hash
-  op_type: FeatureHash
-  inputs:
-  - invest_label_second_tags
-  outputs:
-  - invest_label_second_ids
-  params:
     vocab_size: 100
     num_hashes: 1
   embed:
     vocab_size: 100
     embed_dim: 4
-- name: invest_label_third_parse
-  op_type: JsonExtractList
+    pooling: flatten
+- name: invest_label_third_hash
+  op_type: ParsedFeatureHash
   inputs:
   - invest_label_third
   outputs:
-  - invest_label_third_tags
+  - invest_label_third_ids
   params:
+    parse_mode: json
     key: tag
     pad_len: 3
     pad_val: ''
-- name: invest_label_third_hash
-  op_type: FeatureHash
-  inputs:
-  - invest_label_third_tags
-  outputs:
-  - invest_label_third_ids
-  params:
     vocab_size: 100
     num_hashes: 1
   embed:
     vocab_size: 100
     embed_dim: 4
-- name: entity_words_parse
-  op_type: JsonExtractList
+    pooling: flatten
+- name: entity_words_hash
+  op_type: ParsedFeatureHash
   inputs:
   - entity_words_label
   outputs:
-  - entity_words_tags
+  - entity_words_ids
   params:
+    parse_mode: json
     key: tag
     pad_len: 5
     pad_val: ''
-- name: entity_words_hash
-  op_type: FeatureHash
-  inputs:
-  - entity_words_tags
-  outputs:
-  - entity_words_ids
-  params:
     vocab_size: 200
     num_hashes: 1
   embed:
     vocab_size: 200
     embed_dim: 4
+    pooling: flatten
+- name: entities_v3_hash
+  op_type: ParsedFeatureHash
+  inputs:
+  - item_entities_v3
+  outputs:
+  - entities_v3_ids
+  params:
+    parse_mode: json
+    pad_len: 4
+    pad_val: ''
+    vocab_size: 1000
+    num_hashes: 1
+  embed:
+    vocab_size: 1000
+    embed_dim: 4
+    pooling: flatten
 - name: entities_v3_parse
   op_type: JsonExtractList
   inputs:
@@ -496,40 +482,22 @@ operators:
     key: null
     pad_len: 4
     pad_val: ''
-- name: entities_v3_hash
-  op_type: FeatureHash
-  inputs:
-  - entities_v3_list
-  outputs:
-  - entities_v3_ids
-  params:
-    vocab_size: 1000
-    num_hashes: 1
-  embed:
-    vocab_size: 1000
-    embed_dim: 4
-- name: emb_id_parse
-  op_type: JsonExtractList
+- name: emb_id_hash
+  op_type: ParsedFeatureHash
   inputs:
   - emb_id
   outputs:
-  - emb_id_list
-  params:
-    key: null
-    pad_len: 4
-    pad_val: ''
-- name: emb_id_hash
-  op_type: FeatureHash
-  inputs:
-  - emb_id_list
-  outputs:
   - emb_id_ids
   params:
+    parse_mode: json
+    pad_len: 4
+    pad_val: ''
     vocab_size: 1000
     num_hashes: 1
   embed:
     vocab_size: 1000
     embed_dim: 4
+    pooling: flatten
 - name: stock_list_parse
   op_type: JsonExtractList
   inputs:
@@ -561,6 +529,7 @@ operators:
   embed:
     vocab_size: 500
     embed_dim: 4
+    pooling: flatten
 - name: title_hash
   op_type: FeatureHash
   inputs:
@@ -678,174 +647,159 @@ operators:
   embed:
     vocab_size: 500
     embed_dim: 4
-- name: interest_kw_parse
-  op_type: StringParser
+    pooling: flatten
+- name: interest_kw_hash
+  op_type: ParsedFeatureHash
   inputs:
   - interest_keywords
   outputs:
-  - interest_kw_list
+  - interest_kw_ids
   params:
+    parse_mode: structured
     sep1: '|'
     sep2: '#'
     key_index: 0
     pad_len: 10
     pad_val: ''
-- name: interest_kw_hash
-  op_type: FeatureHash
-  inputs:
-  - interest_kw_list
-  outputs:
-  - interest_kw_ids
-  params:
     vocab_size: 500
     num_hashes: 1
   embed:
     vocab_size: 500
     embed_dim: 4
-- name: follow_authors_parse
-  op_type: StringParser
+    pooling: flatten
+- name: follow_authors_hash
+  op_type: ParsedFeatureHash
   inputs:
   - follow_authors
   outputs:
-  - follow_authors_list
+  - follow_authors_ids
   params:
+    parse_mode: structured
     sep1: '|'
     sep2: '#'
     key_index: 0
     pad_len: 10
     pad_val: ''
-- name: follow_authors_hash
-  op_type: FeatureHash
-  inputs:
-  - follow_authors_list
-  outputs:
-  - follow_authors_ids
-  params:
     vocab_size: 500
     num_hashes: 1
   embed:
     vocab_size: 500
     embed_dim: 4
-- name: hold_stocks_parse
-  op_type: StringParser
+    pooling: flatten
+- name: hold_stocks_hash
+  op_type: ParsedFeatureHash
   inputs:
   - hold_stocks
   outputs:
-  - hold_stocks_raw
+  - hold_stocks_ids
   params:
+    parse_mode: structured
     sep1: '|'
     sep2: '#'
     key_index: 0
     pad_len: 5
     pad_val: ''
-- name: hold_stocks_hash
-  op_type: FeatureHash
-  inputs:
-  - hold_stocks_raw
-  outputs:
-  - hold_stocks_ids
-  params:
     vocab_size: 500
     num_hashes: 1
   embed:
     vocab_size: 500
     embed_dim: 4
-- name: hist_hold_stocks_parse
-  op_type: StringParser
+    pooling: flatten
+- name: hist_hold_stocks_hash
+  op_type: ParsedFeatureHash
   inputs:
   - hist_hold_stocks
   outputs:
-  - hist_hold_stocks_raw
+  - hist_hold_stocks_ids
   params:
+    parse_mode: structured
     sep1: '|'
     sep2: '#'
     key_index: 0
     pad_len: 5
     pad_val: ''
-- name: hist_hold_stocks_hash
-  op_type: FeatureHash
-  inputs:
-  - hist_hold_stocks_raw
-  outputs:
-  - hist_hold_stocks_ids
-  params:
     vocab_size: 500
     num_hashes: 1
   embed:
     vocab_size: 500
     embed_dim: 4
-- name: invest_style_parse
-  op_type: StringParser
+    pooling: flatten
+- name: invest_style_hash
+  op_type: ParsedFeatureHash
   inputs:
   - invest_style
   outputs:
-  - invest_style_list
+  - invest_style_ids
   params:
+    parse_mode: structured
     sep1: '|'
     sep2: '#'
     key_index: 0
     pad_len: 5
     pad_val: ''
-- name: invest_style_hash
-  op_type: FeatureHash
-  inputs:
-  - invest_style_list
-  outputs:
-  - invest_style_ids
-  params:
     vocab_size: 100
     num_hashes: 1
   embed:
     vocab_size: 100
     embed_dim: 4
-- name: theme_interest_parse
-  op_type: StringParser
+    pooling: flatten
+- name: theme_interest_hash
+  op_type: ParsedFeatureHash
   inputs:
   - theme_interest
   outputs:
-  - theme_interest_list
+  - theme_interest_ids
   params:
+    parse_mode: structured
     sep1: '|'
     sep2: '#'
     key_index: 0
     pad_len: 5
     pad_val: ''
-- name: theme_interest_hash
-  op_type: FeatureHash
-  inputs:
-  - theme_interest_list
-  outputs:
-  - theme_interest_ids
-  params:
     vocab_size: 100
     num_hashes: 1
   embed:
     vocab_size: 100
     embed_dim: 4
-- name: industry_interest_parse
-  op_type: StringParser
+    pooling: flatten
+- name: industry_interest_hash
+  op_type: ParsedFeatureHash
   inputs:
   - industry_interest
   outputs:
-  - industry_interest_list
+  - industry_interest_ids
   params:
+    parse_mode: structured
     sep1: '|'
     sep2: '#'
     key_index: 0
     pad_len: 5
     pad_val: ''
-- name: industry_interest_hash
-  op_type: FeatureHash
-  inputs:
-  - industry_interest_list
-  outputs:
-  - industry_interest_ids
-  params:
     vocab_size: 100
     num_hashes: 1
   embed:
     vocab_size: 100
     embed_dim: 4
+    pooling: flatten
+- name: recent_stocks_hash
+  op_type: ParsedFeatureHash
+  inputs:
+  - recent_stocks
+  outputs:
+  - recent_stocks_ids
+  params:
+    parse_mode: structured
+    sep1: '|'
+    sep2: ','
+    key_index: 0
+    pad_len: 10
+    pad_val: ''
+    vocab_size: 500
+    num_hashes: 1
+  embed:
+    vocab_size: 500
+    embed_dim: 4
+    pooling: flatten
 - name: recent_stocks_parse
   op_type: StringParser
   inputs:
@@ -858,18 +812,26 @@ operators:
     key_index: 0
     pad_len: 10
     pad_val: ''
-- name: recent_stocks_hash
-  op_type: FeatureHash
+- name: hist_semantic_hash
+  op_type: ParsedFeatureHash
   inputs:
-  - recent_stocks_raw
+  - historical_click_items
   outputs:
-  - recent_stocks_ids
+  - hist_semantic_mapped
   params:
-    vocab_size: 500
+    parse_mode: structured_flat_split
+    sep1: '|'
+    sep2: '#'
+    key_index: 0
+    sep: ','
+    max_len: 40
+    pad_val: ''
+    vocab_size: 2000
     num_hashes: 1
   embed:
-    vocab_size: 500
+    vocab_size: 2000
     embed_dim: 4
+    pooling: flatten
 - name: hist_items_parse
   op_type: StringParser
   inputs:
@@ -892,18 +854,6 @@ operators:
     sep: ','
     max_len: 40
     pad_val: ''
-- name: hist_semantic_hash
-  op_type: FeatureHash
-  inputs:
-  - hist_semantic_ids
-  outputs:
-  - hist_semantic_mapped
-  params:
-    vocab_size: 2000
-    num_hashes: 1
-  embed:
-    vocab_size: 2000
-    embed_dim: 4
 - name: entity_overlap
   op_type: ListOverlap
   inputs:
@@ -937,43 +887,29 @@ operators:
   embed:
     vocab_size: 2
     embed_dim: 4
-- name: user_author_concat
-  op_type: StringConcat
+- name: user_author_hash
+  op_type: ConcatHash
   inputs:
   - user_id
   - author_id
   outputs:
-  - user_author_str
-  params:
-    separator: _
-- name: user_author_hash
-  op_type: FeatureHash
-  inputs:
-  - user_author_str
-  outputs:
   - user_author_hash_idx
   params:
+    separator: _
     vocab_size: 5000
     num_hashes: 1
   embed:
     vocab_size: 5000
     embed_dim: 8
-- name: type_source_concat
-  op_type: StringConcat
+- name: type_source_hash
+  op_type: ConcatHash
   inputs:
   - item_type
   - source_name
   outputs:
-  - type_source_str
-  params:
-    separator: _
-- name: type_source_hash
-  op_type: FeatureHash
-  inputs:
-  - type_source_str
-  outputs:
   - type_source_hash_idx
   params:
+    separator: _
     vocab_size: 100
     num_hashes: 1
   embed:

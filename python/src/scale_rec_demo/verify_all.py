@@ -3,7 +3,6 @@ from __future__ import annotations
 """Unified verification script comparing PyTorch vs Rust inference outputs."""
 
 import contextlib
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -19,6 +18,8 @@ if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
 
 from train.app.cli import build_model_for_dag
+from train.app.main import _run_discover as run_discover_in_process
+from train.app.main import build_parser as build_train_parser
 from train.app.data import DTYPE_PANDAS, _parse_default
 from train.core.config import FlowConfig
 from train.core.dag import FeatureDag
@@ -55,34 +56,31 @@ def run_training_process(model_type: str, data_path: Path, weights_path: Path) -
     """Train the model for 1 epoch to save safetensors weights."""
     print(f"[Train] Training {model_type} for 1 epoch...")
     stem = model_type.replace("discover_", "")
-    cmd = [
-        sys.executable,
-        "-m",
-        "train.app.main",
-        "discover",
-        "--data",
-        str(data_path),
-        "--feature-config",
-        str(DISCOVER_FEATURE_CONFIG),
-        "--model-config",
-        str(MODEL_CONFIGS[model_type]),
-        "--epochs",
-        "1",
-        "--batch-size",
-        "128",
-        "--lr",
-        "0.005",
-        "--artifact-dir",
-        str(DEMO_ARTIFACT_DIR),
-        "--publish-path",
-        str(weights_path),
-        "--model-name",
-        f"model_{stem}",
-    ]
-    env = os.environ.copy()
-    python_src = str(REPO_ROOT / "python" / "src")
-    env["PYTHONPATH"] = f"{python_src}{os.pathsep}{env.get('PYTHONPATH', '')}"
-    subprocess.run(cmd, cwd=str(REPO_ROOT), env=env, check=True)
+    args = build_train_parser().parse_args(
+        [
+            "discover",
+            "--data",
+            str(data_path),
+            "--feature-config",
+            str(DISCOVER_FEATURE_CONFIG),
+            "--model-config",
+            str(MODEL_CONFIGS[model_type]),
+            "--epochs",
+            "1",
+            "--batch-size",
+            "128",
+            "--lr",
+            "0.005",
+            "--artifact-dir",
+            str(DEMO_ARTIFACT_DIR),
+            "--publish-path",
+            str(weights_path),
+            "--model-name",
+            f"model_{stem}",
+        ]
+    )
+    args.repo_root = REPO_ROOT
+    run_discover_in_process(args)
 
 
 def _load_pytorch_model(

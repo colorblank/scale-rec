@@ -1,8 +1,8 @@
 //! 特征 DAG 执行器：拓扑排序、算子调度、单样本执行。
 use super::ops::{
-    Bucketing, CrossFeature, CustomOp, DictMapper, ExpressionOp, FeatureHash, FlatSplit, Fv,
-    JsonExtractList, ListOverlap, ListStringParser, PluginOp, SequenceOp, Split, StringConcat,
-    StringParser,
+    Bucketing, ConcatHash, CrossFeature, CustomOp, DictMapper, ExpressionOp, FeatureHash,
+    FlatSplit, Fv, JsonExtractList, ListOverlap, ListStringParser, ParsedFeatureHash, PluginOp,
+    SequenceOp, Split, StringConcat, StringParser,
 };
 use crate::feats::config::{FlowConfig, OperatorDef, SourceDef};
 use crate::feats::debug::DebugTracer;
@@ -452,6 +452,51 @@ impl FeatureDag {
                 let version = Self::yaml_stringish(p, "version").unwrap_or_default();
                 Ok(Box::new(FeatureHash::with_scope(
                     vocab_size, num_hashes, separator, &namespace, &salt, &version,
+                )))
+            }
+            "ParsedFeatureHash" => {
+                let vocab_size = Self::yaml_i64(p, "vocab_size").unwrap_or(1000) as u32;
+                let parse_mode = Self::yaml_str(p, "parse_mode").unwrap_or("json").to_string();
+                let num_hashes = Self::yaml_i64(p, "num_hashes").unwrap_or(1) as u32;
+                let separator = Self::yaml_str(p, "separator").unwrap_or("|").to_string();
+                let namespace = Self::yaml_stringish(p, "namespace").unwrap_or_default();
+                let salt = Self::yaml_stringish(p, "salt").unwrap_or_default();
+                let version = Self::yaml_stringish(p, "version").unwrap_or_default();
+                let key = Self::yaml_str(p, "key").map(|s| s.to_string());
+                let sep1 = Self::yaml_str(p, "sep1").unwrap_or("|").to_string();
+                let sep2 = Self::yaml_str(p, "sep2").unwrap_or("#").to_string();
+                let key_index = Self::yaml_i64(p, "key_index").unwrap_or(0) as usize;
+                let sep = Self::yaml_str(p, "sep").unwrap_or(",").to_string();
+                let max_len = Self::yaml_i64(p, "max_len").unwrap_or(0) as usize;
+                let pad_len = Self::yaml_i64(p, "pad_len").unwrap_or(0) as usize;
+                let pad_val = Self::yaml_str(p, "pad_val").unwrap_or("").to_string();
+                Ok(Box::new(ParsedFeatureHash::new(
+                    vocab_size,
+                    parse_mode,
+                    num_hashes,
+                    separator,
+                    namespace,
+                    salt,
+                    version,
+                    key,
+                    sep1,
+                    sep2,
+                    key_index,
+                    sep,
+                    max_len,
+                    pad_len,
+                    pad_val,
+                )))
+            }
+            "ConcatHash" => {
+                let vocab_size = Self::yaml_i64(p, "vocab_size").unwrap_or(1000) as u32;
+                let num_hashes = Self::yaml_i64(p, "num_hashes").unwrap_or(1) as u32;
+                let separator = Self::yaml_str(p, "separator").unwrap_or("_").to_string();
+                let namespace = Self::yaml_stringish(p, "namespace").unwrap_or_default();
+                let salt = Self::yaml_stringish(p, "salt").unwrap_or_default();
+                let version = Self::yaml_stringish(p, "version").unwrap_or_default();
+                Ok(Box::new(ConcatHash::new(
+                    vocab_size, num_hashes, separator, namespace, salt, version,
                 )))
             }
             _ => Err(format!("Unsupported operator type: {}", def.op_type)),

@@ -1,6 +1,6 @@
 # 特征预处理系统文档
 
-本文档完整描述 scale-rec 特征预处理系统的架构、配置格式、全部 14 个算子及执行模式，面向算法工程师和系统开发者。
+本文档完整描述 scale-rec 特征预处理系统的架构、配置格式、14 个基础算子及 2 个融合算子及其执行模式，面向算法工程师和系统开发者。
 
 ---
 
@@ -904,7 +904,47 @@ max_len=5, pad_val=0
 
 ---
 
-### 4.14 PluginOp — 外部插件
+### 4.14 融合预处理算子
+
+融合预处理算子把“先解析，再逐元素哈希”的链路合并成一个节点，用来减少 DAG 深度、降低运行时中间值分配，并简化配置。
+
+#### 4.14.1 ParsedFeatureHash — 解析后哈希
+
+`ParsedFeatureHash` 面向“字符串解析 + hash”的高频链路，支持以下模式：
+
+| 模式 | 输入 | 行为 |
+|---|---|---|
+| `json` | `Str` | 解析 JSON 数组，按 `key` 提取字段后逐元素 hash |
+| `structured` | `Str` | 先按 `sep1` 切块，再按 `sep2` 取 `key_index` 字段后逐元素 hash |
+| `structured_flat_split` | `Str` | 适用于 `K1#V1|K2#V2` 这类结构化字符串：先按 `sep1` / `sep2` 取字段，再按 `sep` 继续打平后 hash |
+| `split` | `Str` | 直接按 `sep` 切分后逐元素 hash |
+| `list_split` | `StrList` | 对列表中每个元素按 `sep` 切分后 hash，输出长度与输入列表对齐 |
+| `flat_split` | `StrList` | 对列表中每个元素切分后打平，再 hash |
+
+**适用场景**：
+- 标签序列、兴趣词序列、结构化字符串字段只需要进入 embedding，不再参与后续 `ListOverlap` 或其它解析算子
+- 希望把配置里的 `StringParser + Split + FeatureHash` 合并成一个节点
+
+**注意**：
+- 如果下游还需要原始列表用于 `ListOverlap`、交集统计或可读调试，请保留拆分算子，不要强行全链路融合
+- `structured_flat_split` 适合“先取字段，再打平子串”的场景，不适合纯列表类型输入
+
+#### 4.14.2 ConcatHash — 拼接后哈希
+
+`ConcatHash` 把多路标量输入先按分隔符拼接，再直接做 `FeatureHash`。它等价于 `StringConcat + FeatureHash`，但少了一层中间字符串节点。
+
+**适用场景**：
+- `user_id + item_id`、`source + type` 这类二元或多元交叉特征
+- 只需要哈希索引，不需要保留拼接后的中间字符串
+
+**优点**：
+- DAG 更短
+- 中间字符串不落地
+- 配置更紧凑
+
+---
+
+### 4.15 PluginOp — 外部插件
 
 通过 `cdylib` 动态加载外部算子，用于实验性特征快速验证。
 

@@ -1,6 +1,6 @@
 type: unimixer
 token_dim: 64
-num_tokens: 10
+num_tokens: 13
 num_blocks: 2
 use_lite: true
 hidden_factor: 1.0

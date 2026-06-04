@@ -14,10 +14,12 @@ from .cross_feature import CrossFeature as CrossFeature
 from .dict_mapper import DictMapper as DictMapper
 from .expression import ExpressionOp as ExpressionOp
 from .feature_hash import FeatureHash as FeatureHash
+from .concat_hash import ConcatHash as ConcatHash
 from .flat_split import FlatSplit as FlatSplit
 from .json_extract_list import JsonExtractList as JsonExtractList
 from .list_overlap import ListOverlap as ListOverlap
 from .list_string_parser import ListStringParser as ListStringParser
+from .parsed_feature_hash import ParsedFeatureHash as ParsedFeatureHash
 from .sequence import SequenceOp as SequenceOp
 from .split import Split as Split
 from .string_concat import StringConcat as StringConcat
@@ -30,6 +32,7 @@ __all__ = [
     "DictMapper",
     "ExpressionOp",
     "FeatureHash",
+    "ConcatHash",
     "FlatSplit",
     "ListOverlap",
     "SequenceOp",
@@ -38,4 +41,5 @@ __all__ = [
     "StringParser",
     "JsonExtractList",
     "ListStringParser",
+    "ParsedFeatureHash",
 ]

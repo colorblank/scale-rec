@@ -225,6 +225,36 @@ fn infer_operator_output(
         },
         "ListOverlap" => FeatureDType::Int,
         "StringConcat" => FeatureDType::String,
+        "ParsedFeatureHash" => {
+            let mode = yaml_str(&op.params, "parse_mode").unwrap_or("json");
+            let length = match mode {
+                "json" | "structured" | "structured_list_split" => {
+                    yaml_usize(&op.params, "pad_len").filter(|v| *v > 0)
+                }
+                "split" | "flat_split" | "structured_flat_split" => {
+                    yaml_usize(&op.params, "max_len").filter(|v| *v > 0)
+                }
+                "list_split" => first.and_then(|s| s.dtype.list_len()).or_else(|| {
+                    yaml_usize(&op.params, "pad_len").filter(|v| *v > 0)
+                }),
+                other => return Err(format!("Unsupported ParsedFeatureHash mode: {}", other)),
+            };
+            FeatureDType::List {
+                dtype: Box::new(FeatureDType::Int),
+                length,
+            }
+        }
+        "ConcatHash" => {
+            let num_hashes = yaml_usize(&op.params, "num_hashes").unwrap_or(1);
+            if num_hashes > 1 {
+                FeatureDType::List {
+                    dtype: Box::new(FeatureDType::Int),
+                    length: Some(num_hashes),
+                }
+            } else {
+                FeatureDType::Int
+            }
+        }
         "FeatureHash" => {
             let list_inputs: Vec<&FeatureSchema> =
                 inputs.iter().filter(|s| s.dtype.is_list()).collect();
