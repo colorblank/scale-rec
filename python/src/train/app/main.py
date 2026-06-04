@@ -125,9 +125,11 @@ def _train_epoch_single(
         total_loss += loss.item()
         n_batches += 1
     if n_batches == 0:
+        available_labels = [c for c in sorted(set(label_col_map.values())) if c in df.columns]
         raise ValueError(
             "No supervised batches were processed. Check that the dataset exposes the "
-            "configured label columns and that label_col_map matches the model outputs."
+            "configured label columns and that label_col_map matches the model outputs. "
+            f"label_col_map={label_col_map} available_labels={available_labels}"
         )
     return total_loss / max(n_batches, 1)
 
@@ -179,7 +181,8 @@ def _evaluate_single(
         }
     if not results:
         raise ValueError(
-            "No evaluation labels were available. Check the dataset and label_col_map."
+            "No evaluation labels were available. Check the dataset and label_col_map. "
+            f"label_col_map={label_col_map} columns={list(df.columns)}"
         )
     return results
 
@@ -269,6 +272,14 @@ def _run_single(args: argparse.Namespace) -> None:
     train_df = df_shuffled.iloc[:n_train]
     test_df = df_shuffled.iloc[n_train:]
     logger.info("[Data] train=%d test=%d", len(train_df), len(test_df))
+    logger.info(
+        "[Data detail] rows=%d batch_size=%d train_batches~%d eval_batches~%d labels=%s",
+        len(df),
+        args.batch_size,
+        max(1, (len(train_df) + args.batch_size - 1) // max(args.batch_size, 1)),
+        max(1, (len(test_df) + args.batch_size - 1) // max(args.batch_size, 1)),
+        built.spec.get("label_col_map", {}),
+    )
 
     model = built.model
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -366,12 +377,13 @@ def _run_discover(args: argparse.Namespace) -> None:
     cfg.export_path = str(artifacts.paths.published_weights_path)
     logger.info("feature config exported to %s", artifacts.paths.feature_config_path)
     logger.info("model config exported to %s", artifacts.paths.model_config_path)
+    label_col_map = built.spec.get("label_col_map", {})
 
     trainer = Trainer(
         built.model,
         dag,
         built.spec["task_names"],
-        built.spec["label_col_map"],
+        label_col_map,
         device,
         cfg,
         model_type=built.config.type,
@@ -385,7 +397,7 @@ def _run_discover(args: argparse.Namespace) -> None:
         repo_root=args.repo_root,
     )
     best = trainer.fit()
-    logger.info("best AUC=%.4f", best)
+    logger.info("best metric=%.4f", best)
 
 
 def _run_all(args: argparse.Namespace) -> None:
@@ -416,6 +428,15 @@ def _run_all(args: argparse.Namespace) -> None:
     train_df = df_shuffled.iloc[:n_train]
     test_df = df_shuffled.iloc[n_train:]
     logger.info("[Data] train=%d test=%d", len(train_df), len(test_df))
+    label_col_map = built.spec.get("label_col_map", {})
+    logger.info(
+        "[Data detail] rows=%d batch_size=%d train_batches~%d eval_batches~%d labels=%s",
+        len(df),
+        args.batch_size,
+        max(1, (len(train_df) + args.batch_size - 1) // max(args.batch_size, 1)),
+        max(1, (len(test_df) + args.batch_size - 1) // max(args.batch_size, 1)),
+        label_col_map,
+    )
 
     model_specs = [
         ("discover_gdcn_esmm", args.model_config_discover_gdcn_esmm),

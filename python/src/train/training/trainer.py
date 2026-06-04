@@ -3,6 +3,7 @@ from __future__ import annotations
 """训练编排器。"""
 
 import logging
+import math
 import time
 from pathlib import Path
 from typing import Any, Iterator, Optional, Union
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 Batch = dict[str, Any]
 
 
-def _estimate_batches(path: str, batch_size: int) -> int:
+def _estimate_rows(path: str, has_header: bool = True) -> int:
     import os
 
     if not os.path.exists(path):
@@ -34,15 +35,26 @@ def _estimate_batches(path: str, batch_size: int) -> int:
     if file_size < 1024 * 1024 * 50:
         with open(path, "rb") as f:
             lines = sum(1 for _ in f)
-        return max(1, lines // batch_size)
+        if has_header and lines > 0:
+            lines -= 1
+        return max(1, lines)
     with open(path, "rb") as f:
-        next(f, None)
+        if has_header:
+            next(f, None)
         sample = f.read(1024 * 500)
         lines = sample.count(b"\n")
         if lines == 0 or len(sample) == 0:
             return 1
         avg_line_size = len(sample) / lines
-        return max(1, int((file_size / avg_line_size) // batch_size))
+        estimated = int(file_size / avg_line_size)
+        if has_header:
+            estimated = max(1, estimated - 1)
+        return max(1, estimated)
+
+
+def _estimate_batches(path: str, batch_size: int, has_header: bool = True) -> int:
+    rows = _estimate_rows(path, has_header=has_header)
+    return max(1, math.ceil(rows / max(batch_size, 1)))
 
 
 def _collect_batches(batches: Iterator[Batch], max_samples: int) -> list[Batch]:
@@ -154,6 +166,33 @@ class Trainer:
         self._collect_eval()
         self.loss_fn = self.loss_fn.to(self.device)
 
+        total_rows = _estimate_rows(self._data_path, has_header=self._has_header)
+        eval_rows = sum(
+            len(next(iter(b["features"].values())))
+            if isinstance(b["features"], dict)
+            else len(b["features"])
+            for b in self.eval_batches
+        )
+        train_rows = max(total_rows - eval_rows, 0)
+        total_batches = _estimate_batches(
+            self._data_path, self.cfg.batch_size, has_header=self._has_header
+        )
+        eval_batches = self._n_eval_batches
+        train_batches = max(total_batches - eval_batches, 1)
+
+        logger.info(
+            "data: rows(total=%d train=%d eval=%d) batch_size=%d batches(total~%d train~%d eval=%d) tasks=%s labels=%s",
+            total_rows,
+            train_rows,
+            eval_rows,
+            self.cfg.batch_size,
+            total_batches,
+            train_batches,
+            eval_batches,
+            self.task_names,
+            self.label_map,
+        )
+
         emb_params: list[torch.nn.Parameter] = []
         dense_params: list[torch.nn.Parameter] = []
         for name, param in self.model.named_parameters():
@@ -179,8 +218,7 @@ class Trainer:
         ]
         self.optimizer = build_optimizer(param_groups, cfg.name)
 
-        n_total = _estimate_batches(self._data_path, self.cfg.batch_size)
-        batches_per_epoch = max(n_total - self._n_eval_batches, 1)
+        batches_per_epoch = train_batches
         total_steps = self.cfg.epochs * batches_per_epoch
         warmup = min(self.cfg.lr_schedule.warmup_steps, max(1, total_steps // 10))
         self.lr_scheduler = LRScheduler(
@@ -360,9 +398,13 @@ class Trainer:
             t0_iter = time.perf_counter()
 
         if n_batches == 0:
+            expected_labels = ", ".join(sorted(set(self.label_map.values())))
+            label_sources = ", ".join(s.name for s in self._flow_config.label_sources)
             raise ValueError(
                 "No supervised batches were processed. Check that the dataset exposes "
-                "the configured label columns and that the task config matches them."
+                "the configured label columns and that the task config matches them. "
+                f"expected labels=[{expected_labels}] label_sources=[{label_sources}] "
+                f"batch_size={self.cfg.batch_size} eval_rows={self._n_eval_batches}"
             )
 
         avg_loss = total_loss / max(n_batches, 1)

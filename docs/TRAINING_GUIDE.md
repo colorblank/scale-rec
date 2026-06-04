@@ -204,6 +204,21 @@ GDCN+ESMM 将门控交叉网络与 ESMM 多任务预测塔相结合。底层利�
 | `--ema-decay` | 0.999 | EMA 衰减率 |
 | `--loss-weighting` | static | 多任务 loss 的加权策略 |
 
+### 训练日志摘要
+
+训练启动后，日志会先输出一条数据和批次摘要，重点看这些字段：
+
+- `rows(total=...)`：文件总行数，按 `--no-header` 是否存在 header 自动修正
+- `train / eval`：按当前配置切分后的训练行数和验证行数
+- `batch_size`：当前训练 batch 大小
+- `batches(total~... train~... eval=...)`：估算的总 batch 数、训练 batch 数和验证 batch 数
+- `tasks` / `labels`：模型任务名和任务到标签列的映射
+
+这条摘要用于快速发现两类问题：
+
+- 验证集切得过大，导致训练 batch 太少甚至没有监督 batch
+- 任务配置和数据列名不一致，导致 loss 找不到标签列
+
 ### 训练默认配置
 
 `examples/train_defaults.yaml` 是训练超参的基线配置。它控制训练行为，但不定义模型结构：
@@ -351,6 +366,14 @@ L = Σ exp(-log_var_i) × L_i + 0.5 × log_var_i
 ### 验证策略
 
 文件头部取 `eval_samples` 行作为验证集，训练时跳过避免数据泄漏。大数据场景建议预 shuffle 或使用独立验证文件。`eval_interval` 控制的是触发评估的频率，不限定评估指标。
+
+如果训练直接报出 `No supervised batches were processed`，通常是以下原因之一：
+
+- 数据文件里没有模型任务所需的 label 列
+- `model_*.yaml` 里的 `tasks[].label` 和真实列名不一致
+- 训练文件被切分后，训练部分没有任何监督列
+
+这时先检查训练开始时打印的 `labels={...}` 和 `rows(total/train/eval)` 摘要，再对照 `examples/feature_config_discover.yaml` 与 `examples/model_*.yaml` 的任务定义。
 
 ### TensorBoard
 
