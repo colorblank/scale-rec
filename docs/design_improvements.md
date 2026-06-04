@@ -87,15 +87,14 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 当前不足：
 
 - `copy_configs` 默认关闭时，manifest 记录的是外部 config 路径及其 sha256，长期归档时依赖外部文件仍然存在。
-- Rust `ModelRegistry` 仍以全局 `feature_config_path` 构建 DAG；即使 manifest 中有 `feature_config_file`，当前运行时也主要用于 sha 校验，没有真正按模型解析对应 feature config。
-- `/health` 和 `/models` 返回信息较少，不足以排查线上模型版本、schema 版本、manifest 路径、任务列表和指标。
+- Rust `ModelRegistry` 已支持按 serving manifest 的 `feature_config_file`、`model_config_file`、`weights_file` 加载，并支持同一 `model_id` 多版本；但 `/models` 还没有返回 schema hash、tasks、metrics 等完整 serving metadata。
+- 默认版本目前按版本字符串取最大值，尚未支持显式 alias、灰度权重或 `versions.yaml` 指针。
 
 改进方向：
 
-- 明确部署模式：如果支持多模型不同 schema，则 registry 必须按 manifest 的 `feature_config_file` 构建每个模型自己的 DAG。
-- 如果只支持全局共享 schema，则文档和接口要明确声明，并将 manifest 中 feature config 作为一致性校验字段。
 - 推荐生产默认开启 `copy_configs`，让发布产物自包含。
-- 扩展 `ModelInfo`，返回 model version、schema hash、model type、tasks、metrics 和 loaded_at。
+- 扩展 `ModelInfo`，返回 schema hash、tasks、metrics 和 loaded_at。
+- 增加显式默认版本配置，例如 serving manifest 标记、alias 文件或版本索引文件。
 
 ## 3. 功能分析
 
@@ -193,9 +192,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 ### P0：稳定性与契约收敛
 
 1. 修复并保持文档 UTF-8 编码，避免中文文档继续出现乱码。
-2. 决定 registry 的 schema 模式：
-   - 多模型独立 schema：按 manifest 的 `feature_config_file` 构建 DAG。
-   - 全局共享 schema：文档和 API 明确限制，manifest 只做校验。
+2. 保持 registry 的多模型独立 schema 模式：按 serving manifest 的 `feature_config_file` 构建 DAG，无 manifest 的旧权重仅作为开发 fallback。
 3. 引入 typed inference error，替换 `map_predict_error()` 的字符串匹配。
 4. 统一 Rust 默认值解析逻辑，避免 `FeatureDag::parse_default()` 与 `source_default()` 行为分叉。
 5. 为 Python/Rust batch DAG 增加更多一致性测试，尤其是 list、flatten、null/default、FeatureHash。
@@ -211,7 +208,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
    - empty sequence count
    - truncation count
    - broadcast precompute/remaining DAG 耗时
-4. 扩展 `/models` 返回 model type、version、manifest path、schema hash、tasks、metrics。
+4. 扩展 `/models` 返回 schema hash、tasks、metrics，并支持显式默认版本/alias 配置。
 5. 建立固定压测矩阵，把 benchmark 结果写入 docs 或 CI artifact。
 
 ### P2：工程治理

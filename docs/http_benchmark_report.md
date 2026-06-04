@@ -118,13 +118,12 @@ cargo build --release --features macos-accelerate --bin server --bin bench
 RUST_LOG=warn \
 target/release/server \
   --model-dir python/artifacts/demo \
-  --feature-config examples/feature_config_discover.yaml \
   --port 8080 \
   --worker-threads 4 \
   --blocking-threads 64
 ```
 
-服务启动后确认模型已加载：
+服务按发布 manifest 加载模型、模型配置和特征配置。服务启动后确认模型和版本已加载：
 
 ```bash
 curl http://127.0.0.1:8080/health

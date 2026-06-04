@@ -242,13 +242,68 @@ best AUC=0.7622
 - 发布权重：`model.safetensors`，可直接由 Rust Candle 引擎加载
 - run 目录：保留 checkpoint、best/latest 别名、复制后的配置和 run manifest
 
+发布权重旁边会生成 serving manifest，例如 `model_gdcn_esmm.manifest.yaml`。Rust 服务以 serving manifest 为权威入口，manifest 记录：
+
+- `model_id`、`model_version`、`model_type`
+- `weights_file`、`feature_config_file`、`model_config_file`
+- 三类文件的 sha256 校验
+- `weight_binding`：safetensors 权重命名规则、prefix、strict 和 extra tensor 策略
+
+同一 `model_id` 可以加载多个 `model_version`。服务默认版本按版本字符串取最大值，因此建议 `--run-version` 使用可排序时间戳，例如 `20260526_120000`。
+
 ```bash
 target/release/server \
   --model-dir python/artifacts/demo \
-  --feature-config examples/feature_config_discover.yaml \
   --port 8080 \
   --worker-threads 4 \
   --blocking-threads 64
+```
+
+只加载单个模型版本时，直接指定 serving manifest：
+
+```bash
+target/release/server \
+  --model-path python/artifacts/demo/model_gdcn_esmm.manifest.yaml \
+  --port 8080
+```
+
+`--model-path` 可重复传入，也可以指向目录。只要传入了 `--model-path`，服务只加载显式路径，不再扫描整个 `--model-dir`。路径解析规则：
+
+| 路径类型 | 行为 |
+|---|---|
+| `.yaml` / `.yml` | 作为 serving manifest 加载，manifest 是权重、模型配置和特征配置的权威来源 |
+| 目录 | 扫描目录内 serving manifest |
+| `.safetensors` | 旧兼容模式，按文件名作为模型名加载，需要 `--feature-config` fallback |
+
+只有加载旧的无 manifest `.safetensors` 产物时，才需要提供 `--feature-config` 作为 fallback：
+
+```bash
+target/release/server \
+  --model-path python/artifacts/demo/model_gdcn_esmm.safetensors \
+  --feature-config examples/feature_config_discover.yaml \
+  --port 8080
+```
+
+manifest 加载时，所有相对路径都基于 manifest 所在目录解析；加载前会校验 feature config、model config、weights 的 sha256，以及 safetensors key/shape。相同 `model_id` 可以加载多个 `model_version`，默认版本按版本字符串取最大值。
+
+查询模型和版本：
+
+```bash
+curl http://127.0.0.1:8080/models
+curl http://127.0.0.1:8080/models/model_gdcn_esmm
+```
+
+指定版本调用和 fallback：
+
+```bash
+curl -X POST http://127.0.0.1:8080/predict \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "model_gdcn_esmm",
+    "version": "20260526_120000",
+    "fallback_version": "20260526_110000",
+    "features": [{"user_id": 42, "item_id": 500}]
+  }'
 ```
 
 ## HTTP 压测
@@ -275,13 +330,13 @@ GDCN+ESMM 和 UniMixer 实测报告见 `docs/http_benchmark_report.md`。
 RUST_LOG=warn \
 target/release/server \
   --model-dir python/artifacts/demo \
-  --feature-config examples/feature_config_discover.yaml \
   --port 8080 \
   --worker-threads 4 \
   --blocking-threads 64
 
-# 确认模型已加载；如果执行了 UniMixer 训练，应同时看到 model_discover_unimixer
+# 确认模型和版本已加载；如果执行了 UniMixer 训练，应同时看到 model_discover_unimixer
 curl http://127.0.0.1:8080/health
+curl http://127.0.0.1:8080/models
 
 # GDCN+ESMM synthetic smoke，仅验证 HTTP 链路
 target/release/bench \
@@ -353,7 +408,6 @@ cargo build --release --features cpu-mkl --bin server --bin bench
 RUST_LOG=warn \
 target/release/server \
   --model-dir python/artifacts/demo \
-  --feature-config examples/feature_config_discover.yaml \
   --port 8080 \
   --worker-threads 4 \
   --blocking-threads 64
@@ -367,7 +421,6 @@ MKL_NUM_THREADS=1 \
 OMP_NUM_THREADS=1 \
 target/release/server \
   --model-dir python/artifacts/demo \
-  --feature-config examples/feature_config_discover.yaml \
   --port 8080 \
   --worker-threads 4 \
   --blocking-threads 64

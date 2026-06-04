@@ -78,9 +78,26 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.verify_discove
 ### 2. HTTP 推理服务
 
 ```bash
-# 启动服务 (自动加载 python/artifacts/demo 下所有 .safetensors)
+# 启动服务 (manifest 优先；自动加载 python/artifacts/demo 下的 serving manifest)
 cargo run --bin server --release -- \
   --model-dir python/artifacts/demo \
+  --worker-threads 4 \
+  --blocking-threads 64
+
+# 只加载单个模型 manifest
+cargo run --bin server --release -- \
+  --model-path python/artifacts/demo/model_gdcn_esmm.manifest.yaml \
+  --worker-threads 4 \
+  --blocking-threads 64
+
+# 也可以重复传入多个显式路径；目录路径会扫描其中的 serving manifest
+cargo run --bin server --release -- \
+  --model-path python/artifacts/demo/model_gdcn_esmm.manifest.yaml \
+  --model-path python/artifacts/demo/model_discover_unimixer.manifest.yaml
+
+# 兼容旧的松散 .safetensors 产物时，才需要提供 feature-config fallback
+cargo run --bin server --release -- \
+  --model-path python/artifacts/demo/model_gdcn_esmm.safetensors \
   --feature-config examples/feature_config_discover.yaml \
   --worker-threads 4 \
   --blocking-threads 64
@@ -88,9 +105,17 @@ cargo run --bin server --release -- \
 # 健康检查
 curl http://localhost:8080/health
 
+# 查询已加载模型、默认版本和版本列表
+curl http://localhost:8080/models
+curl http://localhost:8080/models/model_gdcn_esmm
+
 # Pointwise 推理 (每行一个完整样本)
 curl -X POST http://localhost:8080/predict -H 'Content-Type: application/json' \
   -d '{"model":"model_gdcn_esmm","features":[{"user_id":42,"item_id":500}]}'
+
+# 指定版本推理；如果指定版本不可用，可回退到 fallback_version
+curl -X POST http://localhost:8080/predict -H 'Content-Type: application/json' \
+  -d '{"model":"model_gdcn_esmm","version":"20260526_120000","fallback_version":"20260526_110000","features":[{"user_id":42,"item_id":500}]}'
 
 # Broadcast 推理 (一个用户 + N 个物品)
 curl -X POST http://localhost:8080/predict/broadcast -H 'Content-Type: application/json' \
@@ -124,17 +149,17 @@ cargo build --release --features <backend-feature> --bin server --bin bench
 - `python/artifacts/demo/model_discover_unimixer.safetensors` → `model_discover_unimixer`
 
 ```bash
-# 启动 Rust HTTP 推理服务
+# 启动 Rust HTTP 推理服务；发布 manifest 会指定权重、模型配置和特征配置
 RUST_LOG=warn \
 target/release/server \
   --model-dir python/artifacts/demo \
-  --feature-config examples/feature_config_discover.yaml \
   --port 8080 \
   --worker-threads 4 \
   --blocking-threads 64
 
-# 确认模型已加载
+# 确认模型和版本已加载
 curl http://127.0.0.1:8080/health
+curl http://127.0.0.1:8080/models
 
 # GDCN+ESMM synthetic smoke，仅验证 HTTP 链路
 target/release/bench \
@@ -193,7 +218,6 @@ target/release/bench \
 RUST_LOG=warn \
 target/release/server \
   --model-dir python/artifacts/demo \
-  --feature-config examples/feature_config_discover.yaml \
   --port 8080 \
   --worker-threads 4 \
   --blocking-threads 64
@@ -210,7 +234,6 @@ MKL_NUM_THREADS=1 \
 OMP_NUM_THREADS=1 \
 target/release/server \
   --model-dir python/artifacts/demo \
-  --feature-config examples/feature_config_discover.yaml \
   --port 8080 \
   --worker-threads 4 \
   --blocking-threads 64
@@ -230,7 +253,6 @@ cargo build --release --features macos-metal --bin server --bin bench
 RUST_LOG=warn \
 target/release/server \
   --model-dir python/artifacts/demo \
-  --feature-config examples/feature_config_discover.yaml \
   --port 8080 \
   --worker-threads 4 \
   --blocking-threads 64
@@ -257,20 +279,201 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.app.main discover \
 - `python/artifacts/demo/model_gdcn_esmm/20260526_120000/{best,latest}.safetensors`：最佳与最新别名
 - `python/artifacts/demo/model_gdcn_esmm.safetensors` 和同目录 `.manifest.yaml`：最终发布权重与 manifest
 
+发布 manifest 是 Rust serving 的权威入口，包含：
+
+- `model_id` / `model_version` / `model_type`
+- `weights_file`、`feature_config_file`、`model_config_file` 及 sha256
+- `weight_binding`：权重格式、命名空间前缀、strict/extra tensor 策略
+
+服务启动会递归扫描 `*.manifest.yaml`、`*_manifest.yaml` 和 `model_manifest.yaml`；训练 run 级别的 `run.manifest.yaml` 不会作为 serving manifest 加载。同一 `model_id` 可以同时加载多个 `model_version`，默认版本按版本字符串取最大值，推荐使用时间戳版本号。
+
+如果只想加载单个模型或一组指定模型，可以用 `--model-path`，可重复传入：
+
+- 指向 serving manifest：加载该 manifest 指定的模型版本。
+- 指向目录：扫描该目录下的 serving manifest。
+- 指向旧 `.safetensors`：按文件名作为模型名加载，需要同时提供 `--feature-config` fallback，并在同目录或 fallback 配置目录能找到模型配置 YAML。
+
+## 模型加载逻辑
+
+Rust HTTP 服务启动后会先创建 `ModelRegistry`，然后按以下规则加载模型。
+
+### 1. 加载入口
+
+服务支持两类入口：
+
+```bash
+# 批量目录入口：扫描目录下所有 serving manifest
+target/release/server --model-dir python/artifacts/demo
+
+# 显式路径入口：只加载指定路径，可重复传入
+target/release/server \
+  --model-path python/artifacts/demo/model_gdcn_esmm.manifest.yaml \
+  --model-path python/artifacts/demo/model_discover_unimixer.manifest.yaml
+```
+
+`--model-path` 的优先级高于 `--model-dir` 的自动扫描。只要传入了一个或多个 `--model-path`，服务只加载这些显式路径，不再扫描整个 `--model-dir`。
+
+如果既没有传 `--model-dir`，也没有传 `--model-path`，服务会拒绝启动。只传 `--model-path` 时，服务会用第一个路径的父目录作为 fallback `model_dir`。
+
+### 2. `--model-dir` 批量加载
+
+目录加载分两步：
+
+1. 递归扫描 `--model-dir`，最多向下 3 层。
+2. 加载匹配以下名称的 serving manifest：
+   - `*.manifest.yaml`
+   - `*_manifest.yaml`
+   - `model_manifest.yaml`
+
+训练 run 级别的 `run.manifest.yaml` 会被跳过，因为它描述的是训练过程，不是线上 serving 模型。
+
+如果目录中找到了 serving manifest，服务只按 manifest 加载模型，不再扫描松散的 `.safetensors` 文件。
+
+如果目录中没有 serving manifest，但传入了 `--feature-config`，服务会进入旧兼容模式：扫描目录下的 `.safetensors` 文件，并按文件名推导模型名和模型配置文件。这种模式只建议用于旧 demo 产物。
+
+### 3. `--model-path` 显式加载
+
+`--model-path` 可以指向三种目标：
+
+| 路径类型 | 行为 |
+|---|---|
+| serving manifest (`.yaml` / `.yml`) | 按 manifest 加载单个模型版本 |
+| 目录 | 扫描该目录中的 serving manifest |
+| `.safetensors` | 旧兼容模式，按文件 stem 作为模型名加载 |
+
+显式 manifest 是生产推荐方式。示例：
+
+```bash
+target/release/server \
+  --model-path /models/ranker/20260526_120000/model_manifest.yaml
+```
+
+显式旧权重需要 fallback feature config：
+
+```bash
+target/release/server \
+  --model-path /models/model_gdcn_esmm.safetensors \
+  --feature-config examples/feature_config_discover.yaml
+```
+
+旧权重模式下，服务会尝试在以下位置找模型配置 YAML：
+
+1. `.safetensors` 所在目录
+2. `--model-dir`
+3. `--feature-config` 所在目录
+
+文件名匹配仍沿用 demo 兼容规则，例如 `model_gdcn_esmm.yaml`、`gdcn_esmm.yaml`、去掉 `discover_` 或 `_demo` 后的候选名。
+
+### 4. Manifest 权威加载
+
+当使用 serving manifest 时，manifest 是唯一权威来源。服务会读取：
+
+- `model_id`：HTTP 请求中的模型名
+- `model_version`：该模型版本
+- `model_type`：模型类型，必须和 model config 的 `type` 一致
+- `weights_file`：safetensors 权重文件
+- `feature_config_file`：该版本使用的特征配置
+- `model_config_file`：该版本使用的模型结构配置
+- `weight_binding`：权重命名空间和 strict/extra tensor 校验策略
+
+所有相对路径都以 manifest 所在目录为基准解析。
+
+加载前会校验：
+
+- feature config sha256
+- model config sha256
+- weights sha256（如果 manifest 提供）
+- manifest schema version
+- model type 是否匹配
+- safetensors key 是否缺失、shape 是否匹配，以及 extra tensor 是否允许
+
+### 5. 多版本注册
+
+同一个 `model_id` 可以加载多个 `model_version`。Registry 内部结构是：
+
+```text
+model_id
+  ├── version A -> InferenceEngine
+  └── version B -> InferenceEngine
+```
+
+默认版本按版本字符串取最大值，因此推荐版本号使用可排序格式：
+
+```text
+20260526_110000
+20260526_120000
+20260527_090000
+```
+
+查询接口：
+
+```bash
+curl http://127.0.0.1:8080/models
+curl http://127.0.0.1:8080/models/model_gdcn_esmm
+```
+
+### 6. 请求时版本选择
+
+`/predict` 和 `/predict/broadcast` 使用同一套版本解析逻辑：
+
+| 请求字段 | 行为 |
+|---|---|
+| 只传 `model` | 使用该模型默认版本 |
+| 传 `model` + `version` | 使用指定版本 |
+| 传 `model` + 不存在的 `version` + `fallback_version` | 回退到 fallback 版本 |
+| 传 `model` + 不存在的 `version` 且无 fallback | 返回 `REGISTRY_ERROR` |
+
+响应中的 `version` 是实际使用的版本，可能是请求的 `version`，也可能是 `fallback_version`：
+
+```json
+{
+  "model": "model_gdcn_esmm",
+  "version": "20260526_120000",
+  "predictions": [
+    {"click": 0.73}
+  ]
+}
+```
+
 ## API
 
 | 端点 | 方法 | 说明 |
 |------|------|------|
 | `/health` | GET | 健康检查，返回已加载模型列表 |
-| `/models` | GET | 已加载模型列表 |
+| `/models` | GET | 已加载模型、默认版本和版本列表 |
+| `/models/{model}` | GET | 指定模型的版本信息 |
 | `/predict` | POST | Pointwise: N 行完整特征 → N 个预测 |
 | `/predict/broadcast` | POST | Broadcast: 1 user + N items → N 个预测 |
+
+### /models 响应
+
+```json
+{
+  "models": [
+    {
+      "name": "model_gdcn_esmm",
+      "default_version": "20260526_120000",
+      "versions": [
+        {
+          "version": "20260526_120000",
+          "loaded_at": "1780000000",
+          "model_type": "gdcn_esmm",
+          "manifest_path": "python/artifacts/demo/model_gdcn_esmm.manifest.yaml",
+          "is_default": true
+        }
+      ]
+    }
+  ]
+}
+```
 
 ### /predict 请求
 
 ```json
 {
   "model": "model_gdcn_esmm",
+  "version": "20260526_120000",
+  "fallback_version": "20260526_110000",
   "features": [
     {"user_id": 42, "item_id": 500}
   ]
@@ -282,6 +485,8 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.app.main discover \
 ```json
 {
   "model": "model_gdcn_esmm",
+  "version": "20260526_120000",
+  "fallback_version": "20260526_110000",
   "user": {"user_id": 42},
   "items": [
     {"item_id": 500},
@@ -295,6 +500,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.app.main discover \
 ```json
 {
   "model": "model_gdcn_esmm",
+  "version": "20260526_120000",
   "predictions": [
     {"click": 0.73},
     {"click": 0.21}
@@ -334,11 +540,11 @@ OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 KMP_INIT_AT_FORK=FA
 
 ```bash
 # Rust
-cargo fmt && cargo check && cargo test   # 24 tests
-cargo run --bin server --release          # HTTP 服务
+cargo fmt && cargo check && cargo test
+cargo run --bin server --release -- --model-dir python/artifacts/demo
 
 # Python
-uvx ruff check src/train/                 # Lint
-uvx ruff format src/train/                # 格式化
-uv run pytest tests/ -v                   # 14 tests
+uvx ruff check python/src/train/
+uvx ruff format python/src/train/
+PYTHONPATH=python/src:$PYTHONPATH uv run pytest python/tests/ -v
 ```
