@@ -194,3 +194,29 @@ def test_feature_quality_report_tracks_missing_defaults_and_buckets():
     metrics = report.to_metrics()
     assert metrics["feature_quality.source.user_id.missing_rate"] == 0.5
     assert "feature_quality.emb.age_bucket.bucket_utilization" in metrics
+
+
+def test_parameter_counting_utility():
+    from train.models.params import count_parameters, format_parameter_summary
+
+    class DummyModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.emb_user = torch.nn.Embedding(10, 8)
+            self.dense_layer = torch.nn.Linear(8, 4)
+            self.frozen_param = torch.nn.Parameter(torch.ones(2), requires_grad=False)
+
+    model = DummyModel()
+    counts = count_parameters(model)
+
+    assert counts["emb_trainable"] == 80
+    assert counts["dense_trainable"] == 36  # weight (4 * 8 = 32) + bias (4)
+    assert counts["non_trainable"] == 2
+    assert counts["total"] == 118
+
+    summary = format_parameter_summary(model)
+    assert "total=118" in summary
+    assert "emb_trainable=80" in summary
+    assert "dense_trainable=36" in summary
+    assert "non_trainable=2" in summary
+

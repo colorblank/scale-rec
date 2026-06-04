@@ -225,11 +225,13 @@ def _run_single(args: argparse.Namespace) -> None:
     )
 
     built = build_model_for_dag(model_config, dag, device)
+    from ..models.params import format_parameter_summary
+
     logger.info(
-        "%s tasks=%s params=%s",
+        "%s tasks=%s | %s",
         built.config.type,
         built.spec["task_names"],
-        f"{built.param_count:,}",
+        format_parameter_summary(built.model),
     )
 
     cfg = train_config_from_args(args, export_path=args.publish_path or "")
@@ -332,11 +334,13 @@ def _run_discover(args: argparse.Namespace) -> None:
     )
 
     built = build_model_for_dag(args.model_config, dag, device)
+    from ..models.params import format_parameter_summary
+
     logger.info(
-        "%s tasks=%s params=%s",
+        "%s tasks=%s | %s",
         built.config.type,
         built.spec["task_names"],
-        f"{built.param_count:,}",
+        format_parameter_summary(built.model),
     )
 
     cfg = train_config_from_args(args, export_path=args.publish_path or "")

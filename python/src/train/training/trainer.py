@@ -113,6 +113,10 @@ class Trainer:
         self._stale_epochs = 0
         self._global_step = 0
 
+        from ..models.params import format_parameter_summary
+
+        logger.info("Model parameters: %s", format_parameter_summary(model))
+
     def fit(self) -> float:
         self._collect_eval()
         self.loss_fn = self.loss_fn.to(self.device)
