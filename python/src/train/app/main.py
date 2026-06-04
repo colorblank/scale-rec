@@ -124,6 +124,11 @@ def _train_epoch_single(
         optimizer.step()
         total_loss += loss.item()
         n_batches += 1
+    if n_batches == 0:
+        raise ValueError(
+            "No supervised batches were processed. Check that the dataset exposes the "
+            "configured label columns and that label_col_map matches the model outputs."
+        )
     return total_loss / max(n_batches, 1)
 
 
@@ -172,6 +177,10 @@ def _evaluate_single(
                 ).item()
             ),
         }
+    if not results:
+        raise ValueError(
+            "No evaluation labels were available. Check the dataset and label_col_map."
+        )
     return results
 
 

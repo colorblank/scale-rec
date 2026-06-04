@@ -1,0 +1,29 @@
+version: 1.0.0
+click:
+  quality_weight: 0.45
+  item_type_bonus:
+    news: 0.12
+    report: 0.12
+  source_name_bonus:
+    同花顺: 0.10
+    东方财富: 0.10
+  scene_max: 3
+  scene_bonus: 0.08
+  new_user_label: 新用户
+  new_user_bonus: 0.06
+  stay_time_threshold: 180
+  stay_time_bonus: 0.05
+  threshold: 0.42
+detail:
+  quality_threshold: 0.58
+  item_types: [news, report]
+stock:
+  min_stock_count: 3
+  source_name: 雪球
+cvr:
+  quality_threshold: 0.68
+  stay_time_threshold: 240
+stay_time_label:
+  click_multiplier: [0.85, 0.15]
+  noise_min: -25
+  noise_max: 45

@@ -408,14 +408,15 @@ class FeatureDag:
             n_rows = len(next(iter(columns.values()))) if columns else 0
         else:
             n_rows = len(rows)
-            columns = {name: [None] * n_rows for name in self._source_names}
-            seen: set[str] = set()
-            for i, row in enumerate(rows):
-                for name, val in row.items():
-                    if name in self._source_name_set:
-                        columns[name][i] = val
-                        seen.add(name)
-            columns = {name: col for name, col in columns.items() if name in seen}
+            if n_rows > 0:
+                import pandas as pd
+
+                df = pd.DataFrame(rows)
+                columns = {
+                    col: df[col].tolist() for col in df.columns if col in self._source_name_set
+                }
+            else:
+                columns = {}
 
         if self.tracer:
             for i in range(n_rows):

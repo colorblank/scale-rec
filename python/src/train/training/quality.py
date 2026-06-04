@@ -76,7 +76,15 @@ def summarize_feature_quality(
 def _collect_rows(batches: list[dict[str, Any]], max_rows: int) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for batch in batches:
-        rows.extend(batch.get("features", []))
+        features = batch.get("features", [])
+        if isinstance(features, dict):
+            n = len(next(iter(features.values()))) if features else 0
+            batch_rows = [
+                {k: v[i] for k, v in features.items() if v[i] is not None} for i in range(n)
+            ]
+            rows.extend(batch_rows)
+        else:
+            rows.extend(features)
         if len(rows) >= max_rows:
             return rows[:max_rows]
     return rows

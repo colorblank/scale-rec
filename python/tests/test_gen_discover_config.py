@@ -23,7 +23,7 @@ def test_discover_config_generator_contract() -> None:
     item = generator.generate_item_config()
     user = generator.generate_user_config()
 
-    assert len(full["sources"]) == 38
+    assert len(full["sources"]) == 45
     assert len(full["operators"]) == 69
     assert sum(len(op.get("outputs", [])) for op in full["operators"] if "embed" in op) == 44
     assert len(item["sources"]) == 18

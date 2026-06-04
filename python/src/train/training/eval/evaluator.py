@@ -33,6 +33,7 @@ class Evaluator:
         task_names: list[str],
         label_map: dict[str, str],
         device: Optional[torch.device] = None,
+        task_metrics: Optional[dict[str, list[str]]] = None,
     ) -> dict[str, dict[str, float]]:
         """评估所有 task × metric。
 
@@ -51,7 +52,11 @@ class Evaluator:
 
         with torch.no_grad():
             for batch in batches:
-                rows = [{k: v for k, v in r.items() if v is not None} for r in batch["features"]]
+                features = batch["features"]
+                if isinstance(features, dict):
+                    rows = features
+                else:
+                    rows = [{k: v for k, v in r.items() if v is not None} for r in features]
                 outputs = model(_to_device(dag.preprocess_batch(rows), device))
 
                 # 提取分组特征
@@ -59,7 +64,10 @@ class Evaluator:
                 has_gauc = "gauc" in self.cfg.metrics
                 if has_gauc:
                     gf = self.cfg.gauc_group_feature
-                    gids = [r.get(gf, 0) for r in batch["features"]]
+                    if isinstance(features, dict):
+                        gids = features.get(gf, [0] * len(next(iter(features.values()))))
+                    else:
+                        gids = [r.get(gf, 0) for r in features]
                     group_ids = np.array([g if g is not None else 0 for g in gids], dtype=object)
 
                 for t in task_names:
@@ -91,7 +99,10 @@ class Evaluator:
             if len(y) == 0:
                 continue
             g = np.concatenate(groups_buf[t]) if groups_buf.get(t) else None
-            results[t] = compute_metrics(y, p, self.cfg.metrics, group_ids=g)
+            metrics = (task_metrics or {}).get(t, self.cfg.metrics)
+            if not metrics:
+                continue
+            results[t] = compute_metrics(y, p, metrics, group_ids=g)
 
         # 日志文件
         if self.cfg.log_path:

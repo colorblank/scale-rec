@@ -137,7 +137,7 @@ def test_trainer_monitor_score_falls_back_to_configured_metric():
         label_map={"click": "click"},
         device=torch.device("cpu"),
         config=TrainConfig(eval={"metrics": ["gauc"]}),
-        task_specs=[TaskSpec(name="click", label="click")],
+        task_specs=[TaskSpec(name="click", label="click", metrics=("gauc",))],
         data_path="unused",
         flow_config=None,
     )
@@ -219,4 +219,3 @@ def test_parameter_counting_utility():
     assert "emb_trainable=80" in summary
     assert "dense_trainable=36" in summary
     assert "non_trainable=2" in summary
-

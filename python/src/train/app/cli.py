@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 import torch
+import yaml
 
 from ..core.config import ArtifactConfig, EvalConfig, ModelConfig, TrainConfig
 from ..core.dag import FeatureDag
@@ -18,6 +19,8 @@ from ..models import get_output_spec
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 CONSOLE_LOG_FORMAT = "%(asctime)s [%(levelname)-5s] %(name)s: %(message)s"
 FILE_LOG_FORMAT = "%(asctime)s [%(levelname)-5s] %(process)d %(name)s:%(lineno)d: %(message)s"
+REPO_ROOT = Path(__file__).resolve().parents[4]
+DEFAULT_TRAIN_CONFIG = REPO_ROOT / "examples" / "train_defaults.yaml"
 
 
 @dataclass
@@ -29,30 +32,31 @@ class BuiltModel:
 
 
 def add_training_args(parser: argparse.ArgumentParser, *, lr: float, batch_size: int) -> None:
-    parser.add_argument("--epochs", type=int, default=30)
-    parser.add_argument("--batch-size", type=int, default=batch_size)
-    parser.add_argument("--lr", type=float, default=lr)
-    parser.add_argument("--weight-decay", type=float, default=1e-4)
-    parser.add_argument("--optim", default="adamw", choices=["adamw", "adam", "sgd"])
+    parser.add_argument("--train-config", default=str(DEFAULT_TRAIN_CONFIG))
+    parser.add_argument("--epochs", type=int)
+    parser.add_argument("--batch-size", type=int)
+    parser.add_argument("--lr", type=float)
+    parser.add_argument("--weight-decay", type=float)
+    parser.add_argument("--optim", choices=["adamw", "adam", "sgd"])
     parser.add_argument("--emb-lr", type=float)
     parser.add_argument("--emb-weight-decay", type=float)
-    parser.add_argument("--eval-samples", type=int, default=2000)
-    parser.add_argument("--eval-interval", type=int, default=50)
-    parser.add_argument("--log-interval", type=int, default=10)
-    parser.add_argument("--warmup-steps", type=int, default=200)
-    parser.add_argument("--min-lr-ratio", type=float, default=0.01)
-    parser.add_argument("--grad-max-norm", type=float, default=1.0)
-    parser.add_argument("--early-stopping", type=int, default=5)
+    parser.add_argument("--eval-samples", type=int)
+    parser.add_argument("--eval-interval", type=int)
+    parser.add_argument("--log-interval", type=int)
+    parser.add_argument("--warmup-steps", type=int)
+    parser.add_argument("--min-lr-ratio", type=float)
+    parser.add_argument("--grad-max-norm", type=float)
+    parser.add_argument("--early-stopping", type=int)
     parser.add_argument("--no-ema", action="store_true")
-    parser.add_argument("--ema-decay", type=float, default=0.999)
+    parser.add_argument("--ema-decay", type=float)
     parser.add_argument(
-        "--loss-weighting", default="static", choices=["equal", "static", "uncertainty"]
+        "--loss-weighting", choices=["equal", "static", "uncertainty"]
     )
-    parser.add_argument("--tb-dir", default="")
-    parser.add_argument("--eval-metrics", default="auc")
-    parser.add_argument("--monitor-metric", default="auc")
-    parser.add_argument("--eval-log", default="")
-    parser.add_argument("--gauc-group-feature", default="user_id")
+    parser.add_argument("--tb-dir")
+    parser.add_argument("--eval-metrics")
+    parser.add_argument("--monitor-metric")
+    parser.add_argument("--eval-log")
+    parser.add_argument("--gauc-group-feature")
 
 
 def add_runtime_args(parser: argparse.ArgumentParser) -> None:
@@ -150,38 +154,52 @@ def split_csv(value: str) -> list[str]:
 def train_config_from_args(
     args: argparse.Namespace, *, export_path: Union[str, Path]
 ) -> TrainConfig:
+    config_path = Path(getattr(args, "train_config", DEFAULT_TRAIN_CONFIG))
+    base = TrainConfig.from_yaml(config_path) if config_path.exists() else TrainConfig()
+
+    def pick(name: str, fallback: Any) -> Any:
+        value = getattr(args, name, None)
+        return fallback if value is None else value
+
+    eval_metrics = pick("eval_metrics", ",".join(base.eval.metrics))
+    if isinstance(eval_metrics, str):
+        eval_metrics = split_csv(eval_metrics)
+
     return TrainConfig(
-        epochs=args.epochs,
-        batch_size=args.batch_size,
+        epochs=pick("epochs", base.epochs),
+        batch_size=pick("batch_size", base.batch_size),
         export_path=str(export_path),
         artifacts=ArtifactConfig(
-            artifact_root=str(getattr(args, "artifact_dir", "")),
-            model_name=str(getattr(args, "model_name", "")),
-            run_version=str(getattr(args, "run_version", "")),
-            keep_checkpoints=int(getattr(args, "keep_checkpoints", 3)),
+            artifact_root=str(pick("artifact_dir", base.artifacts.artifact_root)),
+            model_name=str(pick("model_name", base.artifacts.model_name)),
+            run_version=str(pick("run_version", base.artifacts.run_version)),
+            keep_checkpoints=int(pick("keep_checkpoints", base.artifacts.keep_checkpoints)),
         ),
-        eval_samples=args.eval_samples,
-        eval_interval=args.eval_interval,
-        log_interval=args.log_interval,
+        eval_samples=pick("eval_samples", base.eval_samples),
+        eval_interval=pick("eval_interval", base.eval_interval),
+        log_interval=pick("log_interval", base.log_interval),
         optim={
-            "name": args.optim,
-            "lr": args.lr,
-            "weight_decay": args.weight_decay,
-            "emb_lr": args.emb_lr,
-            "emb_weight_decay": args.emb_weight_decay,
+            "name": pick("optim", base.optim.name),
+            "lr": pick("lr", base.optim.lr),
+            "weight_decay": pick("weight_decay", base.optim.weight_decay),
+            "emb_lr": pick("emb_lr", base.optim.emb_lr),
+            "emb_weight_decay": pick("emb_weight_decay", base.optim.emb_weight_decay),
         },
-        lr_schedule={"warmup_steps": args.warmup_steps, "min_lr_ratio": args.min_lr_ratio},
+        lr_schedule={
+            "warmup_steps": pick("warmup_steps", base.lr_schedule.warmup_steps),
+            "min_lr_ratio": pick("min_lr_ratio", base.lr_schedule.min_lr_ratio),
+        },
         eval=EvalConfig(
-            metrics=split_csv(args.eval_metrics),
-            monitor_metric=args.monitor_metric,
-            log_path=args.eval_log,
-            gauc_group_feature=args.gauc_group_feature,
+            metrics=eval_metrics,
+            monitor_metric=pick("monitor_metric", base.eval.monitor_metric),
+            log_path=pick("eval_log", base.eval.log_path),
+            gauc_group_feature=pick("gauc_group_feature", base.eval.gauc_group_feature),
         ),
-        grad_max_norm=args.grad_max_norm,
-        early_stopping_patience=args.early_stopping,
-        ema_decay=0.0 if args.no_ema else args.ema_decay,
-        loss_weighting=args.loss_weighting,
-        tb_dir=args.tb_dir,
+        grad_max_norm=pick("grad_max_norm", base.grad_max_norm),
+        early_stopping_patience=pick("early_stopping", base.early_stopping_patience),
+        ema_decay=0.0 if getattr(args, "no_ema", False) else pick("ema_decay", base.ema_decay),
+        loss_weighting=pick("loss_weighting", base.loss_weighting),
+        tb_dir=pick("tb_dir", base.tb_dir),
     )
 
 

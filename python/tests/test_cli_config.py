@@ -18,6 +18,8 @@ def test_train_config_from_args_uses_nested_config_fields(tmp_path):
         [
             "--optim",
             "sgd",
+            "--batch-size",
+            "128",
             "--lr",
             "0.2",
             "--weight-decay",
@@ -38,7 +40,7 @@ def test_train_config_from_args_uses_nested_config_fields(tmp_path):
 
     cfg = train_config_from_args(args, export_path=tmp_path / "model.safetensors")
 
-    assert cfg.batch_size == 32
+    assert cfg.batch_size == 128
     assert cfg.optim.name == "sgd"
     assert cfg.optim.lr == 0.2
     assert cfg.optim.weight_decay == 0.03

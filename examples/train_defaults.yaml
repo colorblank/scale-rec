@@ -1,0 +1,24 @@
+epochs: 30
+batch_size: 64
+optim:
+  name: adamw
+  lr: 0.005
+  weight_decay: 0.0001
+  emb_lr: null
+  emb_weight_decay: null
+eval_samples: 400
+eval_interval: 50
+log_interval: 10
+lr_schedule:
+  warmup_steps: 200
+  min_lr_ratio: 0.01
+grad_max_norm: 1.0
+early_stopping_patience: 5
+ema_decay: 0.999
+loss_weighting: static
+tb_dir: ""
+eval:
+  metrics: [auc]
+  monitor_metric: auc
+  log_path: ""
+  gauc_group_feature: user_id

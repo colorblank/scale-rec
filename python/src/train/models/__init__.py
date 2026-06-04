@@ -224,7 +224,7 @@ def _spec_esmm(
             "cvr": "is_cvr",
             "detail": "is_click_detail",
             "stock": "is_click_stock",
-            "stay": "stay_time",
+            "stay": "stay_time_label",
         },
     )
     return {"task_names": names, "label_col_map": label_col_map}

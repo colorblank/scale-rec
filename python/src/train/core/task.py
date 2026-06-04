@@ -51,8 +51,10 @@ def legacy_task_specs(
     task_names: list[str],
     label_map: dict[str, str],
     task_weights: Optional[dict[str, float]] = None,
+    default_metrics: Optional[list[str]] = None,
 ) -> list[TaskSpec]:
     weights = task_weights or {}
+    metrics = tuple(default_metrics or ())
     specs = []
     for name in task_names:
         if name.startswith("ct"):
@@ -63,6 +65,7 @@ def legacy_task_specs(
                 label=label_map.get(name, name),
                 loss="weighted_bce_stay" if name == "stay" else "bce",
                 weight=float(weights.get(name, 1.0)),
+                metrics=metrics,
             )
         )
     return specs

@@ -25,12 +25,34 @@ logger = logging.getLogger(__name__)
 Batch = dict[str, Any]
 
 
+def _estimate_batches(path: str, batch_size: int) -> int:
+    import os
+
+    if not os.path.exists(path):
+        return 1
+    file_size = os.path.getsize(path)
+    if file_size < 1024 * 1024 * 50:
+        with open(path, "rb") as f:
+            lines = sum(1 for _ in f)
+        return max(1, lines // batch_size)
+    with open(path, "rb") as f:
+        next(f, None)
+        sample = f.read(1024 * 500)
+        lines = sample.count(b"\n")
+        if lines == 0 or len(sample) == 0:
+            return 1
+        avg_line_size = len(sample) / lines
+        return max(1, int((file_size / avg_line_size) // batch_size))
+
+
 def _collect_batches(batches: Iterator[Batch], max_samples: int) -> list[Batch]:
     result: list[Batch] = []
     collected = 0
     for batch in batches:
         result.append(batch)
-        collected += len(batch["features"])
+        features = batch["features"]
+        size = len(next(iter(features.values()))) if isinstance(features, dict) else len(features)
+        collected += size
         if collected >= max_samples:
             break
     return result
@@ -79,10 +101,21 @@ class Trainer:
         self.task_specs = (
             task_specs
             or config.tasks
-            or legacy_task_specs(task_names, label_map, config.task_weights)
+            or legacy_task_specs(
+                task_names,
+                label_map,
+                config.task_weights,
+                default_metrics=list(config.eval.metrics),
+            )
         )
         self.task_names = [spec.name for spec in self.task_specs]
         self.label_map = {spec.name: spec.label for spec in self.task_specs}
+        missing_metrics = [spec.name for spec in self.task_specs if not spec.metrics]
+        if missing_metrics:
+            raise ValueError(
+                "Task specs must define metrics in configuration: " + ", ".join(missing_metrics)
+            )
+        self.task_metrics = {spec.name: list(spec.metrics) for spec in self.task_specs}
         self.device = device
         self.cfg = config
         self.model_type = model_type
@@ -146,7 +179,7 @@ class Trainer:
         ]
         self.optimizer = build_optimizer(param_groups, cfg.name)
 
-        n_total = sum(1 for _ in self._iter_batches())
+        n_total = _estimate_batches(self._data_path, self.cfg.batch_size)
         batches_per_epoch = max(n_total - self._n_eval_batches, 1)
         total_steps = self.cfg.epochs * batches_per_epoch
         warmup = min(self.cfg.lr_schedule.warmup_steps, max(1, total_steps // 10))
@@ -181,7 +214,13 @@ class Trainer:
                 self.task_names,
                 self.label_map,
                 self.device,
+                task_metrics=self.task_metrics,
             )
+            if not eval_results:
+                raise ValueError(
+                    "No evaluation labels were collected. Check the dataset and the "
+                    "configured label columns for this model."
+                )
             self._log_epoch(epoch, avg_loss, eval_results)
 
             cur = self._monitor_score(eval_results)
@@ -248,7 +287,12 @@ class Trainer:
     def _collect_eval(self) -> None:
         self.eval_batches = _collect_batches(self._iter_batches(), self.cfg.eval_samples)
         self._n_eval_batches = len(self.eval_batches)
-        n_samples = sum(len(batch["features"]) for batch in self.eval_batches)
+        n_samples = sum(
+            len(next(iter(b["features"].values())))
+            if isinstance(b["features"], dict)
+            else len(b["features"])
+            for b in self.eval_batches
+        )
         logger.info("validation: %d samples (%d batches)", n_samples, self._n_eval_batches)
         self.feature_quality = summarize_feature_quality(self.dag, self.eval_batches)
         logger.info("feature quality: rows=%d", self.feature_quality.rows)
@@ -315,6 +359,12 @@ class Trainer:
 
             t0_iter = time.perf_counter()
 
+        if n_batches == 0:
+            raise ValueError(
+                "No supervised batches were processed. Check that the dataset exposes "
+                "the configured label columns and that the task config matches them."
+            )
+
         avg_loss = total_loss / max(n_batches, 1)
         self._log_timing(
             epoch,
@@ -348,14 +398,15 @@ class Trainer:
             self.task_names,
             self.label_map,
             self.device,
+            task_metrics=self.task_metrics,
         )
         self.model.train()
         t_eval = (time.perf_counter() - t0) * 1000
         parts = [f"batch {n_batches:4d}  loss={total_loss / n_batches:.6f}  eval={t_eval:.0f}ms"]
         for task in sorted(self.task_names):
-            auc = results.get(task, {}).get("auc")
-            if auc is not None:
-                parts.append(f"{task}: auc={auc:.4f}")
+            task_metrics = results.get(task, {})
+            for metric, value in sorted(task_metrics.items()):
+                parts.append(f"{task}_{metric}={value:.4f}")
         logger.info("  " + "  ".join(parts))
 
     def _monitor_score(self, results: dict[str, dict[str, float]]) -> float:

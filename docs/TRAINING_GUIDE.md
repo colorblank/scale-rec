@@ -19,7 +19,8 @@
 ```bash
 # 1. 生成合成数据
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m scale_rec_demo.generate_discover_data
+  python -m scale_rec_demo.generate_discover_data \
+  --label-policy examples/discover_label_policy.yaml
 
 # 2. 训练
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
@@ -27,6 +28,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --data python/artifacts/demo/discover_train_data.txt \
   --feature-config examples/feature_config_discover.yaml \
   --model-config examples/model_gdcn_esmm.yaml \
+  --train-config examples/train_defaults.yaml \
   --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
   --artifact-dir python/artifacts/demo \
   --publish-path python/artifacts/demo/model_gdcn_esmm.safetensors \
@@ -39,6 +41,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --data python/artifacts/demo/discover_train_data.txt \
   --feature-config examples/feature_config_discover.yaml \
   --model-config examples/model_discover_unimixer.yaml \
+  --train-config examples/train_defaults.yaml \
   --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
   --artifact-dir python/artifacts/demo \
   --publish-path python/artifacts/demo/model_discover_unimixer.safetensors \
@@ -67,6 +70,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 | `--model-name` | 自动推导 | 模型逻辑名，用于 run 目录和 manifest |
 | `--run-version` | 自动生成 | 训练 run 版本号 |
 | `--keep-checkpoints` | 3 | 保留的 checkpoint 数量 |
+| `--train-config` | `examples/train_defaults.yaml` | 训练超参、优化器、评估默认值 |
 
 ## 特征配置
 
@@ -110,7 +114,7 @@ label_col_map:
   cvr: is_cvr
   detail: is_click_detail
   stock: is_click_stock
-  stay: stay_time
+  stay: stay_time_label
 task_config:
   towers:
     - {name: click, hidden_dims: [16, 8], output_dim: 1, activation: relu}

@@ -196,12 +196,15 @@ def stream_file_batches(
         dtype[s.name] = DTYPE_PANDAS.get(dt, "str")
         defaults[s.name] = _parse_default(s.default_val, dt)
 
+    # Read in larger chunks (e.g. 32k lines) to minimize Pandas overhead
+    read_chunk_size = max(batch_size * 256, 32768)
+
     params: dict[str, Any] = {
         "sep": sep,
         "dtype": dtype,
         "na_values": na_vals,
         "keep_default_na": False,
-        "chunksize": batch_size,
+        "chunksize": read_chunk_size,
     }
     if has_header:
         params["header"] = 0
@@ -220,13 +223,21 @@ def stream_file_batches(
             if col in chunk.columns:
                 chunk[col] = chunk[col].fillna(default)
 
-        rows = chunk[list(source_set & set(chunk.columns))].to_dict("records")
-        rows = [{k: v for k, v in r.items() if not pd.isna(v)} for r in rows]
+        # Convert feature columns directly to dict of lists
+        features_df = chunk[list(source_set & set(chunk.columns))]
+        features_dict = {col: features_df[col].tolist() for col in features_df.columns}
 
-        labels = {
+        # Convert label columns to lists
+        labels_dict = {
             ln: [None if pd.isna(v) else v for v in chunk[ln].tolist()]
             for ln in label_names
             if ln in chunk.columns
         }
 
-        yield {"features": rows, "labels": labels}
+        # Yield mini-batches from the chunk
+        n_rows = len(chunk)
+        for start in range(0, n_rows, batch_size):
+            end = start + batch_size
+            batch_features = {col: vals[start:end] for col, vals in features_dict.items()}
+            batch_labels = {ln: vals[start:end] for ln, vals in labels_dict.items()}
+            yield {"features": batch_features, "labels": batch_labels}

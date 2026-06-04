@@ -31,13 +31,13 @@ OperatorDef = ConfigDict
 EmbedDef = ConfigDict
 
 LABEL_SOURCES: list[SourceDef] = [
-    {"name": "is_click", "dtype": "int", "default_val": "0"},
-    {"name": "is_cvr", "dtype": "int", "default_val": "0"},
-    {"name": "is_click_detail", "dtype": "int", "default_val": "0"},
-    {"name": "is_click_stock", "dtype": "int", "default_val": "0"},
-    {"name": "stay_time", "dtype": "int", "default_val": "-1"},
-    {"name": "ctr", "dtype": "int", "default_val": "0"},
-    {"name": "cvr", "dtype": "int", "default_val": "0"},
+    {"name": "is_click", "dtype": "int", "default_val": "0", "role": "label"},
+    {"name": "is_cvr", "dtype": "int", "default_val": "0", "role": "label"},
+    {"name": "is_click_detail", "dtype": "int", "default_val": "0", "role": "label"},
+    {"name": "is_click_stock", "dtype": "int", "default_val": "0", "role": "label"},
+    {"name": "stay_time_label", "dtype": "int", "default_val": "-1", "role": "label"},
+    {"name": "ctr", "dtype": "int", "default_val": "0", "role": "label"},
+    {"name": "cvr", "dtype": "int", "default_val": "0", "role": "label"},
 ]
 
 
@@ -222,7 +222,7 @@ def string_concat(
 def generate_config() -> ConfigDict:
     return {
         "version": VERSION,
-        "sources": _build_sources(),
+        "sources": _build_sources() + LABEL_SOURCES,
         "operators": _build_operators(),
     }
 

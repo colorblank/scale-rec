@@ -10,6 +10,9 @@ import csv
 import json
 import random
 from pathlib import Path
+from typing import Any
+
+import yaml
 
 from train.core.config import FlowConfig
 
@@ -17,6 +20,8 @@ from .paths import DEMO_ARTIFACT_DIR, DISCOVER_FEATURE_CONFIG
 
 FLOW_CONFIG = FlowConfig.from_yaml(str(DISCOVER_FEATURE_CONFIG))
 SOURCE_NAMES = [source.name for source in FLOW_CONFIG.sources]
+REPO_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_LABEL_POLICY = REPO_ROOT / "examples" / "discover_label_policy.yaml"
 
 STOCK_CODES = [f"60{i:04d}" for i in range(200)]
 ENTITY_CODES = {
@@ -108,6 +113,14 @@ def _pick_with_scores(
 
 def _join_tagged(items: list[str], rng: random.Random, sep: str = "#") -> str:
     return "|".join(f"{item}{sep}{rng.uniform(0.5, 1.0):.2f}" for item in items)
+
+
+def _load_label_policy(path: Path) -> dict[str, Any]:
+    with path.open("r", encoding="utf-8") as f:
+        policy = yaml.safe_load(f)
+    if not isinstance(policy, dict):
+        raise ValueError(f"invalid label policy file: {path}")
+    return policy
 
 
 def _make_item(item_id: int, rng: random.Random) -> dict[str, object]:
@@ -204,11 +217,105 @@ def _make_context(rng: random.Random) -> dict[str, object]:
     }
 
 
-def _make_row(item: dict[str, object], user_id: int, rng: random.Random) -> dict[str, object]:
+def _make_labels(
+    item: dict[str, object],
+    user: dict[str, object],
+    ctx: dict[str, object],
+    rng: random.Random,
+    policy: dict[str, Any],
+) -> dict[str, object]:
+    quality = float(item["quality_score_label"])
+    stay_time = int(ctx["stay_time"])
+    item_type = str(item["item_type"])
+    source_name = str(item["source_name"])
+    scene = int(ctx["scene"])
+    is_new_user = str(user["is_new_user"])
+    stock_count = len(json.loads(str(item["stock_list"]))) if item["stock_list"] else 0
+
+    click_policy = policy["click"]
+    detail_policy = policy["detail"]
+    stock_policy = policy["stock"]
+    cvr_policy = policy["cvr"]
+    stay_policy = policy["stay_time_label"]
+
+    click_score = (
+        float(click_policy["quality_weight"]) * quality
+        + sum(
+            float(v)
+            for k, v in click_policy["item_type_bonus"].items()
+            if item_type == k
+        )
+        + sum(
+            float(v)
+            for k, v in click_policy["source_name_bonus"].items()
+            if source_name == k
+        )
+        + (float(click_policy["scene_bonus"]) if scene <= int(click_policy["scene_max"]) else 0.0)
+        + (
+            float(click_policy["new_user_bonus"])
+            if is_new_user == str(click_policy["new_user_label"])
+            else 0.0
+        )
+        + (
+            float(click_policy["stay_time_bonus"])
+            if stay_time > int(click_policy["stay_time_threshold"])
+            else 0.0
+        )
+    )
+    is_click = int(click_score >= float(click_policy["threshold"]))
+    is_click_detail = int(
+        is_click
+        and (
+            quality >= float(detail_policy["quality_threshold"])
+            or item_type in set(detail_policy["item_types"])
+        )
+    )
+    is_click_stock = int(
+        is_click
+        and (
+            stock_count >= int(stock_policy["min_stock_count"])
+            or source_name == str(stock_policy["source_name"])
+        )
+    )
+    is_cvr = int(
+        is_click
+        and (
+            quality >= float(cvr_policy["quality_threshold"])
+            or stay_time >= int(cvr_policy["stay_time_threshold"])
+        )
+    )
+
+    # stay_time_label 保持为连续时长，供 weighted_bce_stay 任务使用。
+    stay_time_label = max(
+        0,
+        int(
+            stay_time * float(stay_policy["click_multiplier"][0])
+            + stay_time * float(stay_policy["click_multiplier"][1]) * is_click
+            + rng.randint(int(stay_policy["noise_min"]), int(stay_policy["noise_max"]))
+        ),
+    )
+
+    return {
+        "is_click": is_click,
+        "is_cvr": is_cvr,
+        "is_click_detail": is_click_detail,
+        "is_click_stock": is_click_stock,
+        "stay_time_label": stay_time_label,
+        "ctr": is_click,
+        "cvr": is_cvr,
+    }
+
+
+def _make_row(
+    item: dict[str, object], user_id: int, rng: random.Random, policy: dict[str, Any]
+) -> dict[str, object]:
     record = {}
     record.update(item)
-    record.update(_make_user(user_id, rng))
-    record.update(_make_context(rng))
+    user = _make_user(user_id, rng)
+    ctx = _make_context(rng)
+    record.update(user)
+    record.update(ctx)
+    record.update(_make_labels(item, user, ctx, rng, policy))
 
     missing = [name for name in SOURCE_NAMES if name not in record]
     if missing:
@@ -221,6 +328,13 @@ def _output_path() -> Path:
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Generate discover training data")
+    parser.add_argument("--label-policy", default=str(DEFAULT_LABEL_POLICY))
+    args = parser.parse_args()
+
+    policy = _load_label_policy(Path(args.label_policy))
     out_path = _output_path()
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -236,7 +350,7 @@ def main() -> None:
         for uid in range(n_users):
             for _ in range(rows_per_user):
                 item_id = rng.randint(0, n_items - 1)
-                row = _make_row(item_pool[item_id], uid, rng)
+                row = _make_row(item_pool[item_id], uid, rng, policy)
                 writer.writerow([row[name] for name in SOURCE_NAMES])
 
     print(
