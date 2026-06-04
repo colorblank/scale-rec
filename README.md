@@ -274,28 +274,21 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.app.main discover \
   --run-version 20260526_120000
 ```
 
-训练产物会分成三层：
-- `python/artifacts/demo/model_gdcn_esmm/20260526_120000/checkpoints/`：每个 epoch 的 checkpoint
-- `python/artifacts/demo/model_gdcn_esmm/20260526_120000/{best,latest}.safetensors`：最佳与最新别名
-- `python/artifacts/demo/model_gdcn_esmm.safetensors` 和同目录 `.manifest.yaml`：最终发布权重与 manifest
+训练会同时产出训练 run 目录和发布产物：
 
-发布 manifest 是 Rust serving 的权威入口，包含：
+| 路径 | 作用 |
+|---|---|
+| `python/artifacts/demo/model_gdcn_esmm/20260526_120000/checkpoints/` | 按 epoch/step 保存的历史 checkpoint |
+| `python/artifacts/demo/model_gdcn_esmm/20260526_120000/{best,latest}.safetensors` | run 内最佳和最新权重别名 |
+| `python/artifacts/demo/model_gdcn_esmm/20260526_120000/run.manifest.yaml` | 训练过程 manifest，不作为 serving 模型加载 |
+| `python/artifacts/demo/model_gdcn_esmm.safetensors` | 发布权重，默认复制 best checkpoint |
+| `python/artifacts/demo/model_gdcn_esmm.manifest.yaml` | serving manifest，Rust 服务的推荐加载入口 |
 
-- `model_id` / `model_version` / `model_type`
-- `weights_file`、`feature_config_file`、`model_config_file` 及 sha256
-- `weight_binding`：权重格式、命名空间前缀、strict/extra tensor 策略
-
-服务启动会递归扫描 `*.manifest.yaml`、`*_manifest.yaml` 和 `model_manifest.yaml`；训练 run 级别的 `run.manifest.yaml` 不会作为 serving manifest 加载。同一 `model_id` 可以同时加载多个 `model_version`，默认版本按版本字符串取最大值，推荐使用时间戳版本号。
-
-如果只想加载单个模型或一组指定模型，可以用 `--model-path`，可重复传入：
-
-- 指向 serving manifest：加载该 manifest 指定的模型版本。
-- 指向目录：扫描该目录下的 serving manifest。
-- 指向旧 `.safetensors`：按文件名作为模型名加载，需要同时提供 `--feature-config` fallback，并在同目录或 fallback 配置目录能找到模型配置 YAML。
+serving manifest 记录模型名、版本、模型类型、权重文件、特征配置、模型配置、sha256、任务信息、指标和 `weight_binding`。当前 CLI 没有暴露 `copy_configs` 参数，因此默认会在 manifest 中记录原始 feature/model config 路径及其 sha256；发布目录要长期归档时，需要确保这些配置文件仍然可访问，或在代码配置中启用 `copy_configs` 后再训练。
 
 ## 模型加载逻辑
 
-Rust HTTP 服务启动后会先创建 `ModelRegistry`，然后按以下规则加载模型。
+Rust HTTP 服务以 serving manifest 为生产入口。manifest 把权重、模型结构配置和特征配置绑定为一个可校验的模型版本；旧的松散 `.safetensors` 加载只作为兼容模式保留。
 
 ### 1. 加载入口
 
@@ -311,25 +304,25 @@ target/release/server \
   --model-path python/artifacts/demo/model_discover_unimixer.manifest.yaml
 ```
 
-`--model-path` 的优先级高于 `--model-dir` 的自动扫描。只要传入了一个或多个 `--model-path`，服务只加载这些显式路径，不再扫描整个 `--model-dir`。
+入口选择规则：
 
-如果既没有传 `--model-dir`，也没有传 `--model-path`，服务会拒绝启动。只传 `--model-path` 时，服务会用第一个路径的父目录作为 fallback `model_dir`。
+- 传了 `--model-path`：只加载显式路径，可重复传入；不会再扫描整个 `--model-dir`。
+- 未传 `--model-path`：扫描 `--model-dir`。
+- 两者都没传：服务拒绝启动。
+- 只传 `--model-path`：第一个路径的父目录会作为兼容模式下的 fallback `model_dir`。
 
 ### 2. `--model-dir` 批量加载
 
-目录加载分两步：
+目录加载流程：
 
 1. 递归扫描 `--model-dir`，最多向下 3 层。
 2. 加载匹配以下名称的 serving manifest：
    - `*.manifest.yaml`
    - `*_manifest.yaml`
    - `model_manifest.yaml`
+3. 跳过 `run.manifest.yaml`，因为它描述训练过程，不描述 serving 模型。
 
-训练 run 级别的 `run.manifest.yaml` 会被跳过，因为它描述的是训练过程，不是线上 serving 模型。
-
-如果目录中找到了 serving manifest，服务只按 manifest 加载模型，不再扫描松散的 `.safetensors` 文件。
-
-如果目录中没有 serving manifest，但传入了 `--feature-config`，服务会进入旧兼容模式：扫描目录下的 `.safetensors` 文件，并按文件名推导模型名和模型配置文件。这种模式只建议用于旧 demo 产物。
+如果目录中找到了 serving manifest，服务只按 manifest 加载，不再扫描松散 `.safetensors`。如果目录中没有 serving manifest，但传入了 `--feature-config`，服务进入旧兼容模式：扫描目录下 `.safetensors`，用文件名推导模型名和模型配置文件。这种模式只建议用于旧 demo 产物。
 
 ### 3. `--model-path` 显式加载
 
@@ -339,9 +332,9 @@ target/release/server \
 |---|---|
 | serving manifest (`.yaml` / `.yml`) | 按 manifest 加载单个模型版本 |
 | 目录 | 扫描该目录中的 serving manifest |
-| `.safetensors` | 旧兼容模式，按文件 stem 作为模型名加载 |
+| `.safetensors` | 旧兼容模式，按文件 stem 作为模型名加载，需要 `--feature-config` |
 
-显式 manifest 是生产推荐方式。示例：
+显式 manifest 是推荐方式：
 
 ```bash
 target/release/server \
@@ -356,7 +349,7 @@ target/release/server \
   --feature-config examples/feature_config_discover.yaml
 ```
 
-旧权重模式下，服务会尝试在以下位置找模型配置 YAML：
+旧权重模式会用 `.safetensors` 文件 stem 作为模型名，版本固定为 `default`。模型配置 YAML 会按以下位置查找：
 
 1. `.safetensors` 所在目录
 2. `--model-dir`
@@ -364,9 +357,9 @@ target/release/server \
 
 文件名匹配仍沿用 demo 兼容规则，例如 `model_gdcn_esmm.yaml`、`gdcn_esmm.yaml`、去掉 `discover_` 或 `_demo` 后的候选名。
 
-### 4. Manifest 权威加载
+### 4. Serving Manifest
 
-当使用 serving manifest 时，manifest 是唯一权威来源。服务会读取：
+manifest 是模型版本的权威契约。服务会读取：
 
 - `model_id`：HTTP 请求中的模型名
 - `model_version`：该模型版本
@@ -376,18 +369,31 @@ target/release/server \
 - `model_config_file`：该版本使用的模型结构配置
 - `weight_binding`：权重命名空间和 strict/extra tensor 校验策略
 
-所有相对路径都以 manifest 所在目录为基准解析。
+所有相对路径都以 manifest 所在目录为基准解析。加载前会校验：
 
-加载前会校验：
-
+- manifest schema version
 - feature config sha256
 - model config sha256
 - weights sha256（如果 manifest 提供）
-- manifest schema version
 - model type 是否匹配
-- safetensors key 是否缺失、shape 是否匹配，以及 extra tensor 是否允许
+- safetensors key 是否缺失、shape 是否匹配、extra tensor 是否允许
 
-### 5. 多版本注册
+`weight_binding` 的默认值与 Python 导出一致：
+
+```yaml
+weight_binding:
+  format: safetensors
+  schema: candle-varbuilder-v1
+  root_prefix: ""
+  tokenizer_prefix: tokenizer
+  unimixer_prefix: unimixer
+  strict: true
+  allow_extra_tensors: true
+```
+
+这些字段控制 Candle `VarBuilder` 的权重命名空间和校验策略。比如 `root_prefix` 非空时，服务会从该 prefix 下加载主模型权重；UniMixer 的主体前缀由 `unimixer_prefix` 控制。
+
+### 5. 多版本注册与选择
 
 同一个 `model_id` 可以加载多个 `model_version`。Registry 内部结构是：
 
@@ -405,14 +411,12 @@ model_id
 20260527_090000
 ```
 
-查询接口：
+查询接口返回已加载模型、默认版本、每个版本的模型类型和 manifest 路径：
 
 ```bash
 curl http://127.0.0.1:8080/models
 curl http://127.0.0.1:8080/models/model_gdcn_esmm
 ```
-
-### 6. 请求时版本选择
 
 `/predict` 和 `/predict/broadcast` 使用同一套版本解析逻辑：
 

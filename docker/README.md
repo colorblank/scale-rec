@@ -37,7 +37,7 @@ cargo build --release --bin server --features macos-metal
 ./docker/build.sh --backend cpu-mkl --platform linux/amd64 --load
 ```
 
-MKL 版本使用单独的 [docker/Dockerfile.mkl](/Users/brian/Documents/git/scale-rec/docker/Dockerfile.mkl:1)，默认会走 `cpu-mkl` 编译特征，避免和通用 CPU 版混在一起。
+MKL 版本使用单独的 `docker/Dockerfile.mkl`，默认会走 `cpu-mkl` 编译特征，避免和通用 CPU 版混在一起。
 
 构建 ARM64 版本：
 
@@ -51,14 +51,14 @@ MKL 版本使用单独的 [docker/Dockerfile.mkl](/Users/brian/Documents/git/sca
 
 容器默认通过环境变量启动服务：
 
-- `MODEL_DIR`：模型目录，默认 `/models`
-- `MODEL_PATH`：可选。显式模型路径，支持 serving manifest、目录或旧 `.safetensors`；多个路径用英文逗号分隔。设置后优先于 `MODEL_DIR`
-- `FEATURE_CONFIG`：可选。只在加载无 serving manifest 的旧 `.safetensors` 产物时作为 feature config fallback
+- `MODEL_DIR`：批量模型目录，默认 `/models`。未设置 `MODEL_PATH` 时，服务会扫描这里的 serving manifest
+- `MODEL_PATH`：显式模型路径，支持 serving manifest、目录或旧 `.safetensors`；多个路径用英文逗号分隔。设置后优先于 `MODEL_DIR`
+- `FEATURE_CONFIG`：可选，只在加载无 serving manifest 的旧 `.safetensors` 产物时作为 feature config fallback
 - `PORT`：监听端口，默认 `8080`
 - `WORKER_THREADS`：Tokio worker 线程数，可选
 - `BLOCKING_THREADS`：Tokio blocking 线程数，可选
 
-推荐把训练发布产物目录挂载到 `/models`，让服务自动扫描 `*.manifest.yaml`、`*_manifest.yaml` 或 `model_manifest.yaml`。manifest 会指定权重、模型配置、特征配置和 sha256，容器不需要额外挂载 `FEATURE_CONFIG`。
+推荐把训练发布产物目录挂载到 `/models`，让服务自动扫描 `*.manifest.yaml`、`*_manifest.yaml` 或 `model_manifest.yaml`。manifest 会指定权重、模型配置、特征配置、sha256 和 `weight_binding`，容器不需要额外挂载 `FEATURE_CONFIG`。
 
 示例：
 
@@ -90,7 +90,7 @@ docker run --rm \
   scale-rec-server:default-linux-amd64
 ```
 
-旧产物没有 manifest 时，可以显式提供 fallback feature config：
+旧产物没有 manifest 时，可以显式提供 `.safetensors` 和 fallback feature config：
 
 ```bash
 docker run --rm \

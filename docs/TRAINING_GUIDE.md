@@ -235,21 +235,81 @@ EMA weights exported to model.safetensors
 best AUC=0.7622
 ```
 
-## 推理导出
+## 保存与推理导出
 
-训练输出分为两类：
+训练侧由 `TrainingArtifactManager` 管理权重、checkpoint 和 manifest。它的保存逻辑分成 run 产物和 serving 发布产物两层。
 
-- 发布权重：`model.safetensors`，可直接由 Rust Candle 引擎加载
-- run 目录：保留 checkpoint、best/latest 别名、复制后的配置和 run manifest
+### Run 产物
 
-发布权重旁边会生成 serving manifest，例如 `model_gdcn_esmm.manifest.yaml`。Rust 服务以 serving manifest 为权威入口，manifest 记录：
+run 目录按 `artifact_root/model_name/run_version` 组织。以上面的快速开始为例，目录是：
 
-- `model_id`、`model_version`、`model_type`
-- `weights_file`、`feature_config_file`、`model_config_file`
-- 三类文件的 sha256 校验
-- `weight_binding`：safetensors 权重命名规则、prefix、strict 和 extra tensor 策略
+```text
+python/artifacts/demo/model_gdcn_esmm/20260526_120000/
+├── checkpoints/
+│   └── epoch-0001-step-000012.safetensors
+├── best.safetensors
+├── latest.safetensors
+└── run.manifest.yaml
+```
 
-同一 `model_id` 可以加载多个 `model_version`。服务默认版本按版本字符串取最大值，因此建议 `--run-version` 使用可排序时间戳，例如 `20260526_120000`。
+各文件含义：
+
+| 文件 | 说明 |
+|---|---|
+| `checkpoints/*.safetensors` | 每次 checkpoint 保存的真实权重文件，文件名包含 epoch 和 step |
+| `best.safetensors` | 当前最佳 checkpoint 的别名，由 `publish_best` 控制，默认启用 |
+| `latest.safetensors` | 最新 checkpoint 的别名，由 `publish_latest` 控制，默认启用 |
+| `run.manifest.yaml` | 训练过程记录，包含 checkpoint 历史、best/latest、发布路径和配置路径 |
+
+`keep_checkpoints` 默认保留 3 个历史 checkpoint，超过后从最旧记录开始删除。`run.manifest.yaml` 是训练记录，不会被 Rust 服务当作 serving manifest 加载。
+
+### 发布产物
+
+发布产物由 `--publish-path` 决定；没有显式传入时，默认是 `artifact_root/model_name.safetensors`。发布权重旁边会生成同 stem 的 serving manifest：
+
+```text
+python/artifacts/demo/
+├── model_gdcn_esmm.safetensors
+└── model_gdcn_esmm.manifest.yaml
+```
+
+训练结束时，如果存在 best checkpoint，发布权重默认复制 `best.safetensors`；否则导出当前模型参数。serving manifest 由 `python/src/train/app/manifest.py` 写入，记录：
+
+| 字段 | 说明 |
+|---|---|
+| `schema_version` | manifest schema，当前为 `1` |
+| `model_id` | 服务接口中的模型名，来自 `--model-name` 或自动推导 |
+| `model_version` | 服务注册版本，来自 `--run-version` 或自动 UTC 时间戳 |
+| `run_version` / `published_version` | 训练 run 版本和发布来源版本 |
+| `model_type` | 模型类型，必须和模型配置 YAML 的 `type` 一致 |
+| `weights_file` / `weights_sha256` | 发布权重路径和 sha256 |
+| `feature_config_file` / `feature_config_sha256` | 特征配置路径和 sha256 |
+| `model_config_file` / `model_config_sha256` | 模型配置路径和 sha256 |
+| `weight_binding` | safetensors 权重命名、prefix 和校验策略 |
+| `tasks` / `label_col_map` / `metrics` | 任务、标签映射和训练指标 |
+
+当前 CLI 没有暴露 `copy_configs` 参数，默认 `copy_configs=false`。因此：
+
+- 如果 feature/model config 和 manifest 在同一发布目录下，manifest 会写相对路径。
+- 如果配置文件在仓库 `examples/` 等外部位置，manifest 会写绝对路径。
+- 服务加载 manifest 时会按这些路径读取并校验 sha256；长期归档或跨机器部署时，要保证配置文件随发布产物一起可访问，或在代码配置中启用 `copy_configs` 让配置复制到 run 目录。
+
+默认 `weight_binding` 如下：
+
+```yaml
+weight_binding:
+  format: safetensors
+  schema: candle-varbuilder-v1
+  root_prefix: ""
+  tokenizer_prefix: tokenizer
+  unimixer_prefix: unimixer
+  strict: true
+  allow_extra_tensors: true
+```
+
+`root_prefix`、`tokenizer_prefix` 和 `unimixer_prefix` 对应 Rust Candle `VarBuilder::pp()` 的权重路径；`strict=true` 时缺少预期 tensor 会加载失败，`allow_extra_tensors=true` 时权重文件里多出的 tensor 会被忽略并记录 warning。
+
+### 服务加载
 
 ```bash
 target/release/server \
@@ -259,6 +319,8 @@ target/release/server \
   --blocking-threads 64
 ```
 
+`--model-dir` 会递归扫描最多 3 层目录，加载 `*.manifest.yaml`、`*_manifest.yaml` 和 `model_manifest.yaml`，并跳过 `run.manifest.yaml`。如果扫描到了 serving manifest，服务只按 manifest 加载，不再扫描松散 `.safetensors`。
+
 只加载单个模型版本时，直接指定 serving manifest：
 
 ```bash
@@ -267,7 +329,7 @@ target/release/server \
   --port 8080
 ```
 
-`--model-path` 可重复传入，也可以指向目录。只要传入了 `--model-path`，服务只加载显式路径，不再扫描整个 `--model-dir`。路径解析规则：
+`--model-path` 可重复传入，也可以指向目录。只要传入了 `--model-path`，服务只加载显式路径，不再扫描整个 `--model-dir`。
 
 | 路径类型 | 行为 |
 |---|---|
@@ -284,7 +346,9 @@ target/release/server \
   --port 8080
 ```
 
-manifest 加载时，所有相对路径都基于 manifest 所在目录解析；加载前会校验 feature config、model config、weights 的 sha256，以及 safetensors key/shape。相同 `model_id` 可以加载多个 `model_version`，默认版本按版本字符串取最大值。
+旧兼容模式下，服务会把 `.safetensors` 的文件 stem 作为模型名，版本固定为 `default`；模型配置 YAML 会在权重所在目录、`--model-dir` 和 `--feature-config` 所在目录中按候选文件名查找。
+
+manifest 加载时，所有相对路径都基于 manifest 所在目录解析；加载前会校验 feature config、model config、weights 的 sha256、model type，以及 safetensors key/shape。相同 `model_id` 可以加载多个 `model_version`，默认版本按版本字符串取最大值。因此建议 `--run-version` 使用可排序时间戳，例如 `20260526_120000`。
 
 查询模型和版本：
 
