@@ -1,13 +1,29 @@
 # 训练手册
 
+本文档面向模型训练和发布流程，按“快速跑通、配置说明、训练策略、保存发布、服务加载、压测”的顺序组织。HTTP 请求和响应格式已独立到 [HTTP API](API.md)。
+
+## 阅读顺序
+
+| 章节 | 解决的问题 |
+|---|---|
+| [快速开始](#快速开始) | 生成 demo 数据、训练 GDCN+ESMM / UniMixer、跑端到端验证 |
+| [数据格式](#数据格式) | discover TSV 和训练输入参数 |
+| [特征配置](#特征配置) | feature config 的 sources、operators、role |
+| [模型配置](#模型配置) | GDCN+ESMM 示例配置 |
+| [训练参数](#训练参数) / [训练技巧](#训练技巧) / [评估监控](#评估监控) | 训练超参、优化策略、日志与评估 |
+| [保存与推理导出](#保存与推理导出) | checkpoint、发布权重、serving manifest、加载规则 |
+| [HTTP 压测](#http-压测) | bench 使用方式和后端构建建议 |
+
 ## 快速开始
 
 ```bash
 # 1. 生成合成数据
-PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.generate_discover_data
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
+  python -m scale_rec_demo.generate_discover_data
 
 # 2. 训练
-PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.app.main discover \
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
+  python -m train.app.main discover \
   --data python/artifacts/demo/discover_train_data.txt \
   --feature-config examples/feature_config_discover.yaml \
   --model-config examples/model_gdcn_esmm.yaml \
@@ -18,7 +34,8 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.app.main discover \
   --run-version 20260526_120000
 
 # 2b. 可选：训练 UniMixer
-PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.app.main discover \
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
+  python -m train.app.main discover \
   --data python/artifacts/demo/discover_train_data.txt \
   --feature-config examples/feature_config_discover.yaml \
   --model-config examples/model_discover_unimixer.yaml \
@@ -29,7 +46,8 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.app.main discover \
   --run-version 20260526_120000
 
 # 3. 端到端验证
-PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.verify_discover_gdcn
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
+  python -m scale_rec_demo.verify_discover_gdcn
 ```
 
 ## 数据格式
@@ -350,25 +368,7 @@ target/release/server \
 
 manifest 加载时，所有相对路径都基于 manifest 所在目录解析；加载前会校验 feature config、model config、weights 的 sha256、model type，以及 safetensors key/shape。相同 `model_id` 可以加载多个 `model_version`，默认版本按版本字符串取最大值。因此建议 `--run-version` 使用可排序时间戳，例如 `20260526_120000`。
 
-查询模型和版本：
-
-```bash
-curl http://127.0.0.1:8080/models
-curl http://127.0.0.1:8080/models/model_gdcn_esmm
-```
-
-指定版本调用和 fallback：
-
-```bash
-curl -X POST http://127.0.0.1:8080/predict \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "model": "model_gdcn_esmm",
-    "version": "20260526_120000",
-    "fallback_version": "20260526_110000",
-    "features": [{"user_id": 42, "item_id": 500}]
-  }'
-```
+查询模型、指定版本调用和 fallback 的接口格式见 [HTTP API](API.md)。
 
 ## HTTP 压测
 

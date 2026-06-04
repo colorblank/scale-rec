@@ -2,6 +2,15 @@
 
 这里提供 Rust HTTP 服务的 Docker 打包入口。当前方案只覆盖 Linux 容器运行时；`macos-accelerate` 和 `macos-metal` 仍然是本机 macOS 构建，不走 Docker。
 
+## 文档结构
+
+| 章节 | 内容 |
+|---|---|
+| [支持矩阵](#支持矩阵) | 当前 Docker 镜像支持的运行平台和 Candle 后端 |
+| [构建](#构建) | buildx 构建命令和平台选择 |
+| [运行](#运行) | 容器环境变量、模型挂载和启动示例 |
+| [说明](#说明) | Dockerfile 分阶段构建和镜像边界 |
+
 ## 支持矩阵
 
 | 运行环境 | Candle 后端 | 说明 |
@@ -60,7 +69,7 @@ MKL 版本使用单独的 `docker/Dockerfile.mkl`，默认会走 `cpu-mkl` 编�
 
 推荐把训练发布产物目录挂载到 `/models`，让服务自动扫描 `*.manifest.yaml`、`*_manifest.yaml` 或 `model_manifest.yaml`。manifest 会指定权重、模型配置、特征配置、sha256 和 `weight_binding`，容器不需要额外挂载 `FEATURE_CONFIG`。
 
-示例：
+### 批量加载模型目录
 
 ```bash
 docker run --rm \
@@ -70,7 +79,7 @@ docker run --rm \
   scale-rec-server:default-linux-amd64
 ```
 
-只加载单个 manifest：
+### 只加载单个 manifest
 
 ```bash
 docker run --rm \
@@ -80,7 +89,7 @@ docker run --rm \
   scale-rec-server:default-linux-amd64
 ```
 
-加载多个显式路径：
+### 加载多个显式路径
 
 ```bash
 docker run --rm \
@@ -89,6 +98,8 @@ docker run --rm \
   -v "$PWD/models:/models:ro" \
   scale-rec-server:default-linux-amd64
 ```
+
+### 加载旧 safetensors 产物
 
 旧产物没有 manifest 时，可以显式提供 `.safetensors` 和 fallback feature config：
 
@@ -102,12 +113,16 @@ docker run --rm \
   scale-rec-server:default-linux-amd64
 ```
 
+### 查询验证
+
 查询已加载模型和版本：
 
 ```bash
 curl http://127.0.0.1:8080/models
 curl http://127.0.0.1:8080/models/model_gdcn_esmm
 ```
+
+完整请求和响应格式见 [HTTP API](../docs/API.md)。
 
 如果你想覆盖默认启动命令，可以直接给容器传入命令，`entrypoint.sh` 会原样执行：
 
