@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     routing::{get, post},
     Json, Router,
@@ -11,8 +11,8 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::engine::{InferenceEngine, InferenceError, InferenceErrorKind};
-use super::registry::ModelRegistry;
+use super::engine::{InferenceError, InferenceErrorKind};
+use super::registry::{ModelRegistry, ModelServingInfo, ResolvedModel};
 use super::tracing::RequestTimer;
 
 pub type AppState = Arc<ModelRegistry>;
@@ -23,12 +23,16 @@ pub type FeatureRow = HashMap<String, Value>;
 #[derive(Debug, Deserialize)]
 pub struct PredictRequest {
     pub model: String,
+    pub version: Option<String>,
+    pub fallback_version: Option<String>,
     pub features: Vec<FeatureRow>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct BroadcastRequest {
     pub model: String,
+    pub version: Option<String>,
+    pub fallback_version: Option<String>,
     pub user: FeatureRow,
     pub items: Vec<FeatureRow>,
 }
@@ -36,6 +40,7 @@ pub struct BroadcastRequest {
 #[derive(Debug, Serialize)]
 pub struct PredictResponse {
     pub model: String,
+    pub version: String,
     pub predictions: Vec<HashMap<String, f32>>,
 }
 
@@ -85,13 +90,14 @@ fn map_predict_error(err: InferenceError, model_id: String) -> ApiError {
 
 #[derive(Debug, Serialize)]
 pub struct ModelListResponse {
-    pub models: Vec<String>,
+    pub models: Vec<ModelServingInfo>,
 }
 
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/models", get(list_models))
+        .route("/models/{model}", get(get_model))
         .route("/predict", post(predict))
         .route("/predict/broadcast", post(predict_broadcast))
         .with_state(state)
@@ -100,12 +106,53 @@ pub fn router(state: AppState) -> Router {
 async fn health(State(reg): State<AppState>) -> Json<Value> {
     Json(serde_json::json!({
         "status": "ok",
-        "models": reg.list()
+        "models": reg.list_info()
     }))
 }
 
 async fn list_models(State(reg): State<AppState>) -> Json<ModelListResponse> {
-    Json(ModelListResponse { models: reg.list() })
+    Json(ModelListResponse {
+        models: reg.list_info(),
+    })
+}
+
+async fn get_model(
+    State(reg): State<AppState>,
+    Path(model): Path<String>,
+) -> Result<Json<ModelServingInfo>, ApiError> {
+    reg.model_info(&model).map(Json).ok_or_else(|| ApiError {
+        code: "REGISTRY_ERROR".to_string(),
+        message: format!("model '{}' not found", model),
+        request_id: None,
+        model_id: Some(model),
+        details: None,
+    })
+}
+
+fn resolve_model(
+    reg: &ModelRegistry,
+    model: &str,
+    version: Option<&str>,
+    fallback_version: Option<&str>,
+) -> Result<ResolvedModel, ApiError> {
+    reg.resolve(model, version, fallback_version)
+        .ok_or_else(|| ApiError {
+            code: "REGISTRY_ERROR".to_string(),
+            message: match (version, fallback_version) {
+                (Some(v), Some(fb)) => format!(
+                    "model '{}' version '{}' not found and fallback version '{}' is unavailable",
+                    model, v, fb
+                ),
+                (Some(v), None) => format!("model '{}' version '{}' not found", model, v),
+                (None, _) => format!("model '{}' not found", model),
+            },
+            request_id: None,
+            model_id: Some(model.to_string()),
+            details: Some(serde_json::json!({
+                "requested_version": version,
+                "fallback_version": fallback_version,
+            })),
+        })
 }
 
 async fn predict(
@@ -114,18 +161,20 @@ async fn predict(
 ) -> Result<Json<PredictResponse>, ApiError> {
     let mut timer = RequestTimer::new();
     let model = req.model;
+    let requested_version = req.version;
+    let fallback_version = req.fallback_version;
     let features = req.features;
     let batch_size = features.len();
 
-    let engine: Arc<InferenceEngine> = reg.get(&model).ok_or_else(|| ApiError {
-        code: "REGISTRY_ERROR".to_string(),
-        message: format!("model '{}' not found", model),
-        request_id: None,
-        model_id: Some(model.clone()),
-        details: None,
-    })?;
+    let resolved = resolve_model(
+        &reg,
+        &model,
+        requested_version.as_deref(),
+        fallback_version.as_deref(),
+    )?;
 
     let model_for_error = model.clone();
+    let engine = resolved.engine.clone();
     let (result, metrics) = tokio::task::spawn_blocking(move || engine.predict(&features))
         .await
         .map_err(|e| ApiError {
@@ -142,6 +191,7 @@ async fn predict(
 
     Ok(Json(PredictResponse {
         model,
+        version: resolved.version,
         predictions: result,
     }))
 }
@@ -152,19 +202,21 @@ async fn predict_broadcast(
 ) -> Result<Json<PredictResponse>, ApiError> {
     let mut timer = RequestTimer::new();
     let model = req.model;
+    let requested_version = req.version;
+    let fallback_version = req.fallback_version;
     let user = req.user;
     let items = req.items;
     let batch_size = items.len();
 
-    let engine: Arc<InferenceEngine> = reg.get(&model).ok_or_else(|| ApiError {
-        code: "REGISTRY_ERROR".to_string(),
-        message: format!("model '{}' not found", model),
-        request_id: None,
-        model_id: Some(model.clone()),
-        details: None,
-    })?;
+    let resolved = resolve_model(
+        &reg,
+        &model,
+        requested_version.as_deref(),
+        fallback_version.as_deref(),
+    )?;
 
     let model_for_error = model.clone();
+    let engine = resolved.engine.clone();
     let (result, metrics) =
         tokio::task::spawn_blocking(move || engine.predict_broadcast(&user, &items))
             .await
@@ -182,6 +234,7 @@ async fn predict_broadcast(
 
     Ok(Json(PredictResponse {
         model,
+        version: resolved.version,
         predictions: result,
     }))
 }

@@ -40,12 +40,26 @@ pub struct ModelConfig {
     pub params: serde_yaml::Value,
 }
 
+#[derive(Debug, Clone)]
+pub struct ModelBuildOptions {
+    pub unimixer_prefix: String,
+}
+
+impl Default for ModelBuildOptions {
+    fn default() -> Self {
+        Self {
+            unimixer_prefix: "unimixer".into(),
+        }
+    }
+}
+
 /// Build function signature: (vb, features, tokenizer, params) -> Box<dyn Model>
 type BuildFn = fn(
     VarBuilder,
     &[FeatureSpec],
     Option<FeatureTokenizer>,
     &serde_yaml::Value,
+    &ModelBuildOptions,
 ) -> Result<Box<dyn Model>>;
 
 static REGISTRY: LazyLock<HashMap<&'static str, BuildFn>> = LazyLock::new(|| {
@@ -66,8 +80,18 @@ impl ModelConfig {
         features: &[FeatureSpec],
         tokenizer: Option<FeatureTokenizer>,
     ) -> Result<Box<dyn Model>> {
+        self.build_with_options(vb, features, tokenizer, &ModelBuildOptions::default())
+    }
+
+    pub fn build_with_options(
+        &self,
+        vb: VarBuilder,
+        features: &[FeatureSpec],
+        tokenizer: Option<FeatureTokenizer>,
+        options: &ModelBuildOptions,
+    ) -> Result<Box<dyn Model>> {
         match REGISTRY.get(self.model_type.as_str()) {
-            Some(build_fn) => build_fn(vb, features, tokenizer, &self.params),
+            Some(build_fn) => build_fn(vb, features, tokenizer, &self.params, options),
             None => candle_core::bail!(
                 "Unknown model type: {}. Registered: {:?}",
                 self.model_type,
@@ -88,6 +112,7 @@ fn build_lr(
     features: &[FeatureSpec],
     _tokenizer: Option<FeatureTokenizer>,
     _params: &serde_yaml::Value,
+    _options: &ModelBuildOptions,
 ) -> Result<Box<dyn Model>> {
     Ok(Box::new(lr::LogisticRegression::new(vb, features)?))
 }
@@ -97,6 +122,7 @@ fn build_deepfm(
     features: &[FeatureSpec],
     _tokenizer: Option<FeatureTokenizer>,
     params: &serde_yaml::Value,
+    _options: &ModelBuildOptions,
 ) -> Result<Box<dyn Model>> {
     let fm_k = yaml_usize(params, "fm_k", 16);
     let deep_hidden_dims: Vec<usize> = yaml_usize_seq(params, "deep_hidden_dims");
@@ -113,6 +139,7 @@ fn build_mmoe(
     features: &[FeatureSpec],
     _tokenizer: Option<FeatureTokenizer>,
     params: &serde_yaml::Value,
+    _options: &ModelBuildOptions,
 ) -> Result<Box<dyn Model>> {
     let shared_bottom_dims: Vec<usize> = yaml_usize_seq(params, "shared_bottom_dims");
     let num_experts = yaml_usize(params, "num_experts", 4);
@@ -139,6 +166,7 @@ fn build_esmm(
     features: &[FeatureSpec],
     _tokenizer: Option<FeatureTokenizer>,
     params: &serde_yaml::Value,
+    _options: &ModelBuildOptions,
 ) -> Result<Box<dyn Model>> {
     let shared_bottom_dims: Vec<usize> = yaml_usize_seq(params, "shared_bottom_dims");
     let click_hidden_dims: Vec<usize> = yaml_usize_seq(params, "click_hidden_dims");
@@ -174,6 +202,7 @@ fn build_gdcn_esmm(
     features: &[FeatureSpec],
     _tokenizer: Option<FeatureTokenizer>,
     params: &serde_yaml::Value,
+    _options: &ModelBuildOptions,
 ) -> Result<Box<dyn Model>> {
     let cross_layers = yaml_usize(params, "cross_layers", 3);
     let deep_hidden_dims: Vec<usize> = yaml_usize_seq(params, "deep_hidden_dims");
@@ -215,6 +244,7 @@ fn build_unimixer(
     _features: &[FeatureSpec],
     tokenizer: Option<FeatureTokenizer>,
     params: &serde_yaml::Value,
+    options: &ModelBuildOptions,
 ) -> Result<Box<dyn Model>> {
     let tokenizer = tokenizer.ok_or_else(|| {
         candle_core::Error::Msg("UniMixer requires external FeatureTokenizer".into())
@@ -229,6 +259,11 @@ fn build_unimixer(
     let rank = yaml_usize(params, "rank", 16);
     let use_siamese = yaml_bool(params, "use_siamese");
     let task_config = parse_multi_task_config(params);
+    let unimixer_vb = if options.unimixer_prefix.is_empty() {
+        vb
+    } else {
+        vb.pp(&options.unimixer_prefix)
+    };
     Ok(Box::new(unimixer::model::UniMixerModel::new(
         tokenizer,
         token_dim,
@@ -241,7 +276,7 @@ fn build_unimixer(
         rank,
         &task_config,
         use_siamese,
-        vb.pp("unimixer"),
+        unimixer_vb,
     )?))
 }
 

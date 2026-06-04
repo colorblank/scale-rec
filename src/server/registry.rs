@@ -11,12 +11,12 @@ use serde::Serialize;
 use tracing::{info, warn};
 
 use super::engine::InferenceEngine;
-use super::manifest::{find_manifest, ModelManifest};
+use super::manifest::{find_manifest, ModelManifest, WeightBinding};
 use crate::feats::config::FlowConfig;
 use crate::feats::dag::FeatureDag;
 use crate::layers::embedding::FeatureSpec;
 use crate::models::unimixer::tokenizer::FeatureTokenizer;
-use crate::models::ModelConfig;
+use crate::models::{ModelBuildOptions, ModelConfig};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelInfo {
@@ -26,10 +26,45 @@ pub struct ModelInfo {
     pub manifest_path: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ModelVersionInfo {
+    pub version: String,
+    pub loaded_at: String,
+    pub model_type: String,
+    pub manifest_path: Option<String>,
+    pub is_default: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModelServingInfo {
+    pub name: String,
+    pub default_version: Option<String>,
+    pub versions: Vec<ModelVersionInfo>,
+}
+
+#[derive(Clone)]
+struct LoadedModelVersion {
+    engine: Arc<InferenceEngine>,
+    info: ModelVersionInfo,
+}
+
+#[derive(Default)]
+struct ModelEntry {
+    default_version: Option<String>,
+    versions: HashMap<String, LoadedModelVersion>,
+}
+
+#[derive(Clone)]
+pub struct ResolvedModel {
+    pub engine: Arc<InferenceEngine>,
+    pub model_name: String,
+    pub version: String,
+}
+
 /// 线程安全的多模型注册表。
 pub struct ModelRegistry {
-    engines: RwLock<HashMap<String, Arc<InferenceEngine>>>,
-    feature_config_path: PathBuf,
+    models: RwLock<HashMap<String, ModelEntry>>,
+    feature_config_path: Option<PathBuf>,
     model_dir: PathBuf,
 }
 
@@ -42,8 +77,19 @@ impl ModelRegistry {
             ));
         }
         Ok(Self {
-            engines: RwLock::new(HashMap::new()),
-            feature_config_path: feature_config_path.to_path_buf(),
+            models: RwLock::new(HashMap::new()),
+            feature_config_path: Some(feature_config_path.to_path_buf()),
+            model_dir: model_dir.to_path_buf(),
+        })
+    }
+
+    pub fn from_model_dir(model_dir: &Path) -> Result<Self, String> {
+        if !model_dir.exists() {
+            return Err(format!("model dir not found: {}", model_dir.display()));
+        }
+        Ok(Self {
+            models: RwLock::new(HashMap::new()),
+            feature_config_path: None,
             model_dir: model_dir.to_path_buf(),
         })
     }
@@ -51,6 +97,52 @@ impl ModelRegistry {
     /// 加载或重载指定模型。
     pub fn load_model(&self, model_name: &str) -> Result<ModelInfo, String> {
         let manifest_path = find_manifest(&self.model_dir, model_name);
+        self.load_resolved_model(model_name, manifest_path, None, None)
+    }
+
+    pub fn load_manifest(&self, manifest_path: &Path) -> Result<ModelInfo, String> {
+        let manifest = ModelManifest::from_path(manifest_path)?;
+        let model_name = manifest.model_id.clone();
+        self.load_resolved_model(&model_name, Some(manifest_path.to_path_buf()), None, None)
+    }
+
+    pub fn load_safetensors(&self, safetensors_path: &Path) -> Result<ModelInfo, String> {
+        if !safetensors_path.exists() {
+            return Err(format!(
+                "model file not found: {}",
+                safetensors_path.display()
+            ));
+        }
+        if !safetensors_path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext == "safetensors")
+            .unwrap_or(false)
+        {
+            return Err(format!(
+                "not a safetensors file: {}",
+                safetensors_path.display()
+            ));
+        }
+        let model_name = safetensors_path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .ok_or_else(|| format!("invalid model file name: {}", safetensors_path.display()))?;
+        self.load_resolved_model(
+            model_name,
+            None,
+            Some(safetensors_path.to_path_buf()),
+            safetensors_path.parent().map(Path::to_path_buf),
+        )
+    }
+
+    fn load_resolved_model(
+        &self,
+        model_name: &str,
+        manifest_path: Option<PathBuf>,
+        safetensors_path_override: Option<PathBuf>,
+        config_search_dir: Option<PathBuf>,
+    ) -> Result<ModelInfo, String> {
         let manifest = manifest_path
             .as_deref()
             .map(ModelManifest::from_path)
@@ -58,7 +150,8 @@ impl ModelRegistry {
 
         let safetensors_path = match (&manifest, &manifest_path) {
             (Some(m), Some(p)) => m.resolve_from(p, &m.weights_file),
-            _ => self.model_dir.join(format!("{}.safetensors", model_name)),
+            _ => safetensors_path_override
+                .unwrap_or_else(|| self.model_dir.join(format!("{}.safetensors", model_name))),
         };
         if !safetensors_path.exists() {
             return Err(format!(
@@ -69,10 +162,21 @@ impl ModelRegistry {
 
         let model_config_path = match (&manifest, &manifest_path) {
             (Some(m), Some(p)) => m.resolve_from(p, &m.model_config_file),
-            _ => self.find_model_config(model_name)?,
+            _ => self.find_model_config_in(model_name, config_search_dir.as_deref())?,
+        };
+        let feature_config_path = match (&manifest, &manifest_path) {
+            (Some(m), Some(p)) => m.resolve_from(p, &m.feature_config_file),
+            _ => self.feature_config_path.clone().ok_or_else(|| {
+                "feature config is required when loading without manifest".to_string()
+            })?,
         };
         if let Some(m) = &manifest {
-            self.validate_manifest_files(m, &model_config_path, &safetensors_path)?;
+            self.validate_manifest_files(
+                m,
+                &feature_config_path,
+                &model_config_path,
+                &safetensors_path,
+            )?;
         }
         let model_yaml = std::fs::read_to_string(&model_config_path)
             .map_err(|e| format!("read model config: {}", e))?;
@@ -87,8 +191,13 @@ impl ModelRegistry {
                 ));
             }
         }
+        let weight_binding = manifest
+            .as_ref()
+            .map(|m| m.weight_binding.clone())
+            .unwrap_or_default();
+        validate_weight_binding(&weight_binding)?;
 
-        let yaml = std::fs::read_to_string(&self.feature_config_path)
+        let yaml = std::fs::read_to_string(&feature_config_path)
             .map_err(|e| format!("read feature config: {}", e))?;
         let flow_config = FlowConfig::from_yaml(&yaml).map_err(|e| format!("parse: {}", e))?;
         let dag =
@@ -124,7 +233,8 @@ impl ModelRegistry {
             }
         };
         let mut varmap = VarMap::new();
-        let vb = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+        let base_vb = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+        let vb = scoped_vb(base_vb, &weight_binding.root_prefix);
 
         let tokenizer: Option<FeatureTokenizer> = if model_type == "unimixer" {
             let td = model_config
@@ -138,17 +248,25 @@ impl ModelRegistry {
                 .and_then(|v| v.as_u64())
                 .unwrap_or(8) as usize;
             Some(
-                FeatureTokenizer::new(vb.pp("tokenizer"), &embed_features, td, nt)
-                    .map_err(|e| format!("tokenizer: {}", e))?,
+                FeatureTokenizer::new(
+                    scoped_vb(vb.clone(), &weight_binding.tokenizer_prefix),
+                    &embed_features,
+                    td,
+                    nt,
+                )
+                .map_err(|e| format!("tokenizer: {}", e))?,
             )
         } else {
             None
         };
 
+        let build_options = ModelBuildOptions {
+            unimixer_prefix: weight_binding.unimixer_prefix.clone(),
+        };
         let model = model_config
-            .build(vb, &embed_features, tokenizer)
+            .build_with_options(vb, &embed_features, tokenizer, &build_options)
             .map_err(|e| format!("build: {}", e))?;
-        validate_safetensors_keys(&varmap, &safetensors_path)?;
+        validate_safetensors_keys(&varmap, &safetensors_path, &weight_binding)?;
         varmap
             .load(&safetensors_path)
             .map_err(|e| format!("load weights: {}", e))?;
@@ -156,22 +274,52 @@ impl ModelRegistry {
             .warmup()
             .map_err(|e| format!("warm up model caches: {}", e))?;
 
-        let engine = Arc::new(InferenceEngine::new(dag, model, embed_features, device));
-
-        let mut engines = self.engines.write().unwrap();
-        engines.insert(model_name.to_string(), engine);
-        drop(engines);
-
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        info!("[registry] loaded model '{}'", model_name);
+        let loaded_at = ts.to_string();
+        let version = manifest
+            .as_ref()
+            .map(|m| m.model_version.clone())
+            .unwrap_or_else(|| "default".to_string());
+        let engine = Arc::new(InferenceEngine::new(dag, model, embed_features, device));
+        let info = ModelVersionInfo {
+            version: version.clone(),
+            loaded_at: loaded_at.clone(),
+            model_type: model_type.clone(),
+            manifest_path: manifest_path.as_ref().map(|p| p.display().to_string()),
+            is_default: false,
+        };
+
+        let mut models = self.models.write().unwrap();
+        let entry = models.entry(model_name.to_string()).or_default();
+        if entry
+            .default_version
+            .as_ref()
+            .map(|current| version > *current)
+            .unwrap_or(true)
+        {
+            entry.default_version = Some(version.clone());
+        }
+        entry.versions.insert(
+            version.clone(),
+            LoadedModelVersion {
+                engine,
+                info: info.clone(),
+            },
+        );
+        drop(models);
+
+        info!(
+            "[registry] loaded model '{}' version '{}'",
+            model_name, version
+        );
 
         Ok(ModelInfo {
             name: model_name.to_string(),
-            loaded_at: ts.to_string(),
-            model_version: manifest.as_ref().map(|m| m.model_version.clone()),
+            loaded_at,
+            model_version: Some(version),
             manifest_path: manifest_path.map(|p| p.display().to_string()),
         })
     }
@@ -179,10 +327,11 @@ impl ModelRegistry {
     fn validate_manifest_files(
         &self,
         manifest: &ModelManifest,
+        feature_config_path: &Path,
         model_config_path: &Path,
         safetensors_path: &Path,
     ) -> Result<(), String> {
-        let feature_sha = sha256_file(&self.feature_config_path)?;
+        let feature_sha = sha256_file(feature_config_path)?;
         if feature_sha != manifest.feature_config_sha256 {
             return Err(format!(
                 "feature config sha256 mismatch: runtime={} manifest={}",
@@ -214,14 +363,23 @@ impl ModelRegistry {
         Ok(())
     }
 
-    fn find_model_config(&self, model_name: &str) -> Result<PathBuf, String> {
+    fn find_model_config_in(
+        &self,
+        model_name: &str,
+        extra_parent: Option<&Path>,
+    ) -> Result<PathBuf, String> {
         // Look in model_dir first, then alongside feature_config.
         // Canonical demo/example configs now live under examples/.
-        let feature_parent = self.feature_config_path.parent();
-        let parent_candidates: Vec<&Path> = vec![
-            self.model_dir.as_path(),
-            feature_parent.unwrap_or_else(|| Path::new(".")),
-        ];
+        let feature_parent = self
+            .feature_config_path
+            .as_ref()
+            .and_then(|path| path.parent());
+        let mut parent_candidates: Vec<&Path> = Vec::new();
+        if let Some(parent) = extra_parent {
+            parent_candidates.push(parent);
+        }
+        parent_candidates.push(self.model_dir.as_path());
+        parent_candidates.push(feature_parent.unwrap_or_else(|| Path::new(".")));
         let model_key = model_name.strip_prefix("model_").unwrap_or(model_name);
         let config_key = model_key.strip_prefix("discover_").unwrap_or(model_key);
         let demo_key = model_key.strip_suffix("_demo").unwrap_or(model_key);
@@ -247,11 +405,74 @@ impl ModelRegistry {
     }
 
     pub fn get(&self, name: &str) -> Option<Arc<InferenceEngine>> {
-        self.engines.read().unwrap().get(name).cloned()
+        self.resolve(name, None, None)
+            .map(|resolved| resolved.engine)
+    }
+
+    pub fn resolve(
+        &self,
+        name: &str,
+        version: Option<&str>,
+        fallback_version: Option<&str>,
+    ) -> Option<ResolvedModel> {
+        let models = self.models.read().unwrap();
+        let entry = models.get(name)?;
+        let selected_version = match version {
+            Some(v) if entry.versions.contains_key(v) => v.to_string(),
+            Some(_) => fallback_version
+                .filter(|v| entry.versions.contains_key(*v))
+                .map(str::to_string)?,
+            None => entry.default_version.clone()?,
+        };
+        let loaded = entry.versions.get(&selected_version)?;
+        Some(ResolvedModel {
+            engine: loaded.engine.clone(),
+            model_name: name.to_string(),
+            version: selected_version,
+        })
     }
 
     pub fn list(&self) -> Vec<String> {
-        self.engines.read().unwrap().keys().cloned().collect()
+        let mut names: Vec<String> = self.models.read().unwrap().keys().cloned().collect();
+        names.sort();
+        names
+    }
+
+    pub fn list_info(&self) -> Vec<ModelServingInfo> {
+        let models = self.models.read().unwrap();
+        let mut result: Vec<ModelServingInfo> = models
+            .iter()
+            .map(|(name, entry)| self.entry_info(name, entry))
+            .collect();
+        result.sort_by(|a, b| a.name.cmp(&b.name));
+        result
+    }
+
+    pub fn model_info(&self, name: &str) -> Option<ModelServingInfo> {
+        let models = self.models.read().unwrap();
+        models.get(name).map(|entry| self.entry_info(name, entry))
+    }
+
+    fn entry_info(&self, name: &str, entry: &ModelEntry) -> ModelServingInfo {
+        let mut versions: Vec<ModelVersionInfo> = entry
+            .versions
+            .iter()
+            .map(|(version, loaded)| {
+                let mut info = loaded.info.clone();
+                info.is_default = entry
+                    .default_version
+                    .as_ref()
+                    .map(|default| default == version)
+                    .unwrap_or(false);
+                info
+            })
+            .collect();
+        versions.sort_by(|a, b| a.version.cmp(&b.version));
+        ModelServingInfo {
+            name: name.to_string(),
+            default_version: entry.default_version.clone(),
+            versions,
+        }
     }
 }
 
@@ -355,7 +576,29 @@ fn sha256_bytes(input: &[u8]) -> [u8; 32] {
     out
 }
 
-fn validate_safetensors_keys(varmap: &VarMap, path: &Path) -> Result<(), String> {
+fn scoped_vb<'a>(vb: VarBuilder<'a>, prefix: &str) -> VarBuilder<'a> {
+    if prefix.is_empty() {
+        vb
+    } else {
+        vb.pp(prefix)
+    }
+}
+
+fn validate_weight_binding(binding: &WeightBinding) -> Result<(), String> {
+    if binding.format != "safetensors" {
+        return Err(format!("unsupported weight format '{}'", binding.format));
+    }
+    if binding.schema != "candle-varbuilder-v1" {
+        return Err(format!("unsupported weight schema '{}'", binding.schema));
+    }
+    Ok(())
+}
+
+fn validate_safetensors_keys(
+    varmap: &VarMap,
+    path: &Path,
+    binding: &WeightBinding,
+) -> Result<(), String> {
     let expected: HashMap<String, Vec<usize>> = varmap
         .data()
         .lock()
@@ -375,11 +618,19 @@ fn validate_safetensors_keys(varmap: &VarMap, path: &Path) -> Result<(), String>
     let expected_names: HashSet<&String> = expected.keys().collect();
     let missing: Vec<&String> = expected_names.difference(&actual_names).copied().collect();
     if !missing.is_empty() {
-        return Err(format!("missing safetensors keys: {:?}", missing));
+        if binding.strict {
+            return Err(format!("missing safetensors keys: {:?}", missing));
+        }
+        warn!(
+            "missing safetensors keys left at initializer values: {:?}",
+            missing
+        );
     }
 
     for (name, expected_shape) in &expected {
-        let actual_shape = actual.get(name).unwrap();
+        let Some(actual_shape) = actual.get(name) else {
+            continue;
+        };
         if actual_shape != expected_shape {
             return Err(format!(
                 "safetensors shape mismatch for '{}': expected {:?}, got {:?}",
@@ -390,6 +641,9 @@ fn validate_safetensors_keys(varmap: &VarMap, path: &Path) -> Result<(), String>
 
     let extra: Vec<&String> = actual_names.difference(&expected_names).copied().collect();
     if !extra.is_empty() {
+        if !binding.allow_extra_tensors {
+            return Err(format!("extra safetensors keys: {:?}", extra));
+        }
         warn!("extra safetensors keys ignored: {:?}", extra);
     }
     Ok(())
@@ -423,8 +677,8 @@ mod tests {
 
     fn empty_registry(feature_config_path: PathBuf, model_dir: PathBuf) -> ModelRegistry {
         ModelRegistry {
-            engines: RwLock::new(HashMap::new()),
-            feature_config_path,
+            models: RwLock::new(HashMap::new()),
+            feature_config_path: Some(feature_config_path),
             model_dir,
         }
     }
@@ -453,13 +707,13 @@ mod tests {
         let registry = empty_registry(feature_config, artifact_dir);
         assert_eq!(
             registry
-                .find_model_config("model_discover_gdcn_esmm")
+                .find_model_config_in("model_discover_gdcn_esmm", None)
                 .unwrap(),
             discover_gdcn_esmm
         );
         assert_eq!(
             registry
-                .find_model_config("model_discover_unimixer")
+                .find_model_config_in("model_discover_unimixer", None)
                 .unwrap(),
             discover_unimixer
         );
@@ -493,6 +747,7 @@ mod tests {
             code_commit: None,
             weights_file: "model.safetensors".into(),
             weights_sha256: Some(hex(sha256_bytes(b"different"))),
+            weight_binding: WeightBinding::default(),
             feature_config_file: "feature.yaml".into(),
             feature_config_sha256: hex(sha256_bytes(b"feature")),
             model_config_file: "model.yaml".into(),
@@ -503,9 +758,189 @@ mod tests {
         };
 
         let err = registry
-            .validate_manifest_files(&manifest, &model_config, &weights)
+            .validate_manifest_files(&manifest, &feature_config, &model_config, &weights)
             .unwrap_err();
         assert!(err.contains("weights sha256 mismatch"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn loads_model_from_manifest_feature_config_without_global_feature_config() {
+        let root = std::env::temp_dir().join(format!(
+            "scale-rec-manifest-only-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let feature_config = root.join("feature.yaml");
+        let model_config = root.join("model.yaml");
+        let weights = root.join("ranker.safetensors");
+        let manifest_path = root.join("ranker.manifest.yaml");
+
+        let feature_yaml = "version: '1.0.0'\nsources:\n  - name: user_id\n    dtype: int\n    default_val: '0'\noperators:\n  - name: user_id_hash\n    op_type: FeatureHash\n    inputs: [user_id]\n    outputs: [user_id_idx]\n    params: {vocab_size: 100, num_hashes: 1}\n    embed: {vocab_size: 100, embed_dim: 8}\n";
+        let model_yaml = "type: lr\n";
+        fs::write(&feature_config, feature_yaml).unwrap();
+        fs::write(&model_config, model_yaml).unwrap();
+
+        let device = Device::Cpu;
+        let mut tensors = HashMap::new();
+        tensors.insert(
+            "embeddings.emb_user_id_idx.weight".to_string(),
+            Tensor::zeros((100, 8), DType::F32, &device).unwrap(),
+        );
+        tensors.insert(
+            "mlp.output.weight".to_string(),
+            Tensor::zeros((1, 8), DType::F32, &device).unwrap(),
+        );
+        tensors.insert(
+            "mlp.output.bias".to_string(),
+            Tensor::zeros((1,), DType::F32, &device).unwrap(),
+        );
+        candle_core::safetensors::save(&tensors, &weights).unwrap();
+
+        let manifest = format!(
+            "schema_version: 1\nmodel_id: ranker\nmodel_version: v1\nmodel_type: lr\ncode_commit:\nweights_file: ranker.safetensors\nweights_sha256: {}\nfeature_config_file: feature.yaml\nfeature_config_sha256: {}\nmodel_config_file: model.yaml\nmodel_config_sha256: {}\n",
+            sha256_file(&weights).unwrap(),
+            sha256_file(&feature_config).unwrap(),
+            sha256_file(&model_config).unwrap(),
+        );
+        fs::write(&manifest_path, manifest).unwrap();
+
+        let registry = ModelRegistry::from_model_dir(&root).unwrap();
+        let info = registry.load_model("ranker").unwrap();
+
+        assert_eq!(info.name, "ranker");
+        assert!(registry.get("ranker").is_some());
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    fn write_lr_manifest_artifact(root: &Path, model_id: &str, version: &str) -> PathBuf {
+        let version_dir = root.join(model_id).join(version);
+        fs::create_dir_all(&version_dir).unwrap();
+        let feature_config = version_dir.join("feature.yaml");
+        let model_config = version_dir.join("model.yaml");
+        let weights = version_dir.join("model.safetensors");
+        let manifest_path = version_dir.join("model_manifest.yaml");
+
+        let feature_yaml = "version: '1.0.0'\nsources:\n  - name: user_id\n    dtype: int\n    default_val: '0'\noperators:\n  - name: user_id_hash\n    op_type: FeatureHash\n    inputs: [user_id]\n    outputs: [user_id_idx]\n    params: {vocab_size: 100, num_hashes: 1}\n    embed: {vocab_size: 100, embed_dim: 8}\n";
+        fs::write(&feature_config, feature_yaml).unwrap();
+        fs::write(&model_config, "type: lr\n").unwrap();
+
+        let device = Device::Cpu;
+        let mut tensors = HashMap::new();
+        tensors.insert(
+            "embeddings.emb_user_id_idx.weight".to_string(),
+            Tensor::zeros((100, 8), DType::F32, &device).unwrap(),
+        );
+        tensors.insert(
+            "mlp.output.weight".to_string(),
+            Tensor::zeros((1, 8), DType::F32, &device).unwrap(),
+        );
+        tensors.insert(
+            "mlp.output.bias".to_string(),
+            Tensor::zeros((1,), DType::F32, &device).unwrap(),
+        );
+        candle_core::safetensors::save(&tensors, &weights).unwrap();
+
+        let manifest = format!(
+            "schema_version: 1\nmodel_id: {}\nmodel_version: {}\nmodel_type: lr\ncode_commit:\nweights_file: model.safetensors\nweights_sha256: {}\nfeature_config_file: feature.yaml\nfeature_config_sha256: {}\nmodel_config_file: model.yaml\nmodel_config_sha256: {}\n",
+            model_id,
+            version,
+            sha256_file(&weights).unwrap(),
+            sha256_file(&feature_config).unwrap(),
+            sha256_file(&model_config).unwrap(),
+        );
+        fs::write(&manifest_path, manifest).unwrap();
+        manifest_path
+    }
+
+    #[test]
+    fn supports_multiple_versions_default_and_fallback_resolution() {
+        let root = std::env::temp_dir().join(format!(
+            "scale-rec-multi-version-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let v1_manifest = write_lr_manifest_artifact(&root, "ranker", "20260604_010000");
+        let v2_manifest = write_lr_manifest_artifact(&root, "ranker", "20260604_020000");
+
+        let registry = ModelRegistry::from_model_dir(&root).unwrap();
+        registry.load_manifest(&v1_manifest).unwrap();
+        registry.load_manifest(&v2_manifest).unwrap();
+
+        let default = registry.resolve("ranker", None, None).unwrap();
+        assert_eq!(default.version, "20260604_020000");
+
+        let explicit = registry
+            .resolve("ranker", Some("20260604_010000"), None)
+            .unwrap();
+        assert_eq!(explicit.version, "20260604_010000");
+
+        let fallback = registry
+            .resolve("ranker", Some("missing"), Some("20260604_010000"))
+            .unwrap();
+        assert_eq!(fallback.version, "20260604_010000");
+        assert!(registry.resolve("ranker", Some("missing"), None).is_none());
+
+        let info = registry.model_info("ranker").unwrap();
+        assert_eq!(info.name, "ranker");
+        assert_eq!(info.default_version.as_deref(), Some("20260604_020000"));
+        assert_eq!(info.versions.len(), 2);
+        assert!(info
+            .versions
+            .iter()
+            .any(|v| v.version == "20260604_020000" && v.is_default));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn loads_loose_safetensors_from_explicit_path() {
+        let root = std::env::temp_dir().join(format!(
+            "scale-rec-explicit-safetensors-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let feature_config = root.join("feature.yaml");
+        let model_config = root.join("model_ranker.yaml");
+        let weights = root.join("ranker.safetensors");
+
+        let feature_yaml = "version: '1.0.0'\nsources:\n  - name: user_id\n    dtype: int\n    default_val: '0'\noperators:\n  - name: user_id_hash\n    op_type: FeatureHash\n    inputs: [user_id]\n    outputs: [user_id_idx]\n    params: {vocab_size: 100, num_hashes: 1}\n    embed: {vocab_size: 100, embed_dim: 8}\n";
+        fs::write(&feature_config, feature_yaml).unwrap();
+        fs::write(&model_config, "type: lr\n").unwrap();
+
+        let device = Device::Cpu;
+        let mut tensors = HashMap::new();
+        tensors.insert(
+            "embeddings.emb_user_id_idx.weight".to_string(),
+            Tensor::zeros((100, 8), DType::F32, &device).unwrap(),
+        );
+        tensors.insert(
+            "mlp.output.weight".to_string(),
+            Tensor::zeros((1, 8), DType::F32, &device).unwrap(),
+        );
+        tensors.insert(
+            "mlp.output.bias".to_string(),
+            Tensor::zeros((1,), DType::F32, &device).unwrap(),
+        );
+        candle_core::safetensors::save(&tensors, &weights).unwrap();
+
+        let registry = ModelRegistry::new(&feature_config, &root).unwrap();
+        let info = registry.load_safetensors(&weights).unwrap();
+
+        assert_eq!(info.name, "ranker");
+        assert_eq!(info.model_version.as_deref(), Some("default"));
+        assert!(registry.get("ranker").is_some());
 
         fs::remove_dir_all(root).unwrap();
     }
