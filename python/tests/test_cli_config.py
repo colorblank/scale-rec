@@ -3,10 +3,16 @@ from __future__ import annotations
 import argparse
 import logging
 
+import pytest
+import torch
+from safetensors.torch import save_file
+
 from train.app.cli import (
+    add_data_range_args,
     add_runtime_args,
     add_training_args,
     configure_logging,
+    load_init_weights,
     train_config_from_args,
 )
 
@@ -64,6 +70,58 @@ def test_runtime_args_include_file_logging_options():
     assert args.log_file == ""
 
 
+def test_training_args_include_init_weights_default():
+    parser = argparse.ArgumentParser()
+    add_training_args(parser, lr=0.1, batch_size=32)
+
+    args = parser.parse_args([])
+
+    assert args.init_weights == ""
+
+
+def test_data_range_args_are_optional_with_glob_support():
+    parser = argparse.ArgumentParser()
+    add_data_range_args(parser, data_required=False)
+
+    args = parser.parse_args(
+        [
+            "--data-glob",
+            "data/user_*.txt",
+            "--start-date",
+            "20260325",
+            "--end-date",
+            "20260331",
+        ]
+    )
+
+    assert args.data is None
+    assert args.data_glob == "data/user_*.txt"
+    assert args.start_date == "20260325"
+    assert args.end_date == "20260331"
+
+
+def test_discover_parser_includes_pandas_streaming_options():
+    from train.app.main import build_parser
+
+    args = build_parser().parse_args(
+        [
+            "discover",
+            "--model-config",
+            "examples/model_gdcn_esmm.yaml",
+            "--data",
+            "train.tsv",
+            "--read-chunk-rows",
+            "65536",
+            "--fast-no-na",
+            "--memory-map",
+        ]
+    )
+
+    assert args.read_chunk_rows == 65536
+    assert args.fast_no_na is True
+    assert args.memory_map is True
+
+
 def test_configure_logging_writes_debug_file_logs(tmp_path):
     log_path = tmp_path / "train.log"
     configure_logging("WARNING", file_level="DEBUG", log_file=log_path)
@@ -93,6 +151,32 @@ def test_configure_logging_uses_log_dir_and_replaces_handlers(tmp_path):
 
     text = created.read_text()
     assert text.count("written once") == 1
+
+
+def test_load_init_weights_restores_parameters_strictly(tmp_path):
+    source = torch.nn.Linear(2, 1)
+    target = torch.nn.Linear(2, 1)
+    with torch.no_grad():
+        source.weight.fill_(3.0)
+        source.bias.fill_(1.0)
+        target.weight.zero_()
+        target.bias.zero_()
+    weights = tmp_path / "model.safetensors"
+    save_file(source.state_dict(), str(weights))
+
+    load_init_weights(target, weights, torch.device("cpu"))
+
+    assert torch.equal(target.weight, source.weight)
+    assert torch.equal(target.bias, source.bias)
+
+
+def test_load_init_weights_reports_shape_mismatch(tmp_path):
+    target = torch.nn.Linear(2, 1)
+    weights = tmp_path / "bad.safetensors"
+    save_file({"weight": torch.ones(3, 1), "bias": torch.ones(1)}, str(weights))
+
+    with pytest.raises(RuntimeError, match="failed to load --init-weights"):
+        load_init_weights(target, weights, torch.device("cpu"))
 
 
 def _flush_root_handlers() -> None:

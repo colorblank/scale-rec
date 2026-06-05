@@ -24,10 +24,14 @@ from ..training.trainer import Trainer
 from .artifacts import TrainingArtifactManager
 from .cli import (
     add_artifact_args,
+    add_data_range_args,
     add_runtime_args,
     add_training_args,
     build_model_for_dag,
     configure_logging,
+    describe_data_paths,
+    load_init_weights,
+    resolve_data_paths,
     resolve_device,
     train_config_from_args,
 )
@@ -88,6 +92,15 @@ def _load_dataframe(path: str) -> pd.DataFrame:
     if path.endswith(".parquet"):
         return pd.read_parquet(path)
     return pd.read_csv(path)
+
+
+def _load_dataframes(paths: list[str]) -> pd.DataFrame:
+    dfs = [_load_dataframe(path) for path in paths]
+    if not dfs:
+        raise ValueError("no data files to load")
+    if len(dfs) == 1:
+        return dfs[0]
+    return pd.concat(dfs, ignore_index=True)
 
 
 def _train_epoch_single(
@@ -209,10 +222,8 @@ def _predict_all(
 def _run_single(args: argparse.Namespace) -> None:
     feature_config = args.feature_config
     model_config = args.model_config
-    data = args.data
+    data_paths = resolve_data_paths(args)
 
-    if not data:
-        raise SystemExit("--data is required for single mode")
     if not model_config:
         raise SystemExit("--model-config is required for single mode")
 
@@ -237,6 +248,7 @@ def _run_single(args: argparse.Namespace) -> None:
     )
 
     built = build_model_for_dag(model_config, dag, device)
+    load_init_weights(built.model, args.init_weights, device)
     from ..models.params import format_parameter_summary
 
     logger.info(
@@ -259,7 +271,8 @@ def _run_single(args: argparse.Namespace) -> None:
     artifacts.prepare(feature_config, model_config)
     cfg.export_path = str(artifacts.paths.published_weights_path)
 
-    df = _load_dataframe(data)
+    logger.info("[Data files] %s", describe_data_paths(data_paths))
+    df = _load_dataframes(data_paths)
     if "ctr" in df.columns:
         df["ctr"] = df["ctr"].astype("Int64")
     if "cvr" in df.columns:
@@ -331,8 +344,7 @@ def _run_single(args: argparse.Namespace) -> None:
 
 
 def _run_discover(args: argparse.Namespace) -> None:
-    if not args.data:
-        raise SystemExit("--data is required for discover mode")
+    data_paths = resolve_data_paths(args)
     if not args.model_config:
         raise SystemExit("--model-config is required for discover mode")
 
@@ -354,6 +366,7 @@ def _run_discover(args: argparse.Namespace) -> None:
     )
 
     built = build_model_for_dag(args.model_config, dag, device)
+    load_init_weights(built.model, args.init_weights, device)
     from ..models.params import format_parameter_summary
 
     logger.info(
@@ -377,6 +390,7 @@ def _run_discover(args: argparse.Namespace) -> None:
     cfg.export_path = str(artifacts.paths.published_weights_path)
     logger.info("feature config exported to %s", artifacts.paths.feature_config_path)
     logger.info("model config exported to %s", artifacts.paths.model_config_path)
+    logger.info("[Data files] %s", describe_data_paths(data_paths))
     label_col_map = built.spec.get("label_col_map", {})
 
     trainer = Trainer(
@@ -387,11 +401,14 @@ def _run_discover(args: argparse.Namespace) -> None:
         device,
         cfg,
         model_type=built.config.type,
-        data_path=args.data,
         flow_config=fc,
+        data_paths=data_paths,
         has_header=not args.no_header,
         sep=args.separator,
         null_markers=set(args.null_markers),
+        read_chunk_rows=args.read_chunk_rows,
+        fast_no_na=args.fast_no_na,
+        memory_map=args.memory_map,
         task_specs=built.spec.get("tasks"),
         artifact_manager=artifacts,
         repo_root=args.repo_root,
@@ -401,8 +418,7 @@ def _run_discover(args: argparse.Namespace) -> None:
 
 
 def _run_all(args: argparse.Namespace) -> None:
-    if not args.data:
-        raise SystemExit("--data is required for all mode")
+    data_paths = resolve_data_paths(args)
 
     configure_logging(
         args.log_level,
@@ -419,7 +435,8 @@ def _run_all(args: argparse.Namespace) -> None:
     features = dag.feature_tuples()
     logger.info("%d features, %d ops", len(features), len(flow_config.operators))
 
-    df = _load_dataframe(args.data)
+    logger.info("[Data files] %s", describe_data_paths(data_paths))
+    df = _load_dataframes(data_paths)
     for c in ["user_id", "ctr", "cvr"]:
         if c in df.columns:
             df[c] = df[c].astype("Int64")
@@ -428,14 +445,12 @@ def _run_all(args: argparse.Namespace) -> None:
     train_df = df_shuffled.iloc[:n_train]
     test_df = df_shuffled.iloc[n_train:]
     logger.info("[Data] train=%d test=%d", len(train_df), len(test_df))
-    label_col_map = built.spec.get("label_col_map", {})
     logger.info(
-        "[Data detail] rows=%d batch_size=%d train_batches~%d eval_batches~%d labels=%s",
+        "[Data detail] rows=%d batch_size=%d train_batches~%d eval_batches~%d",
         len(df),
         args.batch_size,
         max(1, (len(train_df) + args.batch_size - 1) // max(args.batch_size, 1)),
         max(1, (len(test_df) + args.batch_size - 1) // max(args.batch_size, 1)),
-        label_col_map,
     )
 
     model_specs = [
@@ -454,6 +469,7 @@ def _run_all(args: argparse.Namespace) -> None:
             logger.info("[Skip] config not found: %s", model_config_path)
             continue
         built = build_model_for_dag(model_config_path, dag, device)
+        load_init_weights(built.model, args.init_weights, device)
         model = built.model
         spec = built.spec
         label_col_map = spec.get("label_col_map", {})
@@ -543,7 +559,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--feature-config", default=str(EXAMPLES_DIR / "feature_config_discover.yaml")
     )
     single.add_argument("--model-config", required=True)
-    single.add_argument("--data", required=True)
+    add_data_range_args(single, data_required=False)
     single.add_argument(
         "--artifact-dir", "--export-dir", dest="artifact_dir", default=str(DEMO_ARTIFACT_DIR)
     )
@@ -558,7 +574,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--feature-config", default=str(EXAMPLES_DIR / "feature_config_discover.yaml")
     )
     discover.add_argument("--model-config", required=True)
-    discover.add_argument("--data", required=True)
+    add_data_range_args(discover, data_required=False)
     discover.add_argument(
         "--artifact-dir", "--export-dir", dest="artifact_dir", default=str(DEMO_ARTIFACT_DIR)
     )
@@ -566,6 +582,22 @@ def build_parser() -> argparse.ArgumentParser:
     discover.add_argument("--no-header", action="store_true")
     discover.add_argument("--null-markers", nargs="*", default=list(NULL_MARKERS))
     discover.add_argument("--separator", default="\t")
+    discover.add_argument(
+        "--read-chunk-rows",
+        type=int,
+        default=0,
+        help="pandas read_csv chunk rows; 0 uses the batch-size based default",
+    )
+    discover.add_argument(
+        "--fast-no-na",
+        action="store_true",
+        help="disable pandas NA detection for faster reads when defaults can be handled later",
+    )
+    discover.add_argument(
+        "--memory-map",
+        action="store_true",
+        help="enable pandas memory_map for local uncompressed files",
+    )
     add_training_args(discover, lr=0.005, batch_size=64)
     add_artifact_args(discover)
     add_runtime_args(discover)
@@ -574,7 +606,7 @@ def build_parser() -> argparse.ArgumentParser:
     all_.add_argument(
         "--feature-config", default=str(EXAMPLES_DIR / "feature_config_discover.yaml")
     )
-    all_.add_argument("--data", required=True)
+    add_data_range_args(all_, data_required=False)
     all_.add_argument(
         "--artifact-dir", "--export-dir", dest="artifact_dir", default=str(DEMO_ARTIFACT_DIR)
     )

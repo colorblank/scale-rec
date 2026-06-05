@@ -3,13 +3,16 @@ from __future__ import annotations
 """训练脚本通用 CLI 组件。"""
 
 import argparse
+import glob
 import logging
+import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional, Union
 
 import torch
+from safetensors.torch import load_file
 
 from ..core.config import ArtifactConfig, EvalConfig, ModelConfig, TrainConfig
 from ..core.dag import FeatureDag
@@ -54,6 +57,22 @@ def add_training_args(parser: argparse.ArgumentParser, *, lr: float, batch_size:
     parser.add_argument("--monitor-metric")
     parser.add_argument("--eval-log")
     parser.add_argument("--gauc-group-feature")
+    parser.add_argument(
+        "--init-weights",
+        default="",
+        help="safetensors weights used to initialize the model before fine-tuning",
+    )
+
+
+def add_data_range_args(parser: argparse.ArgumentParser, *, data_required: bool) -> None:
+    parser.add_argument("--data", required=data_required)
+    parser.add_argument(
+        "--data-glob",
+        default="",
+        help="glob pattern for dated training files; used before --data when set",
+    )
+    parser.add_argument("--start-date", default="", help="inclusive YYYYMMDD start date")
+    parser.add_argument("--end-date", default="", help="inclusive YYYYMMDD end date")
 
 
 def add_runtime_args(parser: argparse.ArgumentParser) -> None:
@@ -146,6 +165,103 @@ def resolve_device(name: str) -> torch.device:
 
 def split_csv(value: str) -> list[str]:
     return [x.strip() for x in value.split(",") if x.strip()]
+
+
+_DATE_RE = re.compile(r"(\d{8})")
+
+
+def resolve_data_paths(args: argparse.Namespace) -> list[str]:
+    """Resolve CLI data arguments into an ordered, non-empty file list."""
+
+    pattern = getattr(args, "data_glob", "")
+    if pattern:
+        return _resolve_globbed_data_paths(
+            pattern,
+            start_date=getattr(args, "start_date", ""),
+            end_date=getattr(args, "end_date", ""),
+        )
+
+    data = getattr(args, "data", None)
+    if not data:
+        raise SystemExit("--data is required unless --data-glob is provided")
+    return [str(data)]
+
+
+def _resolve_globbed_data_paths(pattern: str, *, start_date: str, end_date: str) -> list[str]:
+    if not start_date or not end_date:
+        raise SystemExit("--start-date and --end-date are required with --data-glob")
+
+    start = _parse_yyyymmdd(start_date, "--start-date")
+    end = _parse_yyyymmdd(end_date, "--end-date")
+    if start > end:
+        raise SystemExit("--start-date must be <= --end-date")
+
+    by_date: dict[str, list[str]] = {}
+    for path in glob.glob(pattern):
+        date_text = _extract_basename_date(Path(path))
+        if date_text is None:
+            continue
+        date = _parse_yyyymmdd(date_text, Path(path).name)
+        if start <= date <= end:
+            by_date.setdefault(date_text, []).append(path)
+
+    expected = _date_range_strings(start, end)
+    missing = [date for date in expected if date not in by_date]
+    if missing:
+        raise SystemExit("missing data files for dates: " + ", ".join(missing))
+
+    resolved: list[str] = []
+    for date in expected:
+        resolved.extend(sorted(by_date[date]))
+    if not resolved:
+        raise SystemExit(f"--data-glob matched no dated files in range: {pattern}")
+    return resolved
+
+
+def _extract_basename_date(path: Path) -> Optional[str]:
+    match = _DATE_RE.search(path.name)
+    return match.group(1) if match else None
+
+
+def _parse_yyyymmdd(value: str, label: str) -> datetime:
+    try:
+        return datetime.strptime(value, "%Y%m%d")
+    except ValueError as exc:
+        raise SystemExit(f"{label} must be YYYYMMDD: {value}") from exc
+
+
+def _date_range_strings(start: datetime, end: datetime) -> list[str]:
+    days = (end - start).days
+    return [(start + timedelta(days=offset)).strftime("%Y%m%d") for offset in range(days + 1)]
+
+
+def describe_data_paths(paths: list[str]) -> str:
+    dates = [_extract_basename_date(Path(path)) for path in paths]
+    dates = [date for date in dates if date is not None]
+    if dates:
+        return f"{len(paths)} files date_range={min(dates)}..{max(dates)}"
+    return f"{len(paths)} files"
+
+
+def load_init_weights(
+    model: torch.nn.Module,
+    init_weights: Union[str, Path, None],
+    device: torch.device,
+) -> None:
+    """Load safetensors model weights for fine-tuning, without optimizer state."""
+
+    if not init_weights:
+        return
+    path = Path(init_weights)
+    if not path.exists():
+        raise FileNotFoundError(f"--init-weights not found: {path}")
+    state = load_file(str(path))
+    try:
+        model.load_state_dict(state, strict=True)
+    except RuntimeError as exc:
+        raise RuntimeError(f"failed to load --init-weights {path}: {exc}") from exc
+    model.to(device)
+    logging.getLogger(__name__).info("initialized model from %s", path)
 
 
 def train_config_from_args(

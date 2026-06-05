@@ -1,8 +1,10 @@
-"""数据加载模块：多日物品特征索引 + 单文件流式读取。"""
+"""数据加载模块：多日物品特征索引 + 训练文件流式读取。"""
 
 from __future__ import annotations
 
 import logging
+import math
+import os
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
@@ -155,8 +157,42 @@ def build_item_index(
 
 
 # ═══════════════════════════════════════════════════════════════════
-# 单文件流式读取
+# 训练文件流式读取
 # ═══════════════════════════════════════════════════════════════════
+
+
+def estimate_rows(path: str, has_header: bool = True) -> int:
+    if not os.path.exists(path):
+        return 1
+    file_size = os.path.getsize(path)
+    if file_size < 1024 * 1024 * 50:
+        with open(path, "rb") as f:
+            lines = sum(1 for _ in f)
+        if has_header and lines > 0:
+            lines -= 1
+        return max(1, lines)
+    with open(path, "rb") as f:
+        if has_header:
+            next(f, None)
+        sample = f.read(1024 * 500)
+        lines = sample.count(b"\n")
+        if lines == 0 or len(sample) == 0:
+            return 1
+        avg_line_size = len(sample) / lines
+        estimated = int(file_size / avg_line_size)
+        if has_header:
+            estimated = max(1, estimated - 1)
+        return max(1, estimated)
+
+
+def estimate_files_rows(paths: list[str], has_header: bool = True) -> int:
+    return sum(estimate_rows(path, has_header=has_header) for path in paths)
+
+
+def estimate_files_batches(paths: list[str], batch_size: int, has_header: bool = True) -> int:
+    size = max(batch_size, 1)
+    batches = sum(math.ceil(estimate_rows(path, has_header=has_header) / size) for path in paths)
+    return max(1, batches)
 
 
 def stream_file_batches(
@@ -167,6 +203,9 @@ def stream_file_batches(
     has_header: bool = True,
     sep: str = "\t",
     null_markers: Optional[set[str]] = None,
+    read_chunk_rows: Optional[int] = None,
+    fast_no_na: bool = False,
+    memory_map: bool = False,
 ) -> Iterator[dict[str, Any]]:
     """pandas chunk read 流式读取单文件，按 role 分离 feature/label/discard。
 
@@ -181,7 +220,6 @@ def stream_file_batches(
 
     feature_sources = flow_config.feature_sources
     label_sources = flow_config.label_sources
-    discard_names = {s.name for s in flow_config.discard_sources}
 
     seen: set[str] = set()
     names: list[str] = []
@@ -196,36 +234,46 @@ def stream_file_batches(
         dtype[s.name] = DTYPE_PANDAS.get(dt, "str")
         defaults[s.name] = _parse_default(s.default_val, dt)
 
-    # Read in larger chunks (e.g. 32k lines) to minimize Pandas overhead
-    read_chunk_size = max(batch_size * 256, 32768)
+    feature_names = _unique_source_names(feature_sources)
+    label_names = _unique_source_names(label_sources)
+    usecols = [name for name in [*feature_names, *label_names] if name in seen]
+    dtype = {name: dtype[name] for name in usecols if name in dtype}
+    defaults = {name: defaults[name] for name in usecols if name in defaults}
+
+    # Read in larger chunks (e.g. 32k lines) to minimize Pandas overhead.
+    read_chunk_size = (
+        max(read_chunk_rows, batch_size)
+        if read_chunk_rows is not None and read_chunk_rows > 0
+        else max(batch_size * 256, 32768)
+    )
 
     params: dict[str, Any] = {
         "sep": sep,
         "dtype": dtype,
-        "na_values": na_vals,
-        "keep_default_na": False,
+        "usecols": usecols,
         "chunksize": read_chunk_size,
+        "memory_map": memory_map,
     }
+    if fast_no_na:
+        params["na_filter"] = False
+        params["keep_default_na"] = False
+    else:
+        params["na_values"] = na_vals
+        params["keep_default_na"] = False
     if has_header:
         params["header"] = 0
     else:
         params["header"] = None
         params["names"] = names
 
-    source_set = {s.name for s in feature_sources}
-    label_names = [s.name for s in label_sources]
-
     for chunk in pd.read_csv(path, **params):
-        chunk = chunk.drop(
-            columns=[c for c in discard_names if c in chunk.columns], errors="ignore"
-        )
         for col, default in defaults.items():
             if col in chunk.columns:
                 chunk[col] = chunk[col].fillna(default)
 
         # Convert feature columns directly to dict of lists
-        features_df = chunk[list(source_set & set(chunk.columns))]
-        features_dict = {col: features_df[col].tolist() for col in features_df.columns}
+        present_features = [col for col in feature_names if col in chunk.columns]
+        features_dict = {col: chunk[col].tolist() for col in present_features}
 
         # Convert label columns to lists
         labels_dict = {
@@ -241,3 +289,43 @@ def stream_file_batches(
             batch_features = {col: vals[start:end] for col, vals in features_dict.items()}
             batch_labels = {ln: vals[start:end] for ln, vals in labels_dict.items()}
             yield {"features": batch_features, "labels": batch_labels}
+
+
+def _unique_source_names(sources: list[Any]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for source in sources:
+        name = source.name
+        if name in seen:
+            continue
+        seen.add(name)
+        result.append(name)
+    return result
+
+
+def stream_files_batches(
+    paths: list[str],
+    flow_config: FlowConfig,
+    batch_size: int,
+    *,
+    has_header: bool = True,
+    sep: str = "\t",
+    null_markers: Optional[set[str]] = None,
+    read_chunk_rows: Optional[int] = None,
+    fast_no_na: bool = False,
+    memory_map: bool = False,
+) -> Iterator[dict[str, Any]]:
+    """Sequentially stream mini-batches from multiple files."""
+
+    for path in paths:
+        yield from stream_file_batches(
+            path,
+            flow_config,
+            batch_size,
+            has_header=has_header,
+            sep=sep,
+            null_markers=null_markers,
+            read_chunk_rows=read_chunk_rows,
+            fast_no_na=fast_no_na,
+            memory_map=memory_map,
+        )

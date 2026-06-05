@@ -3,7 +3,6 @@ from __future__ import annotations
 """训练编排器。"""
 
 import logging
-import math
 import time
 from pathlib import Path
 from typing import Any, Iterator, Optional, Union
@@ -11,7 +10,7 @@ from typing import Any, Iterator, Optional, Union
 import torch
 
 from ..app.artifacts import TrainingArtifactManager
-from ..app.data import stream_file_batches
+from ..app.data import estimate_files_batches, estimate_files_rows, stream_files_batches
 from ..app.export import export_to_safetensors
 from ..core.config import FlowConfig, TrainConfig
 from ..core.dag import FeatureDag
@@ -27,34 +26,11 @@ Batch = dict[str, Any]
 
 
 def _estimate_rows(path: str, has_header: bool = True) -> int:
-    import os
-
-    if not os.path.exists(path):
-        return 1
-    file_size = os.path.getsize(path)
-    if file_size < 1024 * 1024 * 50:
-        with open(path, "rb") as f:
-            lines = sum(1 for _ in f)
-        if has_header and lines > 0:
-            lines -= 1
-        return max(1, lines)
-    with open(path, "rb") as f:
-        if has_header:
-            next(f, None)
-        sample = f.read(1024 * 500)
-        lines = sample.count(b"\n")
-        if lines == 0 or len(sample) == 0:
-            return 1
-        avg_line_size = len(sample) / lines
-        estimated = int(file_size / avg_line_size)
-        if has_header:
-            estimated = max(1, estimated - 1)
-        return max(1, estimated)
+    return estimate_files_rows([path], has_header=has_header)
 
 
 def _estimate_batches(path: str, batch_size: int, has_header: bool = True) -> int:
-    rows = _estimate_rows(path, has_header=has_header)
-    return max(1, math.ceil(rows / max(batch_size, 1)))
+    return estimate_files_batches([path], batch_size, has_header=has_header)
 
 
 def _collect_batches(batches: Iterator[Batch], max_samples: int) -> list[Batch]:
@@ -99,11 +75,15 @@ class Trainer:
         config: TrainConfig,
         *,
         model_type: str = "",
-        data_path: str,
         flow_config: FlowConfig,
+        data_path: Optional[str] = None,
+        data_paths: Optional[list[str]] = None,
         has_header: bool = True,
         sep: str = "\t",
         null_markers: Optional[set[str]] = None,
+        read_chunk_rows: Optional[int] = None,
+        fast_no_na: bool = False,
+        memory_map: bool = False,
         task_specs: Optional[list[TaskSpec]] = None,
         artifact_manager: Optional[TrainingArtifactManager] = None,
         repo_root: Union[str, Path, None] = None,
@@ -132,11 +112,20 @@ class Trainer:
         self.cfg = config
         self.model_type = model_type
 
-        self._data_path = data_path
+        if data_paths is None:
+            if data_path is None:
+                raise ValueError("Trainer requires data_path or data_paths")
+            data_paths = [data_path]
+        if not data_paths:
+            raise ValueError("Trainer data_paths must not be empty")
+        self._data_paths = [str(path) for path in data_paths]
         self._flow_config = flow_config
         self._has_header = has_header
         self._sep = sep
         self._null_markers = null_markers
+        self._read_chunk_rows = read_chunk_rows
+        self._fast_no_na = fast_no_na
+        self._memory_map = memory_map
         self.artifacts = artifact_manager
         self.repo_root = repo_root
 
@@ -166,7 +155,7 @@ class Trainer:
         self._collect_eval()
         self.loss_fn = self.loss_fn.to(self.device)
 
-        total_rows = _estimate_rows(self._data_path, has_header=self._has_header)
+        total_rows = estimate_files_rows(self._data_paths, has_header=self._has_header)
         eval_rows = sum(
             len(next(iter(b["features"].values())))
             if isinstance(b["features"], dict)
@@ -174,14 +163,15 @@ class Trainer:
             for b in self.eval_batches
         )
         train_rows = max(total_rows - eval_rows, 0)
-        total_batches = _estimate_batches(
-            self._data_path, self.cfg.batch_size, has_header=self._has_header
+        total_batches = estimate_files_batches(
+            self._data_paths, self.cfg.batch_size, has_header=self._has_header
         )
         eval_batches = self._n_eval_batches
         train_batches = max(total_batches - eval_batches, 1)
 
         logger.info(
-            "data: rows(total=%d train=%d eval=%d) batch_size=%d batches(total~%d train~%d eval=%d) tasks=%s labels=%s",
+            "data: files=%d rows(total=%d train=%d eval=%d) batch_size=%d batches(total~%d train~%d eval=%d) tasks=%s labels=%s",
+            len(self._data_paths),
             total_rows,
             train_rows,
             eval_rows,
@@ -191,6 +181,12 @@ class Trainer:
             eval_batches,
             self.task_names,
             self.label_map,
+        )
+        logger.info(
+            "reader: pandas read_chunk_rows=%s fast_no_na=%s memory_map=%s",
+            self._effective_read_chunk_rows(),
+            self._fast_no_na,
+            self._memory_map,
         )
 
         emb_params: list[torch.nn.Parameter] = []
@@ -421,14 +417,22 @@ class Trainer:
         return avg_loss
 
     def _iter_batches(self) -> Iterator[Batch]:
-        return stream_file_batches(
-            self._data_path,
+        return stream_files_batches(
+            self._data_paths,
             self._flow_config,
             self.cfg.batch_size,
             has_header=self._has_header,
             sep=self._sep,
             null_markers=self._null_markers,
+            read_chunk_rows=self._read_chunk_rows,
+            fast_no_na=self._fast_no_na,
+            memory_map=self._memory_map,
         )
+
+    def _effective_read_chunk_rows(self) -> Union[int, str]:
+        if self._read_chunk_rows is not None and self._read_chunk_rows > 0:
+            return max(self._read_chunk_rows, self.cfg.batch_size)
+        return "auto"
 
     def _eval_during_training(self, n_batches: int, total_loss: float) -> None:
         t0 = time.perf_counter()

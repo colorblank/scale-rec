@@ -54,6 +54,20 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m scale_rec_demo.verify_all --models discover_gdcn_esmm --force-train
 ```
 
+多日文件训练和增量微调示例：
+
+```bash
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
+  python -m train.app.main discover \
+  --data-glob 'data/user_*.txt' \
+  --start-date 20260325 --end-date 20260331 \
+  --feature-config examples/feature_config_discover.yaml \
+  --model-config examples/model_gdcn_esmm.yaml \
+  --train-config examples/train_defaults.yaml \
+  --init-weights python/artifacts/demo/model_gdcn_esmm.safetensors \
+  --epochs 3 --batch-size 1024 --no-header
+```
+
 ## 训练流程
 
 训练链路分成 4 层配置，默认优先级从低到高是：`train_defaults.yaml` < 模型 YAML < 命令行参数。
@@ -88,10 +102,17 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 | 参数 | 默认 | 说明 |
 |------|------|------|
-| `--data` | **必填** | 训练 TSV 路径 |
+| `--data` | 空 | 单文件训练 TSV 路径；未传 `--data-glob` 时必填 |
+| `--data-glob` | 空 | 按 glob 展开多日训练文件；设置后优先于 `--data` |
+| `--start-date` | 空 | `--data-glob` 的闭区间开始日期，格式 `YYYYMMDD` |
+| `--end-date` | 空 | `--data-glob` 的闭区间结束日期，格式 `YYYYMMDD` |
+| `--init-weights` | 空 | 从已有 safetensors 权重初始化模型后继续训练，不恢复 optimizer/scheduler/epoch |
 | `--no-header` | off | 文件无 header 行时启用 |
 | `--separator` | `\t` | 字段分隔符 |
 | `--null-markers` | NULL \N null None "" | NULL 标记字符串 |
+| `--read-chunk-rows` | 0 | pandas `read_csv(chunksize=...)` 行数；0 表示按 batch size 自动推导，低于 `--batch-size` 时自动提升到 batch size |
+| `--fast-no-na` | off | 关闭 pandas NA 检测，适合 NULL 很少且默认值可由 DAG 处理的大文件 |
+| `--memory-map` | off | 对本地未压缩文件启用 pandas `memory_map=True` |
 | `--artifact-dir` | `python/artifacts/demo` | 训练 run 目录根路径 |
 | `--publish-path` | 自动生成 | 最终发布权重路径 |
 | `--model-name` | 自动推导 | 模型逻辑名，用于 run 目录和 manifest |

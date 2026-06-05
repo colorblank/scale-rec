@@ -70,6 +70,19 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --run-version 20260526_120000
 ```
 
+多日训练文件可以用日期范围从 glob 结果中展开，日期取文件名中的第一个 8 位数字，闭区间内缺少任意一天会直接报错：
+
+```bash
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
+  python -m train.app.main discover \
+  --data-glob 'data/user_*.txt' \
+  --start-date 20260325 --end-date 20260331 \
+  --feature-config examples/feature_config_discover.yaml \
+  --model-config examples/model_gdcn_esmm.yaml \
+  --init-weights python/artifacts/demo/model_gdcn_esmm.safetensors \
+  --epochs 3 --batch-size 1024 --no-header
+```
+
 `train_defaults.yaml` 负责训练默认值，`model_gdcn_esmm.yaml` 负责任务定义，`discover_label_policy.yaml` 只负责 demo 数据标签生成。三者职责分离，训练流程和评估指标都从配置读取，不再在代码里写死。
 
 训练启动后，日志会先打印一条数据摘要，包括总行数、训练/验证切分、batch_size、估算 batch 数、任务名和 label 映射。若出现 `No supervised batches were processed`，优先检查这条摘要里的 `labels` 和 `train/eval` 切分是否合理。
