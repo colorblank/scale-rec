@@ -178,6 +178,40 @@ def test_trainer_iter_batches_reads_all_data_paths(tmp_path):
     assert [batch["labels"]["is_click"] for batch in batches] == [[1], [0]]
 
 
+def test_trainer_validation_comes_from_last_data_path(tmp_path):
+    first = tmp_path / "part_20260325.tsv"
+    second = tmp_path / "part_20260326.tsv"
+    first.write_text("user_id\tis_click\nu1\t1\n", encoding="utf-8")
+    second.write_text("user_id\tis_click\nu2\t0\nu3\t1\n", encoding="utf-8")
+    flow_config = FlowConfig.from_dict(
+        {
+            "version": "1.0.0",
+            "sources": [
+                {"name": "user_id", "dtype": "string", "default_val": "", "role": "feature"},
+                {"name": "is_click", "dtype": "int", "default_val": "0", "role": "label"},
+            ],
+            "operators": [],
+        }
+    )
+    trainer = Trainer(
+        torch.nn.Linear(1, 1),
+        dag=FeatureDag(flow_config),
+        task_names=["click"],
+        label_map={"click": "is_click"},
+        device=torch.device("cpu"),
+        config=TrainConfig(batch_size=1, eval_samples=1, eval={"metrics": ["auc"]}),
+        task_specs=[TaskSpec(name="click", label="is_click", metrics=("auc",))],
+        flow_config=flow_config,
+        data_paths=[str(first), str(second)],
+    )
+
+    trainer._collect_eval()
+    train_batches = list(trainer._iter_batches())
+
+    assert [batch["features"]["user_id"] for batch in trainer.eval_batches] == [["u2"]]
+    assert [batch["features"]["user_id"] for batch in train_batches] == [["u1"], ["u3"]]
+
+
 def test_feature_quality_report_tracks_missing_defaults_and_buckets():
     config = FlowConfig.from_dict(
         {

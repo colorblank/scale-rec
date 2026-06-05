@@ -10,7 +10,12 @@ from typing import Any, Iterator, Optional, Union
 import torch
 
 from ..app.artifacts import TrainingArtifactManager
-from ..app.data import estimate_files_batches, estimate_files_rows, stream_files_batches
+from ..app.data import (
+    estimate_files_batches,
+    estimate_files_rows,
+    stream_file_batches,
+    stream_files_batches,
+)
 from ..app.export import export_to_safetensors
 from ..core.config import FlowConfig, TrainConfig
 from ..core.dag import FeatureDag
@@ -319,7 +324,7 @@ class Trainer:
         return self._best_score
 
     def _collect_eval(self) -> None:
-        self.eval_batches = _collect_batches(self._iter_batches(), self.cfg.eval_samples)
+        self.eval_batches = _collect_batches(self._iter_eval_batches(), self.cfg.eval_samples)
         self._n_eval_batches = len(self.eval_batches)
         n_samples = sum(
             len(next(iter(b["features"].values())))
@@ -327,7 +332,12 @@ class Trainer:
             else len(b["features"])
             for b in self.eval_batches
         )
-        logger.info("validation: %d samples (%d batches)", n_samples, self._n_eval_batches)
+        logger.info(
+            "validation: %d samples (%d batches) from %s",
+            n_samples,
+            self._n_eval_batches,
+            self._data_paths[-1],
+        )
         self.feature_quality = summarize_feature_quality(self.dag, self.eval_batches)
         logger.info("feature quality: rows=%d", self.feature_quality.rows)
 
@@ -347,11 +357,8 @@ class Trainer:
         t0_epoch = time.perf_counter()
 
         t0_iter = time.perf_counter()
-        for i, batch in enumerate(self._iter_batches()):
+        for batch in self._iter_batches():
             t_data += time.perf_counter() - t0_iter
-            if i < self._n_eval_batches:
-                t0_iter = time.perf_counter()
-                continue
 
             t0 = time.perf_counter()
             feat = _to_device(self.dag.preprocess_batch(batch["features"]), self.device)
@@ -417,16 +424,45 @@ class Trainer:
         return avg_loss
 
     def _iter_batches(self) -> Iterator[Batch]:
+        if len(self._data_paths) > 1:
+            yield from stream_files_batches(
+                self._data_paths[:-1],
+                self._flow_config,
+                self.cfg.batch_size,
+                **self._reader_kwargs(),
+            )
+        for idx, batch in enumerate(self._iter_last_file_batches()):
+            if idx < self._n_eval_batches:
+                continue
+            yield batch
+
+    def _iter_eval_batches(self) -> Iterator[Batch]:
+        return self._iter_last_file_batches()
+
+    def _iter_last_file_batches(self) -> Iterator[Batch]:
+        return stream_file_batches(
+            self._data_paths[-1],
+            self._flow_config,
+            self.cfg.batch_size,
+            **self._reader_kwargs(),
+        )
+
+    def _reader_kwargs(self) -> dict[str, Any]:
+        return {
+            "has_header": self._has_header,
+            "sep": self._sep,
+            "null_markers": self._null_markers,
+            "read_chunk_rows": self._read_chunk_rows,
+            "fast_no_na": self._fast_no_na,
+            "memory_map": self._memory_map,
+        }
+
+    def _iter_all_batches(self) -> Iterator[Batch]:
         return stream_files_batches(
             self._data_paths,
             self._flow_config,
             self.cfg.batch_size,
-            has_header=self._has_header,
-            sep=self._sep,
-            null_markers=self._null_markers,
-            read_chunk_rows=self._read_chunk_rows,
-            fast_no_na=self._fast_no_na,
-            memory_map=self._memory_map,
+            **self._reader_kwargs(),
         )
 
     def _effective_read_chunk_rows(self) -> Union[int, str]:

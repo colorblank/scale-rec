@@ -68,6 +68,8 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --epochs 3 --batch-size 1024 --no-header
 ```
 
+使用 `--data-glob` 时，训练文件会按日期升序读取；验证集只从最后日期文件中收集，训练阶段会跳过最后日期文件中已经作为验证集的 batch。
+
 ## 训练流程
 
 训练链路分成 4 层配置，默认优先级从低到高是：`train_defaults.yaml` < 模型 YAML < 命令行参数。
