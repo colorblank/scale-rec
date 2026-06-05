@@ -18,9 +18,9 @@ if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
 
 from train.app.cli import build_model_for_dag
+from train.app.data import DTYPE_PANDAS, _parse_default
 from train.app.main import _run_discover as run_discover_in_process
 from train.app.main import build_parser as build_train_parser
-from train.app.data import DTYPE_PANDAS, _parse_default
 from train.core.config import FlowConfig
 from train.core.dag import FeatureDag
 

@@ -20,12 +20,7 @@ impl ConcatHash {
         Self {
             separator: separator.clone(),
             inner: FeatureHash::with_scope(
-                vocab_size,
-                num_hashes,
-                separator,
-                &namespace,
-                &salt,
-                &version,
+                vocab_size, num_hashes, separator, &namespace, &salt, &version,
             ),
         }
     }

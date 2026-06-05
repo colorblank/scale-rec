@@ -10,11 +10,11 @@ class CustomOp(Protocol):
 
 
 from .bucketing import Bucketing as Bucketing
+from .concat_hash import ConcatHash as ConcatHash
 from .cross_feature import CrossFeature as CrossFeature
 from .dict_mapper import DictMapper as DictMapper
 from .expression import ExpressionOp as ExpressionOp
 from .feature_hash import FeatureHash as FeatureHash
-from .concat_hash import ConcatHash as ConcatHash
 from .flat_split import FlatSplit as FlatSplit
 from .json_extract_list import JsonExtractList as JsonExtractList
 from .list_overlap import ListOverlap as ListOverlap

@@ -234,9 +234,9 @@ fn infer_operator_output(
                 "split" | "flat_split" | "structured_flat_split" => {
                     yaml_usize(&op.params, "max_len").filter(|v| *v > 0)
                 }
-                "list_split" => first.and_then(|s| s.dtype.list_len()).or_else(|| {
-                    yaml_usize(&op.params, "pad_len").filter(|v| *v > 0)
-                }),
+                "list_split" => first
+                    .and_then(|s| s.dtype.list_len())
+                    .or_else(|| yaml_usize(&op.params, "pad_len").filter(|v| *v > 0)),
                 other => return Err(format!("Unsupported ParsedFeatureHash mode: {}", other)),
             };
             FeatureDType::List {

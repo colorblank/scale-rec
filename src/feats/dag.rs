@@ -456,7 +456,9 @@ impl FeatureDag {
             }
             "ParsedFeatureHash" => {
                 let vocab_size = Self::yaml_i64(p, "vocab_size").unwrap_or(1000) as u32;
-                let parse_mode = Self::yaml_str(p, "parse_mode").unwrap_or("json").to_string();
+                let parse_mode = Self::yaml_str(p, "parse_mode")
+                    .unwrap_or("json")
+                    .to_string();
                 let num_hashes = Self::yaml_i64(p, "num_hashes").unwrap_or(1) as u32;
                 let separator = Self::yaml_str(p, "separator").unwrap_or("|").to_string();
                 let namespace = Self::yaml_stringish(p, "namespace").unwrap_or_default();
@@ -471,21 +473,8 @@ impl FeatureDag {
                 let pad_len = Self::yaml_i64(p, "pad_len").unwrap_or(0) as usize;
                 let pad_val = Self::yaml_str(p, "pad_val").unwrap_or("").to_string();
                 Ok(Box::new(ParsedFeatureHash::new(
-                    vocab_size,
-                    parse_mode,
-                    num_hashes,
-                    separator,
-                    namespace,
-                    salt,
-                    version,
-                    key,
-                    sep1,
-                    sep2,
-                    key_index,
-                    sep,
-                    max_len,
-                    pad_len,
-                    pad_val,
+                    vocab_size, parse_mode, num_hashes, separator, namespace, salt, version, key,
+                    sep1, sep2, key_index, sep, max_len, pad_len, pad_val,
                 )))
             }
             "ConcatHash" => {

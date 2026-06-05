@@ -216,7 +216,9 @@ def _infer_operator_output(op: OperatorDef, input_schemas: list[FeatureSchema]) 
         return _schema(op, FeatureDType("list", FeatureDType("int"), length))
     if op_type == "ConcatHash":
         if int(params.get("num_hashes", 1)) > 1:
-            return _schema(op, FeatureDType("list", FeatureDType("int"), int(params.get("num_hashes", 1))))
+            return _schema(
+                op, FeatureDType("list", FeatureDType("int"), int(params.get("num_hashes", 1)))
+            )
         return _schema(op, FeatureDType("int"))
     if op_type == "FeatureHash":
         list_inputs = [s for s in input_schemas if s.dtype.is_list]

@@ -12,12 +12,12 @@ import torch
 
 from ..ops import (
     Bucketing,
+    ConcatHash,
     CrossFeature,
     CustomOp,
     DictMapper,
     ExpressionOp,
     FeatureHash,
-    ConcatHash,
     FlatSplit,
     JsonExtractList,
     ListOverlap,

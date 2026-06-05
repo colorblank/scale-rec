@@ -35,7 +35,10 @@ impl ParsedFeatureHash {
         pad_len: usize,
         pad_val: String,
     ) -> Self {
-        assert!(num_hashes == 1, "ParsedFeatureHash only supports num_hashes=1");
+        assert!(
+            num_hashes == 1,
+            "ParsedFeatureHash only supports num_hashes=1"
+        );
         Self {
             parse_mode,
             key,
@@ -46,14 +49,7 @@ impl ParsedFeatureHash {
             key_index,
             sep,
             max_len,
-            inner: FeatureHash::with_scope(
-                vocab_size,
-                1,
-                separator,
-                &namespace,
-                &salt,
-                &version,
-            ),
+            inner: FeatureHash::with_scope(vocab_size, 1, separator, &namespace, &salt, &version),
         }
     }
 
