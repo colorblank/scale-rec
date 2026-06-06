@@ -78,14 +78,24 @@ def feature_hash(
     vocab_size: int,
     *,
     num_hashes: int = 1,
+    namespace: str = "",
+    salt: str = "",
+    version: str = "",
     embed: Optional[EmbedDef] = None,
 ) -> OperatorDef:
+    params: dict[str, Any] = {"vocab_size": vocab_size, "num_hashes": num_hashes}
+    if namespace:
+        params["namespace"] = namespace
+    if salt:
+        params["salt"] = salt
+    if version:
+        params["version"] = version
     return _op(
         name,
         "FeatureHash",
         inputs,
         [output],
-        {"vocab_size": vocab_size, "num_hashes": num_hashes},
+        params,
         embed,
     )
 
@@ -96,9 +106,21 @@ def single_feature_hash(
     output: str,
     vocab_size: int,
     *,
+    namespace: str = "",
+    salt: str = "",
+    version: str = "",
     embed: Optional[EmbedDef] = None,
 ) -> OperatorDef:
-    return feature_hash(name, [input_name], output, vocab_size, embed=embed)
+    return feature_hash(
+        name,
+        [input_name],
+        output,
+        vocab_size,
+        namespace=namespace,
+        salt=salt,
+        version=version,
+        embed=embed,
+    )
 
 
 def bucket(
@@ -438,18 +460,47 @@ def _build_operators() -> list[OperatorDef]:
         out: str,
         vocab_size: int,
         num_hashes: int = 1,
+        namespace: str = "",
+        salt: str = "",
+        version: str = "",
         embed: Optional[EmbedDef] = None,
     ) -> None:
         add(
             feature_hash(
-                name, inps, out, vocab_size, num_hashes=num_hashes, embed=embed
+                name,
+                inps,
+                out,
+                vocab_size,
+                num_hashes=num_hashes,
+                namespace=namespace,
+                salt=salt,
+                version=version,
+                embed=embed,
             )
         )
 
     def single_fh(
-        name: str, inp: str, out: str, vocab_size: int, embed: Optional[EmbedDef] = None
+        name: str,
+        inp: str,
+        out: str,
+        vocab_size: int,
+        namespace: str = "",
+        salt: str = "",
+        version: str = "",
+        embed: Optional[EmbedDef] = None,
     ) -> None:
-        add(single_feature_hash(name, inp, out, vocab_size, embed=embed))
+        add(
+            single_feature_hash(
+                name,
+                inp,
+                out,
+                vocab_size,
+                namespace=namespace,
+                salt=salt,
+                version=version,
+                embed=embed,
+            )
+        )
 
     def bk(
         name: str,
@@ -515,7 +566,6 @@ def _build_operators() -> list[OperatorDef]:
     # ═══════════════════════════════════════════════════
     single_hash_specs = [
         ("item_id_hash", "item_id", "item_id_idx", 5000, 16),
-        ("user_id_hash", "user_id", "user_id_idx", 5000, 16),
         ("scene_hash", "scene", "scene_idx", 10, 4),
         ("item_type_hash", "item_type", "item_type_idx", 20, 4),
         ("source_name_hash", "source_name", "source_name_idx", 20, 4),
@@ -535,6 +585,24 @@ def _build_operators() -> list[OperatorDef]:
         single_fh(
             name, input_name, output, vocab_size, embed=_embed(vocab_size, embed_dim)
         )
+    single_fh(
+        "user_id_hash_a",
+        "user_id",
+        "user_id_idx_a",
+        5000,
+        namespace="user_id",
+        salt="a",
+        embed=_embed(5000, 16),
+    )
+    single_fh(
+        "user_id_hash_b",
+        "user_id",
+        "user_id_idx_b",
+        5000,
+        namespace="user_id",
+        salt="b",
+        embed=_embed(5000, 16),
+    )
 
     # ═══════════════════════════════════════════════════
     # Section 2: 数值 → Bucketing / ExpressionOp

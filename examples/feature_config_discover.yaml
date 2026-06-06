@@ -193,15 +193,31 @@ operators:
   embed:
     vocab_size: 5000
     embed_dim: 16
-- name: user_id_hash
+- name: user_id_hash_a
   op_type: FeatureHash
   inputs:
   - user_id
   outputs:
-  - user_id_idx
+  - user_id_idx_a
   params:
     vocab_size: 5000
     num_hashes: 1
+    namespace: user_id
+    salt: a
+  embed:
+    vocab_size: 5000
+    embed_dim: 16
+- name: user_id_hash_b
+  op_type: FeatureHash
+  inputs:
+  - user_id
+  outputs:
+  - user_id_idx_b
+  params:
+    vocab_size: 5000
+    num_hashes: 1
+    namespace: user_id
+    salt: b
   embed:
     vocab_size: 5000
     embed_dim: 16
