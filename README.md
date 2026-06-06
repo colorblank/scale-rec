@@ -12,6 +12,7 @@ scale-rec 是一个推荐系统训练与推理框架。Python 侧负责数据处
 
 | 文档 | 内容 |
 |---|---|
+| [推荐排序系统教程](docs/tutorial/README.md) | 按样本、特征、训练、发布、Rust 推理和排障链路逐步理解系统 |
 | [训练手册](docs/TRAINING_GUIDE.md) | 训练命令、数据格式、训练参数、checkpoint、发布 manifest、模型加载逻辑、压测 |
 | [HTTP API](docs/API.md) | `/health`、`/models`、`/predict`、`/predict/broadcast` 的请求、响应和错误格式 |
 | [开发环境](docs/DEVELOPMENT.md) | Rust/Python 环境、常用命令、测试、格式化、端到端验证 |
