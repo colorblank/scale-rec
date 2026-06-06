@@ -75,7 +75,8 @@ def _read_file_compat(path: str, params: dict, names: list[str]) -> pd.DataFrame
     """兼容读取：如果列数不匹配（ragged lines），用宽松模式重试。"""
     try:
         df = pd.read_csv(path, **params)
-    except Exception:
+    except (pd.errors.ParserError, ValueError):
+        logger.exception("strict csv read failed for %s; retrying relaxed ragged-line mode", path)
         # 宽松模式：读为单列再 split
         df = pd.read_csv(
             path,

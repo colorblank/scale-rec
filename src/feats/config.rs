@@ -160,6 +160,7 @@ pub enum TruncationSide {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EmbedConfig {
     pub vocab_size: usize,
     pub embed_dim: usize,
@@ -173,6 +174,7 @@ pub struct EmbedConfig {
 
 /// 原始输入源定义。`embed` 已弃用，全部 embedding 由算子输出配置。
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SourceDef {
     pub name: String,
     #[serde(default)]
@@ -189,6 +191,7 @@ pub struct SourceDef {
 
 /// 算子节点定义。`params` 使用原生 YAML 值，由各算子自行解析。
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OperatorDef {
     pub name: String,
     pub op_type: String,
@@ -202,6 +205,7 @@ pub struct OperatorDef {
 
 /// 完整的特征编排配置。包含版本、输入源列表和算子列表。
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FlowConfig {
     pub version: String,
     pub sources: Vec<SourceDef>,

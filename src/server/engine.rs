@@ -192,7 +192,9 @@ impl InferenceEngine {
 
             for (key, val) in row {
                 if let Some(col) = columns.get_mut(key) {
-                    let source = self.dag.source_defs().get(key).unwrap();
+                    let source = self.dag.source_defs().get(key).ok_or_else(|| {
+                        InferenceError::internal(format!("source '{}' missing from DAG", key))
+                    })?;
                     let fv = json_to_feature_typed(val, &source.dtype).map_err(|err| {
                         InferenceError::bad_request(format!(
                             "column '{}' row {}: {}",
@@ -313,7 +315,9 @@ impl InferenceEngine {
         for (row_idx, item) in items.iter().enumerate() {
             for (key, val) in item {
                 if let Some(col) = columns.get_mut(key) {
-                    let source = self.dag.source_defs().get(key).unwrap();
+                    let source = self.dag.source_defs().get(key).ok_or_else(|| {
+                        InferenceError::internal(format!("source '{}' missing from DAG", key))
+                    })?;
                     let fv = json_to_feature_typed(val, &source.dtype).map_err(|err| {
                         InferenceError::bad_request(format!(
                             "item column '{}' row {}: {}",
@@ -376,7 +380,7 @@ impl InferenceEngine {
         for key in &out_keys {
             let vals: Vec<f32> = outputs
                 .get(*key)
-                .unwrap()
+                .ok_or_else(|| InferenceError::model(format!("output '{}' missing", key)))?
                 .flatten_all()
                 .map_err(|e| InferenceError::model(format!("flatten output '{}': {}", key, e)))?
                 .to_vec1::<f32>()

@@ -29,9 +29,6 @@ rustc-ice-*.txt
 .claude/scheduled_tasks.json
 .claude/worktrees/
 
-# Rust
-Cargo.lock
-
 # Python / data
 *.safetensors
 *.parquet

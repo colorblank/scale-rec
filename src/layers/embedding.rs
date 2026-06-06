@@ -113,7 +113,9 @@ impl FeatureEmbeddings {
             let input_tensor = x_inputs
                 .get(name)
                 .ok_or_else(|| candle_core::Error::Msg(format!("Feature '{}' not found", name)))?;
-            let idx = *self.feature_to_idx.get(name).unwrap();
+            let idx = *self.feature_to_idx.get(name).ok_or_else(|| {
+                candle_core::Error::Msg(format!("Feature '{}' has no embedding index", name))
+            })?;
             let emb = self.embeddings[idx].forward(input_tensor)?;
             embeds.push(self.pool(name, emb)?);
         }
@@ -126,7 +128,9 @@ impl FeatureEmbeddings {
             let input_tensor = x_inputs
                 .get(name)
                 .ok_or_else(|| candle_core::Error::Msg(format!("Feature '{}' not found", name)))?;
-            let idx = *self.feature_to_idx.get(name).unwrap();
+            let idx = *self.feature_to_idx.get(name).ok_or_else(|| {
+                candle_core::Error::Msg(format!("Feature '{}' has no embedding index", name))
+            })?;
             let emb = self.embeddings[idx].forward(input_tensor)?;
             embeds.push(self.pool(name, emb)?.unsqueeze(1)?);
         }

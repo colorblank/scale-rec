@@ -5,6 +5,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
+use tracing::warn;
 
 /// 特征哈希算子，内置线程安全缓存。
 ///
@@ -21,7 +22,7 @@ pub struct FeatureHash {
 }
 
 impl FeatureHash {
-    pub fn new(vocab_size: u32, num_hashes: u32, separator: String) -> Self {
+    pub fn new(vocab_size: u32, num_hashes: u32, separator: String) -> Result<Self, String> {
         Self::with_scope(vocab_size, num_hashes, separator, "", "", "")
     }
 
@@ -32,10 +33,12 @@ impl FeatureHash {
         namespace: &str,
         salt: &str,
         version: &str,
-    ) -> Self {
-        assert!(vocab_size > 0, "vocab_size must be positive");
+    ) -> Result<Self, String> {
+        if vocab_size == 0 {
+            return Err("vocab_size must be positive".to_string());
+        }
         let hash_prefix = build_hash_prefix(namespace, salt, version);
-        Self {
+        Ok(Self {
             vocab_size,
             num_hashes,
             separator,
@@ -43,7 +46,7 @@ impl FeatureHash {
             cache: RwLock::new(HashMap::new()),
             hits: AtomicU64::new(0),
             misses: AtomicU64::new(0),
-        }
+        })
     }
 
     /// 缓存命中次数（自创建以来的累计值）。
@@ -58,7 +61,13 @@ impl FeatureHash {
 
     /// 缓存条目数。
     pub fn cache_size(&self) -> usize {
-        self.cache.read().unwrap().len()
+        match self.cache.read() {
+            Ok(cache) => cache.len(),
+            Err(e) => {
+                warn!("FeatureHash cache lock poisoned while reading size: {}", e);
+                0
+            }
+        }
     }
 }
 
@@ -138,7 +147,10 @@ impl CustomOp for FeatureHash {
             return Ok(results);
         }
         // 标准路径：join → hash
-        let mut cache = self.cache.write().unwrap();
+        let mut cache = self
+            .cache
+            .write()
+            .map_err(|e| format!("FeatureHash cache lock poisoned: {}", e))?;
         for row in 0..n_rows {
             let key = build_row_key(inputs, row, &self.separator);
             if let Some(cached) = cache.get(&key) {
@@ -158,7 +170,10 @@ impl CustomOp for FeatureHash {
 impl FeatureHash {
     fn cached_or_compute(&self, key: &str) -> Result<Fv, String> {
         {
-            let cache = self.cache.read().unwrap();
+            let cache = self
+                .cache
+                .read()
+                .map_err(|e| format!("FeatureHash cache lock poisoned: {}", e))?;
             if let Some(cached) = cache.get(key) {
                 self.hits.fetch_add(1, Ordering::Relaxed);
                 return Ok(cached.clone());
@@ -166,7 +181,10 @@ impl FeatureHash {
         }
         let result = self.hash_multi(key);
         {
-            let mut cache = self.cache.write().unwrap();
+            let mut cache = self
+                .cache
+                .write()
+                .map_err(|e| format!("FeatureHash cache lock poisoned: {}", e))?;
             cache.insert(key.to_string(), result.clone());
         }
         self.misses.fetch_add(1, Ordering::Relaxed);
@@ -263,7 +281,7 @@ mod tests {
 
     #[test]
     fn test_single_hash() {
-        let op = FeatureHash::new(1000, 1, "|".into());
+        let op = FeatureHash::new(1000, 1, "|".into()).unwrap();
         let result = op
             .process(&[Fv::Str("user_123".into()), Fv::Str("item_456".into())])
             .unwrap();
@@ -276,7 +294,7 @@ mod tests {
 
     #[test]
     fn test_multi_hash() {
-        let op = FeatureHash::new(1000, 4, "|".into());
+        let op = FeatureHash::new(1000, 4, "|".into()).unwrap();
         let result = op.process(&[Fv::Str("hello".into())]).unwrap();
         if let Fv::IntList(indices) = result {
             assert_eq!(indices.len(), 4);
@@ -292,7 +310,7 @@ mod tests {
 
     #[test]
     fn test_deterministic() {
-        let op = FeatureHash::new(500, 3, "_".into());
+        let op = FeatureHash::new(500, 3, "_".into()).unwrap();
         let a = op.process(&[Fv::Str("test".into())]).unwrap();
         let b = op.process(&[Fv::Str("test".into())]).unwrap();
         assert_eq!(a, b);
@@ -300,7 +318,7 @@ mod tests {
 
     #[test]
     fn test_different_inputs_different_output() {
-        let op = FeatureHash::new(100000, 1, "|".into());
+        let op = FeatureHash::new(100000, 1, "|".into()).unwrap();
         let a = op.process(&[Fv::Str("abc".into())]).unwrap();
         let b = op.process(&[Fv::Str("abd".into())]).unwrap();
         assert_ne!(a, b);
@@ -308,11 +326,13 @@ mod tests {
 
     #[test]
     fn test_hash_scope_changes_output_without_affecting_default() {
-        let default_op = FeatureHash::new(1_000_000, 1, "|".into());
-        let scoped_op = FeatureHash::with_scope(1_000_000, 1, "|".into(), "user_id", "salt", "v2");
+        let default_op = FeatureHash::new(1_000_000, 1, "|".into()).unwrap();
+        let scoped_op =
+            FeatureHash::with_scope(1_000_000, 1, "|".into(), "user_id", "salt", "v2").unwrap();
         assert_eq!(
             default_op.process(&[Fv::Str("abc".into())]).unwrap(),
             FeatureHash::with_scope(1_000_000, 1, "|".into(), "", "", "")
+                .unwrap()
                 .process(&[Fv::Str("abc".into())])
                 .unwrap()
         );
@@ -324,7 +344,7 @@ mod tests {
 
     #[test]
     fn test_empty_input() {
-        let op = FeatureHash::new(100, 2, "|".into());
+        let op = FeatureHash::new(100, 2, "|".into()).unwrap();
         let result = op.process(&[Fv::Str("".into())]).unwrap();
         if let Fv::IntList(indices) = result {
             assert_eq!(indices.len(), 2);
@@ -335,7 +355,7 @@ mod tests {
 
     #[test]
     fn test_cache_hit() {
-        let op = FeatureHash::new(1000, 1, "|".into());
+        let op = FeatureHash::new(1000, 1, "|".into()).unwrap();
         // 两次相同输入
         let a = op.process(&[Fv::Str("cached_key".into())]).unwrap();
         let b = op.process(&[Fv::Str("cached_key".into())]).unwrap();
@@ -346,7 +366,7 @@ mod tests {
 
     #[test]
     fn test_cache_batch() {
-        let op = FeatureHash::new(1000, 1, "|".into());
+        let op = FeatureHash::new(1000, 1, "|".into()).unwrap();
         let col = vec![
             Fv::Str("dup".into()),
             Fv::Str("uniq".into()),
@@ -361,7 +381,7 @@ mod tests {
 
     #[test]
     fn test_batch() {
-        let op = FeatureHash::new(1000, 2, "|".into());
+        let op = FeatureHash::new(1000, 2, "|".into()).unwrap();
         let col_a = vec![Fv::Str("x".into()), Fv::Str("y".into())];
         let col_b = vec![Fv::Str("1".into()), Fv::Str("2".into())];
         let results = op.process_batch(&[&col_a, &col_b], 2).unwrap();
@@ -378,7 +398,7 @@ mod tests {
 
     #[test]
     fn test_mixed_list_and_scalar_single_matches_batch() {
-        let op = FeatureHash::new(1000, 1, "|".into());
+        let op = FeatureHash::new(1000, 1, "|".into()).unwrap();
         let single = op
             .process(&[
                 Fv::Str("user".into()),
@@ -398,7 +418,7 @@ mod tests {
 
     #[test]
     fn test_batch_rejects_mixed_scalar_and_list_rows() {
-        let op = FeatureHash::new(1000, 1, "|".into());
+        let op = FeatureHash::new(1000, 1, "|".into()).unwrap();
         let col_a = vec![
             Fv::Str("x".into()),
             Fv::Str("y".into()),

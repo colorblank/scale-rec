@@ -2,12 +2,13 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use anyhow::{anyhow, bail, Context, Result};
 use axum::Router;
 use scale_rec::server::manifest::find_manifests;
 use scale_rec::server::registry::ModelRegistry;
 use scale_rec::server::routes;
 use tower_http::cors::CorsLayer;
-use tracing::info;
+use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 struct ServerArgs {
@@ -19,8 +20,8 @@ struct ServerArgs {
     blocking_threads: Option<usize>,
 }
 
-fn main() {
-    let args = parse_args();
+fn main() -> Result<()> {
+    let args = parse_args()?;
 
     let mut runtime = tokio::runtime::Builder::new_multi_thread();
     runtime.enable_all();
@@ -33,11 +34,11 @@ fn main() {
 
     runtime
         .build()
-        .expect("failed to build tokio runtime")
-        .block_on(run(args));
+        .context("failed to build tokio runtime")?
+        .block_on(run(args))
 }
 
-fn parse_args() -> ServerArgs {
+fn parse_args() -> Result<ServerArgs> {
     let args: Vec<String> = std::env::args().collect();
     let mut model_dir: Option<PathBuf> = None;
     let mut model_paths: Vec<PathBuf> = Vec::new();
@@ -51,30 +52,48 @@ fn parse_args() -> ServerArgs {
         match args[i].as_str() {
             "--model-dir" => {
                 i += 1;
+                if i >= args.len() {
+                    bail!("--model-dir requires a value");
+                }
                 model_dir = Some(PathBuf::from(&args[i]));
             }
             "--model-path" | "--model-manifest" => {
                 i += 1;
+                if i >= args.len() {
+                    bail!("{} requires a value", args[i - 1]);
+                }
                 model_paths.push(PathBuf::from(&args[i]));
             }
             "--feature-config" => {
                 i += 1;
+                if i >= args.len() {
+                    bail!("--feature-config requires a value");
+                }
                 feature_config_path = Some(PathBuf::from(&args[i]));
             }
             "--port" => {
                 i += 1;
+                if i >= args.len() {
+                    bail!("--port requires a value");
+                }
                 port = args[i].parse().unwrap_or(8080);
             }
             "--worker-threads" => {
                 i += 1;
+                if i >= args.len() {
+                    bail!("--worker-threads requires a value");
+                }
                 worker_threads = args[i].parse().ok();
             }
             "--blocking-threads" => {
                 i += 1;
+                if i >= args.len() {
+                    bail!("--blocking-threads requires a value");
+                }
                 blocking_threads = args[i].parse().ok();
             }
             _ => {
-                eprintln!("unknown arg: {}", args[i]);
+                bail!("unknown arg: {}", args[i]);
             }
         }
         i += 1;
@@ -85,22 +104,19 @@ fn parse_args() -> ServerArgs {
                 .first()
                 .and_then(|path| path.parent().map(Path::to_path_buf))
         })
-        .unwrap_or_else(|| {
-            eprintln!("--model-dir or --model-path is required");
-            std::process::exit(2);
-        });
+        .ok_or_else(|| anyhow!("--model-dir or --model-path is required"))?;
 
-    ServerArgs {
+    Ok(ServerArgs {
         model_dir: resolved_model_dir,
         model_paths,
         feature_config_path,
         port,
         worker_threads,
         blocking_threads,
-    }
+    })
 }
 
-async fn run(args: ServerArgs) {
+async fn run(args: ServerArgs) -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
@@ -128,10 +144,9 @@ async fn run(args: ServerArgs) {
 
     let registry = Arc::new(match &args.feature_config_path {
         Some(feature_config_path) => ModelRegistry::new(feature_config_path, &args.model_dir)
-            .expect("Failed to create model registry"),
-        None => {
-            ModelRegistry::from_model_dir(&args.model_dir).expect("Failed to create model registry")
-        }
+            .map_err(|e| anyhow!("failed to create model registry: {}", e))?,
+        None => ModelRegistry::from_model_dir(&args.model_dir)
+            .map_err(|e| anyhow!("failed to create model registry: {}", e))?,
     });
 
     if !args.model_paths.is_empty() {
@@ -153,7 +168,11 @@ async fn run(args: ServerArgs) {
                 for entry in entries.flatten() {
                     let path = entry.path();
                     if path.extension().map_or(false, |e| e == "safetensors") {
-                        let name = path.file_stem().unwrap().to_string_lossy();
+                        let Some(name) = path.file_stem() else {
+                            warn!("skip {}: invalid file stem", path.display());
+                            continue;
+                        };
+                        let name = name.to_string_lossy();
                         let model_name = name.to_string();
                         match registry.load_model(&model_name) {
                             Ok(info) => info!("loaded: {:?}", info),
@@ -176,8 +195,13 @@ async fn run(args: ServerArgs) {
 
     let addr = format!("0.0.0.0:{}", args.port);
     info!("listening on {}", addr);
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .with_context(|| format!("failed to bind {}", addr))?;
+    axum::serve(listener, app)
+        .await
+        .context("server exited with error")?;
+    Ok(())
 }
 
 fn load_model_path(registry: &ModelRegistry, model_path: &Path) {

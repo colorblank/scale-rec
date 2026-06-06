@@ -34,12 +34,11 @@ impl ParsedFeatureHash {
         max_len: usize,
         pad_len: usize,
         pad_val: String,
-    ) -> Self {
-        assert!(
-            num_hashes == 1,
-            "ParsedFeatureHash only supports num_hashes=1"
-        );
-        Self {
+    ) -> Result<Self, String> {
+        if num_hashes != 1 {
+            return Err("ParsedFeatureHash only supports num_hashes=1".to_string());
+        }
+        Ok(Self {
             parse_mode,
             key,
             pad_len,
@@ -49,8 +48,8 @@ impl ParsedFeatureHash {
             key_index,
             sep,
             max_len,
-            inner: FeatureHash::with_scope(vocab_size, 1, separator, &namespace, &salt, &version),
-        }
+            inner: FeatureHash::with_scope(vocab_size, 1, separator, &namespace, &salt, &version)?,
+        })
     }
 
     fn parse_tokens(&self, input: &Fv) -> Result<Vec<String>, String> {

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct WeightBinding {
     #[serde(default = "default_weight_format")]
     pub format: String,
@@ -61,6 +62,7 @@ fn default_allow_extra_tensors() -> bool {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ModelManifest {
     pub schema_version: u32,
     pub model_id: String,

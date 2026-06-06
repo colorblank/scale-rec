@@ -164,7 +164,9 @@ impl FeatureDag {
             source_cols.push(i);
             source_names.push(s.clone());
             col_names[i] = Some(s.clone());
-            let source_def = sources.get(s).unwrap();
+            let source_def = sources
+                .get(s)
+                .ok_or_else(|| format!("source '{}' missing while building execution plan", s))?;
             source_defaults.push(parse_default(&source_def.default_val, &source_def.dtype));
         }
         let mut col_count = sources.len();
@@ -184,7 +186,9 @@ impl FeatureDag {
         let mut op_name_to_idx: HashMap<String, usize> = HashMap::new();
         for (i, node_name) in execution_order.iter().enumerate() {
             op_name_to_idx.insert(node_name.clone(), i);
-            plan_ops.push(nodes.remove(node_name).unwrap());
+            plan_ops.push(nodes.remove(node_name).ok_or_else(|| {
+                format!("operator '{}' missing after topological sort", node_name)
+            })?);
         }
         for node_name in &execution_order {
             let def = &node_defs[node_name];
@@ -192,13 +196,23 @@ impl FeatureDag {
             let input_cols: Vec<usize> = def
                 .inputs
                 .iter()
-                .map(|inp| *col_id.get(inp).unwrap_or(&usize::MAX))
-                .collect();
+                .map(|inp| {
+                    col_id
+                        .get(inp)
+                        .copied()
+                        .ok_or_else(|| format!("input column '{}' missing from plan", inp))
+                })
+                .collect::<Result<_, _>>()?;
             let output_cols: Vec<usize> = def
                 .outputs
                 .iter()
-                .map(|out| *col_id.get(out).unwrap_or(&usize::MAX))
-                .collect();
+                .map(|out| {
+                    col_id
+                        .get(out)
+                        .copied()
+                        .ok_or_else(|| format!("output column '{}' missing from plan", out))
+                })
+                .collect::<Result<_, _>>()?;
             plan_steps.push(ExecStep {
                 op_idx,
                 input_cols,
@@ -299,25 +313,25 @@ impl FeatureDag {
             });
         }
 
-        println!(
-            "[DAG] sources: consumed={}/{} orphan={}",
-            sources.len() - orphan_src.len(),
-            sources.len(),
-            orphan_src.len()
+        tracing::info!(
+            consumed = sources.len() - orphan_src.len(),
+            total = sources.len(),
+            orphan = orphan_src.len(),
+            "DAG source validation summary"
         );
-        println!(
-            "[DAG] outputs: embeddable={} intermediate={} orphan={}",
-            embeddable.len(),
+        tracing::info!(
+            embeddable = embeddable.len(),
             intermediate,
-            orphan_out.len()
+            orphan = orphan_out.len(),
+            "DAG output validation summary"
         );
         if !orphan_src.is_empty() {
-            println!("[DAG] WARNING orphan sources: {:?}", orphan_src);
+            tracing::warn!(?orphan_src, "DAG orphan sources");
         }
         if !orphan_out.is_empty() {
-            println!(
-                "[DAG] WARNING {} orphan outputs (no consumer, no embed)",
-                orphan_out.len()
+            tracing::warn!(
+                count = orphan_out.len(),
+                "DAG orphan outputs have no consumer and no embed"
             );
         }
         ValidationReport {
@@ -427,7 +441,7 @@ impl FeatureDag {
                 let script = Self::yaml_str(p, "script")
                     .ok_or("Missing script for ExpressionOp")?
                     .to_string();
-                Ok(Box::new(ExpressionOp::new(script)))
+                Ok(Box::new(ExpressionOp::new(script)?))
             }
             "PluginOp" => {
                 let path = Self::yaml_str(p, "path")
@@ -452,7 +466,7 @@ impl FeatureDag {
                 let version = Self::yaml_stringish(p, "version").unwrap_or_default();
                 Ok(Box::new(FeatureHash::with_scope(
                     vocab_size, num_hashes, separator, &namespace, &salt, &version,
-                )))
+                )?))
             }
             "ParsedFeatureHash" => {
                 let vocab_size = Self::yaml_i64(p, "vocab_size").unwrap_or(1000) as u32;
@@ -475,7 +489,7 @@ impl FeatureDag {
                 Ok(Box::new(ParsedFeatureHash::new(
                     vocab_size, parse_mode, num_hashes, separator, namespace, salt, version, key,
                     sep1, sep2, key_index, sep, max_len, pad_len, pad_val,
-                )))
+                )?))
             }
             "ConcatHash" => {
                 let vocab_size = Self::yaml_i64(p, "vocab_size").unwrap_or(1000) as u32;
@@ -486,7 +500,7 @@ impl FeatureDag {
                 let version = Self::yaml_stringish(p, "version").unwrap_or_default();
                 Ok(Box::new(ConcatHash::new(
                     vocab_size, num_hashes, separator, namespace, salt, version,
-                )))
+                )?))
             }
             _ => Err(format!("Unsupported operator type: {}", def.op_type)),
         }
@@ -722,7 +736,7 @@ impl FeatureDag {
         source_names: &HashSet<String>,
         computed_names: &HashSet<String>,
     ) {
-        println!("[Feature Snapshot]");
+        tracing::info!("Feature Snapshot");
         for (name, val) in context {
             let type_name = val.type_name();
             let origin = if computed_names.contains(name) {
@@ -732,7 +746,7 @@ impl FeatureDag {
             } else {
                 "raw"
             };
-            println!(" -> [{:<8}] {:<20} | Type: {}", origin, name, type_name);
+            tracing::info!(origin, name, type_name, "feature snapshot entry");
         }
     }
 }

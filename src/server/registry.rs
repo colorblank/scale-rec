@@ -1,6 +1,5 @@
 //! 模型注册表：多模型管理 + 热更新。
 use std::collections::{HashMap, HashSet};
-use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -276,7 +275,7 @@ impl ModelRegistry {
 
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .map_err(|e| format!("system clock before unix epoch: {}", e))?
             .as_secs();
         let loaded_at = ts.to_string();
         let version = manifest
@@ -292,7 +291,10 @@ impl ModelRegistry {
             is_default: false,
         };
 
-        let mut models = self.models.write().unwrap();
+        let mut models = self
+            .models
+            .write()
+            .map_err(|e| format!("model registry lock poisoned: {}", e))?;
         let entry = models.entry(model_name.to_string()).or_default();
         if entry
             .default_version
@@ -415,7 +417,7 @@ impl ModelRegistry {
         version: Option<&str>,
         fallback_version: Option<&str>,
     ) -> Option<ResolvedModel> {
-        let models = self.models.read().unwrap();
+        let models = self.models.read().ok()?;
         let entry = models.get(name)?;
         let selected_version = match version {
             Some(v) if entry.versions.contains_key(v) => v.to_string(),
@@ -433,13 +435,20 @@ impl ModelRegistry {
     }
 
     pub fn list(&self) -> Vec<String> {
-        let mut names: Vec<String> = self.models.read().unwrap().keys().cloned().collect();
+        let Ok(models) = self.models.read() else {
+            warn!("model registry lock poisoned while listing models");
+            return vec![];
+        };
+        let mut names: Vec<String> = models.keys().cloned().collect();
         names.sort();
         names
     }
 
     pub fn list_info(&self) -> Vec<ModelServingInfo> {
-        let models = self.models.read().unwrap();
+        let Ok(models) = self.models.read() else {
+            warn!("model registry lock poisoned while listing model info");
+            return vec![];
+        };
         let mut result: Vec<ModelServingInfo> = models
             .iter()
             .map(|(name, entry)| self.entry_info(name, entry))
@@ -449,7 +458,7 @@ impl ModelRegistry {
     }
 
     pub fn model_info(&self, name: &str) -> Option<ModelServingInfo> {
-        let models = self.models.read().unwrap();
+        let models = self.models.read().ok()?;
         models.get(name).map(|entry| self.entry_info(name, entry))
     }
 
@@ -479,11 +488,7 @@ impl ModelRegistry {
 fn sha256_file(path: &Path) -> Result<String, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("read {}: {}", path.display(), e))?;
     let digest = sha256_bytes(&bytes);
-    let mut out = String::with_capacity(64);
-    for b in digest {
-        write!(&mut out, "{:02x}", b).unwrap();
-    }
-    Ok(out)
+    Ok(hex_encode(&digest))
 }
 
 fn sha256_bytes(input: &[u8]) -> [u8; 32] {
@@ -602,10 +607,12 @@ fn validate_safetensors_keys(
     let expected: HashMap<String, Vec<usize>> = varmap
         .data()
         .lock()
-        .unwrap()
+        .map_err(|e| format!("varmap lock poisoned: {}", e))?
         .iter()
         .map(|(name, var)| (name.clone(), var.as_tensor().dims().to_vec()))
         .collect();
+    // SAFETY: The path is an existing safetensors file selected from a manifest or explicit
+    // model path. The mapping is read-only and is only used to inspect tensor metadata here.
     let safetensors = unsafe { MmapedSafetensors::new(path) }
         .map_err(|e| format!("read safetensors header {}: {}", path.display(), e))?;
     let tensors = safetensors.tensors();
@@ -649,6 +656,16 @@ fn validate_safetensors_keys(
     Ok(())
 }
 
+fn hex_encode(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0x0f) as usize] as char);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -656,11 +673,7 @@ mod tests {
     use std::fs;
 
     fn hex(bytes: [u8; 32]) -> String {
-        let mut out = String::with_capacity(64);
-        for b in bytes {
-            write!(&mut out, "{:02x}", b).unwrap();
-        }
-        out
+        hex_encode(&bytes)
     }
 
     #[test]

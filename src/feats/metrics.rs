@@ -42,11 +42,11 @@ impl FeatureMetrics {
     }
 
     pub fn report(&self) {
-        println!(
-            "Metrics - Mean: {:.4}, StdDev: {:.4}, NullRatio: {:.4}",
-            self.mean,
-            self.std_dev(),
-            self.null_ratio
+        tracing::info!(
+            mean = self.mean,
+            std_dev = self.std_dev(),
+            null_ratio = self.null_ratio,
+            "feature metrics report"
         );
     }
 }
@@ -57,7 +57,7 @@ pub struct PerformanceTracer;
 impl PerformanceTracer {
     /// 记录节点耗时
     pub fn trace_execution_time(node_name: &str, duration_ms: f64) {
-        println!("[Tracing] Node '{}' took {:.2} ms", node_name, duration_ms);
+        tracing::info!(node_name, duration_ms, "feature node execution time");
     }
 }
 

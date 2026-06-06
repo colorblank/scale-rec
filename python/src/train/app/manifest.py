@@ -3,11 +3,14 @@ from __future__ import annotations
 """模型发布 manifest 导出。"""
 
 import hashlib
+import logging
 import subprocess
 from pathlib import Path
 from typing import Any, Optional, Union
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 
 def sha256_file(path: Union[str, Path]) -> str:
@@ -27,7 +30,8 @@ def current_git_commit(repo_root: Union[str, Path, None] = None) -> str:
             text=True,
             stderr=subprocess.DEVNULL,
         ).strip()
-    except Exception:
+    except (subprocess.CalledProcessError, OSError):
+        logger.exception("failed to resolve current git commit")
         return "unknown"
 
 

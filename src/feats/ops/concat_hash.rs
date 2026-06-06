@@ -16,13 +16,13 @@ impl ConcatHash {
         namespace: String,
         salt: String,
         version: String,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, String> {
+        Ok(Self {
             separator: separator.clone(),
             inner: FeatureHash::with_scope(
                 vocab_size, num_hashes, separator, &namespace, &salt, &version,
-            ),
-        }
+            )?,
+        })
     }
 }
 

@@ -8,11 +8,13 @@ pub struct ExpressionOp {
 }
 
 impl ExpressionOp {
-    pub fn new(script: String) -> Self {
+    pub fn new(script: String) -> Result<Self, String> {
         let mut engine = Engine::new();
         engine.register_fn("log", |f: f64| f.ln());
-        let ast = engine.compile(&script).expect("Invalid Rhai expression");
-        Self { ast, engine }
+        let ast = engine
+            .compile(&script)
+            .map_err(|e| format!("invalid Rhai expression '{}': {}", script, e))?;
+        Ok(Self { ast, engine })
     }
 }
 
