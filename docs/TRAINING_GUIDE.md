@@ -151,6 +151,110 @@ sources:
     role: discard
 ```
 
+## 特征预处理 Debug
+
+排查特征预处理时，建议按从单样本到批量、从局部到整体的顺序看。核心目标是确认四件事：原始列是否读到、默认值是否符合预期、每个算子输出是否正确、最终送入模型的 tensor 形状和值是否正确。
+
+### 1. 单样本快照
+
+`FeatureDag(debug_mode=True)` 会在 `execute(row)` 后打印完整特征快照。它使用 Python logger 的 DEBUG 级别，因此需要先打开日志：
+
+```python
+import logging
+
+from train.core.config import FlowConfig
+from train.core.dag import FeatureDag
+
+logging.basicConfig(level=logging.DEBUG)
+
+fc = FlowConfig.from_yaml("examples/feature_config_discover.yaml")
+dag = FeatureDag(fc, debug_mode=True)
+
+row = {
+    "user_id": 123,
+    "item_id": 456,
+    "interest_keywords": "人工智能#0.9|新能源#0.7",
+    "is_click": 1,
+}
+
+result = dag.execute(row)
+print(result.features["user_id_idx"])
+```
+
+日志中的 `source` 表示原始输入列，`computed` 表示算子输出，`raw` 表示输入中存在但不属于 feature source 的字段。这个方式适合快速检查某个字段是否被默认值覆盖、某个 hash/bucket/list 输出是否符合预期。
+
+### 2. 逐算子 Trace
+
+需要看每个算子的输入输出时，用 `DebugTracer`。它记录默认值初始化、原始输入覆盖、每个 operator 的 inputs/outputs，并能输出 JSONL：
+
+```python
+from train.core.config import FlowConfig
+from train.core.dag import FeatureDag
+from train.debug.tracer import DebugConfig, DebugTracer
+
+fc = FlowConfig.from_yaml("examples/feature_config_discover.yaml")
+tracer = DebugTracer(DebugConfig(max_trace_samples=10, output_dir="python/artifacts/debug"))
+dag = FeatureDag(fc, tracer=tracer)
+
+dag.execute(row)
+
+for stage in tracer.traces[0].stages:
+    print(stage.stage_type.value, stage.stage_name)
+    print("inputs:", {k: v.value for k, v in stage.inputs.items()})
+    print("outputs:", {k: v.value for k, v in stage.outputs.items()})
+
+tracer.save()
+```
+
+`DebugTracer` 当前主要用于 `execute(row)` 单样本路径；`preprocess_batch()` 走列式批处理路径，不会记录每个 operator 的 trace。排查算子逻辑时先用单样本复现，再切到 batch tensor 检查。
+
+### 3. 最终 Tensor 检查
+
+模型实际看到的是 `preprocess_batch()` 的输出 tensor。检查 pooling、`seq_len`、padding、`num_hashes` 是否正确时，直接看 tensor：
+
+```python
+batch = [
+    {"user_id": 123, "item_id": 456, "interest_keywords": "人工智能#0.9"},
+    {"user_id": 124, "item_id": 457, "interest_keywords": ""},
+]
+
+tensors = dag.preprocess_batch(batch)
+for name, tensor in tensors.items():
+    print(name, tuple(tensor.shape), tensor[:2])
+```
+
+常见判断：
+
+- 标量特征通常是 `[batch]`。
+- 序列特征通常是 `[batch, seq_len]`。
+- `pooling: flatten` 的序列在 embedding 后会变成 `seq_len * embed_dim`。
+- `pooling: first` 遇到 list 只取第一个值；如果 `FeatureHash num_hashes > 1` 又没有配置 `mean/sum/max/flatten`，后续 hash 会被丢掉。
+- `preprocess_batch()` 会按 `seq_len` 截断/补 `0`，因此要同时看 DAG 输出和 tensor 输出。
+
+### 4. 训练时 Feature Quality
+
+`discover` 训练启动时会先从验证集收集 batch，并计算 feature quality。输出会进入 run manifest 的 metrics，常用字段包括：
+
+| 指标 | 含义 |
+|---|---|
+| `feature_quality.source.<name>.missing_rate` | 原始 source 缺失率，`None` 和空字符串算缺失 |
+| `feature_quality.source.<name>.default_rate` | 原始 source 命中默认值的比例 |
+| `feature_quality.emb.<name>.empty_sequence_rate` | 序列 embeddable 有效长度为 0 的比例 |
+| `feature_quality.emb.<name>.mean_length` | 序列 embeddable 的平均有效长度 |
+| `feature_quality.emb.<name>.padding_rate` | 序列 embeddable 中 padding 项占比 |
+| `feature_quality.emb.<name>.bucket_utilization` | 当前样本中使用过的 hash/bucket 数占 vocab_size 的比例 |
+
+对于多日训练，验证集来自最后日期文件，因此 feature quality 也反映最后日期文件的分布。排查日切数据漂移时，优先看最后日期文件的这些指标。
+
+### 5. 常见问题定位
+
+- 某列 `missing_rate` 很高：检查 TSV header/no-header、列顺序、`--separator`、`--null-markers`、`usecols` 是否和 feature config 一致。
+- 某列 `default_rate` 很高：检查 `default_val` 是否和真实业务值冲突，例如 `user_id` 的默认 `0` 是否也是合法用户。
+- 序列 `padding_rate` 很高：检查上游 `StringParser` / `JsonExtractList` / `Split` 的分隔符、`key_index`、`pad_len`，以及原始字段是否为空。
+- `bucket_utilization` 极低：检查 hash 输入是否大面积为空、`vocab_size` 是否过大、算子是否只看到了 padding token。
+- tensor shape 不符合预期：检查 `embed.pooling`、`embed.seq_len`、上游 schema 的 `pad_len/max_len`。
+- Python/Rust 不一致：先用 `dag.execute(row)` 看 Python 单样本输出，再跑 golden consistency 或 `scale_rec_demo.verify_all` 对比 Rust 推理。
+
 ## 模型配置
 
 ### GDCN+ESMM 门控交叉网络配置

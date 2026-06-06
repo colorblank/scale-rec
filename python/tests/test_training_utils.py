@@ -263,6 +263,65 @@ def test_feature_quality_report_tracks_missing_defaults_and_buckets():
     assert "feature_quality.emb.age_bucket.bucket_utilization" in metrics
 
 
+def test_feature_quality_counts_sequence_padding_as_empty():
+    config = FlowConfig.from_dict(
+        {
+            "version": "1.0.0",
+            "sources": [
+                {"name": "interest_keywords", "dtype": "string", "default_val": ""},
+            ],
+            "operators": [
+                {
+                    "name": "kw_parse",
+                    "op_type": "StringParser",
+                    "inputs": ["interest_keywords"],
+                    "outputs": ["kw_tokens"],
+                    "params": {
+                        "sep1": "|",
+                        "sep2": "#",
+                        "key_index": 0,
+                        "pad_len": 3,
+                        "pad_val": "",
+                    },
+                },
+                {
+                    "name": "kw_hash",
+                    "op_type": "FeatureHash",
+                    "inputs": ["kw_tokens"],
+                    "outputs": ["kw_ids"],
+                    "params": {"vocab_size": 100, "num_hashes": 1},
+                    "embed": {
+                        "vocab_size": 100,
+                        "embed_dim": 4,
+                        "pooling": "mean",
+                        "seq_len": 3,
+                    },
+                },
+            ],
+        }
+    )
+    dag = FeatureDag(config)
+
+    report = summarize_feature_quality(
+        dag,
+        [
+            {
+                "features": [
+                    {"interest_keywords": "ai#0.8"},
+                    {"interest_keywords": ""},
+                ],
+                "labels": {},
+            }
+        ],
+    )
+
+    stat = report.embeddables["kw_ids"]
+    assert stat.empty_sequence_rate == 0.5
+    assert stat.mean_length == 0.5
+    assert stat.padding_rate == pytest.approx(5 / 6)
+    assert report.to_metrics()["feature_quality.emb.kw_ids.padding_rate"] == pytest.approx(5 / 6)
+
+
 def test_parameter_counting_utility():
     from train.models.params import count_parameters, format_parameter_summary
 
