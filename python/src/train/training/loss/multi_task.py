@@ -70,13 +70,24 @@ class MultiTaskLoss(nn.Module):
         total: Optional[torch.Tensor] = None
         self._last_raw_losses: dict[str, float] = {}
         self._last_pos_rates: dict[str, float] = {}
-        for task, logits in outputs.items():
-            if task.startswith("ct"):
-                continue
-            spec = self.spec_by_name.get(task)
-            if spec is None:
-                continue
+        unknown_outputs = sorted(
+            task for task in outputs if task not in self.spec_by_name and not task.startswith("ct")
+        )
+        if unknown_outputs:
+            raise ValueError(
+                "Model produced outputs not covered by task specs: " + ", ".join(unknown_outputs)
+            )
+        missing_outputs = sorted(task for task in self.task_names if task not in outputs)
+        if missing_outputs:
+            raise ValueError(
+                "Task specs require model outputs that are missing: " + ", ".join(missing_outputs)
+            )
+        for spec in self.task_specs:
+            task = spec.name
+            logits = outputs[task]
             col = spec.label
+            if col not in batch_labels and task not in batch_labels:
+                raise ValueError(f"Task '{task}' label column '{col}' is missing from batch labels")
             raw = _pick_labels(batch_labels, col, task)
             if not raw:
                 continue

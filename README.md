@@ -66,7 +66,6 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --train-config examples/train_defaults.yaml \
   --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
   --artifact-dir python/artifacts/demo \
-  --publish-path python/artifacts/demo/model_gdcn_esmm.safetensors \
   --model-name model_gdcn_esmm \
   --run-version 20260526_120000
 ```
@@ -80,18 +79,19 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --start-date 20260325 --end-date 20260331 \
   --feature-config examples/feature_config_discover.yaml \
   --model-config examples/model_gdcn_esmm.yaml \
-  --init-weights python/artifacts/demo/model_gdcn_esmm.safetensors \
+  --init-weights python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.safetensors \
   --epochs 3 --batch-size 1024 --no-header
 ```
 
-`train_defaults.yaml` 负责训练默认值，`model_gdcn_esmm.yaml` 负责任务定义，`discover_label_policy.yaml` 只负责 demo 数据标签生成。三者职责分离，训练流程和评估指标都从配置读取，不再在代码里写死。
+`train_defaults.yaml` 负责训练默认值，`model_gdcn_esmm.yaml` 负责任务定义，`discover_label_policy.yaml` 只负责 demo 数据标签生成。三者职责分离，训练流程和评估指标都从配置读取，不再在代码里写死。`best.safetensors` 由 `eval.monitor_task`、`eval.monitor_metric` 和 `eval.monitor_mode` 明确决定；未指定 `monitor_task` 时使用模型 `tasks` 中的第一个任务。
 
 训练启动后，日志会先打印一条数据摘要，包括总行数、训练/验证切分、batch_size、估算 batch 数、任务名和 label 映射。若出现 `No supervised batches were processed`，优先检查这条摘要里的 `labels` 和 `train/eval` 切分是否合理。
 
 训练完成后会生成：
 
-- `python/artifacts/demo/model_gdcn_esmm.safetensors`
-- `python/artifacts/demo/model_gdcn_esmm.manifest.yaml`
+- `python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.safetensors`
+- `python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.manifest.yaml`
+- `python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/configs/` 下的特征配置和模型配置副本
 - `python/artifacts/demo/model_gdcn_esmm/20260526_120000/` 下的 run checkpoint 和 `run.manifest.yaml`
 
 详细保存逻辑见 [训练手册 - 保存与推理导出](docs/TRAINING_GUIDE.md#保存与推理导出)。
@@ -111,14 +111,14 @@ cargo run --bin server --release -- \
 
 ```bash
 cargo run --bin server --release -- \
-  --model-path python/artifacts/demo/model_gdcn_esmm.manifest.yaml
+  --model-path python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.manifest.yaml
 ```
 
 旧的无 manifest `.safetensors` 产物仍可兼容加载，但必须提供 feature config fallback：
 
 ```bash
 cargo run --bin server --release -- \
-  --model-path python/artifacts/demo/model_gdcn_esmm.safetensors \
+  --model-path python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.safetensors \
   --feature-config examples/feature_config_discover.yaml
 ```
 

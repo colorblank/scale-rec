@@ -18,7 +18,56 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 
 ## 2. 架构分析
 
-### 2.1 FeatureDag 与特征配置
+### 2.1 错误处理与系统鲁棒性
+
+当前代码库在生产路径上大量使用不可恢复的错误处理方式：
+
+- **`unwrap()` / `expect()` 泛滥**：全库约 39 处 `.unwrap()` / `.expect()` 调用分布在生产路径上（不含测试代码），其中 14 处为高严重度。
+  - `src/main.rs:21-22`：配置文件读取和 YAML 解析直接 `.expect()`，文件不存在或格式错误导致进程崩溃。
+  - `src/bin/server.rs:179-180`：`TcpListener::bind().await.unwrap()` 和 `axum::serve().await.unwrap()`，端口被占用或服务异常直接 panic。
+  - `src/bin/server.rs:36,131,133`：Tokio runtime 构建、model registry 创建均 `.expect()`。
+  - `src/feats/ops/expression.rs:14`：Rhai 表达式编译失败直接 `.expect("Invalid Rhai expression")`。
+  - `src/server/registry.rs:279,295,418,436,442,452,484,605`：多处 `RwLock` 的 `.lock().unwrap()`，在 `Mutex`/`RwLock` 已 poisoned 时会导致级联 panic。
+  - `src/layers/embedding.rs:116,129`：`HashMap::get().unwrap()` 在 feature index 查不到时 panic。
+- **`panic!()` / `assert!()` 在非测试代码中**：
+  - `src/main.rs:75`：特征类型不支持时 `panic!("Feature '{}' has unsupported type", ...)`。
+  - `src/feats/ops/feature_hash.rs:36`：`assert!(vocab_size > 0, "vocab_size must be positive")`。
+- **静默吞错**：
+  - `src/models/mod.rs:333`：`serde_yaml::from_value::<MultiTaskConfig>().unwrap_or_else(|_| MultiTaskConfig { towers: vec![], relations: vec![] })` —— 配置错误时返回零 tower，服务启动无任何报错。
+  - `src/feats/defaults.rs:12-25`：`parse_int_strict(raw).unwrap_or(0)` 对非法默认值静默回退为 0。
+  - `src/feats/ops/expression.rs:29`：非数值输入静默转为 0.0。
+  - `src/feats/ops/plugin.rs:42`：插件返回不识别类型时 `.unwrap_or(Fv::Int(0))`。
+  - `src/feats/dag.rs:195,200`：使用 `usize::MAX` 作为 sentinel 值，下游使用错误的值会导致难以追踪的 bug。
+  - `src/feats/debug/tracer.rs:235,244,247,257-262`：文件 I/O 错误用 `let _ = ` 静默丢弃。
+- **Python 侧 `except Exception` 吞错**：
+  - `python/src/train/app/data.py:78`：`_read_file_compat` 中 `except Exception` 捕获所有异常后 fallback 到 relaxed 模式，MemoryError/KeyboardInterrupt 等关键异常也被吞掉。
+  - `python/src/train/app/manifest.py:30`：`current_git_commit` 中 `except Exception` 返回 `"unknown"`，不留任何日志。
+
+**改进方向**：
+- 将生产路径（`src/bin/`、`src/server/`）所有 `.unwrap()`/`.expect()` 替换为 `Result` 传播，配合 `tracing::error!` 记录上下文。
+- 将 `panic!()` 和 `assert!()` 在非测试代码中替换为 `Result::Err` 或 `tracing::error!` + graceful degradation。
+- 为 `serde_yaml` 反序列化增加 `#[serde(deny_unknown_fields)]`，防止配置拼写错误被静默忽略。
+- Python 侧 `except Exception` 替换为具体异常类型，至少记录 `logging.exception()` 后再 fallback。
+- Rust 侧所有默认为 0/Int(0) 的 `.unwrap_or()` 至少添加 `tracing::warn!`，关键位置改为 `Result::Err`。
+
+### 2.2 日志规范
+
+当前代码中 `println!()` / `eprintln!()` / `print()` 大量散布在生产和非测试代码中，完全绕过 tracing 日志体系：
+
+- **Rust**：约 30 处 `println!()` 分布在 9 个文件中：
+  - `src/main.rs:19-133`：14 处 println，包括配置读取、执行结果、输出展示。
+  - `src/feats/dag.rs:302-322`：`validate()` 用 println 输出 `[DAG] sources:`、`[DAG] WARNING` 等信息，生产者无法捕获。
+  - `src/bin/server.rs:77,89`：错误信息用 `eprintln!`。
+  - `src/feats/metrics.rs:45-60`：指标报告用 println。
+- **Python**：9 处 `print()`：
+  - `python/src/train/app/export.py:23`：`print_state_dict_keys` 用 print 而非 logging。
+  - `python/src/scale_rec_demo/verify_all.py:57-226`：6 处 print。
+
+**改进方向**：
+- 全量替换为 `tracing::info!/warn!/error!`（Rust）和 `logging.info/warning/error`（Python）。
+- 确保 log level 可通过环境变量或配置控制，生产默认不低于 INFO。
+
+### 2.3 FeatureDag 与特征配置
 
 当前特征系统的边界比较清晰：
 
@@ -49,7 +98,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 - 将 `FeatureSchema` 的 dtype、seq_len、pooling、default、role 作为训练和推理的统一契约。
 - 对 DAG validation 增加严格模式，生产加载模型时可以选择 orphan warning 升级为错误。
 
-### 2.2 模型与权重加载
+### 2.4 模型与权重加载
 
 模型层目前采用注册表模式：
 
@@ -77,27 +126,107 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 - 收敛 legacy hidden_dims 参数，长期以 `task_config` / `tasks` 作为多任务配置主入口。
 - 在 manifest 中记录模型输出任务、label、relation 和训练指标，并让服务端 `/models` 返回关键元数据。
 
-### 2.3 训练产物与发布
+### 2.5 训练产物与发布
 
 训练侧已有 `TrainingArtifactManager`：
 
-- run 目录保存 checkpoints、best/latest alias、run manifest。
-- 发布路径保存 `.safetensors` 和 `.manifest.yaml`。
+- run 目录保存 checkpoints、best/latest alias、run manifest 和默认 serving 发布目录。
+- 默认发布路径保存到当前 run 的 `serving/model.safetensors` 和 `serving/model.manifest.yaml`，配置副本保存到 `serving/configs/`。
 - manifest 记录 weights、feature config、model config 的 sha256。
 
 这是正确方向，已经解决了“只有权重文件无法恢复训练上下文”的问题。
 
 当前不足：
 
-- `copy_configs` 默认关闭时，manifest 记录的是外部 config 路径及其 sha256，长期归档时依赖外部文件仍然存在。
+- `copy_configs` 已默认开启，默认发布产物会在 `serving/configs/` 归档 feature/model config；但如果显式把 `--publish-path` 指到 run 目录外，跨机器部署时仍要同时携带 run 目录里的配置副本。
 - Rust `ModelRegistry` 已支持按 serving manifest 的 `feature_config_file`、`model_config_file`、`weights_file` 加载，并支持同一 `model_id` 多版本；manifest 已包含 `tasks`、`label_col_map` 和 `metrics`，但 `/models` 还没有把这些信息完全暴露为查询接口。
 - 默认版本目前按版本字符串取最大值，尚未支持显式 alias、灰度权重或 `versions.yaml` 指针。
 
 改进方向：
 
-- 推荐生产默认开启 `copy_configs`，让发布产物自包含。
+- 保持生产发布产物自包含，避免 serving manifest 依赖仓库 `examples/` 等外部配置路径。
 - 扩展 `ModelInfo`，返回 schema hash、tasks、metrics 和 loaded_at。
 - 增加显式默认版本配置，例如 serving manifest 标记、alias 文件或版本索引文件。
+
+### 2.6 工程基础设施
+
+当前项目工程基础设施在以下方面存在明显缺口：
+
+**CI/CD 管线完全缺失**：无 `.github/workflows/`、无 `.gitlab-ci.yml`、无 Jenkinsfile。测试、lint、构建和部署全依赖人工执行，缺少自动化质量闸门。
+
+**Cargo.lock 被 gitignore 但 Docker 构建依赖它**：
+- `.gitignore:33` 将 `Cargo.lock` 标记为 ignore。
+- `docker/Dockerfile:31` 使用 `cargo build --locked` 构建，要求 Cargo.lock 存在。
+- 全新 clone 后 Docker 构建直接失败；团队成员间构建不可复现。
+
+**静态检查工具配置不完整**：
+- Rust：无 `rustfmt.toml`、`clippy.toml`，代码风格仅靠默认规则 + `.claude/rules/code-style.md`（LLM 指导），无机械执行。
+- Python：`ruff` 仅启用默认 pycodestyle + pyflakes，缺少 `I`(isort)、`D`(pydocstyle)、`B`(flake8-bugbear)、`UP`(pyupgrade)、`SIM`(flake8-simplify) 等规则集。
+- **Mypy 种类检查形同虚设**：`python/pyproject.toml:50-72` 对 22 个核心模块（含 `train.core.config`、`train.core.dag`、`train.models` 等）设置 `ignore_errors = true`。
+- 无 `.editorconfig`，编辑器间换行/缩进/编码可能不一致。
+
+**依赖安全扫描缺失**：无 `cargo-audit`、`cargo-deny` 配置，无 Dependabot/Renovate。14 个 Rust crate 加上 Python 依赖无自动漏洞检查。
+
+**无 pre-commit hooks**：格式化和 lint 完全依赖开发者自觉，或 CI 中事后发现。
+
+**改进方向**：
+- 从 `.gitignore` 中移除 `Cargo.lock`。
+- 搭建 GitHub Actions（或 GitLab CI）：包含 `cargo test/fmt/clippy`、`ruff check/format`、`mypy`、`pytest`、`cargo-audit`。
+- 扩展 ruff 配置加入 `I`/`B`/`UP`/`SIM` 规则集，渐进式修复后逐步解锁 mypy `ignore_errors`。
+- 添加 `.editorconfig` 和 `.pre-commit-config.yaml`。
+- 配置 `cargo-deny` 并集成到 CI。
+
+### 2.7 安全与防御
+
+**服务端安全**：
+- `src/bin/server.rs:175`：`CorsLayer::permissive()` 允许任意跨域请求，任何网站都能调用推理接口。
+- 无速率限制 middleware，无请求体大小上限，单个客户端可 OOM 整个服务。
+- 所有 HTTP 端点无认证，任何人可访问 `/predict`、`/models` 等。
+- `src/server/routes.rs:56-72`：`ApiError::into_response()` 可能向客户端暴露内部路径和错误详情。
+
+**不安全代码**：
+- `src/feats/ops/plugin.rs:18,53-59`：`unsafe { Library::new(path) }` 加载任意本地 `.so/.dll`，无路径校验和签名验证，攻击者可通过控制 `path` 执行任意代码。缺少 `// SAFETY:` 注释说明前置条件。
+- `src/server/registry.rs:609`：`unsafe { MmapedSafetensors::new(path) }` 载入外部文件，同样缺少安全注释。
+
+**Docker 安全**：
+- Dockerfile 无 `USER` 指令，容器以 root 运行。
+- `src/bin/bench.rs:14`：硬编码 `http://localhost:8080` 默认 URL（开发级风险）。
+
+**改进方向**：
+- CORS 改为白名单模式，仅允许可信 origin。
+- 添加 `tower::limit::RateLimitLayer` 和 `tower_http::limit::RequestBodyLimitLayer`。
+- 添加 API key 或 mTLS 认证（至少先在内部部署边界完成）。
+- 为所有 unsafe 块添加 `// SAFETY:` 注释，插件路径增加白名单校验。
+- Dockerfile 添加 `USER 1000`。
+
+### 2.8 公共 API 文档覆盖率
+
+当前关键公共类型和方法缺少 rustdoc 或 docstring：
+
+- **Rust**（15 项）：`FeatureDag`、`ExecutionPlan`、`ExecStep`、`ModelConfig`、`TaskConfigEntry`、`InferenceEngine`、`FeatureRow`、`PredictionRow`、`Fv`、`CustomOp`、`ModelRegistry`、`FeatureSchema`、`FeatureDType`、`FeatureSpec`、`FeatureEmbeddings` 均无或仅有最基础的 doc comment。
+- **Python**（约 55 项）：`FeatureDag` 类及其所有方法、`Trainer` 类及其所有方法、`MultiTaskLoss`、cli 模块所有函数、`FlowConfig`、`ModelConfig`、分类指标函数、`verify_all` 中的公共函数等均无 docstring。
+
+**改进方向**：
+- 为所有 `pub` 类型和 `pub fn` 添加至少一行文档描述用途。
+- 对关键路径（DAG、模型注册、训练器）补充示例代码。
+- 在 CI 中启用 `#[warn(missing_docs)]`（Rust）和 `D` 规则（ruff pydocstyle），逐步修复。
+
+### 2.9 代码重复与 God Class
+
+**代码重复**：
+- `python/src/train/app/main.py:48` 中 `_wrap_unimixer` 与 `cli.py:358` 的 `wrap_unimixer_for_rust_names` 功能重复。前者缺少 temperature > 0 校验，是旧版残留。
+- `src/feats/dag.rs:534-563`：`op_source_kind()` 包含两段几乎相同的逻辑计算 `k` 值，存在漂移风险。
+- `python/src/train/app/main.py:43` 和 `python/src/train/app/data.py:17`：`NULL_MARKERS` 常量重复定义。
+
+**God Class（违反单一职责原则）**：
+- `python/src/train/core/dag.py` 的 `FeatureDag`（~485 行）：同时负责 DAG 构建、拓扑校验、单样本执行、批量执行、tensor 预处理、特征元数据提取和调试。
+- `python/src/train/training/trainer.py` 的 `Trainer`（~503 行）：同时负责训练循环、数据迭代、评估、EMA、checkpoint 管理、artifacts 和日志。
+
+**改进方向**：
+- 清理 `_wrap_unimixer` 残留，统一到 `cli.wrap_unimixer_for_rust_names`。
+- 将 `NULL_MARKERS` 抽取到公共模块（如 `train.constants`）。
+- 将 `FeatureDag` 拆分为 `DagBuilder`（构建+校验）、`DagExecutor`（执行）、`DagPreprocessor`（tensor 转换）。
+- 将 `Trainer` 拆分为 `EMA`、`CheckpointManager`、`TrainingLoop` 独立组件。
 
 ## 3. 功能分析
 
@@ -127,6 +256,12 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 - 配置兼容策略：feature config、model config、manifest schema 的版本兼容规则尚未系统化。
 - 线上可观测性：已有 parse/dag/tensor/forward/response 耗时，但缺少 feature default hit rate、空序列比例、截断次数、batch size、broadcast item count 等指标。
 - 数据质量闭环：训练侧有 feature quality summary，但还没有与 manifest、线上日志和服务端统计形成统一链路。
+- **错误处理体系**：生产路径 39 处 `.unwrap()`/`.expect()` 散布在 server、DAG、feature hash、registry、embedding 等模块中，任何一处触发都会导致进程崩溃。
+- **日志体系**：30 处 `println!()` 分布在核心路径（DAG validation、推理主循环、metrics 报告），无法被日志系统采集和路由。
+- **God Class 重构**：`FeatureDag`（~485 行）和 `Trainer`（~503 行）职责过多，后续加功能会继续膨胀。
+- **安全防护**：HTTP 服务无 CORS 白名单、无速率限制、无认证、无请求体大小限制。
+- **CI/CD 自动化**：完全依赖人工执行 `cargo test`、`pytest`、`ruff`、`cargo fmt`。
+- **类型检查**：Mypy 对 22 个核心模块设置为 `ignore_errors = true`，实际未生效。
 
 ## 4. 性能分析
 
@@ -196,15 +331,47 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 
 ## 5. 改进优先级
 
-### P0：稳定性与契约收敛
+### P0：稳定性与构建可复现（立即修复）
 
-1. 修复并保持文档 UTF-8 编码，避免中文文档继续出现乱码。
-2. 保持 registry 的多模型独立 schema 模式：按 serving manifest 的 `feature_config_file` 构建 DAG，无 manifest 的旧权重仅作为开发 fallback。
-3. 引入 typed inference error，替换 `map_predict_error()` 的字符串匹配。
-4. 统一 Rust 默认值解析逻辑，避免 `FeatureDag::parse_default()` 与 `source_default()` 行为分叉。
-5. 为 Python/Rust batch DAG 增加更多一致性测试，尤其是 list、flatten、null/default、FeatureHash，以及融合算子的 parse mode。
+1. **将 `Cargo.lock` 加入 git 跟踪**（`.gitignore:33`），修复 Docker `--locked` 构建在全新 clone 下失败的问题。
+2. **用 `Result` 替换生产路径所有 `.unwrap()`/`.expect()`**：
+   - `src/bin/server.rs:36,131,133,179,180`：服务启动和路由绑定。
+   - `src/feats/dag.rs:167,187`：DAG source/op 查询。
+   - `src/server/engine.rs:195,316,379`：预测路径 source output 查询。
+   - `src/layers/embedding.rs:116,129`：feature index 查询。
+   - `src/feats/ops/feature_hash.rs:61,141,162,169`：缓存 RwLock。
+   - `src/server/registry.rs:279,295,418,436,442,452,484,605`：模型注册 RwLock。
+3. **用 `tracing` 替换所有 `println!()`/`eprintln!()`**（30 处）：让日志可被采集、路由和级别控制。
+4. **修复 Python `except Exception` 吞错**：
+   - `python/src/train/app/data.py:78`：`_read_file_compat` 改为 `except (pd.errors.ParserError, ValueError)`。
+   - `python/src/train/app/manifest.py:30`：`current_git_commit` 至少记录 `logging.exception`。
+5. **为 `serde` struct 添加 `#[serde(deny_unknown_fields)]`**：防止 YAML 配置拼写错误被静默忽略。
+6. 保持 registry 的多模型独立 schema 模式：按 serving manifest 的 `feature_config_file` 构建 DAG，无 manifest 的旧权重仅作为开发 fallback。
+7. 引入 typed inference error，替换 `map_predict_error()` 的字符串匹配。
+8. 统一 Rust 默认值解析逻辑，避免 `FeatureDag::parse_default()` 与 `source_default()` 行为分叉。
+9. 为 Python/Rust batch DAG 增加更多一致性测试，尤其是 list、flatten、null/default、FeatureHash，以及融合算子的 parse mode。
 
-### P1：性能与可观测性
+### P1：安全与工程治理（近期）
+
+1. **CORS 改为白名单**：`src/bin/server.rs:175` 的 `CorsLayer::permissive()` 替换为限制性配置。
+2. **添加速率限制和请求体大小限制**：使用 `tower::limit::RateLimitLayer` 和 `RequestBodyLimitLayer`。
+3. **添加 API 认证**：至少先在内部部署边界完成 API key 或 mTLS。
+4. **为 unsafe 块添加 `// SAFETY:` 注释**：
+   - `src/feats/ops/plugin.rs:18,53-59`：动态库加载与 FFI 调用，同时增加路径白名单。
+   - `src/server/registry.rs:609`：`MmapedSafetensors::new`。
+5. **搭建 CI/CD 管线**（GitHub Actions）：含 `cargo test/fmt/clippy`、`ruff check/format`、`mypy`、`pytest`、`cargo-audit`。
+6. **扩展 ruff 配置**：加入 `I`/`B`/`UP`/`SIM` 规则集，逐步修复后解锁 mypy `ignore_errors`。
+7. **添加 `.editorconfig` 和 `.pre-commit-config.yaml`**。
+8. **修复静默吞错**：
+   - `src/models/mod.rs:333`：`unwrap_or_else` 改为 `map_err` + 日志。
+   - `src/feats/defaults.rs:12-25`：非法默认值添加 `tracing::warn!`。
+   - `src/feats/ops/expression.rs:29`：非数值输入添加 `tracing::warn!`。
+9. **消除代码重复**：
+   - 清理 `main.py` 中 `_wrap_unimixer` 残留，统一到 `cli.wrap_unimixer_for_rust_names`。
+   - 将 `NULL_MARKERS` 抽取到公共模块。
+10. Dockerfile 添加 `USER 1000`。
+
+### P2：性能与可观测性（中期）
 
 1. 将 Python 训练数据流改为列式 batch，减少 records 往返转换。
 2. 为 `FeatureHash` 增加 cache metrics、容量限制和可关闭配置。
@@ -217,39 +384,45 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
    - broadcast precompute/remaining DAG 耗时
 4. 扩展 `/models` 返回 schema hash、tasks、metrics，并支持显式默认版本/alias 配置。
 5. 建立固定压测矩阵，把 benchmark 结果写入 docs 或 CI artifact。
+6. 在 tensor 构造阶段减少中间 clone（`src/feats/dag.rs:593,617-621,679,684,805`、`src/server/engine.rs:304-306`）。
+7. 收敛模型多任务配置入口，逐步减少 legacy hidden_dims 参数路径。
 
-### P2：工程治理
+### P3：重构与平台化（长期）
 
-1. 收敛模型多任务配置入口，逐步减少 legacy hidden_dims 参数路径。
-2. 为模型 state_dict key 对齐建立自动化测试或导出检查脚本。
-3. 让生产发布产物默认自包含 feature config 和 model config。
-4. 增加 config schema version 兼容策略，明确哪些字段可选、哪些变更需要重新训练。
-5. 将训练侧 feature quality 写入 manifest，并在服务端加载后可查询。
-
-### P3：长期平台化
-
-1. 支持列式请求 API 或二进制协议，服务高吞吐召回/排序场景。
-2. 将 operator 注册机制标准化，降低新增算子的 Rust/Python 双端维护成本。
-3. 对大规模训练引入 Arrow/Polars-first pipeline 和异步 prefetch。
-4. 为线上推理增加 Prometheus/OpenTelemetry 指标导出。
-5. 建立模型发布、回滚、灰度和兼容检查流程。
+1. **拆分 God Class**：
+   - `FeatureDag` → `DagBuilder` + `DagExecutor` + `DagPreprocessor`。
+   - `Trainer` → `EMA` + `CheckpointManager` + `TrainingLoop`。
+2. 为所有公共 API 补充文档（15 项 Rust pub 类型、55 项 Python 函数/类）。
+3. 支持列式请求 API 或二进制协议，服务高吞吐召回/排序场景。
+4. 将 operator 注册机制标准化，降低新增算子的 Rust/Python 双端维护成本。
+5. 对大规模训练引入 Arrow/Polars-first pipeline 和异步 prefetch。
+6. 为线上推理增加 Prometheus/OpenTelemetry 指标导出。
+7. 建立模型发布、回滚、灰度和兼容检查流程。
+8. 让生产发布产物默认自包含 feature config 和 model config。
+9. 为模型 state_dict key 对齐建立自动化测试或导出检查脚本。
+10. 将训练侧 feature quality 写入 manifest，并在服务端加载后可查询。
 
 ## 6. 推荐执行路线
 
-短期先做 P0，核心目标是“不会加载错模型、不会悄悄特征漂移、错误能稳定分类”。这部分收益最大，也最能降低后续性能优化的返工概率。
+**短周期（P0，1-2 周）**：修复 Cargo.lock、消除生产路径 unwrap/expect、引入 tracing 替换 println、修复 Python except Exception、添加 deny_unknown_fields。核心目标是消除进程崩溃风险，让错误能够传播和追踪。
 
-中期做 P1，重点优化 Python 列式数据流和 Rust 推理观测。不要在没有基线的情况下先重写高性能路径，应先用 `bench` 和训练 timing log 确认热点。
+**短中期（P1，3-4 周）**：搭建 CI/CD、修复安全漏洞（CORS/限流/认证/unsafe）、扩展 lint 工具链、修复静默吞错。核心目标是建立质量闸门，让安全问题不再被忽略。
 
-长期再做 P2/P3，把当前工程化能力提升为稳定平台能力，包括配置版本治理、发布自包含、模型元数据查询和监控体系。
+**中期（P2，1-2 月）**：列式训练数据流、FeatureHash 可观测性、InferenceMetrics 扩展、tensor clone 优化。核心目标是在有基线的前提下提升吞吐。
+
+**长期（P3，2-4 月）**：重构 God Class、补充公共 API 文档、Arrow pipeline、Prometheus 指标导出、模型发布治理。核心目标是把当前工程化能力提升为稳定平台能力。
 
 ## 7. 验收建议
 
 每一轮改进至少满足以下验收条件：
 
-- Rust：`cargo check`、`cargo test` 通过。
-- Python：`PYTHONPATH=python/src uv run pytest python/tests/ -v` 通过。
+- Rust：`cargo check`、`cargo test`、`cargo fmt`、`cargo clippy` 通过。
+- Python：`PYTHONPATH=python/src uv run pytest python/tests/ -v`、`uvx ruff check python/src/`、`uvx ruff format python/src/`、`uv run mypy python/src/` 通过。
+- CI：所有检查在 CI 中自动执行，PR 合并前必须通过。
 - 格式：Rust 使用 `cargo fmt`，Python 使用 `uvx ruff format python/src/`。
 - 一致性：涉及特征、算子、模型结构或权重命名时，必须跑 Golden consistency 或对应 verify 脚本。
 - 性能：涉及推理或训练性能时，必须记录优化前后的 batch size、模型、后端、P50/P95/P99、RPS 或 per-batch timing。
+- 安全：CORS 必须为白名单；速率限制和请求体大小限制必须存在。
+- 文档：新增公开 API 必须包含 doc comment / docstring。
 
-总体建议是先收紧契约，再优化性能，最后平台化。当前代码库已经具备较好的分层基础，后续改进应避免大范围重写，优先在现有 `FeatureDag`、`ModelRegistry`、`Trainer`、manifest 体系和融合算子上增量演进。
+总体建议是先收紧契约和修复安全漏洞，再优化性能，最后平台化。当前代码库已经具备较好的分层基础，后续改进应避免大范围重写，优先在现有 `FeatureDag`、`ModelRegistry`、`Trainer`、manifest 体系和融合算子上增量演进。

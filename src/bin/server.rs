@@ -3,7 +3,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Context, Result};
-use axum::Router;
+use axum::{
+    extract::DefaultBodyLimit,
+    http::{header, HeaderValue, Method},
+    Router,
+};
 use scale_rec::server::manifest::find_manifests;
 use scale_rec::server::registry::ModelRegistry;
 use scale_rec::server::routes;
@@ -18,7 +22,17 @@ struct ServerArgs {
     port: u16,
     worker_threads: Option<usize>,
     blocking_threads: Option<usize>,
+    allowed_origins: Vec<String>,
+    max_body_bytes: usize,
 }
+
+const DEFAULT_ALLOWED_ORIGINS: &[&str] = &[
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+];
+const DEFAULT_MAX_BODY_BYTES: usize = 8 * 1024 * 1024;
 
 fn main() -> Result<()> {
     let args = parse_args()?;
@@ -46,6 +60,14 @@ fn parse_args() -> Result<ServerArgs> {
     let mut port: u16 = 8080;
     let mut worker_threads: Option<usize> = None;
     let mut blocking_threads: Option<usize> = None;
+    let mut allowed_origins: Vec<String> = std::env::var("SCALE_REC_ALLOWED_ORIGINS")
+        .ok()
+        .map(|raw| split_csv(&raw))
+        .unwrap_or_default();
+    let mut max_body_bytes: usize = std::env::var("SCALE_REC_MAX_BODY_BYTES")
+        .ok()
+        .and_then(|raw| raw.parse().ok())
+        .unwrap_or(DEFAULT_MAX_BODY_BYTES);
 
     let mut i = 1;
     while i < args.len() {
@@ -92,11 +114,36 @@ fn parse_args() -> Result<ServerArgs> {
                 }
                 blocking_threads = args[i].parse().ok();
             }
+            "--allowed-origin" => {
+                i += 1;
+                if i >= args.len() {
+                    bail!("--allowed-origin requires a value");
+                }
+                allowed_origins.push(args[i].clone());
+            }
+            "--max-body-bytes" => {
+                i += 1;
+                if i >= args.len() {
+                    bail!("--max-body-bytes requires a value");
+                }
+                max_body_bytes = args[i]
+                    .parse()
+                    .with_context(|| format!("invalid --max-body-bytes '{}'", args[i]))?;
+            }
             _ => {
                 bail!("unknown arg: {}", args[i]);
             }
         }
         i += 1;
+    }
+    if allowed_origins.is_empty() {
+        allowed_origins = DEFAULT_ALLOWED_ORIGINS
+            .iter()
+            .map(|origin| origin.to_string())
+            .collect();
+    }
+    if max_body_bytes == 0 {
+        bail!("--max-body-bytes must be greater than zero");
     }
     let resolved_model_dir = model_dir
         .or_else(|| {
@@ -113,6 +160,8 @@ fn parse_args() -> Result<ServerArgs> {
         port,
         worker_threads,
         blocking_threads,
+        allowed_origins,
+        max_body_bytes,
     })
 }
 
@@ -141,6 +190,8 @@ async fn run(args: ServerArgs) -> Result<()> {
     info!("port: {}", args.port);
     info!("worker threads: {:?}", args.worker_threads);
     info!("blocking threads: {:?}", args.blocking_threads);
+    info!("allowed origins: {:?}", args.allowed_origins);
+    info!("max body bytes: {}", args.max_body_bytes);
 
     let registry = Arc::new(match &args.feature_config_path {
         Some(feature_config_path) => ModelRegistry::new(feature_config_path, &args.model_dir)
@@ -191,7 +242,9 @@ async fn run(args: ServerArgs) -> Result<()> {
 
     info!("models: {:?}", registry.list());
 
-    let app: Router = routes::router(registry).layer(CorsLayer::permissive());
+    let app: Router = routes::router(registry)
+        .layer(DefaultBodyLimit::max(args.max_body_bytes))
+        .layer(build_cors_layer(&args.allowed_origins)?);
 
     let addr = format!("0.0.0.0:{}", args.port);
     info!("listening on {}", addr);
@@ -202,6 +255,29 @@ async fn run(args: ServerArgs) -> Result<()> {
         .await
         .context("server exited with error")?;
     Ok(())
+}
+
+fn split_csv(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn build_cors_layer(origins: &[String]) -> Result<CorsLayer> {
+    let allowed_origins: Vec<HeaderValue> = origins
+        .iter()
+        .map(|origin| {
+            origin
+                .parse()
+                .with_context(|| format!("invalid allowed origin '{}'", origin))
+        })
+        .collect::<Result<_>>()?;
+    Ok(CorsLayer::new()
+        .allow_origin(allowed_origins)
+        .allow_methods([Method::GET, Method::POST])
+        .allow_headers([header::CONTENT_TYPE]))
 }
 
 fn load_model_path(registry: &ModelRegistry, model_path: &Path) {

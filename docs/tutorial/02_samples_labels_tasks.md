@@ -104,7 +104,7 @@ tasks:
 | `loss` | 该任务使用的损失函数 |
 | `metrics` | 评估时记录的指标 |
 
-训练时 `MultiTaskLoss` 会遍历模型输出，跳过 `ct*` 这类关系输出，再按 task spec 找对应 label 列并计算 loss。
+训练时 `MultiTaskLoss` 以 `tasks:` 为唯一监督合约，按配置任务逐个读取模型输出和 label 列并计算 loss。模型可以额外输出 `ct*` 这类关系概率；除此之外，未知输出、配置任务缺少模型输出、或任务 label 列缺失都会直接报错。
 
 ## ESMM 关系任务
 
@@ -160,9 +160,10 @@ discover demo 默认输出 TSV，无 header。训练命令因此需要加：
 
 常见错误：
 
-- label 列缺失：训练报 `No supervised batches were processed` 或评估 labels 为空。
+- label 列缺失：训练会报任务 label 列缺失，或在没有任何有效监督样本时报告 `No supervised batches were processed`。
 - 列顺序错位：某些 source 的 `missing_rate/default_rate` 异常升高。
 - label 名称不一致：model config 的 `tasks[].label` 找不到对应列。
+- 模型输出和 `tasks:` 不一致：配置里有任务但模型没有对应输出，或模型输出了未配置的非 `ct*` 任务。
 - 把 label 当 feature 使用：在线推理时没有该字段，导致训练和推理分布不一致。
 
 ## batch 中 labels 如何进入 loss

@@ -13,6 +13,19 @@ from train.training.quality import summarize_feature_quality
 from train.training.trainer import Trainer
 
 
+def _single_label_flow(label: str = "click") -> FlowConfig:
+    return FlowConfig.from_dict(
+        {
+            "version": "1.0.0",
+            "sources": [
+                {"name": "user_id", "dtype": "string", "default_val": "", "role": "feature"},
+                {"name": label, "dtype": "int", "default_val": "0", "role": "label"},
+            ],
+            "operators": [],
+        }
+    )
+
+
 def test_train_config_uses_structured_subconfigs():
     cfg = TrainConfig(
         optim=OptimConfig(lr=0.01, weight_decay=0.02, emb_weight_decay=0.0),
@@ -89,6 +102,11 @@ def test_eval_config_accepts_comma_separated_metrics():
     assert cfg.metrics == ["auc", "gauc"]
 
 
+def test_eval_config_rejects_unknown_monitor_mode():
+    with pytest.raises(ValueError, match="monitor_mode"):
+        EvalConfig(monitor_mode="largest")
+
+
 def test_equal_loss_ignores_static_task_weights():
     loss_fn = MultiTaskLoss(
         ["click"],
@@ -129,20 +147,57 @@ def test_task_spec_drives_loss_label_weight_and_mask():
     assert loss_fn.task_weights_info() == {"click": 2.0}
 
 
-def test_trainer_monitor_score_falls_back_to_configured_metric():
+def test_multi_task_loss_rejects_unknown_model_outputs():
+    loss_fn = MultiTaskLoss(["click"], {"click": "click"})
+
+    with pytest.raises(ValueError, match="not covered by task specs"):
+        loss_fn({"click": torch.zeros(1, 1), "extra": torch.zeros(1, 1)}, {"click": [1]})
+
+
+def test_multi_task_loss_rejects_missing_model_outputs():
+    loss_fn = MultiTaskLoss(["click", "cvr"], {"click": "click", "cvr": "cvr"})
+
+    with pytest.raises(ValueError, match="missing"):
+        loss_fn({"click": torch.zeros(1, 1)}, {"click": [1], "cvr": [0]})
+
+
+def test_trainer_monitor_score_uses_configured_task_metric_and_mode():
+    flow_config = _single_label_flow()
     trainer = Trainer(
         torch.nn.Linear(1, 1),
         dag=None,
         task_names=["click"],
         label_map={"click": "click"},
         device=torch.device("cpu"),
-        config=TrainConfig(eval={"metrics": ["gauc"]}),
-        task_specs=[TaskSpec(name="click", label="click", metrics=("gauc",))],
+        config=TrainConfig(
+            eval={"metrics": ["auc", "logloss"], "monitor_task": "click", "monitor_metric": "auc"}
+        ),
+        task_specs=[TaskSpec(name="click", label="click", metrics=("auc", "logloss"))],
         data_path="unused",
-        flow_config=None,
+        flow_config=flow_config,
     )
 
-    assert trainer._monitor_score({"click": {"gauc": 0.7}}) == 0.7
+    assert trainer._monitor_score({"click": {"auc": 0.7, "logloss": 0.3}}) == 0.7
+    assert trainer._is_better(0.8, 0.7)
+
+
+def test_trainer_monitor_auto_minimizes_loss_metrics():
+    flow_config = _single_label_flow()
+    trainer = Trainer(
+        torch.nn.Linear(1, 1),
+        dag=None,
+        task_names=["click"],
+        label_map={"click": "click"},
+        device=torch.device("cpu"),
+        config=TrainConfig(eval={"metrics": ["logloss"], "monitor_metric": "logloss"}),
+        task_specs=[TaskSpec(name="click", label="click", metrics=("logloss",))],
+        data_path="unused",
+        flow_config=flow_config,
+    )
+
+    assert trainer._monitor_score({"click": {"logloss": 0.3}}) == 0.3
+    assert trainer._is_better(0.2, 0.3)
+    assert not trainer._is_better(0.4, 0.3)
 
 
 def test_trainer_iter_batches_reads_all_data_paths(tmp_path):

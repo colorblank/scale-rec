@@ -55,6 +55,8 @@ def add_training_args(parser: argparse.ArgumentParser, *, lr: float, batch_size:
     parser.add_argument("--tb-dir")
     parser.add_argument("--eval-metrics")
     parser.add_argument("--monitor-metric")
+    parser.add_argument("--monitor-task")
+    parser.add_argument("--monitor-mode", choices=["auto", "max", "min"])
     parser.add_argument("--eval-log")
     parser.add_argument("--gauc-group-feature")
     parser.add_argument(
@@ -287,6 +289,9 @@ def train_config_from_args(
             model_name=str(pick("model_name", base.artifacts.model_name)),
             run_version=str(pick("run_version", base.artifacts.run_version)),
             keep_checkpoints=int(pick("keep_checkpoints", base.artifacts.keep_checkpoints)),
+            publish_best=base.artifacts.publish_best,
+            publish_latest=base.artifacts.publish_latest,
+            copy_configs=base.artifacts.copy_configs,
         ),
         eval_samples=pick("eval_samples", base.eval_samples),
         eval_interval=pick("eval_interval", base.eval_interval),
@@ -305,6 +310,8 @@ def train_config_from_args(
         eval=EvalConfig(
             metrics=eval_metrics,
             monitor_metric=pick("monitor_metric", base.eval.monitor_metric),
+            monitor_task=pick("monitor_task", base.eval.monitor_task),
+            monitor_mode=pick("monitor_mode", base.eval.monitor_mode),
             log_path=pick("eval_log", base.eval.log_path),
             gauc_group_feature=pick("gauc_group_feature", base.eval.gauc_group_feature),
         ),

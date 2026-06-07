@@ -258,7 +258,7 @@ fn build_unimixer(
     let num_basis = yaml_usize(params, "num_basis", 4);
     let rank = yaml_usize(params, "rank", 16);
     let use_siamese = yaml_bool(params, "use_siamese");
-    let task_config = parse_multi_task_config(params);
+    let task_config = parse_multi_task_config(params)?;
     let unimixer_vb = if options.unimixer_prefix.is_empty() {
         vb
     } else {
@@ -328,11 +328,13 @@ fn parse_task_config_entries(params: &serde_yaml::Value) -> Vec<TaskConfigEntry>
         .unwrap_or_default()
 }
 
-fn parse_multi_task_config(params: &serde_yaml::Value) -> MultiTaskConfig {
-    let task_config = params.get("task_config");
-    serde_yaml::from_value::<MultiTaskConfig>(task_config.cloned().unwrap_or_default())
-        .unwrap_or_else(|_| MultiTaskConfig {
+fn parse_multi_task_config(params: &serde_yaml::Value) -> Result<MultiTaskConfig> {
+    match params.get("task_config") {
+        Some(task_config) => serde_yaml::from_value::<MultiTaskConfig>(task_config.clone())
+            .map_err(|e| candle_core::Error::Msg(format!("parse unimixer task_config: {}", e))),
+        None => Ok(MultiTaskConfig {
             towers: vec![],
             relations: vec![],
-        })
+        }),
+    }
 }

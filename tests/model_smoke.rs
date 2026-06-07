@@ -220,6 +220,33 @@ fn test_unimixer_forward_shape() {
 }
 
 #[test]
+fn test_modelconfig_unimixer_rejects_invalid_task_config() {
+    use scale_rec::models::unimixer::tokenizer::FeatureTokenizer;
+
+    let features = dummy_features();
+    let vb = vb();
+    let tokenizer = FeatureTokenizer::new(vb.pp("tokenizer"), &features, 4, 2).unwrap();
+    let params = serde_yaml::from_str(
+        r#"
+token_dim: 4
+num_tokens: 2
+task_config: 1
+"#,
+    )
+    .unwrap();
+    let cfg = ModelConfig {
+        model_type: "unimixer".into(),
+        params,
+    };
+
+    let err = match cfg.build(vb, &features, Some(tokenizer)) {
+        Ok(_) => panic!("invalid task_config should fail"),
+        Err(err) => err,
+    };
+    assert!(err.to_string().contains("parse unimixer task_config"));
+}
+
+#[test]
 fn test_unimixer_tokenizer_accepts_sequence_pooling() {
     use scale_rec::feats::config::PoolingStrategy;
     use scale_rec::models::unimixer::tokenizer::FeatureTokenizer;

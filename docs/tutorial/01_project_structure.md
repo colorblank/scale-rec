@@ -146,10 +146,12 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 ```text
 python/artifacts/demo/
-├── model_gdcn_esmm.safetensors          # 发布权重
-├── model_gdcn_esmm.manifest.yaml        # serving manifest，给 Rust 服务加载
 └── model_gdcn_esmm/<run_version>/
     ├── checkpoints/                     # 训练 checkpoint
+    ├── serving/
+    │   ├── model.safetensors            # 发布权重
+    │   ├── model.manifest.yaml          # serving manifest，给 Rust 服务加载
+    │   └── configs/                     # 本次训练使用的 feature/model config 副本
     └── run.manifest.yaml                # 训练 run 元数据
 ```
 

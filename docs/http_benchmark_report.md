@@ -105,8 +105,8 @@ Rust 实现已做以下优化：
 
 | 模型 | Model config | 权重 | HTTP model name |
 |---|---|---|---|
-| GDCN+ESMM | `examples/model_gdcn_esmm.yaml` | `python/artifacts/demo/model_gdcn_esmm.safetensors` | `model_gdcn_esmm` |
-| UniMixer | `examples/model_discover_unimixer.yaml` | `python/artifacts/demo/model_discover_unimixer.safetensors` | `model_discover_unimixer` |
+| GDCN+ESMM | `examples/model_gdcn_esmm.yaml` | `python/artifacts/demo/model_gdcn_esmm/<run_version>/serving/model.safetensors` | `model_gdcn_esmm` |
+| UniMixer | `examples/model_discover_unimixer.yaml` | `python/artifacts/demo/model_discover_unimixer/<run_version>/serving/model.safetensors` | `model_discover_unimixer` |
 
 ## 构建与启动
 

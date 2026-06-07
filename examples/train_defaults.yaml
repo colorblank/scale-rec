@@ -20,5 +20,6 @@ tb_dir: ""
 eval:
   metrics: [auc]
   monitor_metric: auc
+  monitor_mode: auto
   log_path: ""
   gauc_group_feature: user_id

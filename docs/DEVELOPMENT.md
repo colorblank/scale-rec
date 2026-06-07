@@ -110,7 +110,6 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --train-config examples/train_defaults.yaml \
   --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
   --artifact-dir python/artifacts/demo \
-  --publish-path python/artifacts/demo/model_gdcn_esmm.safetensors \
   --model-name model_gdcn_esmm
 ```
 
@@ -123,7 +122,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --start-date 20260325 --end-date 20260331 \
   --feature-config examples/feature_config_discover.yaml \
   --model-config examples/model_gdcn_esmm.yaml \
-  --init-weights python/artifacts/demo/model_gdcn_esmm.safetensors \
+  --init-weights python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.safetensors \
   --epochs 3 --batch-size 1024 --no-header
 ```
 

@@ -32,7 +32,6 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --train-config examples/train_defaults.yaml \
   --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
   --artifact-dir python/artifacts/demo \
-  --publish-path python/artifacts/demo/model_gdcn_esmm.safetensors \
   --model-name model_gdcn_esmm \
   --run-version 20260526_120000
 
@@ -45,7 +44,6 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --train-config examples/train_defaults.yaml \
   --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
   --artifact-dir python/artifacts/demo \
-  --publish-path python/artifacts/demo/model_discover_unimixer.safetensors \
   --model-name model_discover_unimixer \
   --run-version 20260526_120000
 
@@ -64,7 +62,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --feature-config examples/feature_config_discover.yaml \
   --model-config examples/model_gdcn_esmm.yaml \
   --train-config examples/train_defaults.yaml \
-  --init-weights python/artifacts/demo/model_gdcn_esmm.safetensors \
+  --init-weights python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.safetensors \
   --epochs 3 --batch-size 1024 --no-header
 ```
 
@@ -116,7 +114,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 | `--fast-no-na` | off | 关闭 pandas NA 检测，适合 NULL 很少且默认值可由 DAG 处理的大文件 |
 | `--memory-map` | off | 对本地未压缩文件启用 pandas `memory_map=True` |
 | `--artifact-dir` | `python/artifacts/demo` | 训练 run 目录根路径 |
-| `--publish-path` | 自动生成 | 最终发布权重路径 |
+| `--publish-path` | 自动生成 | 最终发布权重路径；未传时写入当前 run 的 `serving/model.safetensors` |
 | `--model-name` | 自动推导 | 模型逻辑名，用于 run 目录和 manifest |
 | `--run-version` | 自动生成 | 训练 run 版本号 |
 | `--keep-checkpoints` | 3 | 保留的 checkpoint 数量 |
@@ -332,6 +330,9 @@ GDCN+ESMM 将门控交叉网络与 ESMM 多任务预测塔相结合。底层利�
 | `--early-stopping-patience` | 5 | 验证指标连续多少次不提升后停止 |
 | `--ema-decay` | 0.999 | EMA 衰减率 |
 | `--loss-weighting` | static | 多任务 loss 的加权策略 |
+| `--monitor-task` | 空 | early stopping 和 best checkpoint 监控的任务名；为空时使用第一个配置任务 |
+| `--monitor-metric` | auc | early stopping 和 best checkpoint 监控的指标名，必须出现在该任务的 `metrics` 中 |
+| `--monitor-mode` | auto | 监控方向，支持 `auto`、`max`、`min`；`auto` 会对 `logloss/mae/mse` 使用 `min`，其它指标使用 `max` |
 
 ### 训练日志摘要
 
@@ -375,6 +376,7 @@ tb_dir: ""
 eval:
   metrics: [auc]
   monitor_metric: auc
+  monitor_mode: auto
   log_path: ""
   gauc_group_feature: user_id
 ```
@@ -394,7 +396,9 @@ eval:
 - `loss_weighting`：多任务 loss 的加权策略，当前支持 `equal`、`static`、`uncertainty`
 - `tb_dir`：TensorBoard 输出目录，空字符串表示不写
 - `eval.metrics`：默认验证指标列表。对于已经在 `tasks:` 里声明 metrics 的模型，这里主要作为兜底和兼容配置
-- `eval.monitor_metric`：early stopping 监控的主指标。训练器会在所有任务里取这个 metric 的最好值作为监控分数
+- `eval.monitor_task`：early stopping 和 best checkpoint 监控的任务名；为空时使用 `tasks:` 中的第一个任务
+- `eval.monitor_metric`：early stopping 和 best checkpoint 监控的指标名。该指标必须出现在 `monitor_task` 对应任务的 `metrics` 中，训练器不会再跨所有任务取最大值
+- `eval.monitor_mode`：监控方向，支持 `auto`、`max`、`min`。`auto` 对 `logloss`、`mae`、`mse` 使用最小化，对 `auc`、`gauc`、`acc`、`recall`、`f1` 等指标使用最大化
 - `eval.log_path`：额外保存评估日志的路径
 - `eval.gauc_group_feature`：GAUC 分组特征名
 
@@ -492,6 +496,30 @@ L = Σ exp(-log_var_i) × L_i + 0.5 × log_var_i
 
 ## 评估监控
 
+### 监控指标与 checkpoint 选择
+
+`Trainer` 使用 `eval.monitor_task + eval.monitor_metric` 作为唯一监控目标，用于 early stopping 和 `best.safetensors` 选择。`monitor_task` 为空时默认使用模型 `tasks:` 中的第一个任务。
+
+监控指标必须出现在对应任务的 `metrics` 中，否则训练启动阶段直接报错。例如：
+
+```yaml
+eval:
+  metrics: [auc]
+  monitor_task: click
+  monitor_metric: auc
+  monitor_mode: max
+```
+
+`monitor_mode` 支持：
+
+| 值 | 含义 |
+|---|---|
+| `auto` | 根据指标名自动判断方向：`logloss/mae/mse` 最小化，其它指标最大化 |
+| `max` | 指标越大越好，例如 `auc`、`gauc`、`recall` |
+| `min` | 指标越小越好，例如 `logloss`、`mae`、`mse` |
+
+如果评估结果没有产出 `monitor_task.monitor_metric`，训练会报错，而不是用 0 或其它任务的指标兜底。这样可以避免多任务训练中因为配置错误选错 checkpoint。
+
 ### 验证策略
 
 文件头部取 `eval_samples` 行作为验证集，训练时跳过避免数据泄漏。大数据场景建议预 shuffle 或使用独立验证文件。`eval_interval` 控制的是触发评估的频率，不限定评估指标。
@@ -556,6 +584,12 @@ run 目录按 `artifact_root/model_name/run_version` 组织。以上面的快速
 python/artifacts/demo/model_gdcn_esmm/20260526_120000/
 ├── checkpoints/
 │   └── epoch-0001-step-000012.safetensors
+├── serving/
+│   ├── model.safetensors
+│   ├── model.manifest.yaml
+│   └── configs/
+│       ├── feature_config.yaml
+│       └── model_config.yaml
 ├── best.safetensors
 ├── latest.safetensors
 └── run.manifest.yaml
@@ -566,6 +600,10 @@ python/artifacts/demo/model_gdcn_esmm/20260526_120000/
 | 文件 | 说明 |
 |---|---|
 | `checkpoints/*.safetensors` | 每次 checkpoint 保存的真实权重文件，文件名包含 epoch 和 step |
+| `serving/model.safetensors` | 默认发布权重；如果显式传入 `--publish-path`，则发布到指定路径 |
+| `serving/model.manifest.yaml` | 默认 serving manifest，绑定权重、特征配置、模型配置和 sha256 |
+| `serving/configs/feature_config.yaml` | 本次训练使用的特征配置副本 |
+| `serving/configs/model_config.yaml` | 本次训练使用的模型配置副本 |
 | `best.safetensors` | 当前最佳 checkpoint 的别名，由 `publish_best` 控制，默认启用 |
 | `latest.safetensors` | 最新 checkpoint 的别名，由 `publish_latest` 控制，默认启用 |
 | `run.manifest.yaml` | 训练过程记录，包含 checkpoint 历史、best/latest、发布路径和配置路径 |
@@ -574,12 +612,12 @@ python/artifacts/demo/model_gdcn_esmm/20260526_120000/
 
 ### 发布产物
 
-发布产物由 `--publish-path` 决定；没有显式传入时，默认是 `artifact_root/model_name.safetensors`。发布权重旁边会生成同 stem 的 serving manifest：
+发布产物由 `--publish-path` 决定；没有显式传入时，默认写入当前 run 的独立 serving 目录。发布权重旁边会生成同 stem 的 serving manifest：
 
 ```text
-python/artifacts/demo/
-├── model_gdcn_esmm.safetensors
-└── model_gdcn_esmm.manifest.yaml
+python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/
+├── model.safetensors
+└── model.manifest.yaml
 ```
 
 训练结束时，如果存在 best checkpoint，发布权重默认复制 `best.safetensors`；否则导出当前模型参数。serving manifest 由 `python/src/train/app/manifest.py` 写入，记录：
@@ -597,11 +635,11 @@ python/artifacts/demo/
 | `weight_binding` | safetensors 权重命名、prefix 和校验策略 |
 | `tasks` / `label_col_map` / `metrics` | 任务、标签映射和训练指标 |
 
-当前 CLI 没有暴露 `copy_configs` 参数，默认 `copy_configs=false`。因此：
+当前 CLI 没有暴露 `copy_configs` 参数，默认 `copy_configs=true`。因此每次训练都会把 feature/model config 复制到当前 run 的 `serving/configs/` 目录，并让 serving manifest 指向这份随发布权重归档的配置副本。
 
-- 如果 feature/model config 和 manifest 在同一发布目录下，manifest 会写相对路径。
-- 如果配置文件在仓库 `examples/` 等外部位置，manifest 会写绝对路径。
-- 服务加载 manifest 时会按这些路径读取并校验 sha256；长期归档或跨机器部署时，要保证配置文件随发布产物一起可访问，或在代码配置中启用 `copy_configs` 让配置复制到 run 目录。
+- 如果使用默认发布路径，manifest 中的配置路径会相对指向 `configs/feature_config.yaml` 和 `configs/model_config.yaml`。
+- 如果显式传入外部 `--publish-path`，manifest 仍会指向当前 run 的配置副本；跨机器部署时要同时带上 run 目录，或显式把发布路径放在 run 目录内。
+- 服务加载 manifest 时会按这些路径读取并校验 sha256。
 
 默认 `weight_binding` 如下：
 
@@ -650,7 +688,7 @@ target/release/server \
 
 ```bash
 target/release/server \
-  --model-path python/artifacts/demo/model_gdcn_esmm.safetensors \
+  --model-path python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.safetensors \
   --feature-config examples/feature_config_discover.yaml \
   --port 8080
 ```
@@ -677,8 +715,8 @@ GDCN+ESMM 和 UniMixer 实测报告见 `docs/http_benchmark_report.md`。
 
 下面以快速开始生成的发布权重为例。HTTP 请求里的 `model` 是服务实际加载的模型名；先用 `/health` 确认返回列表里包含对应模型，再用同名参数压测：
 
-- `python/artifacts/demo/model_gdcn_esmm.safetensors` → `model_gdcn_esmm`
-- `python/artifacts/demo/model_discover_unimixer.safetensors` → `model_discover_unimixer`
+- `python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.safetensors` → `model`
+- `python/artifacts/demo/model_discover_unimixer/20260526_120000/serving/model.safetensors` → `model`
 
 ```bash
 # 启动 Rust HTTP 推理服务

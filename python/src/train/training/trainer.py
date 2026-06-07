@@ -29,6 +29,8 @@ logger = logging.getLogger(__name__)
 
 Batch = dict[str, Any]
 
+_MINIMIZE_METRICS = {"logloss", "mae", "mse"}
+
 
 def _estimate_rows(path: str, has_header: bool = True) -> int:
     return estimate_files_rows([path], has_header=has_header)
@@ -95,6 +97,7 @@ class Trainer:
     ) -> None:
         self.model = model
         self.dag = dag
+        self.cfg = config
         self.task_specs = (
             task_specs
             or config.tasks
@@ -107,14 +110,15 @@ class Trainer:
         )
         self.task_names = [spec.name for spec in self.task_specs]
         self.label_map = {spec.name: spec.label for spec in self.task_specs}
+        self._validate_task_contract(flow_config)
         missing_metrics = [spec.name for spec in self.task_specs if not spec.metrics]
         if missing_metrics:
             raise ValueError(
                 "Task specs must define metrics in configuration: " + ", ".join(missing_metrics)
             )
         self.task_metrics = {spec.name: list(spec.metrics) for spec in self.task_specs}
+        self._monitor_task, self._monitor_metric, self._monitor_mode = self._resolve_monitor()
         self.device = device
-        self.cfg = config
         self.model_type = model_type
 
         if data_paths is None:
@@ -148,7 +152,7 @@ class Trainer:
         self.optimizer: Optional[torch.optim.Optimizer] = None
         self.ema: Optional[_EMA] = None
         self.evaluator = Evaluator(config.eval)
-        self._best_score = float("-inf")
+        self._best_score = self._initial_best_score()
         self._stale_epochs = 0
         self._global_step = 0
 
@@ -240,7 +244,7 @@ class Trainer:
         if self.cfg.ema_decay > 0:
             self.ema = _EMA(self.model, self.cfg.ema_decay)
 
-        self._best_score = float("-inf")
+        self._best_score = self._initial_best_score()
         self._stale_epochs = 0
         self._global_step = 0
         best_epoch = 0
@@ -263,7 +267,7 @@ class Trainer:
             self._log_epoch(epoch, avg_loss, eval_results)
 
             cur = self._monitor_score(eval_results)
-            is_best = cur > self._best_score
+            is_best = self._is_better(cur, self._best_score)
             if is_best:
                 self._best_score = cur
                 self._stale_epochs = 0
@@ -274,7 +278,7 @@ class Trainer:
                     epoch=epoch,
                     step=self._global_step,
                     score=cur,
-                    metric_name=self.cfg.eval.monitor_metric,
+                    metric_name=self._monitor_name(),
                     is_best=is_best,
                 )
             elif is_best:
@@ -491,14 +495,60 @@ class Trainer:
                 parts.append(f"{task}_{metric}={value:.4f}")
         logger.info("  " + "  ".join(parts))
 
-    def _monitor_score(self, results: dict[str, dict[str, float]]) -> float:
-        metric = self.cfg.eval.monitor_metric
-        if metric not in self.cfg.eval.metrics and self.cfg.eval.metrics:
-            metric = self.cfg.eval.metrics[0]
-        return max(
-            (results.get(task, {}).get(metric, 0.0) for task in self.task_names),
-            default=0.0,
+    def _validate_task_contract(self, flow_config: FlowConfig) -> None:
+        if not self.task_specs:
+            raise ValueError("Trainer requires at least one supervised task")
+        duplicates = sorted({name for name in self.task_names if self.task_names.count(name) > 1})
+        if duplicates:
+            raise ValueError("Duplicate task specs: " + ", ".join(duplicates))
+        label_sources = {source.name for source in flow_config.label_sources}
+        missing_labels = sorted(
+            {spec.label for spec in self.task_specs if spec.label not in label_sources}
         )
+        if missing_labels:
+            raise ValueError(
+                "Task labels must be declared as feature config label sources: "
+                + ", ".join(missing_labels)
+            )
+
+    def _resolve_monitor(self) -> tuple[str, str, str]:
+        task = self.cfg.eval.monitor_task or self.task_names[0]
+        if task not in self.task_names:
+            raise ValueError(
+                f"eval.monitor_task '{task}' is not a configured task: {self.task_names}"
+            )
+        metric = self.cfg.eval.monitor_metric
+        task_metrics = self.task_metrics.get(task, [])
+        if metric not in task_metrics:
+            raise ValueError(
+                f"eval.monitor_metric '{metric}' is not configured for task '{task}': "
+                f"{task_metrics}"
+            )
+        mode = self.cfg.eval.monitor_mode
+        if mode == "auto":
+            mode = "min" if metric in _MINIMIZE_METRICS else "max"
+        logger.info("monitor: %s.%s mode=%s", task, metric, mode)
+        return task, metric, mode
+
+    def _monitor_score(self, results: dict[str, dict[str, float]]) -> float:
+        task_results = results.get(self._monitor_task)
+        if not task_results or self._monitor_metric not in task_results:
+            raise ValueError(
+                f"Monitor metric '{self._monitor_name()}' was not produced by evaluation. "
+                f"available={results}"
+            )
+        return task_results[self._monitor_metric]
+
+    def _monitor_name(self) -> str:
+        return f"{self._monitor_task}.{self._monitor_metric}"
+
+    def _initial_best_score(self) -> float:
+        return float("inf") if self._monitor_mode == "min" else float("-inf")
+
+    def _is_better(self, current: float, best: float) -> bool:
+        if self._monitor_mode == "min":
+            return current < best
+        return current > best
 
     def _log_batch(self, n_batches: int, total_loss: float, current_loss: float) -> None:
         if self.lr_scheduler is None:
@@ -515,9 +565,9 @@ class Trainer:
             parts.append(f"{task}={task_losses[task]:.4f}(pr={pos_rates.get(task, 0):.2f})")
         logger.info("  " + "  ".join(parts))
 
-    def _save_checkpoint(self, auc: float) -> None:
+    def _save_checkpoint(self, score: float) -> None:
         export_to_safetensors(self.model, self.cfg.export_path)
-        logger.info("checkpoint: %s (auc=%.4f)", self.cfg.export_path, auc)
+        logger.info("checkpoint: %s (%s=%.4f)", self.cfg.export_path, self._monitor_name(), score)
 
     def _log_epoch(
         self,

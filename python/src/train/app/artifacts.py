@@ -68,7 +68,7 @@ class TrainingArtifactManager:
     keep_checkpoints: int = 3
     publish_best_alias: bool = True
     publish_latest_alias: bool = True
-    copy_configs: bool = False
+    copy_configs: bool = True
     _history: list[CheckpointRecord] = field(default_factory=list, init=False)
     _best: Optional[CheckpointRecord] = field(default=None, init=False)
     _latest: Optional[CheckpointRecord] = field(default=None, init=False)
@@ -89,12 +89,13 @@ class TrainingArtifactManager:
         run_version = artifact_config.run_version or _utc_version()
         root = Path(artifact_config.artifact_root or artifact_root)
         run_dir = root / resolved_model_name / run_version
-        configs_dir = run_dir / "configs"
         checkpoints_dir = run_dir / "checkpoints"
+        serving_dir = run_dir / "serving"
+        configs_dir = serving_dir / "configs"
         if publish_path:
             published_weights_path = Path(publish_path)
         else:
-            published_weights_path = root / f"{resolved_model_name}.safetensors"
+            published_weights_path = serving_dir / "model.safetensors"
         published_manifest_path = published_weights_path.with_suffix(".manifest.yaml")
         feature_copy_path = configs_dir / "feature_config.yaml"
         model_copy_path = configs_dir / "model_config.yaml"
@@ -189,6 +190,7 @@ class TrainingArtifactManager:
         best_score: Optional[float] = None,
         published_source: Union[str, Path, None] = None,
     ) -> None:
+        self.paths.published_weights_path.parent.mkdir(parents=True, exist_ok=True)
         if published_source is not None:
             shutil.copy2(published_source, self.paths.published_weights_path)
         elif model is not None:

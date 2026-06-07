@@ -173,12 +173,16 @@ class FlowConfig:
 class EvalConfig:
     metrics: list[str] = field(default_factory=lambda: ["auc"])
     monitor_metric: str = "auc"
+    monitor_task: str = ""
+    monitor_mode: str = "auto"
     log_path: str = ""
     gauc_group_feature: str = "user_id"
 
     def __post_init__(self) -> None:
         if isinstance(self.metrics, str):
             self.metrics = [m.strip() for m in self.metrics.split(",") if m.strip()]
+        if self.monitor_mode not in {"auto", "max", "min"}:
+            raise ValueError(f"eval.monitor_mode must be auto, max, or min: {self.monitor_mode}")
 
 
 @dataclass
@@ -205,7 +209,7 @@ class ArtifactConfig:
     keep_checkpoints: int = 3
     publish_best: bool = True
     publish_latest: bool = True
-    copy_configs: bool = False
+    copy_configs: bool = True
 
 
 @dataclass
