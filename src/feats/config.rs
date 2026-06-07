@@ -1,6 +1,7 @@
 //! 特征配置类型：FlowConfig、SourceDef、OperatorDef、DType、EmbedConfig。
 
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::ser::SerializeMap;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// 列角色：特征入 DAG、训练标签、读入后丢弃。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -13,22 +14,18 @@ pub enum Role {
 }
 
 /// 数据类型：整数、浮点、字符串、列表。
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum DType {
     Int,
     Float,
     String,
     Enum {
         values: Vec<String>,
-        #[serde(default)]
         default: Option<String>,
-        #[serde(default)]
         oov: Option<String>,
     },
     List {
-        #[serde(alias = "item_dtype")]
         dtype: Box<DType>,
-        #[serde(alias = "max_len")]
         length: usize,
     },
 }
@@ -41,6 +38,65 @@ impl<'de> Deserialize<'de> for DType {
         let value =
             serde_yaml::Value::deserialize(deserializer).map_err(serde::de::Error::custom)?;
         dtype_from_yaml_value(&value).map_err(serde::de::Error::custom)
+    }
+}
+
+impl Serialize for DType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            DType::Int => serializer.serialize_str("int"),
+            DType::Float => serializer.serialize_str("float"),
+            DType::String => serializer.serialize_str("string"),
+            DType::Enum {
+                values,
+                default,
+                oov,
+            } => {
+                let mut outer = serializer.serialize_map(Some(1))?;
+                let mut inner = serde_yaml::Mapping::new();
+                inner.insert(
+                    serde_yaml::Value::String("values".to_string()),
+                    serde_yaml::Value::Sequence(
+                        values
+                            .iter()
+                            .cloned()
+                            .map(serde_yaml::Value::String)
+                            .collect(),
+                    ),
+                );
+                if let Some(default) = default {
+                    inner.insert(
+                        serde_yaml::Value::String("default".to_string()),
+                        serde_yaml::Value::String(default.clone()),
+                    );
+                }
+                if let Some(oov) = oov {
+                    inner.insert(
+                        serde_yaml::Value::String("oov".to_string()),
+                        serde_yaml::Value::String(oov.clone()),
+                    );
+                }
+                outer.serialize_entry("enum", &inner)?;
+                outer.end()
+            }
+            DType::List { dtype, length } => {
+                let mut outer = serializer.serialize_map(Some(1))?;
+                let mut inner = serde_yaml::Mapping::new();
+                inner.insert(
+                    serde_yaml::Value::String("item_dtype".to_string()),
+                    serde_yaml::to_value(dtype.as_ref()).map_err(serde::ser::Error::custom)?,
+                );
+                inner.insert(
+                    serde_yaml::Value::String("max_len".to_string()),
+                    serde_yaml::Value::Number((*length).into()),
+                );
+                outer.serialize_entry("list", &inner)?;
+                outer.end()
+            }
+        }
     }
 }
 
@@ -179,6 +235,8 @@ pub struct SourceDef {
     pub name: String,
     #[serde(default)]
     pub source: Option<String>,
+    #[serde(default)]
+    pub data_source: Option<String>,
     pub dtype: DType,
     pub default_val: String,
     #[serde(default)]
@@ -203,11 +261,24 @@ pub struct OperatorDef {
     pub embed: Option<EmbedConfig>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DataSourceDef {
+    pub name: String,
+    pub kind: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub params: serde_yaml::Value,
+}
+
 /// 完整的特征编排配置。包含版本、输入源列表和算子列表。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FlowConfig {
     pub version: String,
+    #[serde(default)]
+    pub data_sources: Vec<DataSourceDef>,
     pub sources: Vec<SourceDef>,
     pub operators: Vec<OperatorDef>,
 }
@@ -234,4 +305,25 @@ pub fn parse_float_strict(raw: &str) -> Result<f32, String> {
     }
     text.parse::<f32>()
         .map_err(|e| format!("invalid float value '{}': {}", raw, e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DType;
+
+    #[test]
+    fn serializes_dtype_with_config_shape() {
+        assert_eq!(serde_json::to_value(&DType::Int).unwrap(), "int");
+        assert_eq!(serde_json::to_value(&DType::Float).unwrap(), "float");
+        assert_eq!(serde_json::to_value(&DType::String).unwrap(), "string");
+
+        let list = DType::List {
+            dtype: Box::new(DType::Int),
+            length: 3,
+        };
+        assert_eq!(
+            serde_json::to_value(&list).unwrap(),
+            serde_json::json!({"list": {"item_dtype": "int", "max_len": 3}})
+        );
+    }
 }

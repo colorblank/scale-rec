@@ -24,11 +24,15 @@ def test_discover_config_generator_contract() -> None:
     user = generator.generate_user_config()
 
     assert len(full["sources"]) == 45
-    assert len(full["operators"]) == 69
-    assert sum(len(op.get("outputs", [])) for op in full["operators"] if "embed" in op) == 44
+    assert len(full["operators"]) == 70
+    assert sum(len(op.get("outputs", [])) for op in full["operators"] if "embed" in op) == 45
+    assert len(full["data_sources"]) == 5
     assert len(item["sources"]) == 18
     assert len(user["sources"]) == 28
     assert all("embed" not in source for source in full["sources"])
+    assert all(
+        "data_source" in source for source in full["sources"] if source.get("role") != "label"
+    )
 
 
 def test_discover_config_operator_names_are_unique() -> None:

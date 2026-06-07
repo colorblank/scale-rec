@@ -10,6 +10,7 @@
 
 ```
 FeatureConfig (YAML)
+  ├── data_sources[] — 在线取数来源目录
   ├── sources[]      — 原始输入特征定义
   └── operators[]    — 算子 DAG 节点定义
         │
@@ -38,9 +39,14 @@ FeatureConfig (YAML)
 
 ```yaml
 version: "1.0.0"
+data_sources:
+  - name: user_profile_hbase
+    kind: hbase
+    description: user profile and behavior features
 sources:
   - name: user_id
     source: User          # 来源分组: User | Item | Context | ItemStats
+    data_source: user_profile_hbase # 在线取数来源，引用 data_sources[].name
     dtype: int            # 数据类型
     default_val: "0"      # 缺失默认值（字符串形式）
     embed:                # 可选：直接送入 Embedding
@@ -62,12 +68,24 @@ operators:
       truncation: tail    # 可选：截断方向 head (头部截断，默认) | tail (尾部截断)
 ```
 
-### 2.2 SourceDef — 原始输入源
+### 2.2 DataSourceDef — 在线取数来源
+
+`data_sources` 是 feature config 的顶层目录，用来描述在线请求聚合层应该从哪些系统准备原始字段。它不改变 DAG 执行逻辑；Rust/Python 仍只消费已经传入请求或训练样本的字段。
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `name` | string | 是 | 全局唯一来源名，被 `sources[].data_source` 引用 |
+| `kind` | string | 是 | 来源类型，例如 `hbase`、`elasticsearch`、`flink`、`milvus`、`request` |
+| `description` | string | 否 | 人类可读说明 |
+| `params` | object | 否 | 连接别名、表名、索引名、字段映射等扩展参数 |
+
+### 2.3 SourceDef — 原始输入源
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `name` | string | 是 | 全局唯一特征名 |
 | `source` | string | 是 | 来源分组，用于 broadcast 模式优化 |
+| `data_source` | string | 否 | 在线取数来源名，必须引用顶层 `data_sources[].name` |
 | `dtype` | enum/object | 是 | `int` / `float` / `string` / `enum` / `list` |
 | `default_val` | string | 是 | 默认值（字符串形式，按 dtype 解析） |
 | `embed` | object | 否 | 直接嵌入配置（结构同下方 EmbedConfig） |
@@ -95,7 +113,7 @@ dtype:
 | `Item` | item | 候选物品特征，每个候选不同 |
 | `ItemStats` | item | 物品离线统计特征，每个候选不同 |
 
-### 2.3 OperatorDef — 算子节点
+### 2.4 OperatorDef — 算子节点
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
@@ -104,9 +122,9 @@ dtype:
 | `inputs` | string[] | 是 | 输入特征名列表 |
 | `outputs` | string[] | 是 | 输出特征名列表 |
 | `params` | object | 否 | 算子参数（各算子自行解析） |
-| `embed` | object | 否 | 输出嵌入配置（见下方 2.4 EmbedConfig） |
+| `embed` | object | 否 | 输出嵌入配置（见下方 2.5 EmbedConfig） |
 
-### 2.4 EmbedConfig — 嵌入配置
+### 2.5 EmbedConfig — 嵌入配置
 
 特征编排 DAG 允许在算子输出的最终索引特征上声明 `embed`，从而将离散的特征索引转换为稠密特征向量。
 

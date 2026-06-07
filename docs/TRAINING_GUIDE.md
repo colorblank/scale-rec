@@ -8,7 +8,7 @@
 |---|---|
 | [快速开始](#快速开始) | 生成 demo 数据、训练 GDCN+ESMM / UniMixer、跑端到端验证 |
 | [数据格式](#数据格式) | discover TSV 和训练输入参数 |
-| [特征配置](#特征配置) | feature config 的 sources、operators、role |
+| [特征配置](#特征配置) | feature config 的 data_sources、sources、operators、role |
 | [训练流程](#训练流程) | 数据、标签、模型、训练配置如何组合 |
 | [模型配置](#模型配置) | GDCN+ESMM / UniMixer 的任务级配置 |
 | [训练参数](#训练参数) / [训练技巧](#训练技巧) / [评估监控](#评估监控) | 训练超参、优化策略、日志与评估 |
@@ -73,7 +73,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 训练链路分成 4 层配置，默认优先级从低到高是：`train_defaults.yaml` < 模型 YAML < 命令行参数。
 
 1. `examples/feature_config_discover.yaml`
-   定义原始输入列、特征算子 DAG、每个列的 `role`。它决定哪些列进入模型，哪些列作为标签，哪些列只是中间产物。
+   定义在线取数来源、原始输入列、特征算子 DAG、每个列的 `role`。它决定请求聚合层要准备哪些字段、哪些列进入模型、哪些列作为标签、哪些列只是中间产物。
 2. `examples/discover_label_policy.yaml`
    定义 demo 数据生成时的标签规则。它只影响合成数据，不参与模型前向。
 3. `examples/train_defaults.yaml`
@@ -123,10 +123,11 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 ## 特征配置
 
-`examples/feature_config_discover.yaml` 定义三部分：
+`examples/feature_config_discover.yaml` 定义四部分：
 
-- **sources**（45 列）：列名、类型、默认值、角色
-- **operators**（68 个）：14 种算子组成的 DAG
+- **data_sources**：在线取数来源目录，例如 request、HBase、ES、Flink、Milvus 等
+- **sources**（45 列）：列名、类型、默认值、角色，以及可选的 `data_source`
+- **operators**（70 个）：14 种算子组成的 DAG
 - **role 标记**：`feature`（入模型）、`label`（入 loss）、`discard`（读后丢弃）
 
 其中 `operators` 里已经使用了一部分融合节点，比如 `ParsedFeatureHash` 和 `ConcatHash`。它们把“解析 + hash”这类常见链路合并成单个算子，减少 DAG 深度和中间值开销；如果某个中间结果还要被 `ListOverlap` 或其它下游算子复用，就保留拆分节点，不要强行融合。
@@ -137,6 +138,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 sources:
   - name: user_id          # 默认 role=feature
     source: User
+    data_source: user_profile_hbase
     dtype: string
     default_val: ''
   - name: is_click         # 标签列
@@ -148,6 +150,8 @@ sources:
     default_val: '0'
     role: discard
 ```
+
+`data_sources` 与 `sources[].data_source` 用于发布在线请求契约。训练导出时 feature config 会被复制到 run 的 `serving/configs/feature_config.yaml`，Rust 服务加载 manifest 后会从这份归档配置提供 `/models/{model}/features` 和 `/models/{model}/versions/{version}/features` 接口。接口只告诉调用方“需要哪些字段、字段从哪个来源准备”，不会在 Rust 推理服务内直接访问 HBase/ES/Flink/Milvus。
 
 ## 特征预处理 Debug
 

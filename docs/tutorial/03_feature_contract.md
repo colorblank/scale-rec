@@ -2,19 +2,22 @@
 
 推荐排序系统最容易出线上离线不一致的地方是特征工程。scale-rec 的设计原则是：特征配置是一份训练和推理共享的契约，Python 训练和 Rust 推理都按同一份 YAML 执行同一条 DAG。
 
-这一章讲清楚四件事：
+这一章讲清楚五件事：
 
 1. 原始列如何声明。
-2. 原始列如何经过 operators 变成 embeddable feature。
-3. embedding、hash、sequence、pooling 如何影响模型输入维度。
-4. 改特征后如何保证 Python/Rust 一致。
+2. 在线请求聚合层如何知道字段从哪里取。
+3. 原始列如何经过 operators 变成 embeddable feature。
+4. embedding、hash、sequence、pooling 如何影响模型输入维度。
+5. 改特征后如何保证 Python/Rust 一致。
 
 ## 特征配置的三层结构
 
-`examples/feature_config_discover.yaml` 主要由两部分组成：
+`examples/feature_config_discover.yaml` 主要由三部分组成：
 
 ```yaml
 version: 1.0.0
+data_sources:
+  - ...
 sources:
   - ...
 operators:
@@ -25,24 +28,43 @@ operators:
 
 | 层 | 配置位置 | 作用 |
 |---|---|---|
+| 取数来源层 | `data_sources` | 声明在线请求聚合层可以从哪些系统准备原始字段 |
 | 原始列层 | `sources` | 声明训练文件和在线请求里可能出现的字段 |
 | 预处理层 | `operators` | 把原始字段解析、分桶、交叉、hash、序列化 |
 | embedding 层 | operator 的 `embed` | 声明哪些 operator 输出进入模型，以及 embedding 规格 |
 
 当前项目的约定是：`sources` 不直接配置 `embed`，所有入模型的离散特征都通过 operator 输出的 `embed` 声明。这样能保证原始字段一定经过显式预处理后再进入模型。
 
+## data_sources：取数来源契约
+
+`data_sources` 是在线服务契约的一部分，用来告诉请求聚合层字段应该从哪个渠道准备。示例中的 HBase、ES、Flink、Milvus 只是来源类型，实际项目可以按业务命名。
+
+```yaml
+data_sources:
+  - name: user_profile_hbase
+    kind: hbase
+    description: user profile and behavior features
+  - name: item_document_es
+    kind: elasticsearch
+    description: item document and metadata features
+```
+
+Rust 推理服务不会直接访问这些外部系统。它加载模型导出目录中的 feature config 后，通过 `/models/{model}/features` 暴露这份契约；调用方按契约取数并把字段传给 `/predict` 或 `/predict/broadcast`。
+
 ## sources：原始字段契约
 
-source 定义字段名、归属、类型、默认值和角色：
+source 定义字段名、归属、取数来源、类型、默认值和角色：
 
 ```yaml
 - name: user_id
   source: User
+  data_source: user_profile_hbase
   dtype: int
   default_val: '0'
 
 - name: interest_keywords
   source: User
+  data_source: user_profile_hbase
   dtype: string
   default_val: ''
 
@@ -58,6 +80,7 @@ source 定义字段名、归属、类型、默认值和角色：
 |---|---|
 | `name` | 字段名；无 header TSV 时也决定列顺序 |
 | `source` | 业务归属，常见为 `Item`、`User`、`Context` |
+| `data_source` | 在线取数来源，引用顶层 `data_sources[].name` |
 | `dtype` | 原始值解析类型 |
 | `default_val` | 缺失或空值时的默认值 |
 | `role` | `feature`、`label`、`discard` |

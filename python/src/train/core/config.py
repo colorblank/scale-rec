@@ -95,6 +95,7 @@ class SourceDef:
     dtype: DType
     default_val: str
     source: Optional[str] = None
+    data_source: Optional[str] = None
     embed: Optional[EmbedConfig] = None
     role: str = Role.FEATURE
     column_index: Optional[int] = None
@@ -111,8 +112,17 @@ class OperatorDef:
 
 
 @dataclass
+class DataSourceDef:
+    name: str
+    kind: str
+    description: Optional[str] = None
+    params: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class FlowConfig:
     version: str
+    data_sources: list[DataSourceDef]
     sources: list[SourceDef]
     operators: list[OperatorDef]
 
@@ -124,6 +134,15 @@ class FlowConfig:
 
     @classmethod
     def from_dict(cls, raw: dict) -> "FlowConfig":
+        data_sources = [
+            DataSourceDef(
+                name=str(ds["name"]),
+                kind=str(ds["kind"]),
+                description=ds.get("description"),
+                params=ds.get("params", {}),
+            )
+            for ds in raw.get("data_sources", [])
+        ]
         sources = []
         for s in raw.get("sources", []):
             embed = EmbedConfig(**s["embed"]) if "embed" in s else None
@@ -131,6 +150,7 @@ class FlowConfig:
                 SourceDef(
                     name=s["name"],
                     source=s.get("source"),
+                    data_source=s.get("data_source"),
                     dtype=DType.from_dict(s["dtype"]),
                     default_val=s["default_val"],
                     embed=embed,
@@ -138,6 +158,13 @@ class FlowConfig:
                     column_index=s.get("column_index"),
                 )
             )
+        data_source_names = {source.name for source in data_sources}
+        for source in sources:
+            if source.data_source and source.data_source not in data_source_names:
+                raise ValueError(
+                    f"source '{source.name}' references unknown data_source "
+                    f"'{source.data_source}'"
+                )
         operators = []
         for o in raw.get("operators", []):
             embed = EmbedConfig(**o["embed"]) if "embed" in o else None
@@ -151,7 +178,12 @@ class FlowConfig:
                     embed=embed,
                 )
             )
-        return cls(version=raw["version"], sources=sources, operators=operators)
+        return cls(
+            version=raw["version"],
+            data_sources=data_sources,
+            sources=sources,
+            operators=operators,
+        )
 
     @property
     def feature_sources(self) -> list[SourceDef]:

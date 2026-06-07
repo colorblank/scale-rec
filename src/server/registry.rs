@@ -4,14 +4,14 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use candle_core::{safetensors::MmapedSafetensors, DType, Device};
+use candle_core::{safetensors::MmapedSafetensors, DType as CandleDType, Device};
 use candle_nn::{VarBuilder, VarMap};
 use serde::Serialize;
 use tracing::{info, warn};
 
 use super::engine::InferenceEngine;
 use super::manifest::{find_manifest, ModelManifest, WeightBinding};
-use crate::feats::config::FlowConfig;
+use crate::feats::config::{DType, DataSourceDef, FlowConfig};
 use crate::feats::dag::FeatureDag;
 use crate::layers::embedding::FeatureSpec;
 use crate::models::unimixer::tokenizer::FeatureTokenizer;
@@ -39,6 +39,23 @@ pub struct ModelServingInfo {
     pub name: String,
     pub default_version: Option<String>,
     pub versions: Vec<ModelVersionInfo>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FeatureInputInfo {
+    pub name: String,
+    pub source: Option<String>,
+    pub data_source: Option<String>,
+    pub dtype: DType,
+    pub default_val: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FeatureContract {
+    pub model: String,
+    pub version: String,
+    pub data_sources: Vec<DataSourceDef>,
+    pub required_inputs: Vec<FeatureInputInfo>,
 }
 
 #[derive(Clone)]
@@ -232,7 +249,7 @@ impl ModelRegistry {
             }
         };
         let mut varmap = VarMap::new();
-        let base_vb = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+        let base_vb = VarBuilder::from_varmap(&varmap, CandleDType::F32, &device);
         let vb = scoped_vb(base_vb, &weight_binding.root_prefix);
 
         let tokenizer: Option<FeatureTokenizer> = if model_type == "unimixer" {
@@ -460,6 +477,30 @@ impl ModelRegistry {
     pub fn model_info(&self, name: &str) -> Option<ModelServingInfo> {
         let models = self.models.read().ok()?;
         models.get(name).map(|entry| self.entry_info(name, entry))
+    }
+
+    pub fn feature_contract(&self, name: &str, version: Option<&str>) -> Option<FeatureContract> {
+        let resolved = self.resolve(name, version, None)?;
+        let mut required_inputs: Vec<FeatureInputInfo> = resolved
+            .engine
+            .dag
+            .source_defs()
+            .values()
+            .map(|source| FeatureInputInfo {
+                name: source.name.clone(),
+                source: source.source.clone(),
+                data_source: source.data_source.clone(),
+                dtype: source.dtype.clone(),
+                default_val: source.default_val.clone(),
+            })
+            .collect();
+        required_inputs.sort_by(|a, b| a.name.cmp(&b.name));
+        Some(FeatureContract {
+            model: resolved.model_name,
+            version: resolved.version,
+            data_sources: resolved.engine.dag.data_sources.clone(),
+            required_inputs,
+        })
     }
 
     fn entry_info(&self, name: &str, entry: &ModelEntry) -> ModelServingInfo {
@@ -793,7 +834,7 @@ mod tests {
         let weights = root.join("ranker.safetensors");
         let manifest_path = root.join("ranker.manifest.yaml");
 
-        let feature_yaml = "version: '1.0.0'\nsources:\n  - name: user_id\n    dtype: int\n    default_val: '0'\noperators:\n  - name: user_id_hash\n    op_type: FeatureHash\n    inputs: [user_id]\n    outputs: [user_id_idx]\n    params: {vocab_size: 100, num_hashes: 1}\n    embed: {vocab_size: 100, embed_dim: 8}\n";
+        let feature_yaml = "version: '1.0.0'\ndata_sources:\n  - name: user_profile_hbase\n    kind: hbase\nsources:\n  - name: user_id\n    source: User\n    data_source: user_profile_hbase\n    dtype: int\n    default_val: '0'\noperators:\n  - name: user_id_hash\n    op_type: FeatureHash\n    inputs: [user_id]\n    outputs: [user_id_idx]\n    params: {vocab_size: 100, num_hashes: 1}\n    embed: {vocab_size: 100, embed_dim: 8}\n";
         let model_yaml = "type: lr\n";
         fs::write(&feature_config, feature_yaml).unwrap();
         fs::write(&model_config, model_yaml).unwrap();
@@ -802,15 +843,15 @@ mod tests {
         let mut tensors = HashMap::new();
         tensors.insert(
             "embeddings.emb_user_id_idx.weight".to_string(),
-            Tensor::zeros((100, 8), DType::F32, &device).unwrap(),
+            Tensor::zeros((100, 8), CandleDType::F32, &device).unwrap(),
         );
         tensors.insert(
             "mlp.output.weight".to_string(),
-            Tensor::zeros((1, 8), DType::F32, &device).unwrap(),
+            Tensor::zeros((1, 8), CandleDType::F32, &device).unwrap(),
         );
         tensors.insert(
             "mlp.output.bias".to_string(),
-            Tensor::zeros((1,), DType::F32, &device).unwrap(),
+            Tensor::zeros((1,), CandleDType::F32, &device).unwrap(),
         );
         candle_core::safetensors::save(&tensors, &weights).unwrap();
 
@@ -827,6 +868,15 @@ mod tests {
 
         assert_eq!(info.name, "ranker");
         assert!(registry.get("ranker").is_some());
+        let contract = registry.feature_contract("ranker", Some("v1")).unwrap();
+        assert_eq!(contract.model, "ranker");
+        assert_eq!(contract.version, "v1");
+        assert_eq!(contract.data_sources[0].name, "user_profile_hbase");
+        assert_eq!(contract.required_inputs[0].name, "user_id");
+        assert_eq!(
+            contract.required_inputs[0].data_source.as_deref(),
+            Some("user_profile_hbase")
+        );
 
         fs::remove_dir_all(root).unwrap();
     }
@@ -847,15 +897,15 @@ mod tests {
         let mut tensors = HashMap::new();
         tensors.insert(
             "embeddings.emb_user_id_idx.weight".to_string(),
-            Tensor::zeros((100, 8), DType::F32, &device).unwrap(),
+            Tensor::zeros((100, 8), CandleDType::F32, &device).unwrap(),
         );
         tensors.insert(
             "mlp.output.weight".to_string(),
-            Tensor::zeros((1, 8), DType::F32, &device).unwrap(),
+            Tensor::zeros((1, 8), CandleDType::F32, &device).unwrap(),
         );
         tensors.insert(
             "mlp.output.bias".to_string(),
-            Tensor::zeros((1,), DType::F32, &device).unwrap(),
+            Tensor::zeros((1,), CandleDType::F32, &device).unwrap(),
         );
         candle_core::safetensors::save(&tensors, &weights).unwrap();
 
@@ -936,15 +986,15 @@ mod tests {
         let mut tensors = HashMap::new();
         tensors.insert(
             "embeddings.emb_user_id_idx.weight".to_string(),
-            Tensor::zeros((100, 8), DType::F32, &device).unwrap(),
+            Tensor::zeros((100, 8), CandleDType::F32, &device).unwrap(),
         );
         tensors.insert(
             "mlp.output.weight".to_string(),
-            Tensor::zeros((1, 8), DType::F32, &device).unwrap(),
+            Tensor::zeros((1, 8), CandleDType::F32, &device).unwrap(),
         );
         tensors.insert(
             "mlp.output.bias".to_string(),
-            Tensor::zeros((1,), DType::F32, &device).unwrap(),
+            Tensor::zeros((1,), CandleDType::F32, &device).unwrap(),
         );
         candle_core::safetensors::save(&tensors, &weights).unwrap();
 
@@ -981,19 +1031,19 @@ mod tests {
         let mut tensors1 = HashMap::new();
         tensors1.insert(
             "global_bias".to_string(),
-            Tensor::zeros((1,), DType::F32, &device).unwrap(),
+            Tensor::zeros((1,), CandleDType::F32, &device).unwrap(),
         );
         tensors1.insert(
             "embeddings.emb_user_id_idx.weight".to_string(),
-            Tensor::zeros((100, 8), DType::F32, &device).unwrap(),
+            Tensor::zeros((100, 8), CandleDType::F32, &device).unwrap(),
         );
         tensors1.insert(
             "mlp.output.weight".to_string(),
-            Tensor::zeros((1, 8), DType::F32, &device).unwrap(),
+            Tensor::zeros((1, 8), CandleDType::F32, &device).unwrap(),
         );
         tensors1.insert(
             "mlp.output.bias".to_string(),
-            Tensor::zeros((1,), DType::F32, &device).unwrap(),
+            Tensor::zeros((1,), CandleDType::F32, &device).unwrap(),
         );
         candle_core::safetensors::save(&tensors1, &weights).unwrap();
 
@@ -1013,19 +1063,19 @@ mod tests {
         let mut tensors2 = HashMap::new();
         tensors2.insert(
             "global_bias".to_string(),
-            Tensor::zeros((1,), DType::F32, &device).unwrap(),
+            Tensor::zeros((1,), CandleDType::F32, &device).unwrap(),
         );
         tensors2.insert(
             "embeddings.emb_user_id_idx.weight".to_string(),
-            Tensor::zeros((120, 8), DType::F32, &device).unwrap(),
+            Tensor::zeros((120, 8), CandleDType::F32, &device).unwrap(),
         );
         tensors2.insert(
             "mlp.output.weight".to_string(),
-            Tensor::zeros((1, 8), DType::F32, &device).unwrap(),
+            Tensor::zeros((1, 8), CandleDType::F32, &device).unwrap(),
         );
         tensors2.insert(
             "mlp.output.bias".to_string(),
-            Tensor::zeros((1,), DType::F32, &device).unwrap(),
+            Tensor::zeros((1,), CandleDType::F32, &device).unwrap(),
         );
         candle_core::safetensors::save(&tensors2, &weights).unwrap();
 

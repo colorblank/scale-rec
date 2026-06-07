@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::engine::{InferenceError, InferenceErrorKind};
-use super::registry::{ModelRegistry, ModelServingInfo, ResolvedModel};
+use super::registry::{FeatureContract, ModelRegistry, ModelServingInfo, ResolvedModel};
 use super::tracing::RequestTimer;
 
 pub type AppState = Arc<ModelRegistry>;
@@ -98,6 +98,11 @@ pub fn router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/models", get(list_models))
         .route("/models/{model}", get(get_model))
+        .route("/models/{model}/features", get(get_model_features))
+        .route(
+            "/models/{model}/versions/{version}/features",
+            get(get_model_version_features),
+        )
         .route("/predict", post(predict))
         .route("/predict/broadcast", post(predict_broadcast))
         .with_state(state)
@@ -127,6 +132,36 @@ async fn get_model(
         model_id: Some(model),
         details: None,
     })
+}
+
+async fn get_model_features(
+    State(reg): State<AppState>,
+    Path(model): Path<String>,
+) -> Result<Json<FeatureContract>, ApiError> {
+    reg.feature_contract(&model, None)
+        .map(Json)
+        .ok_or_else(|| ApiError {
+            code: "REGISTRY_ERROR".to_string(),
+            message: format!("model '{}' not found", model),
+            request_id: None,
+            model_id: Some(model),
+            details: None,
+        })
+}
+
+async fn get_model_version_features(
+    State(reg): State<AppState>,
+    Path((model, version)): Path<(String, String)>,
+) -> Result<Json<FeatureContract>, ApiError> {
+    reg.feature_contract(&model, Some(&version))
+        .map(Json)
+        .ok_or_else(|| ApiError {
+            code: "REGISTRY_ERROR".to_string(),
+            message: format!("model '{}' version '{}' not found", model, version),
+            request_id: None,
+            model_id: Some(model),
+            details: Some(serde_json::json!({ "requested_version": version })),
+        })
 }
 
 fn resolve_model(

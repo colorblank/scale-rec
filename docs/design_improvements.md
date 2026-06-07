@@ -139,13 +139,13 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 当前不足：
 
 - `copy_configs` 已默认开启，默认发布产物会在 `serving/configs/` 归档 feature/model config；但如果显式把 `--publish-path` 指到 run 目录外，跨机器部署时仍要同时携带 run 目录里的配置副本。
-- Rust `ModelRegistry` 已支持按 serving manifest 的 `feature_config_file`、`model_config_file`、`weights_file` 加载，并支持同一 `model_id` 多版本；manifest 已包含 `tasks`、`label_col_map` 和 `metrics`，但 `/models` 还没有把这些信息完全暴露为查询接口。
+- Rust `ModelRegistry` 已支持按 serving manifest 的 `feature_config_file`、`model_config_file`、`weights_file` 加载，并支持同一 `model_id` 多版本；服务已能按模型版本暴露 feature config 中的 `data_sources` 和请求输入字段契约，但 `/models` 还没有把 `tasks`、`label_col_map` 和 `metrics` 完全暴露为查询接口。
 - 默认版本目前按版本字符串取最大值，尚未支持显式 alias、灰度权重或 `versions.yaml` 指针。
 
 改进方向：
 
 - 保持生产发布产物自包含，避免 serving manifest 依赖仓库 `examples/` 等外部配置路径。
-- 扩展 `ModelInfo`，返回 schema hash、tasks、metrics 和 loaded_at。
+- 扩展 `ModelInfo`，返回 schema hash、tasks、metrics 和 loaded_at；特征契约继续通过 `/models/{model}/features` 查询。
 - 增加显式默认版本配置，例如 serving manifest 标记、alias 文件或版本索引文件。
 
 ### 2.6 工程基础设施
@@ -252,7 +252,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 需要优先补齐的功能缺口：
 
 - Typed error：当前 `src/server/routes.rs` 的 `map_predict_error()` 仍依赖字符串包含关系分类错误，未来错误文案变化会导致 HTTP status 不稳定。
-- 模型级 schema：registry 对多模型不同 feature config 的支持还不完整。
+- 模型级 schema：registry 已按 manifest 加载多模型 feature config，并能查询请求特征契约；后续还需要暴露 embeddable schema、schema hash 和兼容性检查结果。
 - 配置兼容策略：feature config、model config、manifest schema 的版本兼容规则尚未系统化。
 - 线上可观测性：已有 parse/dag/tensor/forward/response 耗时，但缺少 feature default hit rate、空序列比例、截断次数、batch size、broadcast item count 等指标。
 - 数据质量闭环：训练侧有 feature quality summary，但还没有与 manifest、线上日志和服务端统计形成统一链路。
@@ -398,7 +398,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 5. 对大规模训练引入 Arrow/Polars-first pipeline 和异步 prefetch。
 6. 为线上推理增加 Prometheus/OpenTelemetry 指标导出。
 7. 建立模型发布、回滚、灰度和兼容检查流程。
-8. 让生产发布产物默认自包含 feature config 和 model config。
+8. 让生产发布产物默认自包含 feature config 和 model config，并保持特征契约查询接口只读取发布归档配置。
 9. 为模型 state_dict key 对齐建立自动化测试或导出检查脚本。
 10. 将训练侧 feature quality 写入 manifest，并在服务端加载后可查询。
 

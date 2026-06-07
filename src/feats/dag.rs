@@ -4,7 +4,7 @@ use super::ops::{
     FlatSplit, Fv, JsonExtractList, ListOverlap, ListStringParser, ParsedFeatureHash, PluginOp,
     SequenceOp, Split, StringConcat, StringParser,
 };
-use crate::feats::config::{FlowConfig, OperatorDef, SourceDef};
+use crate::feats::config::{DataSourceDef, FlowConfig, OperatorDef, SourceDef};
 use crate::feats::debug::DebugTracer;
 use crate::feats::defaults::parse_default;
 use crate::feats::schema::{infer_feature_schemas, FeatureSchema};
@@ -72,6 +72,7 @@ pub struct ExecStep {
 /// 根据 FlowConfig 构建算子图，拓扑排序后按序执行单样本处理。
 pub struct FeatureDag {
     sources: HashMap<String, SourceDef>,
+    pub data_sources: Vec<DataSourceDef>,
     node_defs: HashMap<String, OperatorDef>,
     pub execution_order: Vec<String>,
     debug_mode: bool,
@@ -90,6 +91,22 @@ impl FeatureDag {
         use crate::feats::config::Role;
 
         let feature_schemas = infer_feature_schemas(&config.sources, &config.operators)?;
+        let data_source_names: HashSet<String> = config
+            .data_sources
+            .iter()
+            .map(|source| source.name.clone())
+            .collect();
+        for source in &config.sources {
+            if let Some(data_source) = &source.data_source {
+                if !data_source_names.contains(data_source) {
+                    return Err(format!(
+                        "source '{}' references unknown data_source '{}'",
+                        source.name, data_source
+                    ));
+                }
+            }
+        }
+        let data_sources = config.data_sources.clone();
 
         let mut sources = HashMap::new();
         for s in config.sources {
@@ -248,6 +265,7 @@ impl FeatureDag {
 
         Ok(Self {
             sources,
+            data_sources,
             node_defs,
             execution_order,
             debug_mode,

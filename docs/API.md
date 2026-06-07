@@ -53,6 +53,8 @@ application/json
 | `/health` | GET | 健康检查，返回服务状态和已加载模型 |
 | `/models` | GET | 查询全部已加载模型和版本 |
 | `/models/{model}` | GET | 查询单个模型的版本信息 |
+| `/models/{model}/features` | GET | 查询默认版本的请求特征契约 |
+| `/models/{model}/versions/{version}/features` | GET | 查询指定版本的请求特征契约 |
 | `/predict` | POST | Pointwise 推理，N 行完整样本得到 N 个预测 |
 | `/predict/broadcast` | POST | Broadcast 推理，1 个 user/context 与 N 个 item 组合得到 N 个预测 |
 
@@ -157,6 +159,63 @@ curl http://127.0.0.1:8080/models/model_gdcn_esmm
 ```
 
 模型不存在时返回 `404 REGISTRY_ERROR`。
+
+## GET /models/{model}/features
+
+查询模型默认版本的请求特征契约。服务从该版本 serving manifest 指向的 `feature_config_file` 加载契约，因此返回内容与模型权重发布时归档的特征配置一致。
+
+```bash
+curl http://127.0.0.1:8080/models/model_gdcn_esmm/features
+```
+
+响应：
+
+```json
+{
+  "model": "model_gdcn_esmm",
+  "version": "20260526_120000",
+  "data_sources": [
+    {
+      "name": "user_profile_hbase",
+      "kind": "hbase",
+      "description": "user profile and behavior features",
+      "params": null
+    }
+  ],
+  "required_inputs": [
+    {
+      "name": "user_id",
+      "source": "User",
+      "data_source": "user_profile_hbase",
+      "dtype": "int",
+      "default_val": "0"
+    }
+  ]
+}
+```
+
+字段说明：
+
+| 字段 | 说明 |
+|---|---|
+| `data_sources` | feature config 顶层声明的数据来源目录，例如画像库、搜索索引、实时统计或向量库 |
+| `required_inputs` | 在线推理需要准备的原始 feature source 字段；label/discard 字段不会出现在这里 |
+| `source` | 字段业务归属，用于 broadcast 请求拆分 user/context 与 item |
+| `data_source` | 字段取数来源名，引用 `data_sources[].name` |
+| `dtype` | 字段解析类型，和 feature config 中的 `sources[].dtype` 一致 |
+| `default_val` | 字段缺失时 Rust/Python DAG 使用的默认值 |
+
+该接口只暴露契约，不执行外部取数。调用方或请求聚合服务应按 `data_sources` 和 `required_inputs[].data_source` 准备字段，再调用 `/predict` 或 `/predict/broadcast`。
+
+## GET /models/{model}/versions/{version}/features
+
+查询指定版本的请求特征契约。
+
+```bash
+curl http://127.0.0.1:8080/models/model_gdcn_esmm/versions/20260526_120000/features
+```
+
+响应结构与 `/models/{model}/features` 一致。模型或版本不存在时返回 `404 REGISTRY_ERROR`。
 
 ## POST /predict
 
