@@ -33,3 +33,4 @@ rustc-ice-*.txt
 *.safetensors
 *.parquet
 demo/temp/
+**/__pycache__/
