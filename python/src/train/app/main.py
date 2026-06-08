@@ -11,7 +11,7 @@ import argparse
 import logging
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Any, Iterator, Optional
 
 import numpy as np
 import pandas as pd
@@ -21,6 +21,7 @@ import torch.nn.functional as F
 from ..core.config import FlowConfig
 from ..core.dag import FeatureDag
 from ..training.trainer import Trainer
+from ..training.trainer import iter_preprocessed_batches
 from .artifacts import TrainingArtifactManager
 from .cli import (
     add_artifact_args,
@@ -103,6 +104,28 @@ def _load_dataframes(paths: list[str]) -> pd.DataFrame:
     return pd.concat(dfs, ignore_index=True)
 
 
+def _iter_dataframe_batches(
+    df: pd.DataFrame,
+    batch_size: int,
+    label_col_map: Optional[dict[str, str]] = None,
+) -> Iterator[dict[str, Any]]:
+    if label_col_map is None:
+        label_col_map = {}
+    for start in range(0, len(df), batch_size):
+        batch_df = df.iloc[start : start + batch_size]
+        actual_bs = len(batch_df)
+        label_cols = set(label_col_map.values())
+        feature_columns = {
+            col: batch_df[col].tolist() for col in batch_df.columns if col not in label_cols
+        }
+        labels = {
+            label_col: batch_df[label_col].tolist()
+            for label_col in label_cols
+            if label_col in batch_df.columns
+        }
+        yield {"features": feature_columns, "labels": labels, "_batch_size": actual_bs}
+
+
 def _train_epoch_single(
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
@@ -110,22 +133,28 @@ def _train_epoch_single(
     df: pd.DataFrame,
     batch_size: int,
     label_col_map: Optional[dict[str, str]] = None,
+    prefetch_batches: int = 0,
 ) -> float:
     if label_col_map is None:
         label_col_map = {}
     model.train()
     total_loss = 0.0
     n_batches = 0
-    for start in range(0, len(df), batch_size):
-        batch_df = df.iloc[start : start + batch_size]
-        actual_bs = len(batch_df)
-        feature_tensors = dag.preprocess_batch(batch_df.to_dict("records"))
+    batches = iter_preprocessed_batches(
+        dag,
+        _iter_dataframe_batches(df, batch_size, label_col_map),
+        prefetch_batches=prefetch_batches,
+    )
+    for batch in batches:
+        actual_bs = int(batch.get("_batch_size", 0))
+        feature_tensors = batch["features"]
+        batch_labels = batch["labels"]
         outputs = model(feature_tensors)
         loss = None
         for task_name, logits in outputs.items():
             label_col = label_col_map.get(task_name, task_name)
-            if label_col in batch_df.columns:
-                labels = torch.tensor(batch_df[label_col].to_numpy(), dtype=torch.float32).view(
+            if label_col in batch_labels:
+                labels = torch.tensor(batch_labels[label_col], dtype=torch.float32).view(
                     actual_bs, 1
                 )
                 task_loss = F.binary_cross_entropy_with_logits(logits, labels)
@@ -153,6 +182,7 @@ def _evaluate_single(
     df: pd.DataFrame,
     batch_size: int,
     label_col_map: Optional[dict[str, str]] = None,
+    prefetch_batches: int = 0,
 ) -> dict[str, dict[str, float]]:
     if label_col_map is None:
         label_col_map = {}
@@ -160,17 +190,22 @@ def _evaluate_single(
     all_outputs: dict[str, list[np.ndarray]] = {}
     all_labels: dict[str, list[np.ndarray]] = {}
     with torch.no_grad():
-        for start in range(0, len(df), batch_size):
-            batch_df = df.iloc[start : start + batch_size]
-            actual_bs = len(batch_df)
-            feature_tensors = dag.preprocess_batch(batch_df.to_dict("records"))
+        batches = iter_preprocessed_batches(
+            dag,
+            _iter_dataframe_batches(df, batch_size, label_col_map),
+            prefetch_batches=prefetch_batches,
+        )
+        for batch in batches:
+            actual_bs = int(batch.get("_batch_size", 0))
+            feature_tensors = batch["features"]
+            batch_labels = batch["labels"]
             outputs = model(feature_tensors)
             for t, logits in outputs.items():
                 label_col = label_col_map.get(t, t)
-                if label_col not in batch_df.columns:
+                if label_col not in batch_labels:
                     continue
                 all_outputs.setdefault(t, []).append(logits.cpu().numpy().flatten())
-                labels = batch_df[label_col].to_numpy().astype(np.float32)
+                labels = np.asarray(batch_labels[label_col], dtype=np.float32)
                 if len(labels) < actual_bs:
                     labels = np.pad(labels, (0, actual_bs - len(labels)), constant_values=0)
                 all_labels.setdefault(t, []).append(labels)
@@ -201,15 +236,23 @@ def _evaluate_single(
 
 
 def _predict_all(
-    model: torch.nn.Module, dag: FeatureDag, df: pd.DataFrame, batch_size: int
+    model: torch.nn.Module,
+    dag: FeatureDag,
+    df: pd.DataFrame,
+    batch_size: int,
+    prefetch_batches: int = 0,
 ) -> dict[str, np.ndarray]:
     model.eval()
     all_keys = None
     all_logits: dict[str, list[np.ndarray]] = {}
     with torch.no_grad():
-        for start in range(0, len(df), batch_size):
-            batch_df = df.iloc[start : start + batch_size]
-            feature_tensors = dag.preprocess_batch(batch_df.to_dict("records"))
+        batches = iter_preprocessed_batches(
+            dag,
+            _iter_dataframe_batches(df, batch_size),
+            prefetch_batches=prefetch_batches,
+        )
+        for batch in batches:
+            feature_tensors = batch["features"]
             outputs = model(feature_tensors)
             if all_keys is None:
                 all_keys = list(outputs.keys())
@@ -299,10 +342,21 @@ def _run_single(args: argparse.Namespace) -> None:
     best_score = float("inf")
     for epoch in range(1, args.epochs + 1):
         train_loss = _train_epoch_single(
-            model, optimizer, dag, train_df, args.batch_size, built.spec.get("label_col_map", {})
+            model,
+            optimizer,
+            dag,
+            train_df,
+            args.batch_size,
+            built.spec.get("label_col_map", {}),
+            cfg.prefetch_batches,
         )
         metrics = _evaluate_single(
-            model, dag, test_df, args.batch_size, built.spec.get("label_col_map", {})
+            model,
+            dag,
+            test_df,
+            args.batch_size,
+            built.spec.get("label_col_map", {}),
+            cfg.prefetch_batches,
         )
         best_score = min(
             best_score, min((v["logloss"] for v in metrics.values()), default=best_score)
@@ -317,7 +371,7 @@ def _run_single(args: argparse.Namespace) -> None:
             artifacts.paths.published_weights_path.stem + "_test.csv"
         )
     )
-    preds = _predict_all(model, dag, test_df, args.batch_size)
+    preds = _predict_all(model, dag, test_df, args.batch_size, cfg.prefetch_batches)
     preds_rows = (
         {"label_ctr": test_df["ctr"].to_numpy().astype(np.float32)}
         if "ctr" in test_df.columns
@@ -492,9 +546,22 @@ def _run_all(args: argparse.Namespace) -> None:
         best_score = float("inf")
         for epoch in range(1, args.epochs + 1):
             train_loss = _train_epoch_single(
-                model, optimizer, dag, train_df, args.batch_size, label_col_map
+                model,
+                optimizer,
+                dag,
+                train_df,
+                args.batch_size,
+                label_col_map,
+                cfg.prefetch_batches,
             )
-            metrics = _evaluate_single(model, dag, test_df, args.batch_size, label_col_map)
+            metrics = _evaluate_single(
+                model,
+                dag,
+                test_df,
+                args.batch_size,
+                label_col_map,
+                cfg.prefetch_batches,
+            )
             score = min(
                 (m.get("logloss", best_score) for m in metrics.values()), default=best_score
             )
@@ -516,7 +583,7 @@ def _run_all(args: argparse.Namespace) -> None:
 
         prefix = artifacts.paths.published_weights_path.with_suffix("")
         test_df.to_csv(prefix.with_name(prefix.name + "_test.csv"))
-        preds = _predict_all(model, dag, test_df, args.batch_size)
+        preds = _predict_all(model, dag, test_df, args.batch_size, cfg.prefetch_batches)
         preds_rows = {"label_ctr": test_df["ctr"].to_numpy().astype(np.float32)}
         if "cvr" in test_df.columns:
             preds_rows["label_cvr"] = test_df["cvr"].to_numpy().astype(np.float32)

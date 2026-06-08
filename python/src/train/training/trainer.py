@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Iterator, Optional, Union
 
@@ -51,6 +53,49 @@ def _collect_batches(batches: Iterator[Batch], max_samples: int) -> list[Batch]:
         if collected >= max_samples:
             break
     return result
+
+
+def _prepare_batch(dag: FeatureDag, batch: Batch) -> Batch:
+    prepared = dict(batch)
+    prepared["features"] = dag.preprocess_batch(batch["features"])
+    return prepared
+
+
+def iter_preprocessed_batches(
+    dag: FeatureDag,
+    batches: Iterator[Batch],
+    *,
+    prefetch_batches: int = 0,
+) -> Iterator[Batch]:
+    prefetch_batches = max(int(prefetch_batches), 0)
+    if prefetch_batches <= 0 or dag is None or getattr(dag, "tracer", None) is not None:
+        for batch in batches:
+            yield _prepare_batch(dag, batch)
+        return
+
+    executor = ThreadPoolExecutor(max_workers=prefetch_batches)
+    pending: deque = deque()
+    try:
+        batch_iter = iter(batches)
+
+        def submit_next() -> bool:
+            try:
+                batch = next(batch_iter)
+            except StopIteration:
+                return False
+            pending.append(executor.submit(_prepare_batch, dag, batch))
+            return True
+
+        for _ in range(prefetch_batches):
+            if not submit_next():
+                break
+
+        while pending:
+            future = pending.popleft()
+            yield future.result()
+            submit_next()
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)
 
 
 class _EMA:
@@ -196,6 +241,10 @@ class Trainer:
             self._effective_read_chunk_rows(),
             self._fast_no_na,
             self._memory_map,
+        )
+        logger.info(
+            "prefetch: batches=%d",
+            max(int(self.cfg.prefetch_batches), 0),
         )
 
         emb_params: list[torch.nn.Parameter] = []
@@ -360,13 +409,18 @@ class Trainer:
         t_data = t_preproc = t_forward = t_loss = t_backward = 0.0
         t0_epoch = time.perf_counter()
 
-        t0_iter = time.perf_counter()
-        for batch in self._iter_batches():
-            t_data += time.perf_counter() - t0_iter
-
+        batch_iter = iter_preprocessed_batches(
+            self.dag, self._iter_batches(), prefetch_batches=self.cfg.prefetch_batches
+        )
+        while True:
             t0 = time.perf_counter()
-            feat = _to_device(self.dag.preprocess_batch(batch["features"]), self.device)
+            try:
+                batch = next(batch_iter)
+            except StopIteration:
+                break
             t_preproc += time.perf_counter() - t0
+
+            feat = _to_device(batch["features"], self.device)
 
             t0 = time.perf_counter()
             outputs = self.model(feat)
@@ -377,7 +431,6 @@ class Trainer:
             t_loss += time.perf_counter() - t0
 
             if loss is None:
-                t0_iter = time.perf_counter()
                 continue
 
             t0 = time.perf_counter()
@@ -401,8 +454,6 @@ class Trainer:
 
             if self.cfg.eval_interval > 0 and n_batches % self.cfg.eval_interval == 0:
                 self._eval_during_training(n_batches, total_loss)
-
-            t0_iter = time.perf_counter()
 
         if n_batches == 0:
             expected_labels = ", ".join(sorted(set(self.label_map.values())))

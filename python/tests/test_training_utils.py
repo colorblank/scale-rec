@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import threading
+import time
+
 import pytest
 import torch
 
@@ -11,6 +14,7 @@ from train.training.loss.multi_task import MultiTaskLoss
 from train.training.optim.scheduler import LRScheduler
 from train.training.quality import summarize_feature_quality
 from train.training.trainer import Trainer
+from train.training.trainer import iter_preprocessed_batches
 
 
 def _single_label_flow(label: str = "click") -> FlowConfig:
@@ -38,6 +42,7 @@ def test_train_config_uses_structured_subconfigs():
     assert cfg.optim.emb_weight_decay == 0.0
     assert cfg.lr_schedule.warmup_steps == 7
     assert cfg.lr_schedule.min_lr_ratio == 0.2
+    assert cfg.prefetch_batches == 2
     assert not cfg.ema_enabled
 
 
@@ -231,6 +236,52 @@ def test_trainer_iter_batches_reads_all_data_paths(tmp_path):
 
     assert [batch["features"]["user_id"] for batch in batches] == [["u1"], ["u2"]]
     assert [batch["labels"]["is_click"] for batch in batches] == [[1], [0]]
+
+
+def test_trainer_prefetches_batches_in_order():
+    class FakeDag:
+        tracer = None
+
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def preprocess_batch(self, rows):
+            self.calls.append(threading.current_thread().name)
+            time.sleep(0.01)
+            values = rows["user_id"]
+            return {"user_id": torch.tensor(values, dtype=torch.long)}
+
+    dag = FakeDag()
+    batches = [
+        {"features": {"user_id": [1]}, "labels": {"is_click": [1]}},
+        {"features": {"user_id": [2]}, "labels": {"is_click": [0]}},
+        {"features": {"user_id": [3]}, "labels": {"is_click": [1]}},
+    ]
+
+    prepared_batches = list(iter_preprocessed_batches(dag, iter(batches), prefetch_batches=2))
+
+    assert [batch["labels"]["is_click"] for batch in prepared_batches] == [[1], [0], [1]]
+    assert [batch["features"]["user_id"].tolist() for batch in prepared_batches] == [[1], [2], [3]]
+    assert all(name != threading.current_thread().name for name in dag.calls)
+
+
+def test_trainer_prefetch_surfaces_background_errors():
+    class RaisingDag:
+        tracer = None
+
+        def preprocess_batch(self, rows):
+            if rows["user_id"][0] == 2:
+                raise RuntimeError("boom")
+            return {"user_id": torch.tensor(rows["user_id"], dtype=torch.long)}
+
+    batches = [
+        {"features": {"user_id": [1]}, "labels": {"is_click": [1]}},
+        {"features": {"user_id": [2]}, "labels": {"is_click": [0]}},
+        {"features": {"user_id": [3]}, "labels": {"is_click": [1]}},
+    ]
+
+    with pytest.raises(RuntimeError, match="boom"):
+        list(iter_preprocessed_batches(RaisingDag(), iter(batches), prefetch_batches=2))
 
 
 def test_trainer_validation_comes_from_last_data_path(tmp_path):

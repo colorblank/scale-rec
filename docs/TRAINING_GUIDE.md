@@ -72,6 +72,8 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 训练链路分成 4 层配置，默认优先级从低到高是：`train_defaults.yaml` < 模型 YAML < 命令行参数。
 
+`single`、`discover`、`all` 三个训练入口现在共用同一套批次预处理与可选预取逻辑；区别只在于数据来源、模型配置和是否启用 discover TSV 的流式读取。
+
 1. `examples/feature_config_discover.yaml`
    定义在线取数来源、原始输入列、特征算子 DAG、每个列的 `role`。它决定请求聚合层要准备哪些字段、哪些列进入模型、哪些列作为标签、哪些列只是中间产物。
 2. `examples/discover_label_policy.yaml`
@@ -360,6 +362,7 @@ GDCN+ESMM 将门控交叉网络与 ESMM 多任务预测塔相结合。底层利�
 ```yaml
 epochs: 30
 batch_size: 64
+prefetch_batches: 2
 optim:
   name: adamw
   lr: 0.005
@@ -388,6 +391,7 @@ eval:
 字段含义：
 
 - `epochs` 和 `batch_size`：控制训练轮数和每次喂入模型的 batch 大小
+- `prefetch_batches`：后台预取的 batch 数量。`0` 表示关闭预取；大于 `0` 时会在后台提前执行特征预处理，主线程继续训练当前 batch
 - `optim`：优化器类型和学习率参数，`emb_lr`、`emb_weight_decay` 允许把 embedding 参数和其它参数分开优化
 - `eval_samples`：从文件头部切出的验证样本数
 - `eval_interval`：训练中每隔多少个 batch 做一次评估

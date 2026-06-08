@@ -1,5 +1,6 @@
 epochs: 30
 batch_size: 64
+prefetch_batches: 2
 optim:
   name: adamw
   lr: 0.005
