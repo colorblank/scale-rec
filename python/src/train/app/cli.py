@@ -46,6 +46,8 @@ def add_training_args(parser: argparse.ArgumentParser, *, lr: float, batch_size:
     parser.add_argument("--eval-interval", type=int)
     parser.add_argument("--log-interval", type=int)
     parser.add_argument("--prefetch-batches", type=int)
+    parser.add_argument("--checkpoint-interval-steps", type=int)
+    parser.add_argument("--checkpoint-interval-seconds", type=float)
     parser.add_argument("--warmup-steps", type=int)
     parser.add_argument("--min-lr-ratio", type=float)
     parser.add_argument("--grad-max-norm", type=float)
@@ -286,6 +288,12 @@ def train_config_from_args(
         batch_size=pick("batch_size", base.batch_size),
         export_path=str(export_path),
         prefetch_batches=pick("prefetch_batches", base.prefetch_batches),
+        checkpoint_interval_steps=pick(
+            "checkpoint_interval_steps", base.checkpoint_interval_steps
+        ),
+        checkpoint_interval_seconds=pick(
+            "checkpoint_interval_seconds", base.checkpoint_interval_seconds
+        ),
         artifacts=ArtifactConfig(
             artifact_root=str(pick("artifact_dir", base.artifacts.artifact_root)),
             model_name=str(pick("model_name", base.artifacts.model_name)),

@@ -77,6 +77,8 @@ def test_training_args_include_init_weights_default():
     args = parser.parse_args([])
 
     assert args.init_weights == ""
+    assert args.checkpoint_interval_steps is None
+    assert args.checkpoint_interval_seconds is None
 
 
 def test_data_range_args_are_optional_with_glob_support():

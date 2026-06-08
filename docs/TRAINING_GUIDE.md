@@ -47,7 +47,21 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --model-name model_discover_unimixer \
   --run-version 20260526_120000
 
-# 2c. 可选：训练 LR 单目标 baseline
+# 2c. 可选：周期保存 checkpoint
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
+  python -m train.app.main discover \
+  --data python/artifacts/demo/discover_train_data.txt \
+  --feature-config examples/shared/feature_config_discover.yaml \
+  --model-config examples/models/gdcn_esmm.yaml \
+  --train-config examples/shared/train_defaults.yaml \
+  --checkpoint-interval-steps 2000 \
+  --checkpoint-interval-seconds 900 \
+  --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
+  --artifact-dir python/artifacts/demo \
+  --model-name model_gdcn_esmm \
+  --run-version 20260526_120000
+
+# 2d. 可选：训练 LR 单目标 baseline
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m train.app.main discover \
   --data python/artifacts/demo/discover_train_data.txt \
@@ -390,6 +404,8 @@ GDCN+ESMM 将门控交叉网络与 ESMM 多任务预测塔相结合。底层利�
 epochs: 30
 batch_size: 64
 prefetch_batches: 2
+checkpoint_interval_steps: 0
+checkpoint_interval_seconds: 0.0
 optim:
   name: adamw
   lr: 0.005
@@ -419,6 +435,8 @@ eval:
 
 - `epochs` 和 `batch_size`：控制训练轮数和每次喂入模型的 batch 大小
 - `prefetch_batches`：后台预取的 batch 数量。`0` 表示关闭预取；大于 `0` 时会在后台提前执行特征预处理，主线程继续训练当前 batch
+- `checkpoint_interval_steps`：每隔多少个 batch 额外保存一次 checkpoint。`0` 表示关闭按步保存
+- `checkpoint_interval_seconds`：每隔多少秒额外保存一次 checkpoint。`0` 表示关闭按时间保存
 - `optim`：优化器类型和学习率参数，`emb_lr`、`emb_weight_decay` 允许把 embedding 参数和其它参数分开优化
 - `eval_samples`：从文件头部切出的验证样本数
 - `eval_interval`：训练中每隔多少个 batch 做一次评估
@@ -495,7 +513,7 @@ stay_time_label:
 
 ### Early Stopping
 
-验证指标连续 `early_stopping_patience` 次评估不提升时自动停止。训练过程中会保存每个 checkpoint，并维护：
+验证指标连续 `early_stopping_patience` 次评估不提升时自动停止。训练过程中会在 epoch 末尾、按步间隔或按时间间隔保存 checkpoint，并维护：
 
 - `best.safetensors`：当前最优 checkpoint
 - `latest.safetensors`：最新 checkpoint
@@ -643,7 +661,7 @@ python/artifacts/demo/model_gdcn_esmm/20260526_120000/
 | `latest.safetensors` | 最新 checkpoint 的别名，由 `publish_latest` 控制，默认启用 |
 | `run.manifest.yaml` | 训练过程记录，包含 checkpoint 历史、best/latest、发布路径和配置路径 |
 
-`keep_checkpoints` 默认保留 3 个历史 checkpoint，超过后从最旧记录开始删除。`run.manifest.yaml` 是训练记录，不会被 Rust 服务当作 serving manifest 加载。
+`keep_checkpoints` 默认保留 3 个历史 checkpoint，超过后从最旧记录开始删除。`run.manifest.yaml` 是训练记录，不会被 Rust 服务当作 serving manifest 加载。对于超大数据集，建议把 `checkpoint_interval_steps` 或 `checkpoint_interval_seconds` 设为非 0，避免只在 epoch 结束时才落盘。周期 checkpoint 会使用 `periodic-epoch-...` 版本名，与 epoch 末尾保存的正式 checkpoint 区分开。
 
 ### 发布产物
 

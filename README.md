@@ -88,7 +88,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 `train_defaults.yaml` 负责训练默认值，`model_gdcn_esmm.yaml` 负责任务定义，`discover_label_policy.yaml` 只负责 demo 数据标签生成。三者职责分离，训练流程和评估指标都从配置读取，不再在代码里写死。`best.safetensors` 由 `eval.monitor_task`、`eval.monitor_metric` 和 `eval.monitor_mode` 明确决定；未指定 `monitor_task` 时使用模型 `tasks` 中的第一个任务。
 
-`single`、`discover`、`all` 三个训练入口现在共享同一套特征预处理与可选预取逻辑；`examples/shared/train_defaults.yaml` 里的 `prefetch_batches` 可以用来控制后台提前准备多少个 batch，`0` 表示关闭。
+`single`、`discover`、`all` 三个训练入口现在共享同一套特征预处理与可选预取逻辑；`examples/shared/train_defaults.yaml` 里的 `prefetch_batches` 可以用来控制后台提前准备多少个 batch，`checkpoint_interval_steps` / `checkpoint_interval_seconds` 可以控制训练中途的周期 checkpoint，`0` 表示关闭。
 
 训练启动后，日志会先打印一条数据摘要，包括总行数、训练/验证切分、batch_size、估算 batch 数、任务名和 label 映射。若出现 `No supervised batches were processed`，优先检查这条摘要里的 `labels` 和 `train/eval` 切分是否合理。
 

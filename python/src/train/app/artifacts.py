@@ -142,8 +142,9 @@ class TrainingArtifactManager:
         score: float,
         metric_name: str,
         is_best: bool,
+        version: Optional[str] = None,
     ) -> CheckpointRecord:
-        version = f"epoch-{epoch:04d}-step-{step:06d}"
+        version = version or f"epoch-{epoch:04d}-step-{step:06d}"
         path = self.paths.checkpoint_path(version)
         export_to_safetensors(model, path)
         record = CheckpointRecord(

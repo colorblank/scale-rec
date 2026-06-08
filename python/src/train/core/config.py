@@ -249,6 +249,8 @@ class TrainConfig:
     batch_size: int = 64
     export_path: str = ""
     prefetch_batches: int = 2
+    checkpoint_interval_steps: int = 0
+    checkpoint_interval_seconds: float = 0.0
     artifacts: Union[ArtifactConfig, dict[str, Any]] = field(default_factory=ArtifactConfig)
     optim: Union[OptimConfig, dict[str, Any]] = field(default_factory=OptimConfig)
     lr_schedule: Union[LRScheduleConfig, dict[str, Any]] = field(default_factory=LRScheduleConfig)

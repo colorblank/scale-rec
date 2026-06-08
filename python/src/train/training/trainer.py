@@ -200,6 +200,9 @@ class Trainer:
         self._best_score = self._initial_best_score()
         self._stale_epochs = 0
         self._global_step = 0
+        self._last_periodic_checkpoint_step = 0
+        self._last_periodic_checkpoint_time = time.perf_counter()
+        self._periodic_checkpoint_seq = 0
 
         from ..models.params import format_parameter_summary
 
@@ -245,6 +248,11 @@ class Trainer:
         logger.info(
             "prefetch: batches=%d",
             max(int(self.cfg.prefetch_batches), 0),
+        )
+        logger.info(
+            "checkpoint: interval_steps=%d interval_seconds=%.1f",
+            max(int(self.cfg.checkpoint_interval_steps), 0),
+            max(float(self.cfg.checkpoint_interval_seconds), 0.0),
         )
 
         emb_params: list[torch.nn.Parameter] = []
@@ -448,6 +456,7 @@ class Trainer:
             total_loss += loss.item()
             n_batches += 1
             self._global_step += 1
+            self._maybe_save_periodic_checkpoint(epoch, current_loss=loss.item())
 
             if self.cfg.log_interval > 0 and n_batches % self.cfg.log_interval == 0:
                 self._log_batch(n_batches, total_loss, loss.item())
@@ -545,6 +554,43 @@ class Trainer:
             for metric, value in sorted(task_metrics.items()):
                 parts.append(f"{task}_{metric}={value:.4f}")
         logger.info("  " + "  ".join(parts))
+
+    def _maybe_save_periodic_checkpoint(self, epoch: int, current_loss: float) -> None:
+        if self.artifacts is None:
+            return
+        interval_steps = max(int(self.cfg.checkpoint_interval_steps), 0)
+        interval_seconds = max(float(self.cfg.checkpoint_interval_seconds), 0.0)
+        if interval_steps <= 0 and interval_seconds <= 0:
+            return
+
+        now = time.perf_counter()
+        steps_due = interval_steps > 0 and (
+            self._global_step - self._last_periodic_checkpoint_step >= interval_steps
+        )
+        time_due = interval_seconds > 0 and (
+            now - self._last_periodic_checkpoint_time >= interval_seconds
+        )
+        if not (steps_due or time_due):
+            return
+
+        self.artifacts.save_checkpoint(
+            self.model,
+            epoch=epoch,
+            step=self._global_step,
+            score=current_loss,
+            metric_name="train_loss",
+            is_best=False,
+            version=self._periodic_checkpoint_version(epoch),
+        )
+        self._last_periodic_checkpoint_step = self._global_step
+        self._last_periodic_checkpoint_time = now
+
+    def _periodic_checkpoint_version(self, epoch: int) -> str:
+        self._periodic_checkpoint_seq += 1
+        return (
+            f"periodic-epoch-{epoch:04d}-step-{self._global_step:06d}-"
+            f"{self._periodic_checkpoint_seq:04d}"
+        )
 
     def _validate_task_contract(self, flow_config: FlowConfig) -> None:
         if not self.task_specs:

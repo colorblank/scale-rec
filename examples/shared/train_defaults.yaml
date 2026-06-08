@@ -1,6 +1,8 @@
 epochs: 30
 batch_size: 64
 prefetch_batches: 2
+checkpoint_interval_steps: 0
+checkpoint_interval_seconds: 0.0
 optim:
   name: adamw
   lr: 0.005

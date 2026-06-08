@@ -42,6 +42,8 @@ def test_train_config_uses_structured_subconfigs():
     assert cfg.lr_schedule.warmup_steps == 7
     assert cfg.lr_schedule.min_lr_ratio == 0.2
     assert cfg.prefetch_batches == 2
+    assert cfg.checkpoint_interval_steps == 0
+    assert cfg.checkpoint_interval_seconds == 0.0
     assert not cfg.ema_enabled
 
 
@@ -281,6 +283,130 @@ def test_trainer_prefetch_surfaces_background_errors():
 
     with pytest.raises(RuntimeError, match="boom"):
         list(iter_preprocessed_batches(RaisingDag(), iter(batches), prefetch_batches=2))
+
+
+def test_trainer_periodic_checkpoint_saves_by_step_interval():
+    class FakeArtifacts:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def save_checkpoint(
+            self,
+            model,
+            *,
+            epoch,
+            step,
+            score,
+            metric_name,
+            is_best,
+            version=None,
+        ):
+            self.calls.append(
+                {
+                    "epoch": epoch,
+                    "step": step,
+                    "score": score,
+                    "metric_name": metric_name,
+                    "is_best": is_best,
+                    "version": version,
+                }
+            )
+
+    flow_config = _single_label_flow()
+    trainer = Trainer(
+        torch.nn.Linear(1, 1),
+        dag=None,
+        task_names=["click"],
+        label_map={"click": "click"},
+        device=torch.device("cpu"),
+        config=TrainConfig(
+            checkpoint_interval_steps=2,
+            checkpoint_interval_seconds=0.0,
+            eval={"metrics": ["auc"]},
+        ),
+        task_specs=[TaskSpec(name="click", label="click", metrics=("auc",))],
+        data_path="unused",
+        flow_config=flow_config,
+    )
+    trainer.artifacts = FakeArtifacts()
+    trainer._global_step = 2
+    trainer._last_periodic_checkpoint_step = 0
+
+    trainer._maybe_save_periodic_checkpoint(epoch=1, current_loss=0.123)
+
+    assert trainer.artifacts.calls == [
+        {
+            "epoch": 1,
+            "step": 2,
+            "score": 0.123,
+            "metric_name": "train_loss",
+            "is_best": False,
+            "version": "periodic-epoch-0001-step-000002-0001",
+        }
+    ]
+
+
+def test_trainer_periodic_checkpoint_saves_by_time_interval(monkeypatch):
+    class FakeArtifacts:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def save_checkpoint(
+            self,
+            model,
+            *,
+            epoch,
+            step,
+            score,
+            metric_name,
+            is_best,
+            version=None,
+        ):
+            self.calls.append(
+                {
+                    "epoch": epoch,
+                    "step": step,
+                    "score": score,
+                    "metric_name": metric_name,
+                    "is_best": is_best,
+                    "version": version,
+                }
+            )
+
+    flow_config = _single_label_flow()
+    trainer = Trainer(
+        torch.nn.Linear(1, 1),
+        dag=None,
+        task_names=["click"],
+        label_map={"click": "click"},
+        device=torch.device("cpu"),
+        config=TrainConfig(
+            checkpoint_interval_steps=0,
+            checkpoint_interval_seconds=1.0,
+            eval={"metrics": ["auc"]},
+        ),
+        task_specs=[TaskSpec(name="click", label="click", metrics=("auc",))],
+        data_path="unused",
+        flow_config=flow_config,
+    )
+    trainer.artifacts = FakeArtifacts()
+    trainer._global_step = 1
+    trainer._last_periodic_checkpoint_step = 1
+    trainer._last_periodic_checkpoint_time = 0.0
+    monkeypatch.setattr("train.training.trainer.time.perf_counter", lambda: 1.5)
+
+    trainer._maybe_save_periodic_checkpoint(epoch=1, current_loss=0.456)
+
+    assert trainer.artifacts.calls == [
+        {
+            "epoch": 1,
+            "step": 1,
+            "score": 0.456,
+            "metric_name": "train_loss",
+            "is_best": False,
+            "version": "periodic-epoch-0001-step-000001-0001",
+        }
+    ]
 
 
 def test_trainer_validation_comes_from_last_data_path(tmp_path):

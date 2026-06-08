@@ -12,7 +12,9 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 - 训练任务语义已经从模型代码里抽出，使用 `tasks`、`label_col_map`、`metrics` 在模型 YAML 里声明，`Trainer` 和 `Evaluator` 只读取配置，不再按模型类型猜测监督目标。
 - 模型特征规格不在模型配置中重复声明，而是统一来自 `FeatureDag.embeddable_features()`。
 - Python 训练后导出 safetensors，Rust 通过 Candle `VarMap` 加载；权重 key 必须与 Rust `VarBuilder::pp()` 路径严格对齐。
-- 训练和推理的全链路验证已经收敛到 `python/src/scale_rec_demo/verify_all.py`，用于同时检查 Python 训练、Rust 推理和输出一致性。
+- `examples/` 已拆分为 `examples/shared/` 和 `examples/models/`，共享配置与模型配置不再混放；当前模型示例包括 `lr.yaml`、`gdcn_esmm.yaml`、`unimixer.yaml`。
+- 训练和推理的全链路验证已经收敛到 `python/src/scale_rec_demo/verify_all.py`，并覆盖 `discover_lr`、`discover_gdcn_esmm`、`discover_unimixer` 三条主线，用于同时检查 Python 训练、Rust 推理和输出一致性。
+- Python 训练入口已经抽出公共批处理 helper `iter_preprocessed_batches()`，`single` / `discover` / `all` 三条入口共享同一套批次预处理与可选预取逻辑。
 
 这套设计的核心优点是：特征编排有单一来源，训练与推理模型结构可对齐，Rust 线上服务可以避免携带 Python 运行时。同时，当前代码已经具备多模型注册、发布 manifest、Golden consistency、模型 smoke test、算子级测试、训练/推理一致性脚本和任务级配置。
 
@@ -154,10 +156,10 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 
 **CI/CD 管线完全缺失**：无 `.github/workflows/`、无 `.gitlab-ci.yml`、无 Jenkinsfile。测试、lint、构建和部署全依赖人工执行，缺少自动化质量闸门。
 
-**Cargo.lock 被 gitignore 但 Docker 构建依赖它**：
-- `.gitignore:33` 将 `Cargo.lock` 标记为 ignore。
-- `docker/Dockerfile:31` 使用 `cargo build --locked` 构建，要求 Cargo.lock 存在。
-- 全新 clone 后 Docker 构建直接失败；团队成员间构建不可复现。
+**Cargo.lock 已纳入仓库，但仍需要 CI 约束**：
+- `Cargo.lock` 已被跟踪，Dockerfile 也按 `cargo build --locked` 构建。
+- 这条链路已经从“全新 clone 直接失败”修复到“依赖必须受锁文件约束”。
+- 后续风险主要是有人在本地绕过锁文件或错误地回退提交，所以 CI 仍需要强制 `--locked`。
 
 **静态检查工具配置不完整**：
 - Rust：无 `rustfmt.toml`、`clippy.toml`，代码风格仅靠默认规则 + `.claude/rules/code-style.md`（LLM 指导），无机械执行。
@@ -170,7 +172,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 **无 pre-commit hooks**：格式化和 lint 完全依赖开发者自觉，或 CI 中事后发现。
 
 **改进方向**：
-- 从 `.gitignore` 中移除 `Cargo.lock`。
+- 在 CI 中强制 `cargo build --locked` / `cargo test --locked`，避免锁文件被绕过。
 - 搭建 GitHub Actions（或 GitLab CI）：包含 `cargo test/fmt/clippy`、`ruff check/format`、`mypy`、`pytest`、`cargo-audit`。
 - 扩展 ruff 配置加入 `I`/`B`/`UP`/`SIM` 规则集，渐进式修复后逐步解锁 mypy `ignore_errors`。
 - 添加 `.editorconfig` 和 `.pre-commit-config.yaml`。
@@ -236,7 +238,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 
 - 共享 YAML 特征编排，覆盖多种 operator。
 - 已新增融合预处理算子 `ParsedFeatureHash` / `ConcatHash`，把高频解析+hash链路合并，减少 DAG 深度和中间值。
-- Python 单文件训练、discover 训练、多模型训练入口。
+- Python 单文件训练、discover 训练、多模型训练入口，且三条入口共享同一个批处理预处理/预取 helper。
 - 多任务 loss、评估、early stopping、EMA、checkpoint 和 manifest。
 - 任务级配置已经落到模型 YAML，训练和评估直接读 `tasks`、`label_col_map`、`metrics`。
 - Rust HTTP 推理，支持 pointwise `/predict` 和 broadcast `/predict/broadcast`。
@@ -318,7 +320,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 
 - pandas chunk 到 dict records 再到 columns 属于重复转换，CPU 和内存开销都较高。
 - `build_item_index()` 虽然已用 `itertuples()`，但最终仍构造大字典，物品规模很大时内存压力明显。
-- 训练数据 pipeline 没有异步 prefetch，GPU/加速设备训练时可能被 CPU 预处理拖住。
+- 训练数据 pipeline 现在已经有线程池 prefetch，但主路径仍然是 pandas chunk + `to_dict("records")` + DAG 预处理；预取只能隐藏一部分 CPU 开销，不能消除数据结构转换的成本。
 - Python 和 Rust 的 batch DAG 行为仍需持续用 Golden 测试锁住，否则优化过程中容易产生细微差异。
 
 改进方向：
@@ -326,14 +328,14 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 - 让 `stream_file_batches()` 直接 yield `dict[str, list]` 列式 features，避免 `to_dict("records")`。
 - `FeatureDag.preprocess_batch()` 优先走列式输入，list[dict] 作为兼容路径。
 - 大数据训练引入 Polars LazyFrame 或 Arrow RecordBatch 作为中间格式。
-- 增加 prefetch worker，将数据读取和模型训练解耦。
+- 在现有 prefetch 之上继续拆分读取、预处理和设备拷贝，形成真正的 producer/consumer 流水线。
 - 对关键算子补充 batch consistency 测试：单样本执行与 batch 执行输出必须一致。
 
 ## 5. 改进优先级
 
 ### P0：稳定性与构建可复现（立即修复）
 
-1. **将 `Cargo.lock` 加入 git 跟踪**（`.gitignore:33`），修复 Docker `--locked` 构建在全新 clone 下失败的问题。
+1. **保持 `Cargo.lock` 入仓并在 CI 中强制 `--locked` 构建**，防止依赖漂移和 Docker 复现问题回归。
 2. **用 `Result` 替换生产路径所有 `.unwrap()`/`.expect()`**：
    - `src/bin/server.rs:36,131,133,179,180`：服务启动和路由绑定。
    - `src/feats/dag.rs:167,187`：DAG source/op 查询。
@@ -341,7 +343,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
    - `src/layers/embedding.rs:116,129`：feature index 查询。
    - `src/feats/ops/feature_hash.rs:61,141,162,169`：缓存 RwLock。
    - `src/server/registry.rs:279,295,418,436,442,452,484,605`：模型注册 RwLock。
-3. **用 `tracing` 替换所有 `println!()`/`eprintln!()`**（30 处）：让日志可被采集、路由和级别控制。
+3. **用 `tracing` 替换所有 `println!()`/`eprintln!()`**（仍然较多）：让日志可被采集、路由和级别控制。
 4. **修复 Python `except Exception` 吞错**：
    - `python/src/train/app/data.py:78`：`_read_file_compat` 改为 `except (pd.errors.ParserError, ValueError)`。
    - `python/src/train/app/manifest.py:30`：`current_git_commit` 至少记录 `logging.exception`。
@@ -367,7 +369,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
    - `src/feats/defaults.rs:12-25`：非法默认值添加 `tracing::warn!`。
    - `src/feats/ops/expression.rs:29`：非数值输入添加 `tracing::warn!`。
 9. **消除代码重复**：
-   - 清理 `main.py` 中 `_wrap_unimixer` 残留，统一到 `cli.wrap_unimixer_for_rust_names`。
+   - 继续收敛 Python 训练入口中的 batch 组织逻辑，减少 `main.py` 与 `trainer.py` 对同一批次结构的重复理解。
    - 将 `NULL_MARKERS` 抽取到公共模块。
 10. Dockerfile 添加 `USER 1000`。
 
@@ -395,7 +397,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 2. 为所有公共 API 补充文档（15 项 Rust pub 类型、55 项 Python 函数/类）。
 3. 支持列式请求 API 或二进制协议，服务高吞吐召回/排序场景。
 4. 将 operator 注册机制标准化，降低新增算子的 Rust/Python 双端维护成本。
-5. 对大规模训练引入 Arrow/Polars-first pipeline 和异步 prefetch。
+5. 对大规模训练引入 Arrow/Polars-first pipeline，并把现有 prefetch 演进为真正的 producer/consumer 流水线。
 6. 为线上推理增加 Prometheus/OpenTelemetry 指标导出。
 7. 建立模型发布、回滚、灰度和兼容检查流程。
 8. 让生产发布产物默认自包含 feature config 和 model config，并保持特征契约查询接口只读取发布归档配置。
@@ -404,7 +406,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 
 ## 6. 推荐执行路线
 
-**短周期（P0，1-2 周）**：修复 Cargo.lock、消除生产路径 unwrap/expect、引入 tracing 替换 println、修复 Python except Exception、添加 deny_unknown_fields。核心目标是消除进程崩溃风险，让错误能够传播和追踪。
+**短周期（P0，1-2 周）**：保持 Cargo.lock 入仓、消除生产路径 unwrap/expect、引入 tracing 替换 println、修复 Python except Exception、添加 deny_unknown_fields。核心目标是消除进程崩溃风险，让错误能够传播和追踪。
 
 **短中期（P1，3-4 周）**：搭建 CI/CD、修复安全漏洞（CORS/限流/认证/unsafe）、扩展 lint 工具链、修复静默吞错。核心目标是建立质量闸门，让安全问题不再被忽略。
 

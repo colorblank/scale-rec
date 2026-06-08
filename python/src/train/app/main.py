@@ -10,6 +10,8 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
@@ -45,6 +47,13 @@ DEMO_ARTIFACT_DIR = REPO_ROOT / "python" / "artifacts" / "demo"
 NULL_MARKERS: set[str] = {"NULL", "\\N", "null", "None", ""}
 
 logger = logging.getLogger("train")
+
+
+@dataclass
+class PeriodicCheckpointState:
+    last_step: int = 0
+    last_time: float = field(default_factory=time.perf_counter)
+    seq: int = 0
 
 
 def _wrap_unimixer(model):
@@ -135,9 +144,16 @@ def _train_epoch_single(
     batch_size: int,
     label_col_map: Optional[dict[str, str]] = None,
     prefetch_batches: int = 0,
+    artifacts: Optional[TrainingArtifactManager] = None,
+    checkpoint_state: Optional[PeriodicCheckpointState] = None,
+    checkpoint_interval_steps: int = 0,
+    checkpoint_interval_seconds: float = 0.0,
+    epoch: int = 0,
 ) -> float:
     if label_col_map is None:
         label_col_map = {}
+    if checkpoint_state is None:
+        checkpoint_state = PeriodicCheckpointState()
     model.train()
     total_loss = 0.0
     n_batches = 0
@@ -167,13 +183,23 @@ def _train_epoch_single(
         optimizer.step()
         total_loss += loss.item()
         n_batches += 1
-    if n_batches == 0:
-        available_labels = [c for c in sorted(set(label_col_map.values())) if c in df.columns]
-        raise ValueError(
-            "No supervised batches were processed. Check that the dataset exposes the "
-            "configured label columns and that label_col_map matches the model outputs. "
-            f"label_col_map={label_col_map} available_labels={available_labels}"
+        _maybe_save_periodic_checkpoint(
+            artifacts,
+            model,
+            epoch=epoch,
+            step=n_batches,
+            current_loss=loss.item(),
+            state=checkpoint_state,
+            interval_steps=checkpoint_interval_steps,
+            interval_seconds=checkpoint_interval_seconds,
         )
+        if n_batches == 0:
+            available_labels = [c for c in sorted(set(label_col_map.values())) if c in df.columns]
+            raise ValueError(
+                "No supervised batches were processed. Check that the dataset exposes the "
+                "configured label columns and that label_col_map matches the model outputs. "
+                f"label_col_map={label_col_map} available_labels={available_labels}"
+            )
     return total_loss / max(n_batches, 1)
 
 
@@ -263,6 +289,44 @@ def _predict_all(
     return {k: np.concatenate(v) for k, v in all_logits.items()}
 
 
+def _maybe_save_periodic_checkpoint(
+    artifacts: Optional[TrainingArtifactManager],
+    model: torch.nn.Module,
+    *,
+    epoch: int,
+    step: int,
+    current_loss: float,
+    state: PeriodicCheckpointState,
+    interval_steps: int,
+    interval_seconds: float,
+) -> None:
+    if artifacts is None:
+        return
+    interval_steps = max(int(interval_steps), 0)
+    interval_seconds = max(float(interval_seconds), 0.0)
+    if interval_steps <= 0 and interval_seconds <= 0:
+        return
+
+    now = time.perf_counter()
+    steps_due = interval_steps > 0 and (step - state.last_step >= interval_steps)
+    time_due = interval_seconds > 0 and (now - state.last_time >= interval_seconds)
+    if not (steps_due or time_due):
+        return
+
+    state.seq += 1
+    artifacts.save_checkpoint(
+        model,
+        epoch=epoch,
+        step=step,
+        score=current_loss,
+        metric_name="train_loss",
+        is_best=False,
+        version=f"periodic-epoch-{epoch:04d}-step-{step:06d}-{state.seq:04d}",
+    )
+    state.last_step = step
+    state.last_time = now
+
+
 def _run_single(args: argparse.Namespace) -> None:
     feature_config = args.feature_config
     model_config = args.model_config
@@ -341,6 +405,7 @@ def _run_single(args: argparse.Namespace) -> None:
     model = built.model
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     best_score = float("inf")
+    periodic_state = PeriodicCheckpointState()
     for epoch in range(1, args.epochs + 1):
         train_loss = _train_epoch_single(
             model,
@@ -350,6 +415,11 @@ def _run_single(args: argparse.Namespace) -> None:
             args.batch_size,
             built.spec.get("label_col_map", {}),
             cfg.prefetch_batches,
+            artifacts,
+            periodic_state,
+            cfg.checkpoint_interval_steps,
+            cfg.checkpoint_interval_seconds,
+            epoch,
         )
         metrics = _evaluate_single(
             model,
@@ -359,9 +429,19 @@ def _run_single(args: argparse.Namespace) -> None:
             built.spec.get("label_col_map", {}),
             cfg.prefetch_batches,
         )
-        best_score = min(
-            best_score, min((v["logloss"] for v in metrics.values()), default=best_score)
-        )
+        score = min((v["logloss"] for v in metrics.values()), default=best_score)
+        is_best = score < best_score
+        if is_best:
+            best_score = score
+        if artifacts is not None:
+            artifacts.save_checkpoint(
+                model,
+                epoch=epoch,
+                step=epoch,
+                score=score,
+                metric_name="logloss",
+                is_best=is_best,
+            )
         logger.info("epoch %d/%d loss=%.6f", epoch, args.epochs, train_loss)
 
     if not np.isfinite(best_score):
@@ -545,6 +625,7 @@ def _run_all(args: argparse.Namespace) -> None:
 
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
         best_score = float("inf")
+        periodic_state = PeriodicCheckpointState()
         for epoch in range(1, args.epochs + 1):
             train_loss = _train_epoch_single(
                 model,
@@ -554,6 +635,11 @@ def _run_all(args: argparse.Namespace) -> None:
                 args.batch_size,
                 label_col_map,
                 cfg.prefetch_batches,
+                artifacts,
+                periodic_state,
+                cfg.checkpoint_interval_steps,
+                cfg.checkpoint_interval_seconds,
+                epoch,
             )
             metrics = _evaluate_single(
                 model,
