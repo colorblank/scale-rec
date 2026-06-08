@@ -8,6 +8,7 @@ use std::sync::LazyLock;
 use crate::layers::embedding::FeatureSpec;
 use crate::layers::towers::MultiTaskConfig;
 use crate::models::unimixer::tokenizer::FeatureTokenizer;
+use tracing::error;
 
 pub mod deepfm;
 pub mod esmm;
@@ -331,7 +332,10 @@ fn parse_task_config_entries(params: &serde_yaml::Value) -> Vec<TaskConfigEntry>
 fn parse_multi_task_config(params: &serde_yaml::Value) -> Result<MultiTaskConfig> {
     match params.get("task_config") {
         Some(task_config) => serde_yaml::from_value::<MultiTaskConfig>(task_config.clone())
-            .map_err(|e| candle_core::Error::Msg(format!("parse unimixer task_config: {}", e))),
+            .map_err(|e| {
+                error!(error = %e, "parse unimixer task_config failed");
+                candle_core::Error::Msg(format!("parse unimixer task_config: {}", e))
+            }),
         None => Ok(MultiTaskConfig {
             towers: vec![],
             relations: vec![],

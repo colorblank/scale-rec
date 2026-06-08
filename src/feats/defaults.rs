@@ -2,6 +2,7 @@
 
 use crate::feats::config::{parse_float_strict, parse_int_strict, DType, SourceDef};
 use crate::feats::ops::Fv;
+use tracing::warn;
 
 pub fn source_default(source: &SourceDef) -> Fv {
     parse_default(&source.default_val, &source.dtype)
@@ -9,8 +10,20 @@ pub fn source_default(source: &SourceDef) -> Fv {
 
 fn parse_default(raw: &str, dtype: &DType) -> Fv {
     match dtype {
-        DType::Int => Fv::Int(parse_int_strict(raw).unwrap_or(0)),
-        DType::Float => Fv::Float(parse_float_strict(raw).unwrap_or(0.0)),
+        DType::Int => match parse_int_strict(raw) {
+            Ok(value) => Fv::Int(value),
+            Err(err) => {
+                warn!(raw = %raw, dtype = "int", error = %err, "invalid default value, falling back to 0");
+                Fv::Int(0)
+            }
+        },
+        DType::Float => match parse_float_strict(raw) {
+            Ok(value) => Fv::Float(value),
+            Err(err) => {
+                warn!(raw = %raw, dtype = "float", error = %err, "invalid default value, falling back to 0.0");
+                Fv::Float(0.0)
+            }
+        },
         DType::String => Fv::Str(raw.to_string()),
         DType::Enum {
             values,
@@ -21,8 +34,20 @@ fn parse_default(raw: &str, dtype: &DType) -> Fv {
             Fv::Str(normalize_enum_default(value, raw, values, oov))
         }
         DType::List { dtype, length } => match dtype.as_ref() {
-            DType::Int => Fv::IntList(vec![parse_int_strict(raw).unwrap_or(0); *length]),
-            DType::Float => Fv::FloatList(vec![parse_float_strict(raw).unwrap_or(0.0); *length]),
+            DType::Int => match parse_int_strict(raw) {
+                Ok(value) => Fv::IntList(vec![value; *length]),
+                Err(err) => {
+                    warn!(raw = %raw, dtype = "list[int]", error = %err, "invalid default value, falling back to 0");
+                    Fv::IntList(vec![0; *length])
+                }
+            },
+            DType::Float => match parse_float_strict(raw) {
+                Ok(value) => Fv::FloatList(vec![value; *length]),
+                Err(err) => {
+                    warn!(raw = %raw, dtype = "list[float]", error = %err, "invalid default value, falling back to 0.0");
+                    Fv::FloatList(vec![0.0; *length])
+                }
+            },
             DType::String => Fv::StrList(vec![raw.to_string(); *length]),
             DType::Enum {
                 values,
@@ -35,7 +60,10 @@ fn parse_default(raw: &str, dtype: &DType) -> Fv {
                     *length
                 ])
             }
-            _ => Fv::Int(0),
+            _ => {
+                warn!(raw = %raw, dtype = "list<unknown>", "unsupported list default dtype, falling back to 0");
+                Fv::Int(0)
+            }
         },
     }
 }

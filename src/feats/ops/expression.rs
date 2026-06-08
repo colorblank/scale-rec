@@ -1,6 +1,7 @@
 //! 表达式算子：Rhai 脚本求值，支持 v0..vN 变量和 log 函数。
 use super::{CustomOp, Fv};
 use rhai::{Engine, Scope, AST};
+use tracing::warn;
 
 pub struct ExpressionOp {
     ast: AST,
@@ -28,7 +29,14 @@ impl CustomOp for ExpressionOp {
             let val: f64 = match v {
                 Fv::Int(n) => *n as f64,
                 Fv::Float(f) => *f as f64,
-                _ => 0.0,
+                other => {
+                    warn!(
+                        input_idx = i,
+                        input_type = %other.type_name(),
+                        "non-numeric expression input, falling back to 0.0"
+                    );
+                    0.0
+                }
             };
             scope.push(format!("v{}", i), val);
         }
