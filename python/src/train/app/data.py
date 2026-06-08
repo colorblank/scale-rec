@@ -254,6 +254,7 @@ def stream_file_batches(
         "usecols": usecols,
         "chunksize": read_chunk_size,
         "memory_map": memory_map,
+        "on_bad_lines": "skip",
     }
     if fast_no_na:
         params["na_filter"] = False
