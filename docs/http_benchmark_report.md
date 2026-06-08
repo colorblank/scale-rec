@@ -37,7 +37,7 @@ UniMixer 的中位数延迟稳定在 `12.2 ms`，但尾延迟波动高于 GDCN+E
 | Rust 后端 | Accelerate CPU |
 | 服务二进制 | `target/release/server` |
 | 压测二进制 | `target/release/bench` |
-| Feature config | `examples/feature_config_discover.yaml` |
+| Feature config | `examples/shared/feature_config_discover.yaml` |
 | 输入数据 | `python/artifacts/demo/discover_train_data.txt` |
 | 输入格式 | 45 列 TSV，无 header；bench 只读取 feature config 需要的输入列，标签列随文件保留 |
 | 请求模式 | broadcast |
@@ -105,8 +105,8 @@ Rust 实现已做以下优化：
 
 | 模型 | Model config | 权重 | HTTP model name |
 |---|---|---|---|
-| GDCN+ESMM | `examples/model_gdcn_esmm.yaml` | `python/artifacts/demo/model_gdcn_esmm/<run_version>/serving/model.safetensors` | `model_gdcn_esmm` |
-| UniMixer | `examples/model_discover_unimixer.yaml` | `python/artifacts/demo/model_discover_unimixer/<run_version>/serving/model.safetensors` | `model_discover_unimixer` |
+| GDCN+ESMM | `examples/models/gdcn_esmm.yaml` | `python/artifacts/demo/model_gdcn_esmm/<run_version>/serving/model.safetensors` | `model_gdcn_esmm` |
+| UniMixer | `examples/models/unimixer.yaml` | `python/artifacts/demo/model_discover_unimixer/<run_version>/serving/model.safetensors` | `model_discover_unimixer` |
 
 ## 构建与启动
 
@@ -149,7 +149,7 @@ target/release/bench \
   --duration-secs 60 \
   --target-qps 300 \
   --input-file python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/feature_config_discover.yaml \
+  --feature-config examples/shared/feature_config_discover.yaml \
   --no-header
 ```
 
@@ -210,7 +210,7 @@ target/release/bench \
   --duration-secs 60 \
   --target-qps 300 \
   --input-file python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/feature_config_discover.yaml \
+  --feature-config examples/shared/feature_config_discover.yaml \
   --no-header
 ```
 

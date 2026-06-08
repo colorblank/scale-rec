@@ -23,7 +23,7 @@ from typing import Any, Optional
 import yaml
 
 VERSION = "1.0.0"
-FULL_CONFIG_FILE = "feature_config_discover.yaml"
+FULL_CONFIG_FILE = "shared/feature_config_discover.yaml"
 
 ConfigDict = dict[str, Any]
 SourceDef = ConfigDict
@@ -960,6 +960,7 @@ def _build_operators() -> list[OperatorDef]:
 
 def _write_yaml(data: ConfigDict, name: str) -> str:
     path = Path(__file__).resolve().parent / name
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
         yaml.dump(
             data,

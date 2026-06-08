@@ -351,7 +351,7 @@ Malformed JSON、缺少必填字段等 Axum `Json` extractor 错误由框架默�
 
 ## 请求特征格式
 
-特征字段是 JSON object，key 为 feature config 中的 source 名。value 支持数字、字符串、数组等 JSON 类型，具体解析由 `examples/feature_config_discover.yaml` 中的 source dtype 和 operator DAG 决定。
+特征字段是 JSON object，key 为 feature config 中的 source 名。value 支持数字、字符串、数组等 JSON 类型，具体解析由 `examples/shared/feature_config_discover.yaml` 中的 source dtype 和 operator DAG 决定。
 
 Pointwise 示例：
 

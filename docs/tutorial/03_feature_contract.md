@@ -12,7 +12,7 @@
 
 ## 特征配置的三层结构
 
-`examples/feature_config_discover.yaml` 主要由三部分组成：
+`examples/shared/feature_config_discover.yaml` 主要由三部分组成：
 
 ```yaml
 version: 1.0.0
@@ -362,7 +362,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 from train.core.config import FlowConfig
 from train.core.dag import FeatureDag
 
-fc = FlowConfig.from_yaml("examples/feature_config_discover.yaml")
+fc = FlowConfig.from_yaml("examples/shared/feature_config_discover.yaml")
 dag = FeatureDag(fc, debug_mode=True)
 result = dag.execute({"user_id": 123, "item_id": 456})
 print(result.features)

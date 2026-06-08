@@ -188,7 +188,7 @@ def verify_model_pipeline(
 ) -> bool:
     """Run verification pipeline for a given model type."""
     print(f"\n{'=' * 60}\n  Model: {model_type}\n{'=' * 60}")
-    stem = "model_gdcn_esmm" if model_type == "discover_gdcn_esmm" else "model_discover_unimixer"
+    stem = f"model_{model_type.removeprefix('discover_')}"
     weights = DEMO_ARTIFACT_DIR / f"{stem}.safetensors"
     test_csv = DEMO_ARTIFACT_DIR / f"{stem}_test.csv"
     py_preds = DEMO_ARTIFACT_DIR / f"{stem}_py_preds.csv"
@@ -211,7 +211,9 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="Verify Python vs Rust prediction consistency.")
     parser.add_argument(
-        "--models", default="discover_gdcn_esmm,discover_unimixer", help="Comma-separated models."
+        "--models",
+        default="discover_lr,discover_gdcn_esmm,discover_unimixer",
+        help="Comma-separated models.",
     )
     parser.add_argument("--force-train", action="store_true", help="Force train models.")
     parser.add_argument("--threshold", type=float, default=1e-4, help="Similarity threshold.")

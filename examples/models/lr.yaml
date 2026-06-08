@@ -1,0 +1,6 @@
+type: lr
+tasks:
+  - name: pred
+    label: is_click
+    loss: bce
+    metrics: [auc, logloss]

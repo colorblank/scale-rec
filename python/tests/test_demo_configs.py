@@ -4,6 +4,7 @@ from pathlib import Path
 
 import yaml
 
+from scale_rec_demo.paths import MODEL_CONFIGS
 from train.core.config import FlowConfig
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -12,21 +13,30 @@ EXAMPLES_DIR = REPO_ROOT / "examples"
 
 def test_demo_model_configs_exist_and_are_current():
     model_configs = {
-        "discover_gdcn_esmm": EXAMPLES_DIR / "model_gdcn_esmm.yaml",
-        "discover_unimixer": EXAMPLES_DIR / "model_discover_unimixer.yaml",
+        "discover_lr": EXAMPLES_DIR / "models" / "lr.yaml",
+        "discover_gdcn_esmm": EXAMPLES_DIR / "models" / "gdcn_esmm.yaml",
+        "discover_unimixer": EXAMPLES_DIR / "models" / "unimixer.yaml",
     }
     ancillary_configs = [
-        EXAMPLES_DIR / "train_defaults.yaml",
-        EXAMPLES_DIR / "discover_label_policy.yaml",
+        EXAMPLES_DIR / "shared" / "train_defaults.yaml",
+        EXAMPLES_DIR / "shared" / "discover_label_policy.yaml",
+        EXAMPLES_DIR / "shared" / "feature_config_discover.yaml",
     ]
-    expected_files = {path.name for path in model_configs.values()}
-    actual_files = {path.name for path in EXAMPLES_DIR.glob("model*.yaml")}
+    actual_files = {path.relative_to(EXAMPLES_DIR).as_posix() for path in EXAMPLES_DIR.rglob("*.yaml")}
+    expected_files = {
+        "models/lr.yaml",
+        "models/gdcn_esmm.yaml",
+        "models/unimixer.yaml",
+        "shared/train_defaults.yaml",
+        "shared/discover_label_policy.yaml",
+        "shared/feature_config_discover.yaml",
+    }
 
     for path in list(model_configs.values()) + ancillary_configs:
         assert path.exists(), path
     assert actual_files == expected_files
 
-    discover_fc = FlowConfig.from_yaml(str(EXAMPLES_DIR / "feature_config_discover.yaml"))
+    discover_fc = FlowConfig.from_yaml(str(EXAMPLES_DIR / "shared" / "feature_config_discover.yaml"))
     assert [s.name for s in discover_fc.label_sources] == [
         "is_click",
         "is_cvr",
@@ -64,6 +74,17 @@ def test_demo_model_configs_exist_and_are_current():
     }
     assert gdcn["label_col_map"]["stay"] == "stay_time_label"
 
+    lr = yaml.safe_load(model_configs["discover_lr"].read_text(encoding="utf-8"))
+    assert lr["type"] == "lr"
+    assert lr["tasks"] == [
+        {
+            "name": "pred",
+            "label": "is_click",
+            "loss": "bce",
+            "metrics": ["auc", "logloss"],
+        }
+    ]
+
     unimixer = yaml.safe_load(model_configs["discover_unimixer"].read_text(encoding="utf-8"))
     assert unimixer["type"] == "unimixer"
     assert unimixer["use_siamese"] is False
@@ -71,7 +92,7 @@ def test_demo_model_configs_exist_and_are_current():
     assert unimixer["label_col_map"]["stay"] == "stay_time_label"
 
     label_policy = yaml.safe_load(
-        (EXAMPLES_DIR / "discover_label_policy.yaml").read_text(encoding="utf-8")
+        (EXAMPLES_DIR / "shared" / "discover_label_policy.yaml").read_text(encoding="utf-8")
     )
     assert label_policy["click"]["threshold"] == 0.42
     assert label_policy["stay_time_label"]["noise_min"] == -25
@@ -79,3 +100,11 @@ def test_demo_model_configs_exist_and_are_current():
 
 def test_lr_ctr_duplicate_config_was_removed():
     assert not (REPO_ROOT / "python" / "demo" / "model_lr_ctr.yaml").exists()
+
+
+def test_demo_model_path_index_covers_all_example_models():
+    assert MODEL_CONFIGS == {
+        "discover_lr": EXAMPLES_DIR / "models" / "lr.yaml",
+        "discover_gdcn_esmm": EXAMPLES_DIR / "models" / "gdcn_esmm.yaml",
+        "discover_unimixer": EXAMPLES_DIR / "models" / "unimixer.yaml",
+    }

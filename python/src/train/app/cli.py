@@ -22,7 +22,7 @@ LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 CONSOLE_LOG_FORMAT = "%(asctime)s [%(levelname)-5s] %(name)s: %(message)s"
 FILE_LOG_FORMAT = "%(asctime)s [%(levelname)-5s] %(process)d %(name)s:%(lineno)d: %(message)s"
 REPO_ROOT = Path(__file__).resolve().parents[4]
-DEFAULT_TRAIN_CONFIG = REPO_ROOT / "examples" / "train_defaults.yaml"
+DEFAULT_TRAIN_CONFIG = REPO_ROOT / "examples" / "shared" / "train_defaults.yaml"
 
 
 @dataclass

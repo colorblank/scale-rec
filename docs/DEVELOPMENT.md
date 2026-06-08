@@ -96,7 +96,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m scale_rec_demo.generate_discover_data \
-  --label-policy examples/discover_label_policy.yaml
+  --label-policy examples/shared/discover_label_policy.yaml
 ```
 
 训练 demo 模型：
@@ -105,9 +105,9 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m train.app.main discover \
   --data python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/feature_config_discover.yaml \
-  --model-config examples/model_gdcn_esmm.yaml \
-  --train-config examples/train_defaults.yaml \
+  --feature-config examples/shared/feature_config_discover.yaml \
+  --model-config examples/models/gdcn_esmm.yaml \
+  --train-config examples/shared/train_defaults.yaml \
   --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
   --artifact-dir python/artifacts/demo \
   --model-name model_gdcn_esmm
@@ -120,8 +120,8 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m train.app.main discover \
   --data-glob 'data/user_*.txt' \
   --start-date 20260325 --end-date 20260331 \
-  --feature-config examples/feature_config_discover.yaml \
-  --model-config examples/model_gdcn_esmm.yaml \
+  --feature-config examples/shared/feature_config_discover.yaml \
+  --model-config examples/models/gdcn_esmm.yaml \
   --init-weights python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.safetensors \
   --epochs 3 --batch-size 1024 --no-header
 ```

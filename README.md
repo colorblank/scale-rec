@@ -36,7 +36,10 @@ scale-rec/
 │   ├── src/scale_rec_demo/         # demo 数据生成和端到端验证脚本
 │   ├── tests/                      # Python 测试
 │   └── pyproject.toml              # Python 项目配置
-├── examples/                       # discover 示例特征配置和模型配置
+├── examples/                       # discover 示例共享配置和模型配置
+│   ├── gen_discover_config.py      # 生成 discover 特征配置的脚本
+│   ├── models/                     # 按模型拆分的 model config（lr/gdcn_esmm/unimixer）
+│   └── shared/                     # 共享的 feature / train / label 配置
 ├── docs/                           # 文档
 ├── docker/                         # Docker 打包入口
 ├── tests/                          # Rust 集成测试
@@ -52,7 +55,7 @@ scale-rec/
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m scale_rec_demo.generate_discover_data \
-  --label-policy examples/discover_label_policy.yaml
+  --label-policy examples/shared/discover_label_policy.yaml
 ```
 
 ### 2. 训练并发布模型
@@ -61,9 +64,9 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m train.app.main discover \
   --data python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/feature_config_discover.yaml \
-  --model-config examples/model_gdcn_esmm.yaml \
-  --train-config examples/train_defaults.yaml \
+  --feature-config examples/shared/feature_config_discover.yaml \
+  --model-config examples/models/gdcn_esmm.yaml \
+  --train-config examples/shared/train_defaults.yaml \
   --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
   --artifact-dir python/artifacts/demo \
   --model-name model_gdcn_esmm \
@@ -77,15 +80,15 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m train.app.main discover \
   --data-glob 'data/user_*.txt' \
   --start-date 20260325 --end-date 20260331 \
-  --feature-config examples/feature_config_discover.yaml \
-  --model-config examples/model_gdcn_esmm.yaml \
+  --feature-config examples/shared/feature_config_discover.yaml \
+  --model-config examples/models/gdcn_esmm.yaml \
   --init-weights python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.safetensors \
   --epochs 3 --batch-size 1024 --no-header
 ```
 
 `train_defaults.yaml` 负责训练默认值，`model_gdcn_esmm.yaml` 负责任务定义，`discover_label_policy.yaml` 只负责 demo 数据标签生成。三者职责分离，训练流程和评估指标都从配置读取，不再在代码里写死。`best.safetensors` 由 `eval.monitor_task`、`eval.monitor_metric` 和 `eval.monitor_mode` 明确决定；未指定 `monitor_task` 时使用模型 `tasks` 中的第一个任务。
 
-`single`、`discover`、`all` 三个训练入口现在共享同一套特征预处理与可选预取逻辑；`examples/train_defaults.yaml` 里的 `prefetch_batches` 可以用来控制后台提前准备多少个 batch，`0` 表示关闭。
+`single`、`discover`、`all` 三个训练入口现在共享同一套特征预处理与可选预取逻辑；`examples/shared/train_defaults.yaml` 里的 `prefetch_batches` 可以用来控制后台提前准备多少个 batch，`0` 表示关闭。
 
 训练启动后，日志会先打印一条数据摘要，包括总行数、训练/验证切分、batch_size、估算 batch 数、任务名和 label 映射。若出现 `No supervised batches were processed`，优先检查这条摘要里的 `labels` 和 `train/eval` 切分是否合理。
 
@@ -121,7 +124,7 @@ cargo run --bin server --release -- \
 ```bash
 cargo run --bin server --release -- \
   --model-path python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.safetensors \
-  --feature-config examples/feature_config_discover.yaml
+  --feature-config examples/shared/feature_config_discover.yaml
 ```
 
 服务加载规则见 [训练手册 - 服务加载](docs/TRAINING_GUIDE.md#服务加载)，接口格式见 [HTTP API](docs/API.md)。

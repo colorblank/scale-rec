@@ -107,7 +107,7 @@ def test_discover_parser_includes_pandas_streaming_options():
         [
             "discover",
             "--model-config",
-            "examples/model_gdcn_esmm.yaml",
+            "examples/models/gdcn_esmm.yaml",
             "--data",
             "train.tsv",
             "--read-chunk-rows",

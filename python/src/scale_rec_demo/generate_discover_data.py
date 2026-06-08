@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """discover-main-sort 合成训练数据生成。
 
-数据列顺序直接来自 `examples/feature_config_discover.yaml`，确保训练、验证和文档
+数据列顺序直接来自 `examples/shared/feature_config_discover.yaml`，确保训练、验证和文档
 使用同一份 source 契约。
 """
 

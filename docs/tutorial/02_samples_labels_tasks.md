@@ -10,7 +10,7 @@
 
 ## 一行样本的结构
 
-`examples/feature_config_discover.yaml` 的 `sources` 定义了样本列。每个 source 可以带 `source` 字段，用来标记它属于 Item、User 还是 Context：
+`examples/shared/feature_config_discover.yaml` 的 `sources` 定义了样本列。每个 source 可以带 `source` 字段，用来标记它属于 Item、User 还是 Context：
 
 ```yaml
 - name: item_id
@@ -80,11 +80,11 @@ feature config 里通过 `role` 区分字段用途：
 | `ctr` | int | `0` | 兼容/派生标签，当前 GDCN+ESMM tasks 未直接使用 |
 | `cvr` | int | `0` | 兼容/派生标签，当前 GDCN+ESMM tasks 未直接使用 |
 
-注意：`ctr` 和 `cvr` 虽然在 feature config 里是 label，但当前 `examples/model_gdcn_esmm.yaml` 的 `tasks` 没有引用它们，因此不会进入当前模型的 loss。是否参与训练，以 model config 的 `tasks` 为准。
+注意：`ctr` 和 `cvr` 虽然在 feature config 里是 label，但当前 `examples/models/gdcn_esmm.yaml` 的 `tasks` 没有引用它们，因此不会进入当前模型的 loss。是否参与训练，以 model config 的 `tasks` 为准。
 
 ## 任务定义
 
-`examples/model_gdcn_esmm.yaml` 把模型输出、标签列、loss 和 metric 绑定在一起：
+`examples/models/gdcn_esmm.yaml` 把模型输出、标签列、loss 和 metric 绑定在一起：
 
 ```yaml
 tasks:
@@ -132,7 +132,7 @@ P(ctstay)   = P(detail) * P(stay | detail)
 
 ## demo 标签生成与真实业务标签
 
-`examples/discover_label_policy.yaml` 只服务于 demo 数据生成。它定义合成数据里点击、详情、股票、转化、停留时长的规则，例如：
+`examples/shared/discover_label_policy.yaml` 只服务于 demo 数据生成。它定义合成数据里点击、详情、股票、转化、停留时长的规则，例如：
 
 ```yaml
 click:

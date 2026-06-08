@@ -14,9 +14,12 @@ DEMO_ARTIFACT_DIR = ARTIFACT_DIR / "demo"
 TEMP_DIR = DEMO_ARTIFACT_DIR
 
 EXAMPLES_DIR = REPO_ROOT / "examples"
-DISCOVER_FEATURE_CONFIG = EXAMPLES_DIR / "feature_config_discover.yaml"
+SHARED_EXAMPLES_DIR = EXAMPLES_DIR / "shared"
+MODEL_EXAMPLES_DIR = EXAMPLES_DIR / "models"
+DISCOVER_FEATURE_CONFIG = SHARED_EXAMPLES_DIR / "feature_config_discover.yaml"
 
 MODEL_CONFIGS = {
-    "discover_gdcn_esmm": EXAMPLES_DIR / "model_gdcn_esmm.yaml",
-    "discover_unimixer": EXAMPLES_DIR / "model_discover_unimixer.yaml",
+    "discover_lr": MODEL_EXAMPLES_DIR / "lr.yaml",
+    "discover_gdcn_esmm": MODEL_EXAMPLES_DIR / "gdcn_esmm.yaml",
+    "discover_unimixer": MODEL_EXAMPLES_DIR / "unimixer.yaml",
 }

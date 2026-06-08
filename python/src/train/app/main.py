@@ -39,6 +39,8 @@ from .cli import (
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "examples"
+SHARED_EXAMPLES_DIR = EXAMPLES_DIR / "shared"
+MODEL_EXAMPLES_DIR = EXAMPLES_DIR / "models"
 DEMO_ARTIFACT_DIR = REPO_ROOT / "python" / "artifacts" / "demo"
 
 NULL_MARKERS: set[str] = {"NULL", "\\N", "null", "None", ""}
@@ -623,7 +625,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     single = sub.add_parser("single", help="train a single model on a CSV/Parquet dataset")
     single.add_argument(
-        "--feature-config", default=str(EXAMPLES_DIR / "feature_config_discover.yaml")
+        "--feature-config", default=str(SHARED_EXAMPLES_DIR / "feature_config_discover.yaml")
     )
     single.add_argument("--model-config", required=True)
     add_data_range_args(single, data_required=False)
@@ -638,7 +640,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     discover = sub.add_parser("discover", help="train discover-main-sort with TSV input")
     discover.add_argument(
-        "--feature-config", default=str(EXAMPLES_DIR / "feature_config_discover.yaml")
+        "--feature-config", default=str(SHARED_EXAMPLES_DIR / "feature_config_discover.yaml")
     )
     discover.add_argument("--model-config", required=True)
     add_data_range_args(discover, data_required=False)
@@ -671,7 +673,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     all_ = sub.add_parser("all", help="train multiple models on one dataset")
     all_.add_argument(
-        "--feature-config", default=str(EXAMPLES_DIR / "feature_config_discover.yaml")
+        "--feature-config", default=str(SHARED_EXAMPLES_DIR / "feature_config_discover.yaml")
     )
     add_data_range_args(all_, data_required=False)
     all_.add_argument(
@@ -680,11 +682,12 @@ def build_parser() -> argparse.ArgumentParser:
     all_.add_argument("--publish-path", "--export-path", dest="publish_path")
     all_.add_argument("--models", default="all")
     all_.add_argument(
-        "--model-config-discover-gdcn-esmm", default=str(EXAMPLES_DIR / "model_gdcn_esmm.yaml")
+        "--model-config-discover-gdcn-esmm",
+        default=str(MODEL_EXAMPLES_DIR / "gdcn_esmm.yaml"),
     )
     all_.add_argument(
         "--model-config-discover-unimixer",
-        default=str(EXAMPLES_DIR / "model_discover_unimixer.yaml"),
+        default=str(MODEL_EXAMPLES_DIR / "unimixer.yaml"),
     )
     all_.add_argument("--debug", type=int, default=0)
     add_training_args(all_, lr=0.005, batch_size=64)

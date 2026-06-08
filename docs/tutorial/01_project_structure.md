@@ -44,20 +44,23 @@ scale-rec 里最重要的不是某个模型类，而是 `examples/` 下的配置
 
 ```text
 examples/
-├── feature_config_discover.yaml     # 特征契约：原始列、DAG、embedding、标签 role
-├── model_gdcn_esmm.yaml             # 排序模型：结构、任务、loss、metric
-├── model_discover_unimixer.yaml     # 另一种排序模型配置
-├── train_defaults.yaml              # 训练策略：batch、optimizer、eval、early stopping
-├── discover_label_policy.yaml       # demo 样本标签生成规则
+├── models/                          # 按模型拆分的配置目录
+│   ├── lr.yaml                      # LR 单目标基线配置
+│   ├── gdcn_esmm.yaml               # GDCN+ESMM 模型配置
+│   └── unimixer.yaml                # UniMixer 模型配置
+└── shared/                          # 共享配置目录
+    ├── feature_config_discover.yaml # 特征契约：原始列、DAG、embedding、标签 role
+    ├── train_defaults.yaml          # 训练策略：batch、optimizer、eval、early stopping
+    └── discover_label_policy.yaml   # demo 样本标签生成规则
 └── gen_discover_config.py           # 生成 discover 特征配置的脚本
 ```
 
 配置职责需要分清：
 
-- `feature_config_discover.yaml` 是训练和推理共享的特征协议。它决定原始字段如何变成模型输入 tensor。
-- `model_*.yaml` 是模型语义协议。它决定模型类型、任务列表、label 映射、loss 和 metric。
-- `train_defaults.yaml` 是训练运行策略。它不应该影响在线推理结果。
-- `discover_label_policy.yaml` 只用于 demo 数据生成，不是线上协议。
+- `shared/feature_config_discover.yaml` 是训练和推理共享的特征协议。它决定原始字段如何变成模型输入 tensor。
+- `models/*.yaml` 是模型语义协议。它决定模型类型、任务列表、label 映射、loss 和 metric。`lr.yaml` 提供了一个最小的单目标二分类基线，其它模型则在此基础上扩展多任务或更复杂的结构。
+- `shared/train_defaults.yaml` 是训练运行策略。它不应该影响在线推理结果。
+- `shared/discover_label_policy.yaml` 只用于 demo 数据生成，不是线上协议。
 
 当你要改一个排序特征时，优先思考它属于哪个层次：原始列、特征算子、embedding 空间、模型输入维度，还是任务定义。不要把这些职责混在一个文件里。
 

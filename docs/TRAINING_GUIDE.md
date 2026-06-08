@@ -10,7 +10,7 @@
 | [数据格式](#数据格式) | discover TSV 和训练输入参数 |
 | [特征配置](#特征配置) | feature config 的 data_sources、sources、operators、role |
 | [训练流程](#训练流程) | 数据、标签、模型、训练配置如何组合 |
-| [模型配置](#模型配置) | GDCN+ESMM / UniMixer 的任务级配置 |
+| [模型配置](#模型配置) | LR / GDCN+ESMM / UniMixer 的任务级配置 |
 | [训练参数](#训练参数) / [训练技巧](#训练技巧) / [评估监控](#评估监控) | 训练超参、优化策略、日志与评估 |
 | [保存与推理导出](#保存与推理导出) | checkpoint、发布权重、serving manifest、加载规则 |
 | [HTTP 压测](#http-压测) | bench 使用方式和后端构建建议 |
@@ -21,15 +21,15 @@
 # 1. 生成合成数据
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m scale_rec_demo.generate_discover_data \
-  --label-policy examples/discover_label_policy.yaml
+  --label-policy examples/shared/discover_label_policy.yaml
 
 # 2. 训练
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m train.app.main discover \
   --data python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/feature_config_discover.yaml \
-  --model-config examples/model_gdcn_esmm.yaml \
-  --train-config examples/train_defaults.yaml \
+  --feature-config examples/shared/feature_config_discover.yaml \
+  --model-config examples/models/gdcn_esmm.yaml \
+  --train-config examples/shared/train_defaults.yaml \
   --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
   --artifact-dir python/artifacts/demo \
   --model-name model_gdcn_esmm \
@@ -39,17 +39,29 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m train.app.main discover \
   --data python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/feature_config_discover.yaml \
-  --model-config examples/model_discover_unimixer.yaml \
-  --train-config examples/train_defaults.yaml \
+  --feature-config examples/shared/feature_config_discover.yaml \
+  --model-config examples/models/unimixer.yaml \
+  --train-config examples/shared/train_defaults.yaml \
   --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
   --artifact-dir python/artifacts/demo \
   --model-name model_discover_unimixer \
   --run-version 20260526_120000
 
+# 2c. 可选：训练 LR 单目标 baseline
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
+  python -m train.app.main discover \
+  --data python/artifacts/demo/discover_train_data.txt \
+  --feature-config examples/shared/feature_config_discover.yaml \
+  --model-config examples/models/lr.yaml \
+  --train-config examples/shared/train_defaults.yaml \
+  --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
+  --artifact-dir python/artifacts/demo \
+  --model-name model_lr \
+  --run-version 20260526_120000
+
 # 3. 端到端验证
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m scale_rec_demo.verify_all --models discover_gdcn_esmm --force-train
+  python -m scale_rec_demo.verify_all --models discover_lr,discover_gdcn_esmm --force-train
 ```
 
 多日文件训练和增量微调示例：
@@ -59,9 +71,9 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m train.app.main discover \
   --data-glob 'data/user_*.txt' \
   --start-date 20260325 --end-date 20260331 \
-  --feature-config examples/feature_config_discover.yaml \
-  --model-config examples/model_gdcn_esmm.yaml \
-  --train-config examples/train_defaults.yaml \
+  --feature-config examples/shared/feature_config_discover.yaml \
+  --model-config examples/models/gdcn_esmm.yaml \
+  --train-config examples/shared/train_defaults.yaml \
   --init-weights python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.safetensors \
   --epochs 3 --batch-size 1024 --no-header
 ```
@@ -74,13 +86,13 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 `single`、`discover`、`all` 三个训练入口现在共用同一套批次预处理与可选预取逻辑；区别只在于数据来源、模型配置和是否启用 discover TSV 的流式读取。
 
-1. `examples/feature_config_discover.yaml`
+1. `examples/shared/feature_config_discover.yaml`
    定义在线取数来源、原始输入列、特征算子 DAG、每个列的 `role`。它决定请求聚合层要准备哪些字段、哪些列进入模型、哪些列作为标签、哪些列只是中间产物。
-2. `examples/discover_label_policy.yaml`
+2. `examples/shared/discover_label_policy.yaml`
    定义 demo 数据生成时的标签规则。它只影响合成数据，不参与模型前向。
-3. `examples/train_defaults.yaml`
+3. `examples/shared/train_defaults.yaml`
    定义训练默认值，包括 batch size、optimizer、eval 样本数、warmup、early stopping、EMA、TensorBoard 等。CLI 可以覆盖其中任意项。
-4. `examples/model_*.yaml`
+4. `examples/models/<model>.yaml`
    定义模型结构和任务语义。`tasks:` 是训练和评估的单一事实来源，决定每个任务用哪个 label、什么 loss、统计哪些 metrics。
 
 典型执行顺序如下：
@@ -94,11 +106,11 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 ## 数据格式
 
-45 列 Tab 分隔 TSV，无 header。列定义见 `examples/feature_config_discover.yaml`。
+45 列 Tab 分隔 TSV，无 header。列定义见 `examples/shared/feature_config_discover.yaml`。
 
 **生成合成数据**：`scale_rec_demo.generate_discover_data` 输出 2000 行 × 45 列，其中 38 列是特征输入，7 列是监督标签。
 
-标签列包含 `is_click`、`is_cvr`、`is_click_detail`、`is_click_stock`、`stay_time_label` 等字段；具体是否启用某个派生标签，由 `examples/discover_label_policy.yaml` 控制。
+标签列包含 `is_click`、`is_cvr`、`is_click_detail`、`is_click_stock`、`stay_time_label` 等字段；具体是否启用某个派生标签，由 `examples/shared/discover_label_policy.yaml` 控制。
 
 如果你要同时训练 GDCN+ESMM 和 UniMixer，建议保留完整标签集合，复用同一份 TSV。
 
@@ -120,12 +132,12 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 | `--model-name` | 自动推导 | 模型逻辑名，用于 run 目录和 manifest |
 | `--run-version` | 自动生成 | 训练 run 版本号 |
 | `--keep-checkpoints` | 3 | 保留的 checkpoint 数量 |
-| `--train-config` | `examples/train_defaults.yaml` | 训练超参、优化器、评估默认值 |
-| `--label-policy` | `examples/discover_label_policy.yaml` | 仅用于合成数据生成的标签规则 |
+| `--train-config` | `examples/shared/train_defaults.yaml` | 训练超参、优化器、评估默认值 |
+| `--label-policy` | `examples/shared/discover_label_policy.yaml` | 仅用于合成数据生成的标签规则 |
 
 ## 特征配置
 
-`examples/feature_config_discover.yaml` 定义四部分：
+`examples/shared/feature_config_discover.yaml` 定义四部分：
 
 - **data_sources**：在线取数来源目录，例如 request、HBase、ES、Flink、Milvus 等
 - **sources**（45 列）：列名、类型、默认值、角色，以及可选的 `data_source`
@@ -171,7 +183,7 @@ from train.core.dag import FeatureDag
 
 logging.basicConfig(level=logging.DEBUG)
 
-fc = FlowConfig.from_yaml("examples/feature_config_discover.yaml")
+fc = FlowConfig.from_yaml("examples/shared/feature_config_discover.yaml")
 dag = FeatureDag(fc, debug_mode=True)
 
 row = {
@@ -196,7 +208,7 @@ from train.core.config import FlowConfig
 from train.core.dag import FeatureDag
 from train.debug.tracer import DebugConfig, DebugTracer
 
-fc = FlowConfig.from_yaml("examples/feature_config_discover.yaml")
+fc = FlowConfig.from_yaml("examples/shared/feature_config_discover.yaml")
 tracer = DebugTracer(DebugConfig(max_trace_samples=10, output_dir="python/artifacts/debug"))
 dag = FeatureDag(fc, tracer=tracer)
 
@@ -261,9 +273,24 @@ for name, tensor in tensors.items():
 
 ## 模型配置
 
+### LR 单目标基线配置
+
+`examples/models/lr.yaml`：
+
+```yaml
+type: lr
+tasks:
+  - name: pred
+    label: is_click
+    loss: bce
+    metrics: [auc, logloss]
+```
+
+这是一个最小的单目标二分类配置，适合做 baseline 或快速验证数据和特征是否能闭环。它和其它模型一样遵循 `tasks:` 作为训练与评估的单一事实来源；区别只在于 `type: lr` 不包含额外的交叉、塔或多任务关系结构。
+
 ### GDCN+ESMM 门控交叉网络配置
 
-`examples/model_gdcn_esmm.yaml`：
+`examples/models/gdcn_esmm.yaml`：
 
 ```yaml
 type: gdcn_esmm
@@ -305,7 +332,7 @@ GDCN+ESMM 将门控交叉网络与 ESMM 多任务预测塔相结合。底层利�
 
 ### UniMixer 配置
 
-`examples/model_discover_unimixer.yaml` 复用同一套 `tasks:` 约定，区别在于 `type: unimixer`，以及 UniMixer 自身的 token、block、rank 等结构参数。训练、评估和导出层面对它的处理方式与 GDCN+ESMM 一致。
+`examples/models/unimixer.yaml` 复用同一套 `tasks:` 约定，区别在于 `type: unimixer`，以及 UniMixer 自身的 token、block、rank 等结构参数。训练、评估和导出层面对它的处理方式与 GDCN+ESMM 一致。
 
 ### 任务定义建议
 
@@ -318,7 +345,7 @@ GDCN+ESMM 将门控交叉网络与 ESMM 多任务预测塔相结合。底层利�
 
 ## 训练参数
 
-下面这些参数来自 `examples/train_defaults.yaml`，CLI 只负责覆盖，不再在代码里写死。
+下面这些参数来自 `examples/shared/train_defaults.yaml`，CLI 只负责覆盖，不再在代码里写死。
 
 | 参数 | 默认 | 说明 |
 |------|------|------|
@@ -357,7 +384,7 @@ GDCN+ESMM 将门控交叉网络与 ESMM 多任务预测塔相结合。底层利�
 
 ### 训练默认配置
 
-`examples/train_defaults.yaml` 是训练超参的基线配置。它控制训练行为，但不定义模型结构：
+`examples/shared/train_defaults.yaml` 是训练超参的基线配置。它控制训练行为，但不定义模型结构：
 
 ```yaml
 epochs: 30
@@ -412,7 +439,7 @@ eval:
 
 ### 标签策略配置
 
-`examples/discover_label_policy.yaml` 只参与 demo 数据生成，不影响模型结构和推理。它的作用是把原始字段转成监督标签：
+`examples/shared/discover_label_policy.yaml` 只参与 demo 数据生成，不影响模型结构和推理。它的作用是把原始字段转成监督标签：
 
 ```yaml
 version: 1.0.0
@@ -456,7 +483,7 @@ stay_time_label:
 
 ## 训练技巧
 
-这些策略的具体数值默认来自 `examples/train_defaults.yaml`。是否启用、采用什么阈值，都应从配置读取。
+这些策略的具体数值默认来自 `examples/shared/train_defaults.yaml`。是否启用、采用什么阈值，都应从配置读取。
 
 ### 学习率调度
 
@@ -535,10 +562,10 @@ eval:
 如果训练直接报出 `No supervised batches were processed`，通常是以下原因之一：
 
 - 数据文件里没有模型任务所需的 label 列
-- `model_*.yaml` 里的 `tasks[].label` 和真实列名不一致
+- `examples/models/<model>.yaml` 里的 `tasks[].label` 和真实列名不一致
 - 训练文件被切分后，训练部分没有任何监督列
 
-这时先检查训练开始时打印的 `labels={...}` 和 `rows(total/train/eval)` 摘要，再对照 `examples/feature_config_discover.yaml` 与 `examples/model_*.yaml` 的任务定义。
+这时先检查训练开始时打印的 `labels={...}` 和 `rows(total/train/eval)` 摘要，再对照 `examples/shared/feature_config_discover.yaml` 与 `examples/models/<model>.yaml` 的任务定义。
 
 ### TensorBoard
 
@@ -697,7 +724,7 @@ target/release/server \
 ```bash
 target/release/server \
   --model-path python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.safetensors \
-  --feature-config examples/feature_config_discover.yaml \
+  --feature-config examples/shared/feature_config_discover.yaml \
   --port 8080
 ```
 
@@ -759,7 +786,7 @@ target/release/bench \
   --duration-secs 60 \
   --target-qps 300 \
   --input-file python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/feature_config_discover.yaml \
+  --feature-config examples/shared/feature_config_discover.yaml \
   --no-header
 
 # UniMixer synthetic smoke，仅验证 HTTP 链路
@@ -782,7 +809,7 @@ target/release/bench \
   --duration-secs 60 \
   --target-qps 300 \
   --input-file python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/feature_config_discover.yaml \
+  --feature-config examples/shared/feature_config_discover.yaml \
   --no-header
 ```
 
