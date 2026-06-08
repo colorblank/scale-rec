@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use candle_core::{safetensors::MmapedSafetensors, DType as CandleDType, Device};
 use candle_nn::{VarBuilder, VarMap};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 use super::engine::InferenceEngine;
@@ -34,10 +34,39 @@ pub struct ModelVersionInfo {
     pub is_default: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelAliasInfo {
+    pub alias: String,
+    pub version: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WeightedVersion {
+    pub version: String,
+    pub weight: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum RoutingPolicy {
+    Fixed {
+        version: String,
+    },
+    Weighted {
+        #[serde(default)]
+        key_field: Option<String>,
+        #[serde(default)]
+        salt: Option<String>,
+        versions: Vec<WeightedVersion>,
+    },
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelServingInfo {
     pub name: String,
     pub default_version: Option<String>,
+    pub aliases: Vec<ModelAliasInfo>,
+    pub routing: Option<RoutingPolicy>,
     pub versions: Vec<ModelVersionInfo>,
 }
 
@@ -68,6 +97,8 @@ struct LoadedModelVersion {
 struct ModelEntry {
     default_version: Option<String>,
     versions: HashMap<String, LoadedModelVersion>,
+    aliases: HashMap<String, String>,
+    routing: Option<RoutingPolicy>,
 }
 
 #[derive(Clone)]
@@ -434,15 +465,21 @@ impl ModelRegistry {
         version: Option<&str>,
         fallback_version: Option<&str>,
     ) -> Option<ResolvedModel> {
+        self.resolve_request(name, version, None, fallback_version, None)
+    }
+
+    pub fn resolve_request(
+        &self,
+        name: &str,
+        version: Option<&str>,
+        alias: Option<&str>,
+        fallback_version: Option<&str>,
+        routing_key: Option<&str>,
+    ) -> Option<ResolvedModel> {
         let models = self.models.read().ok()?;
         let entry = models.get(name)?;
-        let selected_version = match version {
-            Some(v) if entry.versions.contains_key(v) => v.to_string(),
-            Some(_) => fallback_version
-                .filter(|v| entry.versions.contains_key(*v))
-                .map(str::to_string)?,
-            None => entry.default_version.clone()?,
-        };
+        let selected_version =
+            self.select_version(entry, version, alias, fallback_version, routing_key)?;
         let loaded = entry.versions.get(&selected_version)?;
         Some(ResolvedModel {
             engine: loaded.engine.clone(),
@@ -477,6 +514,76 @@ impl ModelRegistry {
     pub fn model_info(&self, name: &str) -> Option<ModelServingInfo> {
         let models = self.models.read().ok()?;
         models.get(name).map(|entry| self.entry_info(name, entry))
+    }
+
+    pub fn aliases(&self, name: &str) -> Option<Vec<ModelAliasInfo>> {
+        let models = self.models.read().ok()?;
+        models.get(name).map(|entry| {
+            let mut aliases: Vec<ModelAliasInfo> = entry
+                .aliases
+                .iter()
+                .map(|(alias, version)| ModelAliasInfo {
+                    alias: alias.clone(),
+                    version: version.clone(),
+                })
+                .collect();
+            aliases.sort_by(|a, b| a.alias.cmp(&b.alias));
+            aliases
+        })
+    }
+
+    pub fn routing_policy(&self, name: &str) -> Option<Option<RoutingPolicy>> {
+        let models = self.models.read().ok()?;
+        models.get(name).map(|entry| entry.routing.clone())
+    }
+
+    pub fn set_alias(&self, name: &str, alias: &str, version: &str) -> Result<(), String> {
+        let mut models = self
+            .models
+            .write()
+            .map_err(|e| format!("model registry lock poisoned: {}", e))?;
+        let entry = models
+            .get_mut(name)
+            .ok_or_else(|| format!("model '{}' not found", name))?;
+        if !entry.versions.contains_key(version) {
+            return Err(format!(
+                "version '{}' not found for model '{}'",
+                version, name
+            ));
+        }
+        entry.aliases.insert(alias.to_string(), version.to_string());
+        Ok(())
+    }
+
+    pub fn delete_alias(&self, name: &str, alias: &str) -> Result<(), String> {
+        let mut models = self
+            .models
+            .write()
+            .map_err(|e| format!("model registry lock poisoned: {}", e))?;
+        let entry = models
+            .get_mut(name)
+            .ok_or_else(|| format!("model '{}' not found", name))?;
+        entry.aliases.remove(alias);
+        Ok(())
+    }
+
+    pub fn set_routing_policy(
+        &self,
+        name: &str,
+        routing: Option<RoutingPolicy>,
+    ) -> Result<(), String> {
+        let mut models = self
+            .models
+            .write()
+            .map_err(|e| format!("model registry lock poisoned: {}", e))?;
+        let entry = models
+            .get_mut(name)
+            .ok_or_else(|| format!("model '{}' not found", name))?;
+        if let Some(policy) = &routing {
+            self.validate_routing_policy(entry, policy, name)?;
+        }
+        entry.routing = routing;
+        Ok(())
     }
 
     pub fn feature_contract(&self, name: &str, version: Option<&str>) -> Option<FeatureContract> {
@@ -518,11 +625,151 @@ impl ModelRegistry {
             })
             .collect();
         versions.sort_by(|a, b| a.version.cmp(&b.version));
+        let mut aliases: Vec<ModelAliasInfo> = entry
+            .aliases
+            .iter()
+            .map(|(alias, version)| ModelAliasInfo {
+                alias: alias.clone(),
+                version: version.clone(),
+            })
+            .collect();
+        aliases.sort_by(|a, b| a.alias.cmp(&b.alias));
         ModelServingInfo {
             name: name.to_string(),
             default_version: entry.default_version.clone(),
+            aliases,
+            routing: entry.routing.clone(),
             versions,
         }
+    }
+
+    fn select_version(
+        &self,
+        entry: &ModelEntry,
+        version: Option<&str>,
+        alias: Option<&str>,
+        fallback_version: Option<&str>,
+        routing_key: Option<&str>,
+    ) -> Option<String> {
+        let selected = if let Some(version) = version {
+            Some(version.to_string())
+        } else if let Some(alias) = alias {
+            entry.aliases.get(alias).cloned()
+        } else if let Some(routing) = &entry.routing {
+            self.select_routing_version(entry, routing, routing_key)
+        } else {
+            entry.default_version.clone()
+        }?;
+
+        if entry.versions.contains_key(&selected) {
+            return Some(selected);
+        }
+
+        fallback_version
+            .filter(|v| entry.versions.contains_key(*v))
+            .map(str::to_string)
+    }
+
+    fn select_routing_version(
+        &self,
+        entry: &ModelEntry,
+        routing: &RoutingPolicy,
+        routing_key: Option<&str>,
+    ) -> Option<String> {
+        match routing {
+            RoutingPolicy::Fixed { version } => Some(version.clone()),
+            RoutingPolicy::Weighted {
+                key_field,
+                salt,
+                versions,
+            } => {
+                let selected = self.select_weighted_version(
+                    entry,
+                    versions,
+                    routing_key,
+                    key_field.as_deref(),
+                    salt.as_deref(),
+                )?;
+                Some(selected)
+            }
+        }
+    }
+
+    fn select_weighted_version(
+        &self,
+        entry: &ModelEntry,
+        versions: &[WeightedVersion],
+        routing_key: Option<&str>,
+        key_field: Option<&str>,
+        salt: Option<&str>,
+    ) -> Option<String> {
+        let total_weight: u64 = versions
+            .iter()
+            .filter(|candidate| {
+                candidate.weight > 0 && entry.versions.contains_key(&candidate.version)
+            })
+            .map(|candidate| candidate.weight as u64)
+            .sum();
+        if total_weight == 0 {
+            return None;
+        }
+        let key = routing_key?;
+        let mut bytes = Vec::new();
+        if let Some(field) = key_field {
+            bytes.extend_from_slice(field.as_bytes());
+            bytes.push(0);
+        }
+        if let Some(salt) = salt {
+            bytes.extend_from_slice(salt.as_bytes());
+            bytes.push(0);
+        }
+        bytes.extend_from_slice(key.as_bytes());
+        let hash = sha256_bytes(&bytes);
+        let mut ticket = u64::from_be_bytes(hash[0..8].try_into().ok()?);
+        ticket %= total_weight;
+        for candidate in versions {
+            if candidate.weight == 0 {
+                continue;
+            }
+            if !entry.versions.contains_key(&candidate.version) {
+                continue;
+            }
+            let weight = candidate.weight as u64;
+            if ticket < weight {
+                return Some(candidate.version.clone());
+            }
+            ticket -= weight;
+        }
+        None
+    }
+
+    fn validate_routing_policy(
+        &self,
+        entry: &ModelEntry,
+        policy: &RoutingPolicy,
+        model_name: &str,
+    ) -> Result<(), String> {
+        let versions = match policy {
+            RoutingPolicy::Fixed { version } => vec![version.as_str()],
+            RoutingPolicy::Weighted { versions, .. } => {
+                if versions.is_empty() {
+                    return Err(format!(
+                        "routing policy for model '{}' must include at least one version",
+                        model_name
+                    ));
+                }
+                versions.iter().map(|v| v.version.as_str()).collect()
+            }
+        };
+        for version in versions {
+            if !entry.versions.contains_key(version) {
+                return Err(format!(
+                    "routing policy references unknown version '{}' for model '{}'",
+                    version, model_name
+                ));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -960,6 +1207,63 @@ mod tests {
             .versions
             .iter()
             .any(|v| v.version == "20260604_020000" && v.is_default));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn resolves_aliases_and_weighted_routing_policies() {
+        let root = std::env::temp_dir().join(format!(
+            "scale-rec-alias-routing-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let v1_manifest = write_lr_manifest_artifact(&root, "ranker", "20260604_010000");
+        let v2_manifest = write_lr_manifest_artifact(&root, "ranker", "20260604_020000");
+
+        let registry = ModelRegistry::from_model_dir(&root).unwrap();
+        registry.load_manifest(&v1_manifest).unwrap();
+        registry.load_manifest(&v2_manifest).unwrap();
+
+        registry
+            .set_alias("ranker", "prod", "20260604_020000")
+            .unwrap();
+        let alias_resolved = registry
+            .resolve_request("ranker", None, Some("prod"), None, None)
+            .unwrap();
+        assert_eq!(alias_resolved.version, "20260604_020000");
+
+        registry
+            .set_routing_policy(
+                "ranker",
+                Some(RoutingPolicy::Weighted {
+                    key_field: Some("user_id".to_string()),
+                    salt: Some("salt".to_string()),
+                    versions: vec![
+                        WeightedVersion {
+                            version: "20260604_010000".to_string(),
+                            weight: 0,
+                        },
+                        WeightedVersion {
+                            version: "20260604_020000".to_string(),
+                            weight: 100,
+                        },
+                    ],
+                }),
+            )
+            .unwrap();
+        let routed = registry
+            .resolve_request("ranker", None, None, None, Some("user-42"))
+            .unwrap();
+        assert_eq!(routed.version, "20260604_020000");
+
+        let info = registry.model_info("ranker").unwrap();
+        assert_eq!(info.aliases.len(), 1);
+        assert_eq!(info.aliases[0].alias, "prod");
+        assert!(matches!(info.routing, Some(RoutingPolicy::Weighted { .. })));
 
         fs::remove_dir_all(root).unwrap();
     }

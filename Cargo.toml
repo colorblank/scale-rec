@@ -29,6 +29,9 @@ clap = { version = "4", features = ["derive"] }
 rand = "0.8"
 rayon = "1.10"
 
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+
 [features]
 default = []
 cpu-mkl = ["candle-core/mkl", "candle-nn/mkl"]

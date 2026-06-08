@@ -144,14 +144,14 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 当前不足：
 
 - `copy_configs` 已默认开启，默认发布产物会在 `serving/configs/` 归档 feature/model config；但如果显式把 `--publish-path` 指到 run 目录外，跨机器部署时仍要同时携带 run 目录里的配置副本。
-- Rust `ModelRegistry` 已支持按 serving manifest 的 `feature_config_file`、`model_config_file`、`weights_file` 加载，并支持同一 `model_id` 多版本；服务已能按模型版本暴露 feature config 中的 `data_sources` 和请求输入字段契约，但 `/models` 还没有把 `tasks`、`label_col_map` 和 `metrics` 完全暴露为查询接口。
-- 默认版本目前按版本字符串取最大值，尚未支持显式 alias、灰度权重或 `versions.yaml` 指针。
+- Rust `ModelRegistry` 已支持按 serving manifest 的 `feature_config_file`、`model_config_file`、`weights_file` 加载，并支持同一 `model_id` 多版本；服务已能按模型版本暴露 feature config 中的 `data_sources` 和请求输入字段契约，且已新增 alias 绑定与基于请求 key 的权重路由。
+- 默认版本目前按版本字符串取最大值，后续仍可继续增强显式 alias、灰度权重的持久化配置和版本索引文件能力。
 
 改进方向：
 
 - 保持生产发布产物自包含，避免 serving manifest 依赖仓库 `examples/` 等外部配置路径。
 - 扩展 `ModelInfo`，返回 schema hash、tasks、metrics 和 loaded_at；特征契约继续通过 `/models/{model}/features` 查询。
-- 增加显式默认版本配置，例如 serving manifest 标记、alias 文件或版本索引文件。
+- 增加显式默认版本配置，例如 serving manifest 标记、alias 文件或版本索引文件，并把 alias/routing 的变更持久化到发布元数据中。
 
 ### 2.6 工程基础设施
 
@@ -388,7 +388,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
    - empty sequence count
    - truncation count
    - broadcast precompute/remaining DAG 耗时
-4. 扩展 `/models` 返回 schema hash、tasks、metrics，并支持显式默认版本/alias 配置。
+4. 扩展 `/models` 返回 schema hash、tasks、metrics，并支持显式默认版本、alias 和 routing 配置。
 5. 建立固定压测矩阵，把 benchmark 结果写入 docs 或 CI artifact。
 6. 在 tensor 构造阶段减少中间 clone（`src/feats/dag.rs:593,617-621,679,684,805`、`src/server/engine.rs:304-306`）。
 7. 收敛模型多任务配置入口，逐步减少 legacy hidden_dims 参数路径。
@@ -403,7 +403,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 4. 将 operator 注册机制标准化，降低新增算子的 Rust/Python 双端维护成本。
 5. 对大规模训练引入 Arrow/Polars-first pipeline，并把现有 prefetch 演进为真正的 producer/consumer 流水线。
 6. 为线上推理增加 Prometheus/OpenTelemetry 指标导出。
-7. 建立模型发布、回滚、灰度和兼容检查流程。
+7. 建立模型发布、回滚、灰度和兼容检查流程，把当前 runtime alias/routing 能力接到持久化控制面。
 8. 让生产发布产物默认自包含 feature config 和 model config，并保持特征契约查询接口只读取发布归档配置。
 9. 为模型 state_dict key 对齐建立自动化测试或导出检查脚本。
 10. 将训练侧 feature quality 写入 manifest，并在服务端加载后可查询。
