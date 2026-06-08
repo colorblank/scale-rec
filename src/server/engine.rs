@@ -6,7 +6,7 @@ use candle_core::{Device, Tensor};
 
 use crate::feats::config::{DType, PoolingStrategy, TruncationSide};
 use crate::feats::dag::{FeatureDag, FeatureValue};
-use crate::feats::defaults::parse_source_default;
+use crate::feats::defaults::source_default;
 use crate::feats::ops::Fv;
 use crate::layers::embedding::FeatureSpec;
 use crate::models::Model;
@@ -176,7 +176,7 @@ impl InferenceEngine {
             .dag
             .source_defs()
             .iter()
-            .map(|(name, source)| (name.clone(), vec![parse_source_default(source); n]))
+            .map(|(name, source)| (name.clone(), vec![source_default(source); n]))
             .collect();
 
         let mut default_hits = 0;
@@ -297,7 +297,7 @@ impl InferenceEngine {
             .dag
             .source_defs()
             .iter()
-            .map(|(name, source)| (name.clone(), vec![parse_source_default(source); n]))
+            .map(|(name, source)| (name.clone(), vec![source_default(source); n]))
             .collect();
 
         // 1. Broadcast pre-parsed user-side features to all n rows

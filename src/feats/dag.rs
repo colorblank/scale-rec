@@ -6,7 +6,7 @@ use super::ops::{
 };
 use crate::feats::config::{DataSourceDef, FlowConfig, OperatorDef, SourceDef};
 use crate::feats::debug::DebugTracer;
-use crate::feats::defaults::parse_default;
+use crate::feats::defaults::source_default;
 use crate::feats::schema::{infer_feature_schemas, FeatureSchema};
 use petgraph::algo::toposort;
 use petgraph::prelude::DiGraph;
@@ -184,7 +184,7 @@ impl FeatureDag {
             let source_def = sources
                 .get(s)
                 .ok_or_else(|| format!("source '{}' missing while building execution plan", s))?;
-            source_defaults.push(parse_default(&source_def.default_val, &source_def.dtype));
+            source_defaults.push(source_default(source_def));
         }
         let mut col_count = sources.len();
         // Assign IDs to operator outputs
@@ -630,7 +630,7 @@ impl FeatureDag {
         // Stage 2: fill defaults only for missing keys
         for (name, source_def) in &self.sources {
             if !context.contains_key(name) {
-                let default_val = parse_default(&source_def.default_val, &source_def.dtype);
+                let default_val = source_default(source_def);
                 context.insert(name.clone(), default_val);
             }
         }
@@ -707,7 +707,7 @@ impl FeatureDag {
         // Stage 2: fill defaults for missing keys
         for (name, source_def) in &self.sources {
             if !context.contains_key(name) {
-                let default = parse_default(&source_def.default_val, &source_def.dtype);
+                let default = source_default(source_def);
                 context.insert(name.clone(), vec![default; n_rows]);
             }
         }

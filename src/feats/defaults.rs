@@ -3,11 +3,11 @@
 use crate::feats::config::{parse_float_strict, parse_int_strict, DType, SourceDef};
 use crate::feats::ops::Fv;
 
-pub fn parse_source_default(source: &SourceDef) -> Fv {
+pub fn source_default(source: &SourceDef) -> Fv {
     parse_default(&source.default_val, &source.dtype)
 }
 
-pub fn parse_default(raw: &str, dtype: &DType) -> Fv {
+fn parse_default(raw: &str, dtype: &DType) -> Fv {
     match dtype {
         DType::Int => Fv::Int(parse_int_strict(raw).unwrap_or(0)),
         DType::Float => Fv::Float(parse_float_strict(raw).unwrap_or(0.0)),
@@ -56,29 +56,44 @@ fn normalize_enum_default(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::feats::config::SourceDef;
 
     #[test]
     fn enum_default_uses_oov_for_unknown_value() {
-        let dtype = DType::Enum {
-            values: vec!["known".to_string()],
-            default: None,
-            oov: Some("other".to_string()),
+        let source = SourceDef {
+            name: "feature".to_string(),
+            source: None,
+            data_source: None,
+            dtype: DType::Enum {
+                values: vec!["known".to_string()],
+                default: None,
+                oov: Some("other".to_string()),
+            },
+            default_val: "missing".to_string(),
+            embed: None,
+            role: crate::feats::config::Role::Feature,
+            column_index: None,
         };
 
-        let parsed = parse_default("missing", &dtype);
-
-        assert_eq!(parsed, Fv::Str("other".to_string()));
+        assert_eq!(source_default(&source), Fv::Str("other".to_string()));
     }
 
     #[test]
     fn list_default_repeats_to_configured_length() {
-        let dtype = DType::List {
-            dtype: Box::new(DType::Int),
-            length: 3,
+        let source = SourceDef {
+            name: "feature".to_string(),
+            source: None,
+            data_source: None,
+            dtype: DType::List {
+                dtype: Box::new(DType::Int),
+                length: 3,
+            },
+            default_val: "7".to_string(),
+            embed: None,
+            role: crate::feats::config::Role::Feature,
+            column_index: None,
         };
 
-        let parsed = parse_default("7", &dtype);
-
-        assert_eq!(parsed, Fv::IntList(vec![7, 7, 7]));
+        assert_eq!(source_default(&source), Fv::IntList(vec![7, 7, 7]));
     }
 }
