@@ -22,7 +22,9 @@ def test_demo_model_configs_exist_and_are_current():
         EXAMPLES_DIR / "shared" / "discover_label_policy.yaml",
         EXAMPLES_DIR / "shared" / "feature_config_discover.yaml",
     ]
-    actual_files = {path.relative_to(EXAMPLES_DIR).as_posix() for path in EXAMPLES_DIR.rglob("*.yaml")}
+    actual_files = {
+        path.relative_to(EXAMPLES_DIR).as_posix() for path in EXAMPLES_DIR.rglob("*.yaml")
+    }
     expected_files = {
         "models/lr.yaml",
         "models/gdcn_esmm.yaml",
@@ -36,7 +38,9 @@ def test_demo_model_configs_exist_and_are_current():
         assert path.exists(), path
     assert actual_files == expected_files
 
-    discover_fc = FlowConfig.from_yaml(str(EXAMPLES_DIR / "shared" / "feature_config_discover.yaml"))
+    discover_fc = FlowConfig.from_yaml(
+        str(EXAMPLES_DIR / "shared" / "feature_config_discover.yaml")
+    )
     assert [s.name for s in discover_fc.label_sources] == [
         "is_click",
         "is_cvr",

@@ -162,8 +162,7 @@ class FlowConfig:
         for source in sources:
             if source.data_source and source.data_source not in data_source_names:
                 raise ValueError(
-                    f"source '{source.name}' references unknown data_source "
-                    f"'{source.data_source}'"
+                    f"source '{source.name}' references unknown data_source '{source.data_source}'"
                 )
         operators = []
         for o in raw.get("operators", []):

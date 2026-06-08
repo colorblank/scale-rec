@@ -107,7 +107,8 @@ def _with_data_sources(sources: list[SourceDef]) -> list[SourceDef]:
         item = dict(source)
         if item.get("role") != "label":
             item["data_source"] = overrides.get(
-                item["name"], item.get("data_source") or _default_data_source(item.get("source", ""))
+                item["name"],
+                item.get("data_source") or _default_data_source(item.get("source", "")),
             )
         result.append(item)
     return result
@@ -320,14 +321,18 @@ def generate_config() -> ConfigDict:
 
 def generate_item_config() -> ConfigDict:
     """生成仅含 Item 侧 source 定义的配置（用于 Polars 读取物品文件）。"""
-    item_sources = [s for s in _with_data_sources(_build_sources()) if s["source"] == "Item"]
+    item_sources = [
+        s for s in _with_data_sources(_build_sources()) if s["source"] == "Item"
+    ]
     return {"version": VERSION, "data_sources": DATA_SOURCES, "sources": item_sources}
 
 
 def generate_user_config() -> ConfigDict:
     """生成仅含 User/Context 侧 source + label 定义的配置（用于 Polars 读取用户文件）。"""
     user_sources = [
-        s for s in _with_data_sources(_build_sources()) if s["source"] in ("User", "Context")
+        s
+        for s in _with_data_sources(_build_sources())
+        if s["source"] in ("User", "Context")
     ]
     # item_id 作为 Join 键也需出现在用户侧配置
     item_id_src = _source("item_id", "Item", "int", "0")

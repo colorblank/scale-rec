@@ -13,8 +13,7 @@ from train.training.eval.evaluator import Evaluator
 from train.training.loss.multi_task import MultiTaskLoss
 from train.training.optim.scheduler import LRScheduler
 from train.training.quality import summarize_feature_quality
-from train.training.trainer import Trainer
-from train.training.trainer import iter_preprocessed_batches
+from train.training.trainer import Trainer, iter_preprocessed_batches
 
 
 def _single_label_flow(label: str = "click") -> FlowConfig:

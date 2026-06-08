@@ -20,8 +20,7 @@ import torch.nn.functional as F
 
 from ..core.config import FlowConfig
 from ..core.dag import FeatureDag
-from ..training.trainer import Trainer
-from ..training.trainer import iter_preprocessed_batches
+from ..training.trainer import Trainer, iter_preprocessed_batches
 from .artifacts import TrainingArtifactManager
 from .cli import (
     add_artifact_args,
