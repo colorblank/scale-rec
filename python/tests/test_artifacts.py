@@ -5,7 +5,7 @@ from pathlib import Path
 import torch
 import yaml
 
-from train.app.artifacts import TrainingArtifactManager
+from train.app.artifacts import TrainingArtifactManager, load_resume_state
 from train.core.config import ArtifactConfig
 
 
@@ -43,6 +43,19 @@ def test_training_artifacts_manage_run_best_and_published_versions(tmp_path):
         score=0.7,
         metric_name="auc",
         is_best=True,
+        resume_state={
+            "schema_version": 1,
+            "checkpoint_kind": "epoch",
+            "epoch": 1,
+            "batch_in_epoch": 0,
+            "next_epoch": 2,
+            "global_step": 1,
+            "best_score": 0.7,
+            "stale_epochs": 0,
+            "best_epoch": 1,
+            "periodic_checkpoint_seq": 0,
+            "last_periodic_checkpoint_step": 0,
+        },
     )
     manager.finalize(
         model=None,
@@ -63,6 +76,9 @@ def test_training_artifacts_manage_run_best_and_published_versions(tmp_path):
     assert manager.paths.published_weights_path.exists()
     assert manager.paths.best_alias_path.exists()
     assert manager.paths.latest_alias_path.exists()
+    assert manager.paths.best_state_path.exists()
+    assert manager.paths.latest_state_path.exists()
+    assert load_resume_state(manager.paths.best_alias_path)["best_score"] == 0.7
 
     published_data = yaml.safe_load(published.read_text(encoding="utf-8"))
     run_data = yaml.safe_load(run_manifest.read_text(encoding="utf-8"))
@@ -81,6 +97,7 @@ def test_training_artifacts_manage_run_best_and_published_versions(tmp_path):
     assert run_data["feature_config_file"] == str(manager.paths.feature_config_path)
     assert run_data["model_config_file"] == str(manager.paths.model_config_path)
     assert run_data["published_source_file"].endswith("best.safetensors")
+    assert run_data["checkpoints"][0]["state_path"].endswith("epoch-0001-step-000001.resume.pt")
 
 
 def test_training_artifacts_publish_into_run_serving_dir_by_default(tmp_path):

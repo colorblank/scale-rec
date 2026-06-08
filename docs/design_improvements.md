@@ -13,8 +13,9 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 - 模型特征规格不在模型配置中重复声明，而是统一来自 `FeatureDag.embeddable_features()`。
 - Python 训练后导出 safetensors，Rust 通过 Candle `VarMap` 加载；权重 key 必须与 Rust `VarBuilder::pp()` 路径严格对齐。
 - `examples/` 已拆分为 `examples/shared/` 和 `examples/models/`，共享配置与模型配置不再混放；当前模型示例包括 `lr.yaml`、`gdcn_esmm.yaml`、`unimixer.yaml`。
-- 训练和推理的全链路验证已经收敛到 `python/src/scale_rec_demo/verify_all.py`，并覆盖 `discover_lr`、`discover_gdcn_esmm`、`discover_unimixer` 三条主线，用于同时检查 Python 训练、Rust 推理和输出一致性。
+- 训练和推理的全链路验证已经收敛到 `python/src/scale_rec_demo/verify_all.py`，并覆盖 `discover_lr`、`discover_gdcn_esmm`、`discover_unimixer` 三条主线；最近一次实测已通过 Python 训练、safetensors 导出、Rust 推理和输出比对四段链路。
 - Python 训练入口已经抽出公共批处理 helper `iter_preprocessed_batches()`，`single` / `discover` / `all` 三条入口共享同一套批次预处理与可选预取逻辑。
+- 训练器已经支持周期 checkpoint 保存，可按步数或时间间隔在 epoch 中途落盘，而不是只依赖 epoch 结束。
 
 这套设计的核心优点是：特征编排有单一来源，训练与推理模型结构可对齐，Rust 线上服务可以避免携带 Python 运行时。同时，当前代码已经具备多模型注册、发布 manifest、Golden consistency、模型 smoke test、算子级测试、训练/推理一致性脚本和任务级配置。
 
@@ -138,6 +139,8 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 
 这是正确方向，已经解决了“只有权重文件无法恢复训练上下文”的问题。
 
+另外，训练侧已经支持周期 checkpoint：可以按 `checkpoint_interval_steps` 或 `checkpoint_interval_seconds` 在训练中途保存，并用 `periodic-*` 版本名与普通 epoch-end checkpoint 区分。
+
 当前不足：
 
 - `copy_configs` 已默认开启，默认发布产物会在 `serving/configs/` 归档 feature/model config；但如果显式把 `--publish-path` 指到 run 目录外，跨机器部署时仍要同时携带 run 目录里的配置副本。
@@ -216,7 +219,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 ### 2.9 代码重复与 God Class
 
 **代码重复**：
-- `python/src/train/app/main.py:48` 中 `_wrap_unimixer` 与 `cli.py:358` 的 `wrap_unimixer_for_rust_names` 功能重复。前者缺少 temperature > 0 校验，是旧版残留。
+- `python/src/train/app/main.py` 与 `python/src/train/training/trainer.py` 仍各自承担一部分 raw batch 组织和预处理入口 glue 逻辑，虽然核心预处理已收敛到 `iter_preprocessed_batches()`，但入口层的批次结构理解仍可继续统一。
 - `src/feats/dag.rs:534-563`：`op_source_kind()` 包含两段几乎相同的逻辑计算 `k` 值，存在漂移风险。
 - `python/src/train/app/main.py:43` 和 `python/src/train/app/data.py:17`：`NULL_MARKERS` 常量重复定义。
 
@@ -225,7 +228,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 - `python/src/train/training/trainer.py` 的 `Trainer`（~503 行）：同时负责训练循环、数据迭代、评估、EMA、checkpoint 管理、artifacts 和日志。
 
 **改进方向**：
-- 清理 `_wrap_unimixer` 残留，统一到 `cli.wrap_unimixer_for_rust_names`。
+- 继续收敛 Python 训练入口中的 batch 组织逻辑，避免 `main.py` 与 `trainer.py` 对同一批次结构维护两套认知。
 - 将 `NULL_MARKERS` 抽取到公共模块（如 `train.constants`）。
 - 将 `FeatureDag` 拆分为 `DagBuilder`（构建+校验）、`DagExecutor`（执行）、`DagPreprocessor`（tensor 转换）。
 - 将 `Trainer` 拆分为 `EMA`、`CheckpointManager`、`TrainingLoop` 独立组件。
@@ -239,7 +242,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 - 共享 YAML 特征编排，覆盖多种 operator。
 - 已新增融合预处理算子 `ParsedFeatureHash` / `ConcatHash`，把高频解析+hash链路合并，减少 DAG 深度和中间值。
 - Python 单文件训练、discover 训练、多模型训练入口，且三条入口共享同一个批处理预处理/预取 helper。
-- 多任务 loss、评估、early stopping、EMA、checkpoint 和 manifest。
+- 多任务 loss、评估、early stopping、EMA、周期 checkpoint、epoch-end checkpoint 和 manifest。
 - 任务级配置已经落到模型 YAML，训练和评估直接读 `tasks`、`label_col_map`、`metrics`。
 - Rust HTTP 推理，支持 pointwise `/predict` 和 broadcast `/predict/broadcast`。
 - Rust 推理侧支持 batch DAG、broadcast user 子图预计算和模型热加载。
@@ -264,6 +267,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 - **安全防护**：HTTP 服务无 CORS 白名单、无速率限制、无认证、无请求体大小限制。
 - **CI/CD 自动化**：完全依赖人工执行 `cargo test`、`pytest`、`ruff`、`cargo fmt`。
 - **类型检查**：Mypy 对 22 个核心模块设置为 `ignore_errors = true`，实际未生效。
+- **训练中断恢复**：周期 checkpoint 和 `--resume-from` 已支持完整训练状态恢复；后续更值得补的是自动选择最近可恢复 checkpoint、以及更细粒度的训练中断回放能力。
 
 ## 4. 性能分析
 

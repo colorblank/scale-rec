@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Union
 
+import torch
 import yaml
 
 from ..core.config import ArtifactConfig
@@ -34,6 +35,7 @@ class CheckpointRecord:
     score: float
     metric_name: str
     path: Path
+    state_path: Optional[Path] = None
 
 
 @dataclass
@@ -58,8 +60,19 @@ class TrainingArtifactPaths:
     def best_alias_path(self) -> Path:
         return self.run_dir / "best.safetensors"
 
+    @property
+    def latest_state_path(self) -> Path:
+        return self.run_dir / "latest.resume.pt"
+
+    @property
+    def best_state_path(self) -> Path:
+        return self.run_dir / "best.resume.pt"
+
     def checkpoint_path(self, version: str) -> Path:
         return self.checkpoints_dir / f"{version}.safetensors"
+
+    def checkpoint_state_path(self, version: str) -> Path:
+        return self.checkpoints_dir / f"{version}.resume.pt"
 
 
 @dataclass
@@ -142,11 +155,15 @@ class TrainingArtifactManager:
         score: float,
         metric_name: str,
         is_best: bool,
+        resume_state: Optional[dict[str, Any]] = None,
         version: Optional[str] = None,
     ) -> CheckpointRecord:
         version = version or f"epoch-{epoch:04d}-step-{step:06d}"
         path = self.paths.checkpoint_path(version)
+        state_path = self.paths.checkpoint_state_path(version) if resume_state is not None else None
         export_to_safetensors(model, path)
+        if resume_state is not None:
+            self._write_resume_state(state_path, resume_state)
         record = CheckpointRecord(
             version=version,
             epoch=epoch,
@@ -154,15 +171,20 @@ class TrainingArtifactManager:
             score=score,
             metric_name=metric_name,
             path=path,
+            state_path=state_path,
         )
         self._history.append(record)
         self._latest = record
         if self.publish_latest_alias:
             shutil.copy2(path, self.paths.latest_alias_path)
+            if state_path is not None:
+                shutil.copy2(state_path, self.paths.latest_state_path)
         if is_best:
             self._best = record
             if self.publish_best_alias:
                 shutil.copy2(path, self.paths.best_alias_path)
+                if state_path is not None:
+                    shutil.copy2(state_path, self.paths.best_state_path)
         self._prune_history()
         return record
 
@@ -244,7 +266,12 @@ class TrainingArtifactManager:
             "feature_config_file": str(self.paths.feature_config_path),
             "model_config_file": str(self.paths.model_config_path),
             "checkpoints": [
-                asdict(record) | {"path": str(record.path)} for record in self._history
+                asdict(record)
+                | {
+                    "path": str(record.path),
+                    "state_path": str(record.state_path) if record.state_path else "",
+                }
+                for record in self._history
             ],
         }
         self.paths.run_manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -300,3 +327,40 @@ class TrainingArtifactManager:
             record = self._history.pop(0)
             if record.path.exists():
                 record.path.unlink()
+            if record.state_path is not None and record.state_path.exists():
+                record.state_path.unlink()
+
+    def _write_resume_state(self, path: Path, resume_state: dict[str, Any]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(resume_state, path)
+
+
+def resume_state_path(checkpoint_path: Union[str, Path]) -> Path:
+    path = Path(checkpoint_path)
+    if path.name.endswith(".resume.pt"):
+        return path
+    if path.suffix != ".safetensors":
+        raise ValueError(f"resume checkpoint must be a .safetensors file: {path}")
+    return path.with_name(path.stem + ".resume.pt")
+
+
+def checkpoint_weights_path(checkpoint_path: Union[str, Path]) -> Path:
+    path = Path(checkpoint_path)
+    if path.suffix == ".safetensors":
+        return path
+    if path.name.endswith(".resume.pt"):
+        return path.with_name(path.name.removesuffix(".resume.pt") + ".safetensors")
+    raise ValueError(f"checkpoint path must be a .safetensors or .resume.pt file: {path}")
+
+
+def load_resume_state(checkpoint_path: Union[str, Path]) -> dict[str, Any]:
+    path = resume_state_path(checkpoint_path)
+    if not path.exists():
+        raise FileNotFoundError(f"resume state not found: {path}")
+    try:
+        state = torch.load(path, map_location="cpu", weights_only=False)
+    except TypeError:
+        state = torch.load(path, map_location="cpu")
+    if not isinstance(state, dict):
+        raise ValueError(f"invalid resume state file: {path}")
+    return state

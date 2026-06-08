@@ -159,11 +159,11 @@ uv run --project python mypy
 
 ## 端到端验证
 
-端到端验证会串起训练、权重导出、PyTorch 推理、Rust 推理和结果比对：
+端到端训练-导出-推理验证会串起训练、权重导出、PyTorch 推理、Rust 推理和结果比对：
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m scale_rec_demo.verify_all --models discover_gdcn_esmm --force-train
+  python -m scale_rec_demo.verify_all --models discover_lr,discover_gdcn_esmm,discover_unimixer --force-train
 ```
 
 验证全部 demo 主线：
@@ -172,6 +172,8 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m scale_rec_demo.verify_all
 ```
+
+最近一次全链路验证已覆盖 `discover_lr`、`discover_gdcn_esmm`、`discover_unimixer`，Python 训练、safetensors 导出、Rust 推理和输出比对均通过；Rust 侧的 `cargo test --test model_smoke` 也同步通过。
 
 如果本地线程环境对 OpenMP/MKL 比较敏感，可以先设置：
 

@@ -135,6 +135,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 | `--start-date` | 空 | `--data-glob` 的闭区间开始日期，格式 `YYYYMMDD` |
 | `--end-date` | 空 | `--data-glob` 的闭区间结束日期，格式 `YYYYMMDD` |
 | `--init-weights` | 空 | 从已有 safetensors 权重初始化模型后继续训练，不恢复 optimizer/scheduler/epoch |
+| `--resume-from` | 空 | 从已有 checkpoint 恢复训练状态，恢复 model、optimizer、EMA、scheduler、global_step 和 epoch/batch 进度 |
 | `--no-header` | off | 文件无 header 行时启用 |
 | `--separator` | `\t` | 字段分隔符 |
 | `--null-markers` | NULL \N null None "" | NULL 标记字符串 |
@@ -284,6 +285,7 @@ for name, tensor in tensors.items():
 - `bucket_utilization` 极低：检查 hash 输入是否大面积为空、`vocab_size` 是否过大、算子是否只看到了 padding token。
 - tensor shape 不符合预期：检查 `embed.pooling`、`embed.seq_len`、上游 schema 的 `pad_len/max_len`。
 - Python/Rust 不一致：先用 `dag.execute(row)` 看 Python 单样本输出，再跑 golden consistency 或 `scale_rec_demo.verify_all` 对比 Rust 推理。
+- 如果要验证“训练 -> 导出 -> 推理”整条链路，优先跑 `scale_rec_demo.verify_all --models discover_lr,discover_gdcn_esmm,discover_unimixer --force-train`；这会先训练模型、再导出 safetensors、最后调用 Rust `demo_inference` 做逐模型比对。
 
 ## 模型配置
 
@@ -637,6 +639,7 @@ run 目录按 `artifact_root/model_name/run_version` 组织。以上面的快速
 python/artifacts/demo/model_gdcn_esmm/20260526_120000/
 ├── checkpoints/
 │   └── epoch-0001-step-000012.safetensors
+│   └── epoch-0001-step-000012.resume.pt
 ├── serving/
 │   ├── model.safetensors
 │   ├── model.manifest.yaml
@@ -644,7 +647,9 @@ python/artifacts/demo/model_gdcn_esmm/20260526_120000/
 │       ├── feature_config.yaml
 │       └── model_config.yaml
 ├── best.safetensors
+├── best.resume.pt
 ├── latest.safetensors
+├── latest.resume.pt
 └── run.manifest.yaml
 ```
 
@@ -653,15 +658,18 @@ python/artifacts/demo/model_gdcn_esmm/20260526_120000/
 | 文件 | 说明 |
 |---|---|
 | `checkpoints/*.safetensors` | 每次 checkpoint 保存的真实权重文件，文件名包含 epoch 和 step |
+| `checkpoints/*.resume.pt` | 与 checkpoint 权重同名的训练状态文件，包含 optimizer、EMA、scheduler、step、epoch 等恢复信息 |
 | `serving/model.safetensors` | 默认发布权重；如果显式传入 `--publish-path`，则发布到指定路径 |
 | `serving/model.manifest.yaml` | 默认 serving manifest，绑定权重、特征配置、模型配置和 sha256 |
 | `serving/configs/feature_config.yaml` | 本次训练使用的特征配置副本 |
 | `serving/configs/model_config.yaml` | 本次训练使用的模型配置副本 |
 | `best.safetensors` | 当前最佳 checkpoint 的别名，由 `publish_best` 控制，默认启用 |
+| `best.resume.pt` | `best.safetensors` 对应的训练状态别名，可直接用于 `--resume-from` |
 | `latest.safetensors` | 最新 checkpoint 的别名，由 `publish_latest` 控制，默认启用 |
+| `latest.resume.pt` | `latest.safetensors` 对应的训练状态别名，可直接用于 `--resume-from` |
 | `run.manifest.yaml` | 训练过程记录，包含 checkpoint 历史、best/latest、发布路径和配置路径 |
 
-`keep_checkpoints` 默认保留 3 个历史 checkpoint，超过后从最旧记录开始删除。`run.manifest.yaml` 是训练记录，不会被 Rust 服务当作 serving manifest 加载。对于超大数据集，建议把 `checkpoint_interval_steps` 或 `checkpoint_interval_seconds` 设为非 0，避免只在 epoch 结束时才落盘。周期 checkpoint 会使用 `periodic-epoch-...` 版本名，与 epoch 末尾保存的正式 checkpoint 区分开。
+`keep_checkpoints` 默认保留 3 个历史 checkpoint，超过后从最旧记录开始删除。`run.manifest.yaml` 是训练记录，不会被 Rust 服务当作 serving manifest 加载。对于超大数据集，建议把 `checkpoint_interval_steps` 或 `checkpoint_interval_seconds` 设为非 0，避免只在 epoch 结束时才落盘。周期 checkpoint 会使用 `periodic-epoch-...` 版本名，与 epoch 末尾保存的正式 checkpoint 区分开。需要恢复中断训练时，直接传入 `--resume-from <checkpoint.safetensors|resume.pt>`，训练器会恢复完整训练状态并从对应 epoch/batch 继续。
 
 ### 发布产物
 

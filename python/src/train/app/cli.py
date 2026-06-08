@@ -67,6 +67,11 @@ def add_training_args(parser: argparse.ArgumentParser, *, lr: float, batch_size:
         default="",
         help="safetensors weights used to initialize the model before fine-tuning",
     )
+    parser.add_argument(
+        "--resume-from",
+        default="",
+        help="resume training from a saved checkpoint weights file or .resume.pt sidecar",
+    )
 
 
 def add_data_range_args(parser: argparse.ArgumentParser, *, data_required: bool) -> None:
@@ -288,9 +293,7 @@ def train_config_from_args(
         batch_size=pick("batch_size", base.batch_size),
         export_path=str(export_path),
         prefetch_batches=pick("prefetch_batches", base.prefetch_batches),
-        checkpoint_interval_steps=pick(
-            "checkpoint_interval_steps", base.checkpoint_interval_steps
-        ),
+        checkpoint_interval_steps=pick("checkpoint_interval_steps", base.checkpoint_interval_steps),
         checkpoint_interval_seconds=pick(
             "checkpoint_interval_seconds", base.checkpoint_interval_seconds
         ),

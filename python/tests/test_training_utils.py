@@ -299,6 +299,7 @@ def test_trainer_periodic_checkpoint_saves_by_step_interval():
             score,
             metric_name,
             is_best,
+            resume_state=None,
             version=None,
         ):
             self.calls.append(
@@ -308,6 +309,7 @@ def test_trainer_periodic_checkpoint_saves_by_step_interval():
                     "score": score,
                     "metric_name": metric_name,
                     "is_best": is_best,
+                    "resume_state": resume_state,
                     "version": version,
                 }
             )
@@ -319,31 +321,45 @@ def test_trainer_periodic_checkpoint_saves_by_step_interval():
         task_names=["click"],
         label_map={"click": "click"},
         device=torch.device("cpu"),
+        task_specs=[TaskSpec(name="click", label="click", metrics=("logloss",))],
+        data_path="unused",
+        flow_config=flow_config,
         config=TrainConfig(
             checkpoint_interval_steps=2,
             checkpoint_interval_seconds=0.0,
-            eval={"metrics": ["auc"]},
+            eval={"metrics": ["logloss"], "monitor_metric": "logloss"},
         ),
-        task_specs=[TaskSpec(name="click", label="click", metrics=("auc",))],
-        data_path="unused",
-        flow_config=flow_config,
     )
     trainer.artifacts = FakeArtifacts()
     trainer._global_step = 2
     trainer._last_periodic_checkpoint_step = 0
 
-    trainer._maybe_save_periodic_checkpoint(epoch=1, current_loss=0.123)
+    trainer._maybe_save_periodic_checkpoint(
+        epoch=1,
+        batch_in_epoch=2,
+        current_loss=0.123,
+    )
 
-    assert trainer.artifacts.calls == [
-        {
-            "epoch": 1,
-            "step": 2,
-            "score": 0.123,
-            "metric_name": "train_loss",
-            "is_best": False,
-            "version": "periodic-epoch-0001-step-000002-0001",
-        }
-    ]
+    resume = trainer.artifacts.calls[0]["resume_state"]
+    assert trainer.artifacts.calls[0]["epoch"] == 1
+    assert trainer.artifacts.calls[0]["step"] == 2
+    assert trainer.artifacts.calls[0]["score"] == 0.123
+    assert trainer.artifacts.calls[0]["metric_name"] == "train_loss"
+    assert trainer.artifacts.calls[0]["is_best"] is False
+    assert trainer.artifacts.calls[0]["version"] == "periodic-epoch-0001-step-000002-0001"
+    assert resume["schema_version"] == 1
+    assert resume["checkpoint_kind"] == "periodic"
+    assert resume["epoch"] == 1
+    assert resume["batch_in_epoch"] == 2
+    assert resume["next_epoch"] == 1
+    assert resume["global_step"] == 2
+    assert resume["best_score"] == float("inf")
+    assert resume["stale_epochs"] == 0
+    assert resume["best_epoch"] == 0
+    assert resume["periodic_checkpoint_seq"] == 1
+    assert resume["last_periodic_checkpoint_step"] == 2
+    assert "optimizer_state" not in resume
+    assert not resume["loss_fn_state"]
 
 
 def test_trainer_periodic_checkpoint_saves_by_time_interval(monkeypatch):
@@ -360,6 +376,7 @@ def test_trainer_periodic_checkpoint_saves_by_time_interval(monkeypatch):
             score,
             metric_name,
             is_best,
+            resume_state=None,
             version=None,
         ):
             self.calls.append(
@@ -369,6 +386,7 @@ def test_trainer_periodic_checkpoint_saves_by_time_interval(monkeypatch):
                     "score": score,
                     "metric_name": metric_name,
                     "is_best": is_best,
+                    "resume_state": resume_state,
                     "version": version,
                 }
             )
@@ -380,14 +398,14 @@ def test_trainer_periodic_checkpoint_saves_by_time_interval(monkeypatch):
         task_names=["click"],
         label_map={"click": "click"},
         device=torch.device("cpu"),
+        task_specs=[TaskSpec(name="click", label="click", metrics=("logloss",))],
+        data_path="unused",
+        flow_config=flow_config,
         config=TrainConfig(
             checkpoint_interval_steps=0,
             checkpoint_interval_seconds=1.0,
-            eval={"metrics": ["auc"]},
+            eval={"metrics": ["logloss"], "monitor_metric": "logloss"},
         ),
-        task_specs=[TaskSpec(name="click", label="click", metrics=("auc",))],
-        data_path="unused",
-        flow_config=flow_config,
     )
     trainer.artifacts = FakeArtifacts()
     trainer._global_step = 1
@@ -395,18 +413,27 @@ def test_trainer_periodic_checkpoint_saves_by_time_interval(monkeypatch):
     trainer._last_periodic_checkpoint_time = 0.0
     monkeypatch.setattr("train.training.trainer.time.perf_counter", lambda: 1.5)
 
-    trainer._maybe_save_periodic_checkpoint(epoch=1, current_loss=0.456)
+    trainer._maybe_save_periodic_checkpoint(
+        epoch=1,
+        batch_in_epoch=1,
+        current_loss=0.456,
+    )
 
-    assert trainer.artifacts.calls == [
-        {
-            "epoch": 1,
-            "step": 1,
-            "score": 0.456,
-            "metric_name": "train_loss",
-            "is_best": False,
-            "version": "periodic-epoch-0001-step-000001-0001",
-        }
-    ]
+    resume = trainer.artifacts.calls[0]["resume_state"]
+    assert trainer.artifacts.calls[0]["epoch"] == 1
+    assert trainer.artifacts.calls[0]["step"] == 1
+    assert trainer.artifacts.calls[0]["score"] == 0.456
+    assert trainer.artifacts.calls[0]["metric_name"] == "train_loss"
+    assert trainer.artifacts.calls[0]["is_best"] is False
+    assert trainer.artifacts.calls[0]["version"] == "periodic-epoch-0001-step-000001-0001"
+    assert resume["schema_version"] == 1
+    assert resume["checkpoint_kind"] == "periodic"
+    assert resume["batch_in_epoch"] == 1
+    assert resume["global_step"] == 1
+    assert resume["periodic_checkpoint_seq"] == 1
+    assert resume["last_periodic_checkpoint_step"] == 1
+    assert "optimizer_state" not in resume
+    assert not resume["loss_fn_state"]
 
 
 def test_trainer_validation_comes_from_last_data_path(tmp_path):

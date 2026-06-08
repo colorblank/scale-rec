@@ -19,11 +19,21 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
+from safetensors.torch import load_file
 
 from ..core.config import FlowConfig
 from ..core.dag import FeatureDag
-from ..training.trainer import Trainer, iter_preprocessed_batches
-from .artifacts import TrainingArtifactManager
+from ..training.trainer import (
+    Trainer,
+    build_resume_state,
+    iter_preprocessed_batches,
+    restore_rng_state,
+)
+from .artifacts import (
+    TrainingArtifactManager,
+    checkpoint_weights_path,
+    load_resume_state,
+)
 from .cli import (
     add_artifact_args,
     add_data_range_args,
@@ -54,6 +64,25 @@ class PeriodicCheckpointState:
     last_step: int = 0
     last_time: float = field(default_factory=time.perf_counter)
     seq: int = 0
+
+
+def _load_resume_checkpoint(checkpoint_path: str | Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    path = Path(checkpoint_path)
+    if not path.exists():
+        raise FileNotFoundError(f"checkpoint not found: {path}")
+    weights_path = checkpoint_weights_path(path)
+    model_state = load_file(str(weights_path))
+    resume_state = load_resume_state(path)
+    return model_state, resume_state
+
+
+def _restore_model_and_state(model: torch.nn.Module, checkpoint_path: str | Path) -> dict[str, Any]:
+    model_state, resume_state = _load_resume_checkpoint(checkpoint_path)
+    model.load_state_dict(model_state, strict=True)
+    rng_state = resume_state.get("rng_state")
+    if isinstance(rng_state, dict):
+        restore_rng_state(rng_state)
+    return resume_state
 
 
 def _wrap_unimixer(model):
@@ -146,10 +175,15 @@ def _train_epoch_single(
     prefetch_batches: int = 0,
     artifacts: Optional[TrainingArtifactManager] = None,
     checkpoint_state: Optional[PeriodicCheckpointState] = None,
+    global_step: int = 0,
+    skip_batches: int = 0,
+    best_score: float = 0.0,
+    stale_epochs: int = 0,
+    best_epoch: int = 0,
     checkpoint_interval_steps: int = 0,
     checkpoint_interval_seconds: float = 0.0,
     epoch: int = 0,
-) -> float:
+) -> tuple[float, int]:
     if label_col_map is None:
         label_col_map = {}
     if checkpoint_state is None:
@@ -162,7 +196,12 @@ def _train_epoch_single(
         _iter_dataframe_batches(df, batch_size, label_col_map),
         prefetch_batches=prefetch_batches,
     )
+    skipped = 0
+    batch_offset = skip_batches
     for batch in batches:
+        if skipped < skip_batches:
+            skipped += 1
+            continue
         actual_bs = int(batch.get("_batch_size", 0))
         feature_tensors = batch["features"]
         batch_labels = batch["labels"]
@@ -183,15 +222,21 @@ def _train_epoch_single(
         optimizer.step()
         total_loss += loss.item()
         n_batches += 1
+        global_step += 1
         _maybe_save_periodic_checkpoint(
             artifacts,
             model,
             epoch=epoch,
-            step=n_batches,
+            step=global_step,
+            batch_in_epoch=batch_offset + n_batches,
             current_loss=loss.item(),
             state=checkpoint_state,
             interval_steps=checkpoint_interval_steps,
             interval_seconds=checkpoint_interval_seconds,
+            best_score=best_score,
+            stale_epochs=stale_epochs,
+            best_epoch=best_epoch,
+            optimizer=optimizer,
         )
         if n_batches == 0:
             available_labels = [c for c in sorted(set(label_col_map.values())) if c in df.columns]
@@ -200,7 +245,7 @@ def _train_epoch_single(
                 "configured label columns and that label_col_map matches the model outputs. "
                 f"label_col_map={label_col_map} available_labels={available_labels}"
             )
-    return total_loss / max(n_batches, 1)
+    return total_loss / max(n_batches, 1), global_step
 
 
 def _evaluate_single(
@@ -295,10 +340,15 @@ def _maybe_save_periodic_checkpoint(
     *,
     epoch: int,
     step: int,
+    batch_in_epoch: int,
     current_loss: float,
     state: PeriodicCheckpointState,
     interval_steps: int,
     interval_seconds: float,
+    best_score: float,
+    stale_epochs: int,
+    best_epoch: int,
+    optimizer: Optional[torch.optim.Optimizer] = None,
 ) -> None:
     if artifacts is None:
         return
@@ -313,6 +363,19 @@ def _maybe_save_periodic_checkpoint(
     if not (steps_due or time_due):
         return
 
+    resume_state = build_resume_state(
+        checkpoint_kind="periodic",
+        epoch=epoch,
+        batch_in_epoch=batch_in_epoch,
+        next_epoch=epoch,
+        global_step=step,
+        best_score=best_score,
+        stale_epochs=stale_epochs,
+        best_epoch=best_epoch,
+        periodic_checkpoint_seq=state.seq + 1,
+        last_periodic_checkpoint_step=step,
+        optimizer=optimizer,
+    )
     state.seq += 1
     artifacts.save_checkpoint(
         model,
@@ -321,6 +384,7 @@ def _maybe_save_periodic_checkpoint(
         score=current_loss,
         metric_name="train_loss",
         is_best=False,
+        resume_state=resume_state,
         version=f"periodic-epoch-{epoch:04d}-step-{step:06d}-{state.seq:04d}",
     )
     state.last_step = step
@@ -356,7 +420,6 @@ def _run_single(args: argparse.Namespace) -> None:
     )
 
     built = build_model_for_dag(model_config, dag, device)
-    load_init_weights(built.model, args.init_weights, device)
     from ..models.params import format_parameter_summary
 
     logger.info(
@@ -365,6 +428,14 @@ def _run_single(args: argparse.Namespace) -> None:
         built.spec["task_names"],
         format_parameter_summary(built.model),
     )
+
+    if args.resume_from and args.init_weights:
+        raise SystemExit("--resume-from cannot be combined with --init-weights")
+    resume_state: dict[str, Any] | None = None
+    if args.resume_from:
+        resume_state = _restore_model_and_state(built.model, args.resume_from)
+    elif args.init_weights:
+        load_init_weights(built.model, args.init_weights, device)
 
     cfg = train_config_from_args(args, export_path=args.publish_path or "")
     artifacts = TrainingArtifactManager.from_config(
@@ -378,6 +449,26 @@ def _run_single(args: argparse.Namespace) -> None:
     )
     artifacts.prepare(feature_config, model_config)
     cfg.export_path = str(artifacts.paths.published_weights_path)
+
+    start_epoch = 1
+    start_batch_in_epoch = 0
+    global_step = 0
+    best_score = float("inf")
+    best_epoch = 0
+    stale_epochs = 0
+    periodic_state = PeriodicCheckpointState()
+
+    if resume_state is not None:
+        global_step = int(resume_state.get("global_step", 0))
+        best_score = float(resume_state.get("best_score", best_score))
+        best_epoch = int(resume_state.get("best_epoch", best_epoch))
+        stale_epochs = int(resume_state.get("stale_epochs", stale_epochs))
+        start_epoch = int(resume_state.get("next_epoch", resume_state.get("epoch", 1)))
+        start_batch_in_epoch = int(resume_state.get("batch_in_epoch", 0))
+        periodic_state.seq = int(resume_state.get("periodic_checkpoint_seq", 0))
+        periodic_state.last_step = int(
+            resume_state.get("last_periodic_checkpoint_step", global_step)
+        )
 
     logger.info("[Data files] %s", describe_data_paths(data_paths))
     df = _load_dataframes(data_paths)
@@ -404,10 +495,13 @@ def _run_single(args: argparse.Namespace) -> None:
 
     model = built.model
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    best_score = float("inf")
-    periodic_state = PeriodicCheckpointState()
-    for epoch in range(1, args.epochs + 1):
-        train_loss = _train_epoch_single(
+    if resume_state is not None:
+        optimizer_state = resume_state.get("optimizer_state")
+        if optimizer_state is not None:
+            optimizer.load_state_dict(optimizer_state)
+
+    for epoch in range(start_epoch, args.epochs + 1):
+        train_loss, global_step = _train_epoch_single(
             model,
             optimizer,
             dag,
@@ -417,9 +511,14 @@ def _run_single(args: argparse.Namespace) -> None:
             cfg.prefetch_batches,
             artifacts,
             periodic_state,
-            cfg.checkpoint_interval_steps,
-            cfg.checkpoint_interval_seconds,
-            epoch,
+            global_step=global_step,
+            skip_batches=start_batch_in_epoch if epoch == start_epoch else 0,
+            best_score=best_score,
+            stale_epochs=stale_epochs,
+            best_epoch=best_epoch,
+            checkpoint_interval_steps=cfg.checkpoint_interval_steps,
+            checkpoint_interval_seconds=cfg.checkpoint_interval_seconds,
+            epoch=epoch,
         )
         metrics = _evaluate_single(
             model,
@@ -433,14 +532,31 @@ def _run_single(args: argparse.Namespace) -> None:
         is_best = score < best_score
         if is_best:
             best_score = score
+            best_epoch = epoch
+            stale_epochs = 0
+        else:
+            stale_epochs += 1
         if artifacts is not None:
             artifacts.save_checkpoint(
                 model,
                 epoch=epoch,
-                step=epoch,
+                step=global_step,
                 score=score,
                 metric_name="logloss",
                 is_best=is_best,
+                resume_state=build_resume_state(
+                    checkpoint_kind="epoch",
+                    epoch=epoch,
+                    batch_in_epoch=0,
+                    next_epoch=epoch + 1,
+                    global_step=global_step,
+                    best_score=best_score,
+                    stale_epochs=stale_epochs,
+                    best_epoch=best_epoch,
+                    periodic_checkpoint_seq=periodic_state.seq,
+                    last_periodic_checkpoint_step=periodic_state.last_step,
+                    optimizer=optimizer,
+                ),
             )
         logger.info("epoch %d/%d loss=%.6f", epoch, args.epochs, train_loss)
 
@@ -501,7 +617,6 @@ def _run_discover(args: argparse.Namespace) -> None:
     )
 
     built = build_model_for_dag(args.model_config, dag, device)
-    load_init_weights(built.model, args.init_weights, device)
     from ..models.params import format_parameter_summary
 
     logger.info(
@@ -510,6 +625,11 @@ def _run_discover(args: argparse.Namespace) -> None:
         built.spec["task_names"],
         format_parameter_summary(built.model),
     )
+
+    if args.resume_from and args.init_weights:
+        raise SystemExit("--resume-from cannot be combined with --init-weights")
+    if args.init_weights:
+        load_init_weights(built.model, args.init_weights, device)
 
     cfg = train_config_from_args(args, export_path=args.publish_path or "")
     artifacts = TrainingArtifactManager.from_config(
@@ -548,6 +668,8 @@ def _run_discover(args: argparse.Namespace) -> None:
         artifact_manager=artifacts,
         repo_root=args.repo_root,
     )
+    if args.resume_from:
+        trainer.resume_from_checkpoint(args.resume_from)
     best = trainer.fit()
     logger.info("best metric=%.4f", best)
 
@@ -588,6 +710,9 @@ def _run_all(args: argparse.Namespace) -> None:
         max(1, (len(test_df) + args.batch_size - 1) // max(args.batch_size, 1)),
     )
 
+    if args.resume_from and args.init_weights:
+        raise SystemExit("--resume-from cannot be combined with --init-weights")
+
     model_specs = [
         ("discover_gdcn_esmm", args.model_config_discover_gdcn_esmm),
         ("discover_unimixer", args.model_config_discover_unimixer),
@@ -604,10 +729,14 @@ def _run_all(args: argparse.Namespace) -> None:
             logger.info("[Skip] config not found: %s", model_config_path)
             continue
         built = build_model_for_dag(model_config_path, dag, device)
-        load_init_weights(built.model, args.init_weights, device)
         model = built.model
         spec = built.spec
         label_col_map = spec.get("label_col_map", {})
+        resume_state: dict[str, Any] | None = None
+        if args.resume_from:
+            resume_state = _restore_model_and_state(model, args.resume_from)
+        elif args.init_weights:
+            load_init_weights(model, args.init_weights, device)
 
         cfg = train_config_from_args(args, export_path=args.publish_path or "")
         model_name = f"{args.model_name}-{model_type}" if args.model_name else model_type
@@ -625,9 +754,29 @@ def _run_all(args: argparse.Namespace) -> None:
 
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
         best_score = float("inf")
+        best_epoch = 0
+        stale_epochs = 0
+        global_step = 0
         periodic_state = PeriodicCheckpointState()
-        for epoch in range(1, args.epochs + 1):
-            train_loss = _train_epoch_single(
+        start_epoch = 1
+        start_batch_in_epoch = 0
+        if resume_state is not None:
+            optimizer_state = resume_state.get("optimizer_state")
+            if optimizer_state is not None:
+                optimizer.load_state_dict(optimizer_state)
+            global_step = int(resume_state.get("global_step", 0))
+            best_score = float(resume_state.get("best_score", best_score))
+            best_epoch = int(resume_state.get("best_epoch", best_epoch))
+            stale_epochs = int(resume_state.get("stale_epochs", stale_epochs))
+            start_epoch = int(resume_state.get("next_epoch", resume_state.get("epoch", 1)))
+            start_batch_in_epoch = int(resume_state.get("batch_in_epoch", 0))
+            periodic_state.seq = int(resume_state.get("periodic_checkpoint_seq", 0))
+            periodic_state.last_step = int(
+                resume_state.get("last_periodic_checkpoint_step", global_step)
+            )
+
+        for epoch in range(start_epoch, args.epochs + 1):
+            train_loss, global_step = _train_epoch_single(
                 model,
                 optimizer,
                 dag,
@@ -637,9 +786,14 @@ def _run_all(args: argparse.Namespace) -> None:
                 cfg.prefetch_batches,
                 artifacts,
                 periodic_state,
-                cfg.checkpoint_interval_steps,
-                cfg.checkpoint_interval_seconds,
-                epoch,
+                global_step=global_step,
+                skip_batches=start_batch_in_epoch if epoch == start_epoch else 0,
+                best_score=best_score,
+                stale_epochs=stale_epochs,
+                best_epoch=best_epoch,
+                checkpoint_interval_steps=cfg.checkpoint_interval_steps,
+                checkpoint_interval_seconds=cfg.checkpoint_interval_seconds,
+                epoch=epoch,
             )
             metrics = _evaluate_single(
                 model,
@@ -655,13 +809,30 @@ def _run_all(args: argparse.Namespace) -> None:
             is_best = score < best_score
             if is_best:
                 best_score = score
+                best_epoch = epoch
+                stale_epochs = 0
+            else:
+                stale_epochs += 1
             artifacts.save_checkpoint(
                 model,
                 epoch=epoch,
-                step=epoch,
+                step=global_step,
                 score=score,
                 metric_name="logloss",
                 is_best=is_best,
+                resume_state=build_resume_state(
+                    checkpoint_kind="epoch",
+                    epoch=epoch,
+                    batch_in_epoch=0,
+                    next_epoch=epoch + 1,
+                    global_step=global_step,
+                    best_score=best_score,
+                    stale_epochs=stale_epochs,
+                    best_epoch=best_epoch,
+                    periodic_checkpoint_seq=periodic_state.seq,
+                    last_periodic_checkpoint_step=periodic_state.last_step,
+                    optimizer=optimizer,
+                ),
             )
             logger.info("[%s] epoch %d/%d loss=%.6f", model_type, epoch, args.epochs, train_loss)
 

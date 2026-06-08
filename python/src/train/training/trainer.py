@@ -3,15 +3,21 @@ from __future__ import annotations
 """训练编排器。"""
 
 import logging
+import random
 import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Iterator, Optional, Union
 
+import numpy as np
 import torch
 
-from ..app.artifacts import TrainingArtifactManager
+from ..app.artifacts import (
+    TrainingArtifactManager,
+    checkpoint_weights_path,
+    load_resume_state,
+)
 from ..app.data import (
     estimate_files_batches,
     estimate_files_rows,
@@ -32,6 +38,74 @@ logger = logging.getLogger(__name__)
 Batch = dict[str, Any]
 
 _MINIMIZE_METRICS = {"logloss", "mae", "mse"}
+
+
+def _capture_rng_state() -> dict[str, Any]:
+    state: dict[str, Any] = {
+        "python": random.getstate(),
+        "numpy": np.random.get_state(),
+        "torch": torch.random.get_rng_state(),
+    }
+    if torch.cuda.is_available():
+        state["cuda"] = torch.cuda.get_rng_state_all()
+    return state
+
+
+def _restore_rng_state(state: dict[str, Any]) -> None:
+    python_state = state.get("python")
+    if python_state is not None:
+        random.setstate(python_state)
+    numpy_state = state.get("numpy")
+    if numpy_state is not None:
+        np.random.set_state(numpy_state)
+    torch_state = state.get("torch")
+    if torch_state is not None:
+        torch.random.set_rng_state(torch_state)
+    cuda_state = state.get("cuda")
+    if cuda_state is not None and torch.cuda.is_available():
+        torch.cuda.set_rng_state_all(cuda_state)
+
+
+restore_rng_state = _restore_rng_state
+
+
+def build_resume_state(
+    *,
+    checkpoint_kind: str,
+    epoch: int,
+    batch_in_epoch: int,
+    next_epoch: int,
+    global_step: int,
+    best_score: float,
+    stale_epochs: int,
+    best_epoch: int,
+    periodic_checkpoint_seq: int,
+    last_periodic_checkpoint_step: int,
+    optimizer: Optional[torch.optim.Optimizer] = None,
+    loss_fn: Optional[torch.nn.Module] = None,
+    ema: Optional["_EMA"] = None,
+) -> dict[str, Any]:
+    state: dict[str, Any] = {
+        "schema_version": 1,
+        "checkpoint_kind": checkpoint_kind,
+        "epoch": int(epoch),
+        "batch_in_epoch": int(batch_in_epoch),
+        "next_epoch": int(next_epoch),
+        "global_step": int(global_step),
+        "best_score": float(best_score),
+        "stale_epochs": int(stale_epochs),
+        "best_epoch": int(best_epoch),
+        "periodic_checkpoint_seq": int(periodic_checkpoint_seq),
+        "last_periodic_checkpoint_step": int(last_periodic_checkpoint_step),
+        "rng_state": _capture_rng_state(),
+    }
+    if optimizer is not None:
+        state["optimizer_state"] = optimizer.state_dict()
+    if loss_fn is not None:
+        state["loss_fn_state"] = loss_fn.state_dict()
+    if ema is not None:
+        state["ema_state"] = ema.state_dict()
+    return state
 
 
 def _estimate_rows(path: str, has_header: bool = True) -> int:
@@ -114,6 +188,19 @@ class _EMA:
         for name, p in self.shadow.items():
             if name in state:
                 state[name].copy_(p)
+
+    def state_dict(self) -> dict[str, Any]:
+        return {
+            "decay": self.decay,
+            "shadow": {name: tensor.detach().cpu() for name, tensor in self.shadow.items()},
+        }
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        self.decay = float(state.get("decay", self.decay))
+        shadow = state.get("shadow", {})
+        for name, tensor in shadow.items():
+            if name in self.shadow:
+                self.shadow[name].copy_(tensor.to(self.shadow[name].device))
 
 
 class Trainer:
@@ -203,10 +290,29 @@ class Trainer:
         self._last_periodic_checkpoint_step = 0
         self._last_periodic_checkpoint_time = time.perf_counter()
         self._periodic_checkpoint_seq = 0
+        self._resume_state: Optional[dict[str, Any]] = None
+        self._resume_start_epoch = 1
+        self._resume_batch_in_epoch = 0
+        self._resume_epoch = 0
+        self._resume_next_epoch = 1
+        self._resume_requested = False
+        self._best_epoch = 0
 
         from ..models.params import format_parameter_summary
 
         logger.info("Model parameters: %s", format_parameter_summary(model))
+
+    def resume_from_checkpoint(self, checkpoint_path: Union[str, Path]) -> None:
+        from safetensors.torch import load_file
+
+        path = Path(checkpoint_path)
+        if not path.exists():
+            raise FileNotFoundError(f"checkpoint not found: {path}")
+        weights_path = checkpoint_weights_path(path)
+        model_state = load_file(str(weights_path))
+        self.model.load_state_dict(model_state, strict=True)
+        self._resume_state = load_resume_state(path)
+        self._resume_requested = True
 
     def fit(self) -> float:
         self._collect_eval()
@@ -301,11 +407,18 @@ class Trainer:
         if self.cfg.ema_decay > 0:
             self.ema = _EMA(self.model, self.cfg.ema_decay)
 
-        self._best_score = self._initial_best_score()
-        self._stale_epochs = 0
-        self._global_step = 0
-        best_epoch = 0
-        for epoch in range(1, self.cfg.epochs + 1):
+        if self._resume_state is not None:
+            self._apply_resume_state()
+
+        if self._resume_state is None:
+            self._best_score = self._initial_best_score()
+            self._stale_epochs = 0
+            self._global_step = 0
+            self._best_epoch = 0
+
+        best_epoch = self._best_epoch
+        start_epoch = self._resume_start_epoch if self._resume_requested else 1
+        for epoch in range(start_epoch, self.cfg.epochs + 1):
             avg_loss = self._train_epoch(epoch)
             eval_results = self.evaluator.evaluate(
                 self.model,
@@ -329,6 +442,7 @@ class Trainer:
                 self._best_score = cur
                 self._stale_epochs = 0
                 best_epoch = epoch
+                self._best_epoch = epoch
             if self.artifacts is not None:
                 self.artifacts.save_checkpoint(
                     self.model,
@@ -337,6 +451,12 @@ class Trainer:
                     score=cur,
                     metric_name=self._monitor_name(),
                     is_best=is_best,
+                    resume_state=self._checkpoint_state(
+                        checkpoint_kind="epoch",
+                        epoch=epoch,
+                        batch_in_epoch=0,
+                        next_epoch=epoch + 1,
+                    ),
                 )
             elif is_best:
                 self._save_checkpoint(cur)
@@ -407,6 +527,73 @@ class Trainer:
             return {}
         return self.feature_quality.to_metrics()
 
+    def _apply_resume_state(self) -> None:
+        if self._resume_state is None:
+            return
+        state = self._resume_state
+        optimizer_state = state.get("optimizer_state")
+        if optimizer_state is not None and self.optimizer is not None:
+            self.optimizer.load_state_dict(optimizer_state)
+        loss_fn_state = state.get("loss_fn_state")
+        if loss_fn_state is not None:
+            self.loss_fn.load_state_dict(loss_fn_state)
+        ema_state = state.get("ema_state")
+        if ema_state is not None and self.ema is not None:
+            self.ema.load_state_dict(ema_state)
+
+        self._best_score = float(state.get("best_score", self._best_score))
+        self._stale_epochs = int(state.get("stale_epochs", self._stale_epochs))
+        self._best_epoch = int(state.get("best_epoch", self._best_epoch))
+        self._global_step = int(state.get("global_step", self._global_step))
+        self._periodic_checkpoint_seq = int(
+            state.get("periodic_checkpoint_seq", self._periodic_checkpoint_seq)
+        )
+        self._last_periodic_checkpoint_step = int(
+            state.get("last_periodic_checkpoint_step", self._global_step)
+        )
+        self._last_periodic_checkpoint_time = time.perf_counter()
+        self._resume_epoch = int(state.get("epoch", 1))
+        self._resume_batch_in_epoch = int(state.get("batch_in_epoch", 0))
+        self._resume_start_epoch = int(state.get("next_epoch", self._resume_epoch))
+        self._resume_next_epoch = self._resume_start_epoch
+        rng_state = state.get("rng_state")
+        if isinstance(rng_state, dict):
+            _restore_rng_state(rng_state)
+
+    def _checkpoint_state(
+        self,
+        *,
+        checkpoint_kind: str,
+        epoch: int,
+        batch_in_epoch: int,
+        next_epoch: int,
+        periodic_checkpoint_seq: Optional[int] = None,
+        last_periodic_checkpoint_step: Optional[int] = None,
+    ) -> dict[str, Any]:
+        return build_resume_state(
+            checkpoint_kind=checkpoint_kind,
+            epoch=epoch,
+            batch_in_epoch=batch_in_epoch,
+            next_epoch=next_epoch,
+            global_step=self._global_step,
+            best_score=self._best_score,
+            stale_epochs=self._stale_epochs,
+            best_epoch=self._best_epoch,
+            periodic_checkpoint_seq=(
+                periodic_checkpoint_seq
+                if periodic_checkpoint_seq is not None
+                else self._periodic_checkpoint_seq
+            ),
+            last_periodic_checkpoint_step=(
+                last_periodic_checkpoint_step
+                if last_periodic_checkpoint_step is not None
+                else self._last_periodic_checkpoint_step
+            ),
+            optimizer=self.optimizer,
+            loss_fn=self.loss_fn,
+            ema=self.ema,
+        )
+
     def _train_epoch(self, epoch: int) -> float:
         if self.optimizer is None or self.lr_scheduler is None:
             raise RuntimeError("Trainer.fit() must initialize optimizer before training")
@@ -420,12 +607,22 @@ class Trainer:
         batch_iter = iter_preprocessed_batches(
             self.dag, self._iter_batches(), prefetch_batches=self.cfg.prefetch_batches
         )
+        skip_batches = (
+            self._resume_batch_in_epoch
+            if self._resume_requested and epoch == self._resume_epoch
+            else 0
+        )
+        batch_offset = skip_batches
+        skipped = 0
         while True:
             t0 = time.perf_counter()
             try:
                 batch = next(batch_iter)
             except StopIteration:
                 break
+            if skipped < skip_batches:
+                skipped += 1
+                continue
             t_preproc += time.perf_counter() - t0
 
             feat = _to_device(batch["features"], self.device)
@@ -456,7 +653,11 @@ class Trainer:
             total_loss += loss.item()
             n_batches += 1
             self._global_step += 1
-            self._maybe_save_periodic_checkpoint(epoch, current_loss=loss.item())
+            self._maybe_save_periodic_checkpoint(
+                epoch,
+                batch_in_epoch=batch_offset + n_batches,
+                current_loss=loss.item(),
+            )
 
             if self.cfg.log_interval > 0 and n_batches % self.cfg.log_interval == 0:
                 self._log_batch(n_batches, total_loss, loss.item())
@@ -555,7 +756,9 @@ class Trainer:
                 parts.append(f"{task}_{metric}={value:.4f}")
         logger.info("  " + "  ".join(parts))
 
-    def _maybe_save_periodic_checkpoint(self, epoch: int, current_loss: float) -> None:
+    def _maybe_save_periodic_checkpoint(
+        self, epoch: int, *, batch_in_epoch: int, current_loss: float
+    ) -> None:
         if self.artifacts is None:
             return
         interval_steps = max(int(self.cfg.checkpoint_interval_steps), 0)
@@ -580,6 +783,14 @@ class Trainer:
             score=current_loss,
             metric_name="train_loss",
             is_best=False,
+            resume_state=self._checkpoint_state(
+                checkpoint_kind="periodic",
+                epoch=epoch,
+                batch_in_epoch=batch_in_epoch,
+                next_epoch=epoch,
+                periodic_checkpoint_seq=self._periodic_checkpoint_seq + 1,
+                last_periodic_checkpoint_step=self._global_step,
+            ),
             version=self._periodic_checkpoint_version(epoch),
         )
         self._last_periodic_checkpoint_step = self._global_step
