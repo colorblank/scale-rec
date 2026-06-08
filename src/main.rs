@@ -14,25 +14,30 @@ use layers::towers::{Activation, MultiTaskConfig, TowerConfig};
 use models::unimixer::model::UniMixerModel;
 use models::unimixer::tokenizer::FeatureTokenizer;
 use std::collections::HashMap;
+use tracing::info;
+use tracing_subscriber::EnvFilter;
 
 fn main() -> Result<()> {
-    println!("=== scale-rec: FeatFlow + UniMixer ===");
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
+        .try_init();
+
+    info!("scale-rec: FeatFlow + UniMixer");
     let yaml = std::fs::read_to_string("examples/feature_config_discover.yaml")
         .expect("Failed to read config");
     let flow_config = FlowConfig::from_yaml(&yaml).expect("Invalid YAML");
-    println!("[Config] version={}", flow_config.version);
+    info!(version = %flow_config.version, "config loaded");
 
     let dag =
         FeatureDag::from_config(flow_config, true, None).map_err(|e| candle_core::Error::Msg(e))?;
     let embed_features = dag.embeddable_features();
-    println!("\n[Embed] {} embeddable features:", embed_features.len());
+    info!(count = embed_features.len(), "embeddable features");
     let tokenizer_features: Vec<FeatureSpec> = embed_features
         .iter()
         .map(|(name, emb)| {
-            println!(
-                "  {} -> vocab={}, dim={}",
-                name, emb.vocab_size, emb.embed_dim
-            );
+            info!(name = %name, vocab = emb.vocab_size, dim = emb.embed_dim, "feature spec");
             FeatureSpec {
                 name: name.to_string(),
                 vocab_size: emb.vocab_size,
@@ -48,7 +53,7 @@ fn main() -> Result<()> {
         })
         .collect();
 
-    println!("\n[Preprocess] Executing feature pipeline...");
+    info!("executing feature pipeline");
     let mut raw_inputs: HashMap<String, FeatureValue> = HashMap::new();
     raw_inputs.insert("user_id".into(), Fv::Int(42));
     raw_inputs.insert("user_age".into(), Fv::Float(28.5));
@@ -58,10 +63,10 @@ fn main() -> Result<()> {
     let pre_result = dag
         .execute(&raw_inputs)
         .map_err(|e| candle_core::Error::Msg(e))?;
-    println!(
-        "  Sources: {} | Computed: {}",
-        pre_result.source_names.len(),
-        pre_result.computed_names.len()
+    info!(
+        sources = pre_result.source_names.len(),
+        computed = pre_result.computed_names.len(),
+        "feature pipeline executed"
     );
 
     let batch_size = 1usize;
@@ -121,16 +126,17 @@ fn main() -> Result<()> {
         false,
         vb.pp("unimixer"),
     )?;
-    println!(
-        "\n[Model] UniMixer: embed_dim={}, block_size={}",
-        model.embed_dim, model.block_size
+    info!(
+        embed_dim = model.embed_dim,
+        block_size = model.block_size,
+        "UniMixer model built"
     );
 
-    println!("\n[Forward] Running inference...");
+    info!("running inference");
     let outputs = model.forward_with_temperature(&feature_tensors, 0.5)?;
     for (name, logit) in &outputs {
         let val = logit.to_vec2::<f32>()?[0][0];
-        println!("  {}: logit={:.4}", name, val);
+        info!(task = %name, logit = val, "prediction");
     }
     Ok(())
 }

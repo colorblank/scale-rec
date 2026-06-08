@@ -1,5 +1,6 @@
 use std::sync::OnceLock;
 use std::time::Instant;
+use tracing::info;
 
 static ENABLED: OnceLock<bool> = OnceLock::new();
 static VERBOSE: OnceLock<bool> = OnceLock::new();
@@ -18,9 +19,11 @@ pub fn start() -> Option<Instant> {
 
 pub fn log(stage: &str, start: Option<Instant>) {
     if let Some(start) = start {
-        eprintln!(
-            "[unimixer-profile] {stage}: {:.3} ms",
-            start.elapsed().as_secs_f64() * 1000.0
+        info!(
+            target = "unimixer-profile",
+            stage = %stage,
+            elapsed_ms = start.elapsed().as_secs_f64() * 1000.0,
+            "stage timing"
         );
     }
 }

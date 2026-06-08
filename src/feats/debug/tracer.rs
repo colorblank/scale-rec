@@ -6,6 +6,7 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::info;
 
 /// 阶段类型
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -262,11 +263,7 @@ impl DebugTracer {
             );
         }
 
-        println!("[Debug] summary -> {}", sp.display());
-        println!(
-            "[Debug] traces -> {} ({} samples)",
-            tp.display(),
-            traces.len()
-        );
+        info!(summary = %sp.display(), "debug summary written");
+        info!(traces = %tp.display(), samples = traces.len(), "debug traces written");
     }
 }

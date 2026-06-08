@@ -8,6 +8,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::time::{self, MissedTickBehavior};
+use tracing::{info, warn};
+use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Clone)]
 struct Args {
@@ -135,7 +137,7 @@ fn load_input_data(args: &Args) -> Option<InputData> {
             serde_yaml::from_str(&feature_yaml).expect("failed to parse feature config");
         let rows = load_broadcast_samples(path, &flow.sources, args.separator, args.no_header);
         if rows.is_empty() {
-            eprintln!("input file contains no rows");
+            warn!("input file contains no rows");
             return None;
         }
         return Some(InputData::Broadcast(Arc::new(rows)));
@@ -143,7 +145,7 @@ fn load_input_data(args: &Args) -> Option<InputData> {
 
     let rows = load_pointwise_rows(path);
     if rows.is_empty() {
-        eprintln!("input file contains no rows");
+        warn!("input file contains no rows");
         return None;
     }
     Some(InputData::Pointwise(Arc::new(rows)))
@@ -514,7 +516,7 @@ fn report(
 ) {
     let mut lats = latencies.lock().unwrap().clone();
     if lats.is_empty() {
-        println!("No successful requests.");
+        warn!("no successful requests");
         return;
     }
     lats.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -524,29 +526,34 @@ fn report(
     let errors = errors.load(Ordering::Relaxed);
     let rps = success as f64 / elapsed_secs.max(1e-9);
 
-    println!("\n  ═══════════════════════════════════════");
     if let Some(s) = scheduled {
-        println!("  Scheduled:   {}", s);
+        info!(scheduled = s, "benchmark schedule");
     }
     if args.target_qps > 0 {
-        println!("  Target QPS:  {}", args.target_qps);
+        info!(target_qps = args.target_qps, "benchmark target");
     }
-    println!(
-        "  Batch:       {}  Model: {}  Mode: {}",
-        args.batch_size, args.model, args.mode
+    info!(
+        batch_size = args.batch_size,
+        model = %args.model,
+        mode = %args.mode,
+        "benchmark config"
     );
-    println!("  ───────────────────────────────────────");
-    println!(
-        "  Success:     {}  Errors: {}  RPS: {:.0}",
-        success, errors, rps
+    info!(
+        success = success,
+        errors = errors,
+        rps = rps,
+        "benchmark throughput"
     );
-    println!("  P50:         {:.1} ms", p(&lats, 50.0));
-    println!("  P95:         {:.1} ms", p(&lats, 95.0));
-    println!("  P99:         {:.1} ms", p(&lats, 99.0));
-    println!("  P99.9:       {:.1} ms", p(&lats, 99.9));
-    println!("  Mean:        {:.1} ms", sum / n as f64);
-    println!("  Min/Max:     {:.1}/{:.1} ms", lats[0], lats[n - 1]);
-    println!("  ═══════════════════════════════════════");
+    info!(
+        p50_ms = p(&lats, 50.0),
+        p95_ms = p(&lats, 95.0),
+        p99_ms = p(&lats, 99.0),
+        p999_ms = p(&lats, 99.9),
+        mean_ms = sum / n as f64,
+        min_ms = lats[0],
+        max_ms = lats[n - 1],
+        "benchmark latency"
+    );
 }
 
 fn p(samples: &[f64], pct: f64) -> f64 {
@@ -556,10 +563,21 @@ fn p(samples: &[f64], pct: f64) -> f64 {
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
+        .try_init();
+
     let args = Args::parse();
-    println!(
-        "Benchmark: target={} model={} mode={} concur={} batch={} dur={}s",
-        args.target, args.model, args.mode, args.concurrency, args.batch_size, args.duration_secs
+    info!(
+        target = %args.target,
+        model = %args.model,
+        mode = %args.mode,
+        concurrency = args.concurrency,
+        batch_size = args.batch_size,
+        duration_secs = args.duration_secs,
+        "benchmark start"
     );
 
     if args.target_qps > 0 {

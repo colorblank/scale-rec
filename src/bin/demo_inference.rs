@@ -11,12 +11,20 @@ use scale_rec::layers::embedding::FeatureSpec;
 use scale_rec::models::unimixer::tokenizer::FeatureTokenizer;
 use scale_rec::models::ModelConfig;
 use scale_rec::server::engine::{FeatureRow, InferenceEngine};
+use tracing::{error, info};
+use tracing_subscriber::EnvFilter;
 
 fn main() -> Result<()> {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
+        .try_init();
+
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 6 {
-        eprintln!(
-            "Usage: {} <feature_config.yaml> <model_config.yaml> <model.safetensors> <test.csv> <output.csv>",
+        error!(
+            "usage: {} <feature_config.yaml> <model_config.yaml> <model.safetensors> <test.csv> <output.csv>",
             args[0]
         );
         std::process::exit(1);
@@ -51,10 +59,10 @@ fn main() -> Result<()> {
             truncation: emb.truncation,
         })
         .collect();
-    println!(
-        "[Rust] {} embeddable features: {:?}",
-        features.len(),
-        features.iter().map(|f| f.name.as_str()).collect::<Vec<_>>()
+    info!(
+        count = features.len(),
+        names = ?features.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(),
+        "embeddable features"
     );
 
     // 3. 加载 model config
@@ -63,7 +71,7 @@ fn main() -> Result<()> {
     let model_config: ModelConfig =
         serde_yaml::from_str(&model_yaml).context("Invalid model config YAML")?;
     let model_type = model_config.model_type().to_string();
-    println!("[Rust] model_type={}", model_type);
+    info!(model_type = %model_type, "model config loaded");
 
     // 4. 构建模型（注册 Var entries 到共享 VarMap） → 加载 safetensors
     let device = Device::Cpu;
@@ -99,7 +107,7 @@ fn main() -> Result<()> {
         .load(safetensors_path)
         .context("Failed to load safetensors")?;
     model.warmup().context("Failed to warm up model caches")?;
-    println!("[Rust] loaded weights from {}", safetensors_path);
+    info!(path = %safetensors_path, "loaded weights");
 
     let engine = InferenceEngine::new(dag, model, features, device);
 
@@ -131,7 +139,7 @@ fn main() -> Result<()> {
         }
         rows.push(row);
     }
-    println!("[Rust] processed {} rows", rows.len());
+    info!(rows = rows.len(), "processed input rows");
 
     let (predictions, _metrics) = engine
         .predict(&rows)
@@ -160,11 +168,11 @@ fn main() -> Result<()> {
         writer.write_record(&row_strs)?;
     }
     writer.flush()?;
-    println!(
-        "[Rust] wrote {} predictions (keys: {:?}) to {}",
-        predictions.len(),
-        out_keys,
-        output_csv_path
+    info!(
+        predictions = predictions.len(),
+        keys = ?out_keys,
+        output = %output_csv_path,
+        "wrote predictions"
     );
     Ok(())
 }

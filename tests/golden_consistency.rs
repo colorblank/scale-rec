@@ -4,6 +4,7 @@ use scale_rec::feats::ops::Fv;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
+use tracing::error;
 
 fn fixture_path(name: &str) -> String {
     format!("{}/tests/fixtures/{}", env!("CARGO_MANIFEST_DIR"), name)
@@ -114,21 +115,19 @@ fn rust_dag_matches_golden_fixture() {
 
     for (ri, (act, exp)) in actual.iter().zip(expected.iter()).enumerate() {
         if act != exp {
-            println!("Row {} mismatch!", ri);
+            error!(row = ri, "golden row mismatch");
             for (key, act_val) in act {
                 if let Some(exp_val) = exp.get(key) {
                     if act_val != exp_val {
-                        println!("  Feature '{}':", key);
-                        println!("    Actual:   {:?}", act_val);
-                        println!("    Expected: {:?}", exp_val);
+                        error!(feature = %key, actual = ?act_val, expected = ?exp_val, "feature mismatch");
                     }
                 } else {
-                    println!("  Feature '{}' expected is missing", key);
+                    error!(feature = %key, "feature missing from expected row");
                 }
             }
             for key in exp.keys() {
                 if !act.contains_key(key) {
-                    println!("  Feature '{}' actual is missing", key);
+                    error!(feature = %key, "feature missing from actual row");
                 }
             }
         }
