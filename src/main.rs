@@ -25,7 +25,7 @@ fn main() -> Result<()> {
         .try_init();
 
     info!("scale-rec: FeatFlow + UniMixer");
-    let yaml = std::fs::read_to_string("examples/feature_config_discover.yaml")
+    let yaml = std::fs::read_to_string("examples/shared/feature_config_discover.yaml")
         .expect("Failed to read config");
     let flow_config = FlowConfig::from_yaml(&yaml).expect("Invalid YAML");
     info!(version = %flow_config.version, "config loaded");
@@ -88,7 +88,7 @@ fn main() -> Result<()> {
     let varmap = VarMap::new();
     let vb = VarBuilder::from_varmap(&varmap, DType::F32, &device);
     let token_dim = 64;
-    let num_tokens = 8;
+    let num_tokens = 4;
     let tokenizer = FeatureTokenizer::new(
         vb.pp("tokenizer"),
         &tokenizer_features,
