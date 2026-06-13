@@ -21,6 +21,7 @@ pub struct GDCNESMM {
 
 impl GDCNESMM {
     #[allow(clippy::too_many_arguments)]
+    /// 使用默认任务配置构造 GDCNESMM。
     pub fn new(
         vb: VarBuilder,
         features: &[FeatureSpec],
@@ -50,6 +51,7 @@ impl GDCNESMM {
         )
     }
 
+    /// 使用自定义 MultiTaskConfig 构造 GDCNESMM。
     pub fn with_task_config(
         vb: VarBuilder,
         features: &[FeatureSpec],

@@ -10,6 +10,7 @@ pub struct Split {
 }
 
 impl Split {
+    /// 创建字符串分割算子。
     pub fn new(sep: String, max_len: usize, pad_val: String) -> Self {
         Self {
             sep,

@@ -17,6 +17,7 @@ use crate::layers::embedding::FeatureSpec;
 use crate::models::unimixer::tokenizer::FeatureTokenizer;
 use crate::models::{ModelBuildOptions, ModelConfig};
 
+/// 模型摘要信息。
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelInfo {
     pub name: String,
@@ -25,6 +26,7 @@ pub struct ModelInfo {
     pub manifest_path: Option<String>,
 }
 
+/// 模型版本详细信息。
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelVersionInfo {
     pub version: String,
@@ -34,18 +36,21 @@ pub struct ModelVersionInfo {
     pub is_default: bool,
 }
 
+/// 模型别名映射。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelAliasInfo {
     pub alias: String,
     pub version: String,
 }
 
+/// 加权流量路由版本。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WeightedVersion {
     pub version: String,
     pub weight: u32,
 }
 
+/// 流量路由策略：固定版本或加权分发。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RoutingPolicy {
@@ -61,6 +66,7 @@ pub enum RoutingPolicy {
     },
 }
 
+/// 模型 serving 完整信息。
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelServingInfo {
     pub name: String,
@@ -70,6 +76,7 @@ pub struct ModelServingInfo {
     pub versions: Vec<ModelVersionInfo>,
 }
 
+/// 特征输入描述。
 #[derive(Debug, Clone, Serialize)]
 pub struct FeatureInputInfo {
     pub name: String,
@@ -79,6 +86,7 @@ pub struct FeatureInputInfo {
     pub default_val: String,
 }
 
+/// 特征契约：模型声明的输入特征和 data sources。
 #[derive(Debug, Clone, Serialize)]
 pub struct FeatureContract {
     pub model: String,
@@ -101,6 +109,7 @@ struct ModelEntry {
     routing: Option<RoutingPolicy>,
 }
 
+/// 解析后的模型引用：包含引擎及版本信息。
 #[derive(Clone)]
 pub struct ResolvedModel {
     pub engine: Arc<InferenceEngine>,
@@ -116,6 +125,7 @@ pub struct ModelRegistry {
 }
 
 impl ModelRegistry {
+    /// 创建注册表（指定特征配置路径和模型目录）。
     pub fn new(feature_config_path: &Path, model_dir: &Path) -> Result<Self, String> {
         if !feature_config_path.exists() {
             return Err(format!(
@@ -130,6 +140,7 @@ impl ModelRegistry {
         })
     }
 
+    /// 从模型目录创建注册表（需通过 manifest 加载）。
     pub fn from_model_dir(model_dir: &Path) -> Result<Self, String> {
         if !model_dir.exists() {
             return Err(format!("model dir not found: {}", model_dir.display()));
@@ -141,18 +152,20 @@ impl ModelRegistry {
         })
     }
 
-    /// 加载或重载指定模型。
+    /// 重载模型。
     pub fn load_model(&self, model_name: &str) -> Result<ModelInfo, String> {
         let manifest_path = find_manifest(&self.model_dir, model_name);
         self.load_resolved_model(model_name, manifest_path, None, None)
     }
 
+    /// 从 manifest 文件加载模型。
     pub fn load_manifest(&self, manifest_path: &Path) -> Result<ModelInfo, String> {
         let manifest = ModelManifest::from_path(manifest_path)?;
         let model_name = manifest.model_id.clone();
         self.load_resolved_model(&model_name, Some(manifest_path.to_path_buf()), None, None)
     }
 
+    /// 直接加载 safetensors 文件及其关联配置。
     pub fn load_safetensors(&self, safetensors_path: &Path) -> Result<ModelInfo, String> {
         if !safetensors_path.exists() {
             return Err(format!(
@@ -454,11 +467,13 @@ impl ModelRegistry {
         Err(format!("model config not found for '{}'", model_name))
     }
 
+    /// 获取模型引擎。
     pub fn get(&self, name: &str) -> Option<Arc<InferenceEngine>> {
         self.resolve(name, None, None)
             .map(|resolved| resolved.engine)
     }
 
+    /// 根据名称和版本解析模型。
     pub fn resolve(
         &self,
         name: &str,
@@ -468,6 +483,7 @@ impl ModelRegistry {
         self.resolve_request(name, version, None, fallback_version, None)
     }
 
+    /// 完整解析流程：版本/别名/路由策略/回退版本。
     pub fn resolve_request(
         &self,
         name: &str,
@@ -488,6 +504,7 @@ impl ModelRegistry {
         })
     }
 
+    /// 返回已加载的模型名称列表。
     pub fn list(&self) -> Vec<String> {
         let Ok(models) = self.models.read() else {
             warn!("model registry lock poisoned while listing models");
@@ -498,6 +515,7 @@ impl ModelRegistry {
         names
     }
 
+    /// 返回所有模型的 serving 信息。
     pub fn list_info(&self) -> Vec<ModelServingInfo> {
         let Ok(models) = self.models.read() else {
             warn!("model registry lock poisoned while listing model info");
@@ -511,11 +529,13 @@ impl ModelRegistry {
         result
     }
 
+    /// 返回指定模型的 serving 信息。
     pub fn model_info(&self, name: &str) -> Option<ModelServingInfo> {
         let models = self.models.read().ok()?;
         models.get(name).map(|entry| self.entry_info(name, entry))
     }
 
+    /// 返回指定模型的别名列表。
     pub fn aliases(&self, name: &str) -> Option<Vec<ModelAliasInfo>> {
         let models = self.models.read().ok()?;
         models.get(name).map(|entry| {
@@ -532,11 +552,13 @@ impl ModelRegistry {
         })
     }
 
+    /// 返回指定模型的路由策略。
     pub fn routing_policy(&self, name: &str) -> Option<Option<RoutingPolicy>> {
         let models = self.models.read().ok()?;
         models.get(name).map(|entry| entry.routing.clone())
     }
 
+    /// 设置模型版本别名。
     pub fn set_alias(&self, name: &str, alias: &str, version: &str) -> Result<(), String> {
         let mut models = self
             .models
@@ -555,6 +577,7 @@ impl ModelRegistry {
         Ok(())
     }
 
+    /// 删除模型版本别名。
     pub fn delete_alias(&self, name: &str, alias: &str) -> Result<(), String> {
         let mut models = self
             .models
@@ -567,6 +590,7 @@ impl ModelRegistry {
         Ok(())
     }
 
+    /// 设置模型路由策略。
     pub fn set_routing_policy(
         &self,
         name: &str,
@@ -586,6 +610,7 @@ impl ModelRegistry {
         Ok(())
     }
 
+    /// 返回指定模型的特征契约。
     pub fn feature_contract(&self, name: &str, version: Option<&str>) -> Option<FeatureContract> {
         let resolved = self.resolve(name, version, None)?;
         let mut required_inputs: Vec<FeatureInputInfo> = resolved
@@ -1044,6 +1069,8 @@ mod tests {
             schema_version: 1,
             model_id: "m".into(),
             model_version: "v".into(),
+            run_version: None,
+            published_version: None,
             model_type: "lr".into(),
             code_commit: None,
             weights_file: "model.safetensors".into(),
@@ -1056,6 +1083,18 @@ mod tests {
             tasks: vec![],
             label_col_map: HashMap::new(),
             metrics: HashMap::new(),
+            best_version: None,
+            best_epoch: None,
+            best_step: None,
+            best_score: None,
+            latest_version: None,
+            latest_epoch: None,
+            latest_step: None,
+            checkpoint_dir: None,
+            run_manifest_file: None,
+            published_weights_file: None,
+            best_weights_file: None,
+            latest_weights_file: None,
         };
 
         let err = registry

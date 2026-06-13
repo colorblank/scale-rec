@@ -1,4 +1,4 @@
-//! 推理引擎：FeatureDag + Box<dyn Model> + 预编译执行计划。
+//! 推理引擎：`FeatureDag` + `Box<dyn Model>` + 预编译执行计划。
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
@@ -11,6 +11,7 @@ use crate::feats::ops::Fv;
 use crate::layers::embedding::FeatureSpec;
 use crate::models::Model;
 
+/// 推理各阶段耗时指标（微秒）。
 #[derive(Debug, Clone, Default)]
 pub struct InferenceMetrics {
     pub parse_us: u64,
@@ -20,6 +21,7 @@ pub struct InferenceMetrics {
     pub response_us: u64,
 }
 
+/// 推理错误类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InferenceErrorKind {
     BadRequest,
@@ -28,6 +30,7 @@ pub enum InferenceErrorKind {
     Internal,
 }
 
+/// 推理错误：携带类型和消息。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InferenceError {
     kind: InferenceErrorKind,
@@ -35,6 +38,7 @@ pub struct InferenceError {
 }
 
 impl InferenceError {
+    /// 创建请求参数错误（BadRequest）。
     pub fn bad_request(message: impl Into<String>) -> Self {
         Self {
             kind: InferenceErrorKind::BadRequest,
@@ -42,6 +46,7 @@ impl InferenceError {
         }
     }
 
+    /// 创建特征处理错误。
     pub fn feature(message: impl Into<String>) -> Self {
         Self {
             kind: InferenceErrorKind::Feature,
@@ -49,6 +54,7 @@ impl InferenceError {
         }
     }
 
+    /// 创建模型推理错误。
     pub fn model(message: impl Into<String>) -> Self {
         Self {
             kind: InferenceErrorKind::Model,
@@ -56,6 +62,7 @@ impl InferenceError {
         }
     }
 
+    /// 创建内部错误。
     pub fn internal(message: impl Into<String>) -> Self {
         Self {
             kind: InferenceErrorKind::Internal,
@@ -63,10 +70,12 @@ impl InferenceError {
         }
     }
 
+    /// 返回错误类型。
     pub fn kind(&self) -> InferenceErrorKind {
         self.kind
     }
 
+    /// 返回错误消息。
     pub fn message(&self) -> &str {
         &self.message
     }
@@ -80,7 +89,8 @@ impl std::fmt::Display for InferenceError {
 
 impl std::error::Error for InferenceError {}
 
-type InferenceResult<T> = Result<T, InferenceError>;
+/// 推理结果类型别名。
+pub type InferenceResult<T> = Result<T, InferenceError>;
 
 pub struct InferenceEngine {
     pub dag: FeatureDag,
@@ -93,10 +103,13 @@ pub struct InferenceEngine {
     broadcast_precompute_skip_indices: HashSet<usize>,
 }
 
+/// 单行特征数据的类型别名。
 pub type FeatureRow = HashMap<String, serde_json::Value>;
+/// 单行预测结果的类型别名。
 pub type PredictionRow = HashMap<String, f32>;
 
 impl InferenceEngine {
+    /// 构造推理引擎。
     pub fn new(
         dag: FeatureDag,
         model: Box<dyn Model>,
@@ -135,6 +148,7 @@ impl InferenceEngine {
         }
     }
 
+    /// 批量预测：特征行列表 → 预测结果行列表。
     pub fn predict(
         &self,
         features: &[FeatureRow],
@@ -239,6 +253,7 @@ impl InferenceEngine {
         Ok(columns)
     }
 
+    /// 广播模式预测：用户特征一次计算 + 候选物品逐条预测。
     pub fn predict_broadcast(
         &self,
         user: &FeatureRow,

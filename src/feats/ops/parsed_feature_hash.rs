@@ -3,6 +3,7 @@
 use crate::feats::ops::{feature_hash::FeatureHash, CustomOp, Fv};
 use serde_json::Value;
 
+/// 融合预处理哈希：先解析为 token 序列再逐 token 哈希。
 pub struct ParsedFeatureHash {
     parse_mode: String,
     key: Option<String>,
@@ -18,6 +19,7 @@ pub struct ParsedFeatureHash {
 
 impl ParsedFeatureHash {
     #[allow(clippy::too_many_arguments)]
+    /// 创建融合预处理哈希算子。
     pub fn new(
         vocab_size: u32,
         parse_mode: String,

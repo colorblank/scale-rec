@@ -10,21 +10,31 @@ use crate::layers::towers::MultiTaskConfig;
 use crate::models::unimixer::tokenizer::FeatureTokenizer;
 use tracing::error;
 
+/// DeepFM 模型。
 pub mod deepfm;
+/// ESMM 多任务模型。
 pub mod esmm;
+/// GDCN + ESMM 混合模型。
 pub mod gdcn_esmm;
+/// 逻辑回归基线模型。
 pub mod lr;
+/// MMoE 多门控专家混合模型。
 pub mod mmoe;
+/// UniMixer 双随机矩阵交互模型。
 pub mod unimixer;
 
+/// 模型推理 trait：所有模型实现该 trait 以统一前向接口。
 pub trait Model: Send + Sync {
+    /// 模型前向推理，接收特征字典返回输出字典。
     fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<HashMap<String, Tensor>>;
 
+    /// 预热 Sinkhorn-Knopp 等缓存，可选实现。
     fn warmup(&self) -> Result<()> {
         Ok(())
     }
 }
 
+/// 任务配置项：名称 + 塔隐藏层维度。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskConfigEntry {
     pub name: String,
@@ -41,6 +51,7 @@ pub struct ModelConfig {
     pub params: serde_yaml::Value,
 }
 
+/// 模型构建选项。
 #[derive(Debug, Clone)]
 pub struct ModelBuildOptions {
     pub unimixer_prefix: String,
@@ -54,7 +65,7 @@ impl Default for ModelBuildOptions {
     }
 }
 
-/// Build function signature: (vb, features, tokenizer, params) -> Box<dyn Model>
+/// Build function signature: (vb, features, tokenizer, params) -> `Box<dyn Model>`
 type BuildFn = fn(
     VarBuilder,
     &[FeatureSpec],
@@ -75,6 +86,7 @@ static REGISTRY: LazyLock<HashMap<&'static str, BuildFn>> = LazyLock::new(|| {
 });
 
 impl ModelConfig {
+    /// 构建模型实例（默认选项）。
     pub fn build(
         &self,
         vb: VarBuilder,
@@ -84,6 +96,7 @@ impl ModelConfig {
         self.build_with_options(vb, features, tokenizer, &ModelBuildOptions::default())
     }
 
+    /// 使用自定义选项构建模型实例。
     pub fn build_with_options(
         &self,
         vb: VarBuilder,
@@ -101,6 +114,7 @@ impl ModelConfig {
         }
     }
 
+    /// 返回模型类型字符串。
     pub fn model_type(&self) -> &str {
         &self.model_type
     }

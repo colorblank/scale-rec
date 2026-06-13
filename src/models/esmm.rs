@@ -9,6 +9,7 @@ use candle_core::{Result, Tensor};
 use candle_nn::VarBuilder;
 use std::collections::HashMap;
 
+/// 生成默认 5 任务 ESMM 配置 (click/cvr/detail/stock/stay)。
 pub fn default_task_config(
     click_hidden_dims: &[usize],
     cvr_hidden_dims: &[usize],
@@ -84,6 +85,7 @@ pub struct ESMM {
 
 impl ESMM {
     #[allow(clippy::too_many_arguments)]
+    /// 使用默认任务配置构造 ESMM。
     pub fn new(
         vb: VarBuilder,
         features: &[FeatureSpec],
@@ -104,6 +106,7 @@ impl ESMM {
         Self::with_task_config(vb, features, shared_bottom_dims, &task_config)
     }
 
+    /// 使用自定义 MultiTaskConfig 构造 ESMM。
     pub fn with_task_config(
         vb: VarBuilder,
         features: &[FeatureSpec],

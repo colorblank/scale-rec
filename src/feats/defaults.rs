@@ -4,6 +4,7 @@ use crate::feats::config::{parse_float_strict, parse_int_strict, DType, SourceDe
 use crate::feats::ops::Fv;
 use tracing::warn;
 
+/// 根据 SourceDef 的 dtype 和 default_val 生成 Fv 默认值。
 pub fn source_default(source: &SourceDef) -> Fv {
     parse_default(&source.default_val, &source.dtype)
 }

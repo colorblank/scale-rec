@@ -1,10 +1,12 @@
 //! 特征交叉算子：内积或笛卡尔积。
 use super::{CustomOp, Fv};
 
+/// 特征交叉算子：内积或笛卡尔积。
 pub struct CrossFeature {
     cross_type: String,
 }
 impl CrossFeature {
+    /// 创建交叉特征算子。
     pub fn new(cross_type: String) -> Self {
         Self { cross_type }
     }

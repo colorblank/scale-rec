@@ -29,10 +29,12 @@ impl SiameseNorm {
         Ok(Self { rmsnorm })
     }
 
+    /// 仅应用 RMSNorm。
     pub fn forward_rmsnorm(&self, x: &Tensor) -> Result<Tensor> {
         self.rmsnorm.forward(x)
     }
 
+    /// 双流前向：更新流或最终融合。
     pub fn forward(
         &self,
         x_bar: &Tensor,

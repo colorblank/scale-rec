@@ -7,6 +7,7 @@ use crate::feats::config::{
     SourceDef,
 };
 
+/// 特征数据类型枚举：推断出的具体类型及约束。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FeatureDType {
     Int,
@@ -25,10 +26,12 @@ pub enum FeatureDType {
 }
 
 impl FeatureDType {
+    /// 是否是列表类型。
     pub fn is_list(&self) -> bool {
         matches!(self, FeatureDType::List { .. })
     }
 
+    /// 是否为整数索引类型（适合作为 Embedding 输入）。
     pub fn is_integer_index(&self) -> bool {
         match self {
             FeatureDType::Int => true,
@@ -37,6 +40,7 @@ impl FeatureDType {
         }
     }
 
+    /// 返回列表长度（定长列表有值，变长列表为 None）。
     pub fn list_len(&self) -> Option<usize> {
         match self {
             FeatureDType::List { length, .. } => *length,
@@ -44,11 +48,13 @@ impl FeatureDType {
         }
     }
 
+    /// 返回特征维度（列表为 list_len，否则为 1）。
     pub fn dimension(&self) -> usize {
         self.list_len().unwrap_or(1)
     }
 }
 
+/// 特征 Schema：名称、数据类型、维度、基数等完整描述。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureSchema {
     pub name: String,
@@ -61,6 +67,7 @@ pub struct FeatureSchema {
     pub pooling: Option<PoolingStrategy>,
 }
 
+/// 从 sources 和 operators 推断完整特征 Schema。
 pub fn infer_feature_schemas(
     sources: &[SourceDef],
     operators: &[OperatorDef],

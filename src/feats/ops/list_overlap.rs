@@ -2,9 +2,11 @@
 use super::{CustomOp, Fv};
 use std::collections::HashSet;
 
+/// 判断两个字符串列表是否存在共同元素。
 pub struct ListOverlap;
 
 impl ListOverlap {
+    /// 创建列表重叠检测算子。
     pub fn new() -> Self {
         Self
     }

@@ -22,10 +22,12 @@ pub struct FeatureHash {
 }
 
 impl FeatureHash {
+    /// 创建特征哈希算子。
     pub fn new(vocab_size: u32, num_hashes: u32, separator: String) -> Result<Self, String> {
         Self::with_scope(vocab_size, num_hashes, separator, "", "", "")
     }
 
+    /// 创建带命名空间/盐/版本的特征哈希算子。
     pub fn with_scope(
         vocab_size: u32,
         num_hashes: u32,

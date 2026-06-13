@@ -2,6 +2,7 @@
 use super::{CustomOp, Fv};
 use serde_json::Value;
 
+/// 从 JSON 数组中提取值并填充/截断为定长字符串列表。
 pub struct JsonExtractList {
     key: Option<String>,
     pad_len: usize,
@@ -9,6 +10,7 @@ pub struct JsonExtractList {
 }
 
 impl JsonExtractList {
+    /// 创建 JSON 数组提取算子。
     pub fn new(key: Option<String>, pad_len: usize, pad_val: String) -> Self {
         Self {
             key,

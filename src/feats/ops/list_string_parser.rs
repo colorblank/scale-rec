@@ -1,12 +1,14 @@
 //! 字符串列表切分提取算子：对 StrList 中每个字符串进行 split 并提取指定索引内容。
 use super::{CustomOp, Fv};
 
+/// 对 StrList 中每个字符串按分隔符切分并提取指定索引。
 pub struct ListStringParser {
     sep: String,
     key_index: usize,
 }
 
 impl ListStringParser {
+    /// 创建列表字符串解析算子。
     pub fn new(sep: String, key_index: usize) -> Self {
         Self { sep, key_index }
     }

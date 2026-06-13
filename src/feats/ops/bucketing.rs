@@ -1,11 +1,13 @@
 //! 连续值分桶算子：将浮点数映射为桶索引。
 use super::{CustomOp, Fv};
 
+/// 将连续浮点值映射为桶索引。
 pub struct Bucketing {
     boundaries: Vec<f32>,
 }
 
 impl Bucketing {
+    /// 创建分桶算子，边界值会自动排序。
     pub fn new(mut boundaries: Vec<f32>) -> Self {
         boundaries.sort_by(|a, b| a.total_cmp(b));
         Self { boundaries }

@@ -23,6 +23,7 @@ pub struct MMoE {
 
 impl MMoE {
     #[allow(clippy::too_many_arguments)]
+    /// 构造 MMoE 模型。
     pub fn new(
         vb: VarBuilder,
         features: &[FeatureSpec],

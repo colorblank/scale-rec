@@ -3,12 +3,14 @@ use super::{CustomOp, Fv};
 use rhai::{Engine, Scope, AST};
 use tracing::warn;
 
+/// Rhai 脚本表达式求值算子。
 pub struct ExpressionOp {
     ast: AST,
     engine: Engine,
 }
 
 impl ExpressionOp {
+    /// 创建表达式算子，预编译 Rhai 脚本。
     pub fn new(script: String) -> Result<Self, String> {
         let mut engine = Engine::new();
         engine.register_fn("log", |f: f64| f.ln());

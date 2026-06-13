@@ -1,6 +1,7 @@
 //! 字符串解析算子：结构化字符串分词与填充。
 use super::{CustomOp, Fv};
 
+/// 结构化字符串解析：按 sep1 分词、sep2 提取、填充/截断。
 pub struct StringParser {
     sep1: String,
     sep2: String,
@@ -10,6 +11,7 @@ pub struct StringParser {
 }
 
 impl StringParser {
+    /// 创建字符串解析算子。
     pub fn new(
         sep1: String,
         sep2: String,

@@ -12,6 +12,7 @@ use petgraph::algo::toposort;
 use petgraph::prelude::DiGraph;
 use std::collections::{HashMap, HashSet};
 
+/// 特征值的类型别名。
 pub type FeatureValue = Fv;
 
 /// 特征处理结果：包含所有特征值并区分来源。
@@ -21,6 +22,7 @@ pub struct FeatureResult {
     pub computed_names: HashSet<String>,
 }
 
+/// DAG 校验问题：包含严重级别、错误码和描述。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationIssue {
     pub severity: &'static str,
@@ -29,6 +31,7 @@ pub struct ValidationIssue {
     pub feature: Option<String>,
 }
 
+/// DAG 校验报告：汇总 source 消费率、embed 利用率和中间结果。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationReport {
     pub issues: Vec<ValidationIssue>,
@@ -61,6 +64,7 @@ pub struct ExecutionPlan {
     embed_ids: Vec<usize>,
 }
 
+/// 预编译执行步骤：算子索引 + 输入/输出列索引。
 pub struct ExecStep {
     pub op_idx: usize,
     pub input_cols: Vec<usize>,
@@ -83,6 +87,7 @@ pub struct FeatureDag {
 }
 
 impl FeatureDag {
+    /// 从 FlowConfig 构建 FeatureDag，包含拓扑排序和预编译执行计划。
     pub fn from_config(
         config: FlowConfig,
         debug_mode: bool,
@@ -524,13 +529,16 @@ impl FeatureDag {
         }
     }
 
+    /// 获取原始输入源定义。
     pub fn source_defs(&self) -> &HashMap<String, SourceDef> {
         &self.sources
     }
+    /// 获取算子节点定义。
     pub fn operator_defs(&self) -> &HashMap<String, OperatorDef> {
         &self.node_defs
     }
 
+    /// 获取所有需要嵌入的特征 (name, EmbedConfig) 列表。
     pub fn embeddable_features(&self) -> Vec<(&str, &crate::feats::config::EmbedConfig)> {
         let mut result = Vec::new();
         for (_, op) in &self.node_defs {
@@ -608,6 +616,7 @@ impl FeatureDag {
         self.node_defs.get(op_name).map(|d| &d.outputs)
     }
 
+    /// 执行 DAG：raw_inputs → 拓扑序执行算子 → FeatureResult。
     pub fn execute(
         &self,
         raw_inputs: &HashMap<String, FeatureValue>,
@@ -748,6 +757,7 @@ impl FeatureDag {
         Ok(context)
     }
 
+    /// 调试用：输出当前 context 的快照日志。
     pub fn dump_snapshot(
         &self,
         context: &HashMap<String, FeatureValue>,
@@ -840,9 +850,11 @@ impl ExecutionPlan {
         Ok(context)
     }
 
+    /// 返回 embeddable 列的索引列表。
     pub fn embed_ids(&self) -> &[usize] {
         &self.embed_ids
     }
+    /// 返回 source 名称到列索引的映射。
     pub fn source_col_map(&self) -> HashMap<String, usize> {
         self.source_names
             .iter()

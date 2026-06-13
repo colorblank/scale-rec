@@ -23,6 +23,7 @@ pub struct DeepFM {
 }
 
 impl DeepFM {
+    /// 构造 DeepFM 模型：FM 一阶/二阶 + Deep MLP 分支。
     pub fn new(
         vb: VarBuilder,
         features: &[FeatureSpec],

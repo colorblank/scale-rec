@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
+/// 权重绑定配置：格式、schema、路径前缀。
 pub struct WeightBinding {
     #[serde(default = "default_weight_format")]
     pub format: String,
@@ -63,6 +64,7 @@ fn default_allow_extra_tensors() -> bool {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+/// 模型发布 Manifest：关联特征配置、模型配置和权重文件的元数据。
 pub struct ModelManifest {
     pub schema_version: u32,
     pub model_id: String,
@@ -114,12 +116,15 @@ pub struct ModelManifest {
 }
 
 impl ModelManifest {
+    /// 从 YAML 文件路径解析 Manifest。
+    /// 从 YAML 文件路径解析 Manifest。
     pub fn from_path(path: &Path) -> Result<Self, String> {
         let yaml = std::fs::read_to_string(path)
             .map_err(|e| format!("read manifest {}: {}", path.display(), e))?;
         serde_yaml::from_str(&yaml).map_err(|e| format!("parse manifest {}: {}", path.display(), e))
     }
 
+    /// 将相对路径解析为 manifest 所在目录下的绝对路径。
     pub fn resolve_from(&self, manifest_path: &Path, rel: &str) -> PathBuf {
         let normalized = rel.replace('\\', "/");
         let p = PathBuf::from(normalized);
@@ -134,6 +139,7 @@ impl ModelManifest {
     }
 }
 
+/// 在模型目录中查找 manifest 文件。
 pub fn find_manifest(model_dir: &Path, model_name: &str) -> Option<PathBuf> {
     [
         model_dir.join(format!("{}.manifest.yaml", model_name)),
@@ -145,6 +151,7 @@ pub fn find_manifest(model_dir: &Path, model_name: &str) -> Option<PathBuf> {
     .find(|p| p.exists())
 }
 
+/// 递归查找模型目录下的所有 manifest 文件。
 pub fn find_manifests(model_dir: &Path) -> Vec<PathBuf> {
     let mut manifests = Vec::new();
     collect_manifests(model_dir, 0, &mut manifests);
@@ -191,6 +198,8 @@ mod tests {
             schema_version: 1,
             model_id: "m".into(),
             model_version: "v".into(),
+            run_version: None,
+            published_version: None,
             model_type: "lr".into(),
             code_commit: None,
             weights_file: "m.safetensors".into(),
@@ -203,6 +212,18 @@ mod tests {
             tasks: vec![],
             label_col_map: HashMap::new(),
             metrics: HashMap::new(),
+            best_version: None,
+            best_epoch: None,
+            best_step: None,
+            best_score: None,
+            latest_version: None,
+            latest_epoch: None,
+            latest_step: None,
+            checkpoint_dir: None,
+            run_manifest_file: None,
+            published_weights_file: None,
+            best_weights_file: None,
+            latest_weights_file: None,
         };
 
         let path = manifest.resolve_from(Path::new("/tmp/model/m.manifest.yaml"), "m.safetensors");

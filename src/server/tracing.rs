@@ -15,6 +15,7 @@ pub struct RequestTimer {
 }
 
 impl RequestTimer {
+    /// 创建请求计时器，记录 start 时间点。
     pub fn new() -> Self {
         Self {
             start: Instant::now(),
@@ -26,6 +27,7 @@ impl RequestTimer {
         }
     }
 
+    /// 记录推理各阶段耗时指标。
     pub fn record(&mut self, metrics: &InferenceMetrics) {
         self.parse_us = metrics.parse_us;
         self.dag_us = metrics.dag_us;

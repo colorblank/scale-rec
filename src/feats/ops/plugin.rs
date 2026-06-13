@@ -7,12 +7,14 @@ use std::any::Any;
 type PluginFn =
     unsafe fn(&[&(dyn Any + Send + Sync)]) -> Result<Box<dyn Any + Send + Sync>, String>;
 
+/// 通过 cdylib 动态加载的外部插件算子。
 pub struct PluginOp {
     lib: Library,
     op_name: String,
 }
 
 impl PluginOp {
+    /// 加载动态库并创建插件算子。
     pub fn new(path: &str, op_name: String) -> Result<Self, String> {
         // SAFETY: Loading a dynamic library runs platform loader logic and may execute library
         // initialization code. Callers must only pass trusted plugin paths from controlled config.

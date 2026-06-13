@@ -1,9 +1,11 @@
+//! 特征嵌入层：FeatureSpec 定义 + FeatureEmbeddings 多特征合并。
 use candle_core::{Result, Tensor};
 use candle_nn::{embedding, Embedding, Module, VarBuilder};
 use std::collections::HashMap;
 
 use crate::feats::config::{PoolingStrategy, TruncationSide};
 
+/// 单个特征的嵌入配置：词表大小、嵌入维度、池化策略等。
 #[derive(Debug, Clone)]
 pub struct FeatureSpec {
     pub name: String,
@@ -15,6 +17,7 @@ pub struct FeatureSpec {
 }
 
 impl FeatureSpec {
+    /// 创建 FeatureSpec，默认使用 First 池化和 Head 截断。
     pub fn new(name: String, vocab_size: usize, embed_dim: usize) -> Self {
         Self {
             name,
@@ -26,6 +29,7 @@ impl FeatureSpec {
         }
     }
 
+    /// 克隆并修改嵌入维度。
     pub fn with_dim(&self, embed_dim: usize) -> Self {
         Self {
             name: self.name.clone(),
@@ -45,6 +49,7 @@ impl FeatureSpec {
     }
 }
 
+/// 多特征嵌入管理器：按序查找、池化、拼接。
 pub struct FeatureEmbeddings {
     feature_to_idx: HashMap<String, usize>,
     ordered_names: Vec<String>,
@@ -55,6 +60,7 @@ pub struct FeatureEmbeddings {
 }
 
 impl FeatureEmbeddings {
+    /// 从 FeatureSpec 列表构造嵌入层，每个特征创建独立 Embedding。
     pub fn new(vb: VarBuilder, features: &[FeatureSpec]) -> Result<Self> {
         let num_features = features.len();
         let mut feature_to_idx = HashMap::with_capacity(num_features);
@@ -107,6 +113,7 @@ impl FeatureEmbeddings {
         }
     }
 
+    /// 前向：多特征嵌入 → 拼接为 [batch, total_dim] 张量。
     pub fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<Tensor> {
         let mut embeds = Vec::with_capacity(self.num_features);
         for name in &self.ordered_names {
@@ -122,6 +129,7 @@ impl FeatureEmbeddings {
         Tensor::cat(&embeds, 1)
     }
 
+    /// 前向：返回各特征嵌入保留 seq 维度的 Vec。
     pub fn forward_stacked(&self, x_inputs: &HashMap<String, Tensor>) -> Result<Vec<Tensor>> {
         let mut embeds = Vec::with_capacity(self.num_features);
         for name in &self.ordered_names {

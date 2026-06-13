@@ -14,6 +14,7 @@ struct GatedCrossLayer {
 }
 
 impl GatedCrossNetwork {
+    /// 构造 GatedCrossNetwork。
     pub fn new(vb: VarBuilder, input_dim: usize, num_layers: usize) -> Result<Self> {
         if input_dim == 0 {
             candle_core::bail!("input_dim must be positive");

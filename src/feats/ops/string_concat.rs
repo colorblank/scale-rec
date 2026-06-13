@@ -8,6 +8,7 @@ pub struct StringConcat {
 }
 
 impl StringConcat {
+    /// 创建字符串拼接算子。
     pub fn new(separator: String) -> Self {
         Self { separator }
     }

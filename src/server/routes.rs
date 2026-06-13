@@ -17,11 +17,13 @@ use super::registry::{
 };
 use super::tracing::RequestTimer;
 
+/// 应用共享状态。
 pub type AppState = Arc<ModelRegistry>;
 
 /// 单行特征
 pub type FeatureRow = HashMap<String, Value>;
 
+/// 预测请求体。
 #[derive(Debug, Deserialize)]
 pub struct PredictRequest {
     pub model: String,
@@ -32,6 +34,7 @@ pub struct PredictRequest {
     pub features: Vec<FeatureRow>,
 }
 
+/// 广播预测请求体。
 #[derive(Debug, Deserialize)]
 pub struct BroadcastRequest {
     pub model: String,
@@ -43,6 +46,7 @@ pub struct BroadcastRequest {
     pub items: Vec<FeatureRow>,
 }
 
+/// 预测响应体。
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PredictResponse {
     pub model: String,
@@ -50,6 +54,7 @@ pub struct PredictResponse {
     pub predictions: Vec<HashMap<String, f32>>,
 }
 
+/// API 错误响应体。
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ApiError {
     pub code: String,
@@ -94,28 +99,33 @@ fn map_predict_error(err: InferenceError, model_id: String) -> ApiError {
     }
 }
 
+/// 模型列表响应。
 #[derive(Debug, Serialize)]
 pub struct ModelListResponse {
     pub models: Vec<ModelServingInfo>,
 }
 
+/// 别名更新请求体。
 #[derive(Debug, Deserialize)]
 pub struct AliasUpdateRequest {
     pub version: String,
 }
 
+/// 别名列表响应。
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AliasListResponse {
     pub model: String,
     pub aliases: Vec<ModelAliasInfo>,
 }
 
+/// 路由策略更新请求体。
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RoutingUpdateRequest {
     #[serde(flatten)]
     pub policy: RoutingPolicy,
 }
 
+/// 构建 Axum Router，注册所有 API 路由。
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))

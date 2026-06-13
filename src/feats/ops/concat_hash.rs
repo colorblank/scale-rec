@@ -2,6 +2,7 @@
 
 use crate::feats::ops::{feature_hash::FeatureHash, CustomOp, Fv};
 
+/// 多输入字符串拼接后合并哈希。
 pub struct ConcatHash {
     separator: String,
     inner: FeatureHash,
@@ -9,6 +10,7 @@ pub struct ConcatHash {
 
 impl ConcatHash {
     #[allow(clippy::too_many_arguments)]
+    /// 创建 ConcatHash 算子。
     pub fn new(
         vocab_size: u32,
         num_hashes: u32,

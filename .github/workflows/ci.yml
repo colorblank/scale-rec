@@ -30,6 +30,9 @@ jobs:
       - name: Run tests
         run: cargo test --locked
 
+      - name: Check documentation builds without errors
+        run: cargo doc --no-deps --locked 2>&1
+
   python:
     name: Python
     runs-on: ubuntu-latest

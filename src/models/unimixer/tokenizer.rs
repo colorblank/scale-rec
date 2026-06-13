@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use crate::feats::config::PoolingStrategy;
 use crate::layers::embedding::FeatureSpec;
 
+/// 特征分词器：分组 Conv1d 将多特征投影为 Token 序列。
 pub struct FeatureTokenizer {
     feature_to_emb_idx: HashMap<String, usize>,
     ordered_feature_names: Vec<String>,
@@ -19,6 +20,7 @@ pub struct FeatureTokenizer {
 }
 
 impl FeatureTokenizer {
+    /// 构造 FeatureTokenizer。
     pub fn new(
         vb: VarBuilder,
         features: &[FeatureSpec],
@@ -102,6 +104,7 @@ impl FeatureTokenizer {
         }
     }
 
+    /// 前向：特征嵌入 → 分组投影 → [batch, num_tokens, token_dim]。
     pub fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<Tensor> {
         let total_timer = profile::start();
         let embedding_timer = profile::start();

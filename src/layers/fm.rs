@@ -1,6 +1,7 @@
 //! FM 二阶交互：0.5 * Σ[(Σv_i)² - Σv_i²]。
 use candle_core::{Result, Tensor};
 
+/// FM 二阶交互：0.5 * Σ[(Σv_i)² - Σv_i²]。
 pub fn fm_interaction(stacked: &Tensor) -> Result<Tensor> {
     let sum_square = stacked.sqr()?.sum(1)?;
     let square_sum = stacked.sum(1)?.sqr()?;

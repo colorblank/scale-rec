@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+/// 激活函数类型。
 pub enum Activation {
     Relu,
     Sigmoid,
@@ -21,6 +22,7 @@ impl Default for Activation {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// 单任务塔配置：名称、隐藏层维度、输出维度、激活函数。
 pub struct TowerConfig {
     pub name: String,
     #[serde(default)]
@@ -32,6 +34,7 @@ pub struct TowerConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+/// 任务间概率关系运算类型。
 pub enum RelationOp {
     Multiply,
     Add,
@@ -40,6 +43,7 @@ pub enum RelationOp {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// 任务关系定义：目标任务由源任务经运算推导。
 pub struct TaskRelation {
     pub target: String,
     pub sources: Vec<String>,
@@ -47,6 +51,7 @@ pub struct TaskRelation {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// 多任务塔完整配置：塔列表 + 关系推导列表。
 pub struct MultiTaskConfig {
     pub towers: Vec<TowerConfig>,
     #[serde(default)]
@@ -113,6 +118,7 @@ impl TaskTower {
         Ok(out)
     }
 
+    /// 返回该塔的任务名称。
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -146,6 +152,7 @@ impl MultiTaskTower {
         })
     }
 
+    /// 返回所有任务名称（含推导任务）。
     pub fn task_names(&self) -> Vec<String> {
         let mut names: Vec<String> = self.towers.iter().map(|t| t.name().to_string()).collect();
         for r in &self.relations {
@@ -154,6 +161,7 @@ impl MultiTaskTower {
         names
     }
 
+    /// 返回独立塔的数量（不含推导任务）。
     pub fn num_towers(&self) -> usize {
         self.towers.len()
     }
@@ -173,6 +181,7 @@ impl MultiTaskTower {
         Ok(outputs)
     }
 
+    /// 返回各独立塔的 logits（不含推导任务）。
     pub fn tower_logits(&self, shared_output: &Tensor) -> Result<Vec<Tensor>> {
         self.towers
             .iter()

@@ -18,6 +18,7 @@ cargo fmt                          # format all Rust code
 cargo test                         # run all tests (38 tests)
 cargo test --test model_smoke      # run only integration tests
 cargo test feats::ops::feature_hash  # run specific module tests
+cargo doc --no-deps                # build docs (warn on missing docs)
 cargo run                          # run inference example
 ```
 

@@ -7,16 +7,19 @@ use super::unimixing_lite::UniMixingLite;
 use candle_core::{Result, Tensor};
 use candle_nn::VarBuilder;
 
+/// 交互层变体：标准版或轻量版。
 pub enum UniMixingLayer {
     Standard(UniMixing),
     Lite(UniMixingLite),
 }
 
+/// 块输出变体：标准流或 Siamese 双流。
 pub enum BlockOutput {
     Siamese(Tensor, Tensor),
     Standard(Tensor),
 }
 
+/// 单层交互块：UniMixing + SwiGLU + SiameseNorm。
 pub struct UniMixerBlock {
     pub embed_dim: usize,
     pub token_dim: usize,
@@ -27,6 +30,7 @@ pub struct UniMixerBlock {
 }
 
 impl UniMixerBlock {
+    /// 构造 UniMixerBlock。
     pub fn new(
         embed_dim: usize,
         block_size: usize,
@@ -70,6 +74,7 @@ impl UniMixerBlock {
         }
     }
 
+    /// 预热内部缓存。
     pub fn warmup(&self, temperature: f64) -> Result<()> {
         match &self.unimixing {
             UniMixingLayer::Standard(layer) => layer.warmup(temperature)?,
@@ -78,6 +83,7 @@ impl UniMixerBlock {
         self.pswiglu.warmup()
     }
 
+    /// 前向传播。
     pub fn forward(
         &self,
         x: &Tensor,

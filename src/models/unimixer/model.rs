@@ -9,6 +9,7 @@ use candle_core::{Result, Tensor};
 use candle_nn::VarBuilder;
 use std::collections::HashMap;
 
+/// 完整的 UniMixer 模型：特征分词 → Token 交互 → 多任务塔。
 pub struct UniMixerModel {
     pub embed_dim: usize,
     pub block_size: usize,
@@ -22,6 +23,7 @@ pub struct UniMixerModel {
 
 impl UniMixerModel {
     #[allow(clippy::too_many_arguments)]
+    /// 构造 UniMixerModel。
     pub fn new(
         tokenizer: FeatureTokenizer,
         token_dim: usize,
@@ -99,10 +101,12 @@ impl UniMixerModel {
         })
     }
 
+    /// 设置退火温度。
     pub fn set_temperature(&mut self, t: f64) {
         self.temperature = t;
     }
 
+    /// 使用指定温度执行前向传播。
     pub fn forward_with_temperature(
         &self,
         x_inputs: &HashMap<String, Tensor>,

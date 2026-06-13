@@ -17,6 +17,7 @@ pub struct LogisticRegression {
 }
 
 impl LogisticRegression {
+    /// 构造逻辑回归模型。
     pub fn new(vb: VarBuilder, features: &[FeatureSpec]) -> Result<Self> {
         let embeddings = FeatureEmbeddings::new(vb.pp("embeddings"), features)?;
         let mlp = Mlp::new(

@@ -10,6 +10,7 @@ pub struct FeatureMetrics {
 }
 
 impl FeatureMetrics {
+    /// 创建新的特征统计实例。
     pub fn new() -> Self {
         Self {
             mean: 0.0,
@@ -36,11 +37,13 @@ impl FeatureMetrics {
         }
     }
 
+    /// 返回当前标准差。
     pub fn std_dev(&self) -> f64 {
         let n = (self.count - self.null_count).max(1) as f64;
         (self.m2 / n).sqrt()
     }
 
+    /// 输出统计报告日志。
     pub fn report(&self) {
         tracing::info!(
             mean = self.mean,

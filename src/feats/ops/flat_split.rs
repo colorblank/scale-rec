@@ -10,6 +10,7 @@ pub struct FlatSplit {
 }
 
 impl FlatSplit {
+    /// 创建列表打平分割算子。
     pub fn new(sep: String, max_len: usize, pad_val: String) -> Self {
         Self {
             sep,

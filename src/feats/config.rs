@@ -206,15 +206,18 @@ pub enum PoolingStrategy {
     Max,
 }
 
-/// 嵌入层配置：词表大小、嵌入维度、池化策略、序列长度、截断方向。
+/// 序列截断方向。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum TruncationSide {
+    /// 保留头部
     #[default]
     Head,
+    /// 保留尾部
     Tail,
 }
 
+/// 嵌入层配置：词表大小、嵌入维度、池化策略、序列长度、截断方向。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EmbedConfig {
@@ -261,6 +264,7 @@ pub struct OperatorDef {
     pub embed: Option<EmbedConfig>,
 }
 
+/// 数据源定义：名称、类型及连接参数。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DataSourceDef {
@@ -284,11 +288,13 @@ pub struct FlowConfig {
 }
 
 impl FlowConfig {
+    /// 从 YAML 字符串解析 FlowConfig。
     pub fn from_yaml(yaml: &str) -> Result<Self, serde_yaml::Error> {
         serde_yaml::from_str(yaml)
     }
 }
 
+/// 严格解析整数，空字符串返回错误。
 pub fn parse_int_strict(raw: &str) -> Result<i32, String> {
     let text = raw.trim();
     if text.is_empty() {
@@ -298,6 +304,7 @@ pub fn parse_int_strict(raw: &str) -> Result<i32, String> {
         .map_err(|e| format!("invalid integer value '{}': {}", raw, e))
 }
 
+/// 严格解析浮点数，空字符串返回错误。
 pub fn parse_float_strict(raw: &str) -> Result<f32, String> {
     let text = raw.trim();
     if text.is_empty() {

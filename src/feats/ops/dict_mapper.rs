@@ -12,6 +12,7 @@ pub struct DictMapper {
 }
 
 impl DictMapper {
+    /// 创建字典映射算子。
     pub fn new(mapping: HashMap<String, i32>, default_idx: i32) -> Self {
         Self {
             mapping,
