@@ -4,7 +4,10 @@ from __future__ import annotations
 import json
 from typing import Any, Optional
 
+from . import register_op
 
+
+@register_op("JsonExtractList")
 class JsonExtractList:
     """Parse JSON array strings and extract elements or specific properties."""
 
@@ -12,6 +15,14 @@ class JsonExtractList:
         self.key = key
         self.pad_len = pad_len
         self.pad_val = pad_val
+
+    @classmethod
+    def from_config(cls, params: dict) -> "JsonExtractList":
+        return cls(
+            key=params.get("key"),
+            pad_len=int(params.get("pad_len", 0)),
+            pad_val=str(params.get("pad_val", "")),
+        )
 
     def process(self, inputs: list[Any]) -> list[str]:
         val = inputs[0]

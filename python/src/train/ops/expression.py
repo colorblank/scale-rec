@@ -6,6 +6,8 @@ import math
 import operator
 from typing import Any
 
+from . import register_op
+
 _FUNCTIONS = {"log": math.log, "abs": abs, "max": max, "min": min, "sqrt": math.sqrt}
 _BINOPS = {
     ast.Add: operator.add,
@@ -17,11 +19,19 @@ _BINOPS = {
 _UNARYOPS = {ast.USub: operator.neg, ast.UAdd: operator.pos}
 
 
+@register_op("ExpressionOp")
 class ExpressionOp:
     """Evaluate script expressions using AST parsing (no eval)."""
 
     def __init__(self, script: str) -> None:
         self.tree = ast.parse(script.strip(), mode="eval")
+
+    @classmethod
+    def from_config(cls, params: dict) -> "ExpressionOp":
+        script = params.get("script")
+        if not script:
+            raise ValueError("Missing 'script' for ExpressionOp")
+        return cls(str(script))
 
     def process(self, inputs: list[Any]) -> float:
         scope = {f"v{i}": float(val) for i, val in enumerate(inputs)}

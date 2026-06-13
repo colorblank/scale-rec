@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from . import register_op
 
+
+@register_op("Split")
 class Split:
     """将输入字符串按分隔符切分，截断/填充到定长。
 
@@ -18,6 +21,14 @@ class Split:
         self.sep = sep
         self.max_len = max_len
         self.pad_val = pad_val
+
+    @classmethod
+    def from_config(cls, params: dict) -> "Split":
+        return cls(
+            sep=str(params.get("sep", "|")),
+            max_len=int(params.get("max_len", 0)),
+            pad_val=str(params.get("pad_val", "")),
+        )
 
     def _normalize(self, parts: list[str]) -> list[str]:
         if self.max_len <= 0:

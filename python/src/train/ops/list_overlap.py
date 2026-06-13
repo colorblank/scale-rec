@@ -3,9 +3,16 @@ from __future__ import annotations
 """列表重叠检测算子：判断两个列表是否存在共同元素。"""
 from typing import Any
 
+from . import register_op
 
+
+@register_op("ListOverlap")
 class ListOverlap:
     """Check if two lists have overlapping elements. Returns 1 if any overlap, 0 otherwise."""
+
+    @classmethod
+    def from_config(cls, params: dict) -> "ListOverlap":
+        return cls()
 
     def process(self, inputs: list[Any]) -> int:
         a, b = inputs[0], inputs[1]

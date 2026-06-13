@@ -9,6 +9,29 @@ class CustomOp(Protocol):
     def process(self, inputs: list[Any]) -> Any: ...
 
 
+# ── Operator registry ──
+
+OP_REGISTRY: dict[str, type] = {}
+
+
+def register_op(op_type: str):
+    """Decorator that registers an operator class by its YAML op_type string."""
+    def decorator(cls):
+        OP_REGISTRY[op_type] = cls
+        return cls
+    return decorator
+
+
+def create_op(op_type: str, params: dict) -> CustomOp:
+    """Look up operator in registry and construct from params."""
+    cls = OP_REGISTRY.get(op_type)
+    if cls is None:
+        raise ValueError(f"Unsupported operator type: {op_type}")
+    return cls.from_config(params)
+
+
+# ── Operator imports (triggers registration via decorator) ──
+
 from .bucketing import Bucketing as Bucketing
 from .concat_hash import ConcatHash as ConcatHash
 from .cross_feature import CrossFeature as CrossFeature
@@ -27,19 +50,22 @@ from .string_parser import StringParser as StringParser
 
 __all__ = [
     "Bucketing",
+    "ConcatHash",
     "CrossFeature",
     "CustomOp",
     "DictMapper",
     "ExpressionOp",
     "FeatureHash",
-    "ConcatHash",
     "FlatSplit",
+    "JsonExtractList",
     "ListOverlap",
+    "ListStringParser",
+    "ParsedFeatureHash",
     "SequenceOp",
     "Split",
     "StringConcat",
     "StringParser",
-    "JsonExtractList",
-    "ListStringParser",
-    "ParsedFeatureHash",
+    "OP_REGISTRY",
+    "create_op",
+    "register_op",
 ]

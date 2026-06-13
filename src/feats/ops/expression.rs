@@ -21,6 +21,14 @@ impl ExpressionOp {
     }
 }
 
+pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
+    let script = params.get("script")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing script for ExpressionOp")?
+        .to_string();
+    Ok(Box::new(ExpressionOp::new(script)?))
+}
+
 impl CustomOp for ExpressionOp {
     fn name(&self) -> &str {
         "ExpressionOp"

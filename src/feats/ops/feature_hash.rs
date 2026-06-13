@@ -217,6 +217,16 @@ impl FeatureHash {
     }
 }
 
+pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
+    let vocab_size = params.get("vocab_size").and_then(|v| v.as_u64()).unwrap_or(1000) as u32;
+    let num_hashes = params.get("num_hashes").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
+    let separator = params.get("separator").and_then(|v| v.as_str()).unwrap_or("|").to_string();
+    let namespace = params.get("namespace").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let salt = params.get("salt").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let version = params.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    Ok(Box::new(FeatureHash::with_scope(vocab_size, num_hashes, separator, &namespace, &salt, &version)?))
+}
+
 // ── 公开工具函数 (供测试) ──
 
 /// DJB2 带种子前缀的哈希，32 位回绕 —— 与 Python _djb2_seeded 完全一致。

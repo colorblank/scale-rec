@@ -3,7 +3,10 @@ from __future__ import annotations
 """字典映射算子：字符串/整数到索引的映射。"""
 from typing import Any, Union
 
+from . import register_op
 
+
+@register_op("DictMapper")
 class DictMapper:
     """String/int to index lookup.
 
@@ -15,6 +18,11 @@ class DictMapper:
         """Initialize with mapping table and fallback index."""
         self.mapping = mapping
         self.default_idx = default_idx
+
+    @classmethod
+    def from_config(cls, params: dict) -> "DictMapper":
+        mapping = {str(k): int(v) for k, v in params.get("mapping", {}).items()}
+        return cls(mapping, int(params.get("default_idx", 0)))
 
     def process(self, inputs: list[Any]) -> Union[int, list[int]]:
         """Map string key to integer index; list input -> list output, single -> single."""

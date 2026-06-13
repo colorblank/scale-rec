@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 from typing import Any, Optional
 
+from . import register_op
 from .feature_hash import FeatureHash
 
 
+@register_op("ParsedFeatureHash")
 class ParsedFeatureHash:
     """Parse structured inputs and hash tokens in one operator.
 
@@ -56,6 +58,26 @@ class ParsedFeatureHash:
             namespace=namespace,
             salt=salt,
             version=version,
+        )
+
+    @classmethod
+    def from_config(cls, params: dict) -> "ParsedFeatureHash":
+        return cls(
+            vocab_size=int(params.get("vocab_size", 1000)),
+            parse_mode=str(params.get("parse_mode", "json")),
+            num_hashes=int(params.get("num_hashes", 1)),
+            separator=str(params.get("separator", "|")),
+            namespace=str(params.get("namespace", "")),
+            salt=str(params.get("salt", "")),
+            version=str(params.get("version", "")),
+            key=params.get("key"),
+            sep1=str(params.get("sep1", "|")),
+            sep2=str(params.get("sep2", "#")),
+            key_index=int(params.get("key_index", 0)),
+            sep=str(params.get("sep", ",")),
+            max_len=int(params.get("max_len", 0)),
+            pad_len=int(params.get("pad_len", 0)),
+            pad_val=str(params.get("pad_val", "")),
         )
 
     def process(self, inputs: list[Any]) -> list[int]:

@@ -29,6 +29,15 @@ impl StringParser {
     }
 }
 
+pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
+    let sep1 = params.get("sep1").and_then(|v| v.as_str()).unwrap_or("#").to_string();
+    let sep2 = params.get("sep2").and_then(|v| v.as_str()).unwrap_or("|").to_string();
+    let key_index = params.get("key_index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+    let pad_len = params.get("pad_len").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+    let pad_val = params.get("pad_val").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
+    Ok(Box::new(StringParser::new(sep1, sep2, key_index, pad_len, pad_val)))
+}
+
 impl CustomOp for StringParser {
     fn name(&self) -> &str {
         "StringParser"

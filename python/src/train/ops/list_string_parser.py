@@ -3,13 +3,23 @@ from __future__ import annotations
 """字符串列表切分提取算子：对 StrList 中每个字符串进行 split 并提取指定索引内容。"""
 from typing import Any
 
+from . import register_op
 
+
+@register_op("ListStringParser")
 class ListStringParser:
     """Parse list of strings, splitting each by a separator and extracting a specific index."""
 
     def __init__(self, sep: str, key_index: int) -> None:
         self.sep = sep
         self.key_index = key_index
+
+    @classmethod
+    def from_config(cls, params: dict) -> "ListStringParser":
+        return cls(
+            sep=str(params.get("sep", ",")),
+            key_index=int(params.get("key_index", 0)),
+        )
 
     def process(self, inputs: list[Any]) -> list[str]:
         str_list = inputs[0]

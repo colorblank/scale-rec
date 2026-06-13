@@ -3,7 +3,10 @@ from __future__ import annotations
 """字符串解析算子：结构化字符串的分词与填充。"""
 from typing import Any
 
+from . import register_op
 
+
+@register_op("StringParser")
 class StringParser:
     """Parse structured strings into token sequences."""
 
@@ -14,6 +17,16 @@ class StringParser:
         self.key_index = key_index
         self.pad_len = pad_len
         self.pad_val = pad_val
+
+    @classmethod
+    def from_config(cls, params: dict) -> "StringParser":
+        return cls(
+            sep1=str(params.get("sep1", "#")),
+            sep2=str(params.get("sep2", "|")),
+            key_index=int(params.get("key_index", 0)),
+            pad_len=int(params.get("pad_len", 0)),
+            pad_val=str(params.get("pad_val", "unknown")),
+        )
 
     def process(self, inputs: list[Any]) -> list[str]:
         """Parse string: split by sep1/sep2, extract key_index field, pad to pad_len."""

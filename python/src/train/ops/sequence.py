@@ -3,7 +3,10 @@ from __future__ import annotations
 """序列算子：填充/截断整数序列至固定长度。"""
 from typing import Any
 
+from . import register_op
 
+
+@register_op("SequenceOp")
 class SequenceOp:
     """Pad or truncate integer sequences to fixed length."""
 
@@ -11,6 +14,13 @@ class SequenceOp:
         """Initialize with target length and padding value."""
         self.max_len = max_len
         self.pad_val = pad_val
+
+    @classmethod
+    def from_config(cls, params: dict) -> "SequenceOp":
+        return cls(
+            max_len=int(params.get("max_len", 10)),
+            pad_val=int(params.get("pad_val", 0)),
+        )
 
     def process(self, inputs: list[Any]) -> list[int]:
         """Pad or truncate integer sequence to max_len."""

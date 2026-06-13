@@ -3,7 +3,10 @@ from __future__ import annotations
 """特征哈希算子：DJB2 多种子哈希，支持逐元素 list 哈希。"""
 from typing import Any, Union
 
+from . import register_op
 
+
+@register_op("FeatureHash")
 class FeatureHash:
     """Stateless feature hashing. List inputs → per-element hash → IntList."""
 
@@ -23,6 +26,17 @@ class FeatureHash:
         self.separator = separator
         scope_parts = [str(part) for part in (namespace, salt, version) if str(part)]
         self.hash_prefix = "::".join(scope_parts) + "::" if scope_parts else ""
+
+    @classmethod
+    def from_config(cls, params: dict) -> "FeatureHash":
+        return cls(
+            vocab_size=int(params.get("vocab_size", 1000)),
+            num_hashes=int(params.get("num_hashes", 1)),
+            separator=str(params.get("separator", "|")),
+            namespace=str(params.get("namespace", "")),
+            salt=str(params.get("salt", "")),
+            version=str(params.get("version", "")),
+        )
 
     # ── single-row ──
 

@@ -3,13 +3,20 @@ from __future__ import annotations
 """特征交叉算子：内积或笛卡尔积。"""
 from typing import Any, Union
 
+from . import register_op
 
+
+@register_op("CrossFeature")
 class CrossFeature:
     """Feature cross: inner product or cartesian product."""
 
     def __init__(self, cross_type: str) -> None:
         """Initialize with "inner_product" or "cartesian" mode."""
         self.cross_type = cross_type
+
+    @classmethod
+    def from_config(cls, params: dict) -> "CrossFeature":
+        return cls(str(params.get("cross_type", "cartesian")))
 
     def process(self, inputs: list[Any]) -> Union[float, list[str]]:
         """Compute cross: dot product (inner_product) or all-pairs concat (cartesian)."""

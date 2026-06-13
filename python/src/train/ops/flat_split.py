@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from . import register_op
 
+
+@register_op("FlatSplit")
 class FlatSplit:
     """将字符串列表中每个元素按分隔符切分，打平为定长列表。
 
@@ -18,6 +21,14 @@ class FlatSplit:
         self.sep = sep
         self.max_len = max_len
         self.pad_val = pad_val
+
+    @classmethod
+    def from_config(cls, params: dict) -> "FlatSplit":
+        return cls(
+            sep=str(params.get("sep", ",")),
+            max_len=int(params.get("max_len", 0)),
+            pad_val=str(params.get("pad_val", "")),
+        )
 
     def _normalize(self, parts: list[str]) -> list[str]:
         if self.max_len <= 0:

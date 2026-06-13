@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from . import register_op
 
+
+@register_op("StringConcat")
 class StringConcat:
     """将多路输入拼接为字符串。输入取值类型不限，输出为 str。
 
@@ -14,6 +17,10 @@ class StringConcat:
 
     def __init__(self, separator: str = "_") -> None:
         self.separator = separator
+
+    @classmethod
+    def from_config(cls, params: dict) -> "StringConcat":
+        return cls(str(params.get("separator", "_")))
 
     def process(self, inputs: list[Any]) -> str:
         return self.separator.join(str(v) if v is not None else "" for v in inputs)

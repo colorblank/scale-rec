@@ -11,22 +11,9 @@ logger = logging.getLogger(__name__)
 import torch
 
 from ..ops import (
-    Bucketing,
-    ConcatHash,
-    CrossFeature,
     CustomOp,
-    DictMapper,
-    ExpressionOp,
-    FeatureHash,
-    FlatSplit,
-    JsonExtractList,
-    ListOverlap,
-    ListStringParser,
-    ParsedFeatureHash,
-    SequenceOp,
-    Split,
-    StringConcat,
-    StringParser,
+    create_op,
+    OP_REGISTRY,
 )
 from .config import (
     DType,
@@ -245,94 +232,7 @@ class FeatureDag:
 
     @staticmethod
     def _create_op(def_: OperatorDef) -> CustomOp:
-        p, op_type = def_.params, def_.op_type
-        if op_type == "DictMapper":
-            mapping = {str(k): int(v) for k, v in p.get("mapping", {}).items()}
-            return DictMapper(mapping, int(p.get("default_idx", 0)))
-        elif op_type == "Bucketing":
-            return Bucketing([float(x) for x in p.get("boundaries", [])])
-        elif op_type == "StringParser":
-            return StringParser(
-                str(p.get("sep1", "#")),
-                str(p.get("sep2", "|")),
-                int(p.get("key_index", 0)),
-                int(p.get("pad_len", 0)),
-                str(p.get("pad_val", "unknown")),
-            )
-        elif op_type == "JsonExtractList":
-            return JsonExtractList(
-                p.get("key"),
-                int(p.get("pad_len", 0)),
-                str(p.get("pad_val", "")),
-            )
-        elif op_type == "ListStringParser":
-            return ListStringParser(
-                str(p.get("sep", ",")),
-                int(p.get("key_index", 0)),
-            )
-        elif op_type == "CrossFeature":
-            return CrossFeature(str(p.get("cross_type", "cartesian")))
-        elif op_type == "ExpressionOp":
-            script = p.get("script")
-            if not script:
-                raise ValueError("Missing 'script' for ExpressionOp")
-            return ExpressionOp(str(script))
-        elif op_type == "SequenceOp":
-            return SequenceOp(int(p.get("max_len", 10)), int(p.get("pad_val", 0)))
-        elif op_type == "Split":
-            return Split(
-                str(p.get("sep", "|")),
-                int(p.get("max_len", 0)),
-                str(p.get("pad_val", "")),
-            )
-        elif op_type == "FlatSplit":
-            return FlatSplit(
-                str(p.get("sep", ",")),
-                int(p.get("max_len", 0)),
-                str(p.get("pad_val", "")),
-            )
-        elif op_type == "ListOverlap":
-            return ListOverlap()
-        elif op_type == "StringConcat":
-            return StringConcat(str(p.get("separator", "_")))
-        elif op_type == "FeatureHash":
-            return FeatureHash(
-                vocab_size=int(p.get("vocab_size", 1000)),
-                num_hashes=int(p.get("num_hashes", 1)),
-                separator=str(p.get("separator", "|")),
-                namespace=str(p.get("namespace", "")),
-                salt=str(p.get("salt", "")),
-                version=str(p.get("version", "")),
-            )
-        elif op_type == "ParsedFeatureHash":
-            return ParsedFeatureHash(
-                vocab_size=int(p.get("vocab_size", 1000)),
-                parse_mode=str(p.get("parse_mode", "json")),
-                num_hashes=int(p.get("num_hashes", 1)),
-                separator=str(p.get("separator", "|")),
-                namespace=str(p.get("namespace", "")),
-                salt=str(p.get("salt", "")),
-                version=str(p.get("version", "")),
-                key=p.get("key"),
-                sep1=str(p.get("sep1", "|")),
-                sep2=str(p.get("sep2", "#")),
-                key_index=int(p.get("key_index", 0)),
-                sep=str(p.get("sep", ",")),
-                max_len=int(p.get("max_len", 0)),
-                pad_len=int(p.get("pad_len", 0)),
-                pad_val=str(p.get("pad_val", "")),
-            )
-        elif op_type == "ConcatHash":
-            return ConcatHash(
-                vocab_size=int(p.get("vocab_size", 1000)),
-                separator=str(p.get("separator", "_")),
-                num_hashes=int(p.get("num_hashes", 1)),
-                namespace=str(p.get("namespace", "")),
-                salt=str(p.get("salt", "")),
-                version=str(p.get("version", "")),
-            )
-        else:
-            raise ValueError(f"Unsupported operator: {op_type}")
+        return create_op(def_.op_type, def_.params)
 
     def embeddable_features(self) -> list[tuple[str, EmbedConfig]]:
         result: list[tuple[str, EmbedConfig]] = []

@@ -13,6 +13,12 @@ pub struct PluginOp {
     op_name: String,
 }
 
+pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
+    let path = params.get("path").and_then(|v| v.as_str()).ok_or("Missing path for PluginOp")?;
+    let op_name = params.get("op_name").and_then(|v| v.as_str()).unwrap_or("custom_plugin").to_string();
+    Ok(Box::new(PluginOp::new(path, op_name)?))
+}
+
 impl PluginOp {
     /// 加载动态库并创建插件算子。
     pub fn new(path: &str, op_name: String) -> Result<Self, String> {

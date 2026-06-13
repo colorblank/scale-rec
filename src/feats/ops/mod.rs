@@ -32,6 +32,8 @@ pub mod split;
 pub mod string_concat;
 /// 结构化字符串解析算子。
 pub mod string_parser;
+/// 算子注册中心。
+pub mod registry;
 
 /// Bucketing 算子重新导出。
 pub use bucketing::Bucketing;

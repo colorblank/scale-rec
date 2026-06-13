@@ -50,6 +50,10 @@ impl CustomOp for ListOverlap {
     }
 }
 
+pub fn create(_params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
+    Ok(Box::new(ListOverlap::new()))
+}
+
 fn strs(v: &Fv) -> HashSet<&str> {
     match v {
         Fv::StrList(l) => l
