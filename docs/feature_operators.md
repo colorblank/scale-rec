@@ -1,6 +1,6 @@
 # 特征预处理系统文档
 
-本文档完整描述 scale-rec 特征预处理系统的架构、配置格式、14 个基础算子及 2 个融合算子及其执行模式，面向算法工程师和系统开发者。
+本文档完整描述 scale-rec 特征预处理系统的架构、配置格式、16 个基础算子及其执行模式，面向算法工程师和系统开发者。
 
 ---
 
@@ -233,7 +233,7 @@ DAG 在初始化阶段根据 SourceDef.dtype 生成默认值及类型映射：
 
 ---
 
-## 4. 全部 14 个算子
+## 4. 全部 16 个算子
 
 ### 4.1 Bucketing — 数值分桶
 
@@ -1199,9 +1199,22 @@ RQ-VAE 语义 ID 序列的完整处理链路：两级解析 → 打平 → 映�
 
 ## 8. 扩展新算子
 
-1. **Rust**：在 `src/feats/ops/` 下新建文件，实现 `CustomOp` trait（`name()` + `process()` + 可选 `process_batch()`）
-2. **注册**：在 `src/feats/ops/mod.rs` 中添加 `pub mod` + `pub use`，在 `src/feats/dag.rs` 的 `create_op()` 中添加 match 分支
-3. **Python**：在 `python/src/train/ops/` 下新建文件，实现 `process()` + `process_batch()` 方法
-4. **注册 Python**：在 `ops/__init__.py` 中导出，在 `dag.py` 的 `_create_node()` 中添加分支
-5. **测试**：Rust 侧 `#[cfg(test)]` 模块，Python 侧 `tests/test_ops.py`
-6. **文档**：更新本文档的算子列表和速查表
+现在使用 **registry 模式**，新增算子无需修改 DAG 核心代码：
+
+1. **Rust**：
+   - 在 `src/feats/ops/<name>.rs` 下新建文件，实现 `CustomOp` trait（`name()` + `process()` + 可选 `process_batch()`）
+   - 实现 `pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String>` 工厂函数
+   - 在 `src/feats/ops/registry.rs` 的 `OP_REGISTRY` 中插入一行
+
+2. **Python**：
+   - 在 `python/src/train/ops/<name>.py` 下新建文件，实现 `process()` + `process_batch()` 方法
+   - 添加 `@register_op("<OpType>")` 装饰器 + `@classmethod from_config(params) -> Self`
+
+3. **验证**：
+   - Rust：`cargo test`（`all_16_ops_are_registered` 测试自动验证注册完整性）
+   - Python：`PYTHONPATH=python/src uv run --directory python pytest tests/ -v`
+   - 双端一致性：`PYTHONPATH=python/src uv run --project python python -m scale_rec_demo.verify_all`
+
+4. **文档**：更新本文档的算子列表和速查表
+
+> **注意**：不再需要修改 `dag.rs` 或 `dag.py` 的 `create_op` 方法。

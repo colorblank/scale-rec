@@ -62,7 +62,7 @@ Rust HTTP 排序推理服务
 教程负责给出推荐排序系统的工程路径；参考文档负责查细节：
 
 - [训练手册](../TRAINING_GUIDE.md)：训练命令、数据参数、保存发布和服务加载。
-- [特征算子](../feature_operators.md)：14 个特征算子的参数、输入输出和边界行为。
+- [特征算子](../feature_operators.md)：16 个特征算子的参数、输入输出和边界行为。
 - [HTTP API](../API.md)：HTTP 请求、响应、错误码和批量推理格式。
 - [开发环境](../DEVELOPMENT.md)：本地测试、格式化和端到端验证命令。
 - [Docker 打包](../../docker/README.md)：容器构建和模型挂载方式。

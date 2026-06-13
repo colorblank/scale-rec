@@ -90,9 +90,9 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.verify_all
 
 Both sides parse the same `examples/feature_config_discover.yaml` which defines:
 - **sources**: raw input features (NO embed — all embedding through operators)
-- **operators**: a DAG of 14 operator types
+- **operators**: a DAG of 16 operator types
 
-全部 14 个算子：`Bucketing`, `DictMapper`, `StringParser`, `JsonExtractList`, `ListStringParser`, `Split`, `FlatSplit`, `ExpressionOp`, `CrossFeature`, `ListOverlap`, `SequenceOp`, `StringConcat`, `FeatureHash`, `PluginOp`。
+全部 16 个算子：`Bucketing`, `DictMapper`, `StringParser`, `JsonExtractList`, `ListStringParser`, `Split`, `FlatSplit`, `ExpressionOp`, `CrossFeature`, `ListOverlap`, `SequenceOp`, `StringConcat`, `FeatureHash`, `PluginOp`, `ParsedFeatureHash`, `ConcatHash`。
 
 **配置原则**：
 - 默认使用 FeatureHash（无状态哈希），DictMapper 仅用于低基数枚举
@@ -100,6 +100,20 @@ Both sides parse the same `examples/feature_config_discover.yaml` which defines:
 - DAG 构建时自动校验 source 消费率 and 输出利用率
 
 `FlowConfig` (Rust: `src/feats/config.rs`, Python: `python/src/train/config.py`) deserializes the YAML. `FeatureDag` (Rust: `src/feats/dag.rs`, Python: `python/src/train/dag.py`) builds the DAG with topological sort and executes single samples via `execute(raw_inputs) -> FeatureResult`.
+
+### Operator registration
+
+Both Rust and Python use a **registry pattern** instead of a central match statement:
+
+| Language | Registry | Factory |
+|---|---|---|
+| Rust | `src/feats/ops/registry.rs` — `OP_REGISTRY: LazyLock<HashMap<&str, OpFactory>>` | Each operator exports `pub fn create(params) -> Result<Box<dyn CustomOp>>` |
+| Python | `python/src/train/ops/__init__.py` — `OP_REGISTRY: dict[str, type]` | Each operator has `@classmethod from_config(params) -> Self` decorated with `@register_op("OpType")` |
+
+To add a new operator:
+1. **Rust**: implement `CustomOp` in `src/feats/ops/<name>.rs`, export `pub fn create()`, register in `registry.rs`
+2. **Python**: implement class in `python/src/train/ops/<name>.py`, add `@register_op` + `from_config`
+3. **No changes** needed in `dag.rs` or `dag.py`.
 
 `FeatureDag.embeddable_features()` returns `[(name, EmbedConfig)]` — these are the only features that need embedding. All models get their feature specs from this method; ModelConfig does NOT duplicate feature definitions.
 

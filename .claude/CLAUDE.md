@@ -158,9 +158,9 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python python/demo/verify_all.py
 
 Both sides parse the same `examples/feature_config.yaml` which defines:
 - **sources**: raw input features (NO embed — all embedding through operators)
-- **operators**: a DAG of 14 operator types
+- **operators**: a DAG of 16 operator types
 
-全部 14 个算子：`Bucketing`, `DictMapper`, `StringParser`, `JsonExtractList`, `ListStringParser`, `Split`, `FlatSplit`, `ExpressionOp`, `CrossFeature`, `ListOverlap`, `SequenceOp`, `StringConcat`, `FeatureHash`, `PluginOp`。
+全部 16 个算子：`Bucketing`, `DictMapper`, `StringParser`, `JsonExtractList`, `ListStringParser`, `Split`, `FlatSplit`, `ExpressionOp`, `CrossFeature`, `ListOverlap`, `SequenceOp`, `StringConcat`, `FeatureHash`, `PluginOp`, `ParsedFeatureHash`, `ConcatHash`。
 
 **配置原则**：
 - 默认使用 FeatureHash（无状态哈希），DictMapper 仅用于低基数枚举

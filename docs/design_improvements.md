@@ -195,7 +195,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 
 - `FeatureDag` 同时承担 DAG 构建、schema 推导、验证、单样本执行、批量执行、tensor 预处理和调试支持，Interface 接近 Implementation 复杂度。
 - `Trainer` 同时承担训练循环、数据迭代、评估、EMA、checkpoint、resume、artifact、日志和 prefetch，Locality 较弱。
-- Rust operator params 解析散落在 `FeatureDag` 内部，新增算子时会同时修改配置解释、schema 推导、执行和测试多个位置。
+- ~~Rust operator params 解析散落在 `FeatureDag` 内部~~ ✅ 已重构为 registry 模式，每个算子自包含 `create()` 工厂函数
 - Python/Rust operator 双端实现仍依赖人工同步，缺少一个统一的 operator contract 测试矩阵。
 
 改进方向：
@@ -337,8 +337,8 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 
 1. 拆分 `FeatureDag`：`DagBuilder` + `DagExecutor` + `DagPreprocessor`，先固化测试 seam 再拆 Implementation。
 2. 拆分 `Trainer`：`CheckpointManager` + `ResumeState` + `TrainingLoop` + `EvaluatorAdapter`。
-3. 为所有公共 API 补充 rustdoc/docstring，并在 CI 中逐步启用 missing docs 检查。
-4. 标准化 operator 注册和 typed params，降低新增算子的 Rust/Python 双端维护成本。
+3. ~~为所有公共 API 补充 rustdoc/docstring，并在 CI 中逐步启用 missing docs 检查。~~ ✅ 已完成，`#![warn(missing_docs)]` 已启用。
+4. ~~标准化 operator 注册和 typed params，降低新增算子的 Rust/Python 双端维护成本。~~ ✅ 已完成，双端均使用 registry 模式。
 5. 为模型 state_dict key 对齐建立自动化测试或导出检查脚本。
 6. 建立模型发布、回滚、灰度和兼容检查流程，把 runtime alias/routing 接入持久化控制面。
 7. 将训练侧 feature quality 写入 manifest，并在服务端加载后可查询。
