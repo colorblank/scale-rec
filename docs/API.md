@@ -12,6 +12,15 @@ cargo run --bin server --release -- \
   --port 8080
 ```
 
+服务默认启用基础过载保护：请求体上限 `8 MiB`、全局 `1000 req/s` 限流、最多 `512` 个并发请求、单请求 `30s` 超时。可通过环境变量或 CLI 调整：
+
+| 配置 | 环境变量 | CLI | 默认值 |
+|---|---|---|---:|
+| 请求体上限 | `SCALE_REC_MAX_BODY_BYTES` | `--max-body-bytes` | `8388608` |
+| 全局限流 | `SCALE_REC_RATE_LIMIT_PER_SECOND` | `--rate-limit-per-second` | `1000` |
+| 并发请求上限 | `SCALE_REC_MAX_CONCURRENCY` | `--max-concurrency` | `512` |
+| 请求超时 | `SCALE_REC_REQUEST_TIMEOUT_SECS` | `--request-timeout-secs` | `30` |
+
 只加载指定模型或版本：
 
 ```bash

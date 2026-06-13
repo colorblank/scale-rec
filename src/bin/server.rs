@@ -1,17 +1,24 @@
 //! HTTP 推理服务：加载特征配置和模型权重，提供 REST API。
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Context, Result};
 use axum::{
+    body::Body,
     extract::DefaultBodyLimit,
-    http::{header, HeaderValue, Method},
+    http::{header, HeaderValue, Method, Request, StatusCode},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
     Router,
 };
 use scale_rec::server::manifest::find_manifests;
 use scale_rec::server::registry::ModelRegistry;
 use scale_rec::server::routes;
+use tokio::sync::Mutex;
+use tower::limit::ConcurrencyLimitLayer;
 use tower_http::cors::CorsLayer;
+use tower_http::timeout::TimeoutLayer;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
@@ -24,6 +31,9 @@ struct ServerArgs {
     blocking_threads: Option<usize>,
     allowed_origins: Vec<String>,
     max_body_bytes: usize,
+    rate_limit_per_second: u64,
+    max_concurrency: usize,
+    request_timeout_secs: u64,
 }
 
 const DEFAULT_ALLOWED_ORIGINS: &[&str] = &[
@@ -33,6 +43,32 @@ const DEFAULT_ALLOWED_ORIGINS: &[&str] = &[
     "http://127.0.0.1:5173",
 ];
 const DEFAULT_MAX_BODY_BYTES: usize = 8 * 1024 * 1024;
+const DEFAULT_RATE_LIMIT_PER_SECOND: u64 = 1000;
+const DEFAULT_MAX_CONCURRENCY: usize = 512;
+const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 30;
+
+#[derive(Clone)]
+struct GlobalRateLimiter {
+    limit_per_second: u64,
+    state: Arc<Mutex<RateLimitState>>,
+}
+
+struct RateLimitState {
+    window_start: Instant,
+    count: u64,
+}
+
+impl GlobalRateLimiter {
+    fn new(limit_per_second: u64) -> Self {
+        Self {
+            limit_per_second,
+            state: Arc::new(Mutex::new(RateLimitState {
+                window_start: Instant::now(),
+                count: 0,
+            })),
+        }
+    }
+}
 
 fn main() -> Result<()> {
     let args = parse_args()?;
@@ -68,6 +104,18 @@ fn parse_args() -> Result<ServerArgs> {
         .ok()
         .and_then(|raw| raw.parse().ok())
         .unwrap_or(DEFAULT_MAX_BODY_BYTES);
+    let mut rate_limit_per_second: u64 = std::env::var("SCALE_REC_RATE_LIMIT_PER_SECOND")
+        .ok()
+        .and_then(|raw| raw.parse().ok())
+        .unwrap_or(DEFAULT_RATE_LIMIT_PER_SECOND);
+    let mut max_concurrency: usize = std::env::var("SCALE_REC_MAX_CONCURRENCY")
+        .ok()
+        .and_then(|raw| raw.parse().ok())
+        .unwrap_or(DEFAULT_MAX_CONCURRENCY);
+    let mut request_timeout_secs: u64 = std::env::var("SCALE_REC_REQUEST_TIMEOUT_SECS")
+        .ok()
+        .and_then(|raw| raw.parse().ok())
+        .unwrap_or(DEFAULT_REQUEST_TIMEOUT_SECS);
 
     let mut i = 1;
     while i < args.len() {
@@ -130,6 +178,33 @@ fn parse_args() -> Result<ServerArgs> {
                     .parse()
                     .with_context(|| format!("invalid --max-body-bytes '{}'", args[i]))?;
             }
+            "--rate-limit-per-second" => {
+                i += 1;
+                if i >= args.len() {
+                    bail!("--rate-limit-per-second requires a value");
+                }
+                rate_limit_per_second = args[i]
+                    .parse()
+                    .with_context(|| format!("invalid --rate-limit-per-second '{}'", args[i]))?;
+            }
+            "--max-concurrency" => {
+                i += 1;
+                if i >= args.len() {
+                    bail!("--max-concurrency requires a value");
+                }
+                max_concurrency = args[i]
+                    .parse()
+                    .with_context(|| format!("invalid --max-concurrency '{}'", args[i]))?;
+            }
+            "--request-timeout-secs" => {
+                i += 1;
+                if i >= args.len() {
+                    bail!("--request-timeout-secs requires a value");
+                }
+                request_timeout_secs = args[i]
+                    .parse()
+                    .with_context(|| format!("invalid --request-timeout-secs '{}'", args[i]))?;
+            }
             _ => {
                 bail!("unknown arg: {}", args[i]);
             }
@@ -144,6 +219,15 @@ fn parse_args() -> Result<ServerArgs> {
     }
     if max_body_bytes == 0 {
         bail!("--max-body-bytes must be greater than zero");
+    }
+    if rate_limit_per_second == 0 {
+        bail!("--rate-limit-per-second must be greater than zero");
+    }
+    if max_concurrency == 0 {
+        bail!("--max-concurrency must be greater than zero");
+    }
+    if request_timeout_secs == 0 {
+        bail!("--request-timeout-secs must be greater than zero");
     }
     let resolved_model_dir = model_dir
         .or_else(|| {
@@ -162,6 +246,9 @@ fn parse_args() -> Result<ServerArgs> {
         blocking_threads,
         allowed_origins,
         max_body_bytes,
+        rate_limit_per_second,
+        max_concurrency,
+        request_timeout_secs,
     })
 }
 
@@ -192,6 +279,9 @@ async fn run(args: ServerArgs) -> Result<()> {
     info!("blocking threads: {:?}", args.blocking_threads);
     info!("allowed origins: {:?}", args.allowed_origins);
     info!("max body bytes: {}", args.max_body_bytes);
+    info!("rate limit per second: {}", args.rate_limit_per_second);
+    info!("max concurrency: {}", args.max_concurrency);
+    info!("request timeout seconds: {}", args.request_timeout_secs);
 
     let registry = Arc::new(match &args.feature_config_path {
         Some(feature_config_path) => ModelRegistry::new(feature_config_path, &args.model_dir)
@@ -244,6 +334,15 @@ async fn run(args: ServerArgs) -> Result<()> {
 
     let app: Router = routes::router(registry)
         .layer(DefaultBodyLimit::max(args.max_body_bytes))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(args.request_timeout_secs),
+        ))
+        .layer(ConcurrencyLimitLayer::new(args.max_concurrency))
+        .layer(middleware::from_fn_with_state(
+            GlobalRateLimiter::new(args.rate_limit_per_second),
+            global_rate_limit,
+        ))
         .layer(build_cors_layer(&args.allowed_origins)?);
 
     let addr = format!("0.0.0.0:{}", args.port);
@@ -278,6 +377,29 @@ fn build_cors_layer(origins: &[String]) -> Result<CorsLayer> {
         .allow_origin(allowed_origins)
         .allow_methods([Method::GET, Method::POST])
         .allow_headers([header::CONTENT_TYPE]))
+}
+
+async fn global_rate_limit(
+    axum::extract::State(limiter): axum::extract::State<GlobalRateLimiter>,
+    req: Request<Body>,
+    next: Next,
+) -> Response {
+    let mut state = limiter.state.lock().await;
+    if state.window_start.elapsed() >= Duration::from_secs(1) {
+        state.window_start = Instant::now();
+        state.count = 0;
+    }
+    if state.count >= limiter.limit_per_second {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            "rate limit exceeded; retry later",
+        )
+            .into_response();
+    }
+    state.count += 1;
+    drop(state);
+
+    next.run(req).await
 }
 
 fn load_model_path(registry: &ModelRegistry, model_path: &Path) {

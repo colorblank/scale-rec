@@ -1,18 +1,14 @@
 //! scale-rec 集成示例：特征预处理 + UniMixer 推理。
 //! scale-rec integration example
-mod feats;
-mod layers;
-mod models;
-
 use candle_core::{DType, Device, Result, Tensor};
 use candle_nn::{VarBuilder, VarMap};
-use feats::config::FlowConfig;
-use feats::dag::{FeatureDag, FeatureValue};
-use feats::ops::Fv;
-use layers::embedding::FeatureSpec;
-use layers::towers::{Activation, MultiTaskConfig, TowerConfig};
-use models::unimixer::model::UniMixerModel;
-use models::unimixer::tokenizer::FeatureTokenizer;
+use scale_rec::feats::config::FlowConfig;
+use scale_rec::feats::dag::{FeatureDag, FeatureValue};
+use scale_rec::feats::ops::Fv;
+use scale_rec::layers::embedding::FeatureSpec;
+use scale_rec::layers::towers::{Activation, MultiTaskConfig, TowerConfig};
+use scale_rec::models::unimixer::model::UniMixerModel;
+use scale_rec::models::unimixer::tokenizer::FeatureTokenizer;
 use std::collections::HashMap;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
