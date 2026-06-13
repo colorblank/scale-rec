@@ -1,23 +1,37 @@
 # syntax=docker/dockerfile:1.7
 
-ARG RUST_IMAGE=rust:1.89-bookworm
+ARG ONEAPI_IMAGE=intel/oneapi-basekit:latest
+ARG RUNTIME_IMAGE=debian:bookworm-slim
+ARG DEFAULT_PORT=8080
 
-FROM ${RUST_IMAGE} AS builder
+FROM ${ONEAPI_IMAGE} AS builder
 
 ARG CANDLE_FEATURES=cpu-mkl
+ARG RUST_VERSION=1.89.0
 
+ARG DEBIAN_FRONTEND=noninteractive
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true \
+    PATH=/root/.cargo/bin:${PATH} \
     RUST_BACKTRACE=1
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     ca-certificates \
+    clang \
+    cmake \
+    curl \
     git \
     libssl-dev \
     pkg-config \
   && rm -rf /var/lib/apt/lists/*
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+      | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"; \
+    rustup component add rustfmt clippy
 
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
@@ -26,25 +40,42 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/target \
     set -eux; \
-    cargo build --release --locked --bin server --features "${CANDLE_FEATURES}"
+    . /opt/intel/oneapi/setvars.sh; \
+    cargo build --release --locked --bin server --features "${CANDLE_FEATURES}"; \
+    install -Dm755 /app/target/release/server /usr/local/bin/scale-rec-server; \
+    mkdir -p /opt/scale-rec-libs; \
+    ldd /usr/local/bin/scale-rec-server; \
+    ldd /usr/local/bin/scale-rec-server \
+      | awk '/=> \/.*(mkl|iomp|tbb)/ { print $3 } /^\/.*(mkl|iomp|tbb)/ { print $1 }' \
+      | sort -u \
+      | xargs -r -I '{}' cp -v '{}' /opt/scale-rec-libs/
 
-FROM debian:bookworm-slim AS runtime
+FROM ${RUNTIME_IMAGE} AS runtime
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG DEFAULT_PORT=8080
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    libgomp1 \
     libssl3 \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY --from=builder /app/target/release/server /usr/local/bin/scale-rec-server
+COPY --from=builder /usr/local/bin/scale-rec-server /usr/local/bin/scale-rec-server
+COPY --from=builder /opt/scale-rec-libs/ /usr/local/lib/scale-rec/
 COPY docker/entrypoint.sh /usr/local/bin/scale-rec-entrypoint
 
 RUN chmod +x /usr/local/bin/scale-rec-entrypoint
 
 ENV MODEL_DIR=/models \
-    PORT=8080
+    PORT=${DEFAULT_PORT} \
+    RUST_LOG=info \
+    LD_LIBRARY_PATH=/usr/local/lib/scale-rec \
+    OMP_NUM_THREADS=8 \
+    MKL_NUM_THREADS=8
 
-EXPOSE 8080
+EXPOSE ${DEFAULT_PORT}
 
 ENTRYPOINT ["/usr/local/bin/scale-rec-entrypoint"]

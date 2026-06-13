@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 ARG RUST_IMAGE=rust:1.89-bookworm
+ARG DEFAULT_PORT=8080
 
 FROM ${RUST_IMAGE} AS builder
 
@@ -34,6 +35,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 
 FROM debian:bookworm-slim AS runtime
 
+ARG DEFAULT_PORT=8080
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libssl3 \
@@ -47,8 +50,8 @@ COPY docker/entrypoint.sh /usr/local/bin/scale-rec-entrypoint
 RUN chmod +x /usr/local/bin/scale-rec-entrypoint
 
 ENV MODEL_DIR=/models \
-    PORT=8080
+    PORT=${DEFAULT_PORT}
 
-EXPOSE 8080
+EXPOSE ${DEFAULT_PORT}
 
 ENTRYPOINT ["/usr/local/bin/scale-rec-entrypoint"]

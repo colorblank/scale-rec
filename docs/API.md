@@ -16,6 +16,7 @@ cargo run --bin server --release -- \
 
 | 配置 | 环境变量 | CLI | 默认值 |
 |---|---|---|---:|
+| 监听端口 | `SCALE_REC_PORT` | `--port` | `8080` |
 | 请求体上限 | `SCALE_REC_MAX_BODY_BYTES` | `--max-body-bytes` | `8388608` |
 | 全局限流 | `SCALE_REC_RATE_LIMIT_PER_SECOND` | `--rate-limit-per-second` | `1000` |
 | 并发请求上限 | `SCALE_REC_MAX_CONCURRENCY` | `--max-concurrency` | `512` |

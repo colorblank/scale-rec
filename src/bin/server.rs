@@ -93,7 +93,10 @@ fn parse_args() -> Result<ServerArgs> {
     let mut model_dir: Option<PathBuf> = None;
     let mut model_paths: Vec<PathBuf> = Vec::new();
     let mut feature_config_path: Option<PathBuf> = None;
-    let mut port: u16 = 8080;
+    let mut port: u16 = std::env::var("SCALE_REC_PORT")
+        .ok()
+        .and_then(|raw| raw.parse().ok())
+        .unwrap_or(8080);
     let mut worker_threads: Option<usize> = None;
     let mut blocking_threads: Option<usize> = None;
     let mut allowed_origins: Vec<String> = std::env::var("SCALE_REC_ALLOWED_ORIGINS")

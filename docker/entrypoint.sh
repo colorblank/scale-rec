@@ -5,9 +5,11 @@ if [ "$#" -gt 0 ]; then
   exec "$@"
 fi
 
+port="${PORT:-${SCALE_REC_PORT:-8080}}"
+
 cmd=(
   "${SERVER_BIN:-/usr/local/bin/scale-rec-server}"
-  --port "${PORT:-8080}"
+  --port "${port}"
 )
 
 if [ -n "${MODEL_PATH:-}" ]; then

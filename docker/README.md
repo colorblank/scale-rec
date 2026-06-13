@@ -56,6 +56,12 @@ MKL 版本使用单独的 `docker/Dockerfile.mkl`，默认会走 `cpu-mkl` 编�
 
 如果要推送到镜像仓库，用 `--push` 替换 `--load`。
 
+如需修改镜像默认监听端口和 `EXPOSE` 元数据，可在构建时设置：
+
+```bash
+./docker/build.sh --default-port 9090 --load
+```
+
 ## 运行
 
 容器默认通过环境变量启动服务：
@@ -63,7 +69,8 @@ MKL 版本使用单独的 `docker/Dockerfile.mkl`，默认会走 `cpu-mkl` 编�
 - `MODEL_DIR`：批量模型目录，默认 `/models`。未设置 `MODEL_PATH` 时，服务会扫描这里的 serving manifest
 - `MODEL_PATH`：显式模型路径，支持 serving manifest、目录或旧 `.safetensors`；多个路径用英文逗号分隔。设置后优先于 `MODEL_DIR`
 - `FEATURE_CONFIG`：可选，只在加载无 serving manifest 的旧 `.safetensors` 产物时作为 feature config fallback
-- `PORT`：监听端口，默认 `8080`
+- `PORT`：监听端口，默认使用镜像构建时的 `DEFAULT_PORT`，未覆盖时为 `8080`
+- `SCALE_REC_PORT`：服务端监听端口配置；容器入口会在未设置 `PORT` 时读取它
 - `WORKER_THREADS`：Tokio worker 线程数，可选
 - `BLOCKING_THREADS`：Tokio blocking 线程数，可选
 
@@ -74,6 +81,29 @@ MKL 版本使用单独的 `docker/Dockerfile.mkl`，默认会走 `cpu-mkl` 编�
 ```bash
 docker run --rm \
   -p 8080:8080 \
+  -e MODEL_DIR=/models \
+  -v "$PWD/models:/models:ro" \
+  scale-rec-server:default-linux-amd64
+```
+
+### 修改端口
+
+修改容器内监听端口时，需要同时设置端口环境变量和端口映射：
+
+```bash
+docker run --rm \
+  -p 9090:9090 \
+  -e PORT=9090 \
+  -e MODEL_DIR=/models \
+  -v "$PWD/models:/models:ro" \
+  scale-rec-server:default-linux-amd64
+```
+
+如果只想改宿主机端口，容器内仍监听默认 `8080` 即可：
+
+```bash
+docker run --rm \
+  -p 9090:8080 \
   -e MODEL_DIR=/models \
   -v "$PWD/models:/models:ro" \
   scale-rec-server:default-linux-amd64

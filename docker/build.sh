@@ -7,13 +7,14 @@ tag=""
 image_name="${IMAGE_NAME:-scale-rec-server}"
 dockerfile="${DOCKERFILE:-docker/Dockerfile}"
 context="${CONTEXT:-.}"
+default_port="${DEFAULT_PORT:-8080}"
 build_mode="load"
 extra_args=()
 
 usage() {
   cat <<'EOF'
 Usage:
-  docker/build.sh [--platform linux/amd64] [--backend default|cpu-mkl] [--tag TAG] [--push|--load]
+  docker/build.sh [--platform linux/amd64] [--backend default|cpu-mkl] [--tag TAG] [--default-port 8080] [--push|--load]
 
 Environment overrides:
   PLATFORM      Build platform, default: linux/amd64
@@ -21,6 +22,7 @@ Environment overrides:
   IMAGE_NAME    Base image name, default: scale-rec-server
   DOCKERFILE    Dockerfile path, default: docker/Dockerfile
   CONTEXT       Build context, default: .
+  DEFAULT_PORT  Image default port, default: 8080
 EOF
 }
 
@@ -48,6 +50,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --context)
       context="$2"
+      shift 2
+      ;;
+    --default-port)
+      default_port="$2"
       shift 2
       ;;
     --push)
@@ -103,6 +109,7 @@ build_args=(
   -f "$dockerfile"
   -t "$tag"
   --build-arg "CANDLE_FEATURES=$candle_features"
+  --build-arg "DEFAULT_PORT=$default_port"
 )
 
 if [ "$build_mode" = "push" ]; then
