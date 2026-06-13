@@ -25,7 +25,7 @@ notify = { version = "7", default-features = false, features = ["macos_kqueue"] 
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # benchmark
-reqwest = { version = "0.12", features = ["json", "blocking"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "blocking", "rustls-tls"] }
 clap = { version = "4", features = ["derive"] }
 rand = "0.8"
 rayon = "1.10"

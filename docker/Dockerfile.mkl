@@ -8,6 +8,7 @@ FROM ${ONEAPI_IMAGE} AS builder
 
 ARG CANDLE_FEATURES=cpu-mkl
 ARG RUST_VERSION=1.89.0
+ARG INSTALL_BUILD_DEPS=0
 
 ARG DEBIAN_FRONTEND=noninteractive
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true \
@@ -18,7 +19,8 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN if [ "${INSTALL_BUILD_DEPS}" = "1" ]; then \
+    apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     ca-certificates \
     clang \
@@ -27,7 +29,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     libssl-dev \
     pkg-config \
-  && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/*; \
+  fi
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
       | sh -s -- -y --profile minimal --default-toolchain "${RUST_VERSION}"; \
@@ -39,8 +42,8 @@ COPY src ./src
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/target \
-    set -eux; \
-    . /opt/intel/oneapi/setvars.sh; \
+    set -ex; \
+    . /opt/intel/oneapi/setvars.sh --force; \
     cargo build --release --locked --bin server --features "${CANDLE_FEATURES}"; \
     install -Dm755 /app/target/release/server /usr/local/bin/scale-rec-server; \
     mkdir -p /opt/scale-rec-libs; \

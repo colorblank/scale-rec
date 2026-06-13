@@ -67,6 +67,10 @@ pub struct ModelManifest {
     pub schema_version: u32,
     pub model_id: String,
     pub model_version: String,
+    #[serde(default)]
+    pub run_version: Option<String>,
+    #[serde(default)]
+    pub published_version: Option<String>,
     pub model_type: String,
     pub code_commit: Option<String>,
     pub weights_file: String,
@@ -83,6 +87,30 @@ pub struct ModelManifest {
     pub label_col_map: HashMap<String, String>,
     #[serde(default)]
     pub metrics: HashMap<String, f64>,
+    #[serde(default)]
+    pub best_version: Option<String>,
+    #[serde(default)]
+    pub best_epoch: Option<u32>,
+    #[serde(default)]
+    pub best_step: Option<u64>,
+    #[serde(default)]
+    pub best_score: Option<f64>,
+    #[serde(default)]
+    pub latest_version: Option<String>,
+    #[serde(default)]
+    pub latest_epoch: Option<u32>,
+    #[serde(default)]
+    pub latest_step: Option<u64>,
+    #[serde(default)]
+    pub checkpoint_dir: Option<String>,
+    #[serde(default)]
+    pub run_manifest_file: Option<String>,
+    #[serde(default)]
+    pub published_weights_file: Option<String>,
+    #[serde(default)]
+    pub best_weights_file: Option<String>,
+    #[serde(default)]
+    pub latest_weights_file: Option<String>,
 }
 
 impl ModelManifest {
@@ -93,7 +121,8 @@ impl ModelManifest {
     }
 
     pub fn resolve_from(&self, manifest_path: &Path, rel: &str) -> PathBuf {
-        let p = PathBuf::from(rel);
+        let normalized = rel.replace('\\', "/");
+        let p = PathBuf::from(normalized);
         if p.is_absolute() {
             p
         } else {
