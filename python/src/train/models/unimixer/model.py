@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 """UniMixer：Full model。"""
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -22,7 +21,7 @@ class UniMixerModel(nn.Module):
         token_dim: int,
         num_tokens: int,
         num_blocks: int,
-        block_size_opt: Optional[int],
+        block_size_opt: int | None,
         use_lite: bool,
         hidden_factor: float,
         num_basis: int,
@@ -56,7 +55,7 @@ class UniMixerModel(nn.Module):
         self.temperature = 1.0
         self.tokenizer = tokenizer
         self.blocks = nn.ModuleList()
-        for i in range(num_blocks):
+        for _ in range(num_blocks):
             self.blocks.append(
                 UniMixerBlock(
                     self.embed_dim,
@@ -74,7 +73,7 @@ class UniMixerModel(nn.Module):
         self.final_norm = SiameseNorm(self.embed_dim) if use_siamese else None
 
     def forward(
-        self, x_inputs: FeatureTensorMap, temperature: Optional[float] = None
+        self, x_inputs: FeatureTensorMap, temperature: float | None = None
     ) -> dict[str, torch.Tensor]:
         """Forward: tokenize -> M blocks (standard or siamese path) -> task towers."""
         t = temperature if temperature is not None else self.temperature

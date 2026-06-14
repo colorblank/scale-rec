@@ -16,7 +16,7 @@ class SequenceOp:
         self.pad_val = pad_val
 
     @classmethod
-    def from_config(cls, params: dict) -> "SequenceOp":
+    def from_config(cls, params: dict) -> SequenceOp:
         return cls(
             max_len=int(params.get("max_len", 10)),
             pad_val=int(params.get("pad_val", 0)),

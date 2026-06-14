@@ -3,7 +3,7 @@ from __future__ import annotations
 """Task contract shared by model output, labels, loss, and metrics."""
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -12,12 +12,12 @@ class TaskSpec:
     label: str
     loss: str = "bce"
     weight: float = 1.0
-    mask: Optional[str] = None
-    pos_weight: Optional[float] = None
+    mask: str | None = None
+    pos_weight: float | None = None
     metrics: tuple[str, ...] = field(default_factory=tuple)
 
 
-def parse_task_specs(raw: Optional[list[dict[str, Any]]]) -> list[TaskSpec]:
+def parse_task_specs(raw: list[dict[str, Any]] | None) -> list[TaskSpec]:
     if not raw:
         return []
     specs = []
@@ -50,8 +50,8 @@ def parse_task_specs(raw: Optional[list[dict[str, Any]]]) -> list[TaskSpec]:
 def legacy_task_specs(
     task_names: list[str],
     label_map: dict[str, str],
-    task_weights: Optional[dict[str, float]] = None,
-    default_metrics: Optional[list[str]] = None,
+    task_weights: dict[str, float] | None = None,
+    default_metrics: list[str] | None = None,
 ) -> list[TaskSpec]:
     weights = task_weights or {}
     metrics = tuple(default_metrics or ())

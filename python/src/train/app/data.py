@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import logging
 import math
-import os
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any
 
 import pandas as pd
 
@@ -100,7 +100,7 @@ def build_item_index(
     item_sources: list[dict],
     has_header: bool = True,
     separator: str = "\t",
-    null_markers: Optional[set[str]] = None,
+    null_markers: set[str] | None = None,
 ) -> dict[str, dict[str, str]]:
     """用 pandas 读取多日物品文件，按 item_id 去重后构建索引。
 
@@ -122,7 +122,7 @@ def build_item_index(
     # 只保留 feature-role 的 source（物品文件不应含标签）
     feature_only = [s for s in item_sources if s.get("role", "feature") == "feature"]
     na_vals = list(null_markers)
-    params, names, dtype, default_vals = _build_reader_params(
+    params, names, _dtype, default_vals = _build_reader_params(
         feature_only, has_header, separator, na_vals
     )
 
@@ -163,16 +163,17 @@ def build_item_index(
 
 
 def estimate_rows(path: str, has_header: bool = True) -> int:
-    if not os.path.exists(path):
+    file_path = Path(path)
+    if not file_path.exists():
         return 1
-    file_size = os.path.getsize(path)
+    file_size = file_path.stat().st_size
     if file_size < 1024 * 1024 * 50:
-        with open(path, "rb") as f:
+        with file_path.open("rb") as f:
             lines = sum(1 for _ in f)
         if has_header and lines > 0:
             lines -= 1
         return max(1, lines)
-    with open(path, "rb") as f:
+    with file_path.open("rb") as f:
         if has_header:
             next(f, None)
         sample = f.read(1024 * 500)
@@ -203,8 +204,8 @@ def stream_file_batches(
     *,
     has_header: bool = True,
     sep: str = "\t",
-    null_markers: Optional[set[str]] = None,
-    read_chunk_rows: Optional[int] = None,
+    null_markers: set[str] | None = None,
+    read_chunk_rows: int | None = None,
     fast_no_na: bool = False,
     memory_map: bool = False,
 ) -> Iterator[dict[str, Any]]:
@@ -312,8 +313,8 @@ def stream_files_batches(
     *,
     has_header: bool = True,
     sep: str = "\t",
-    null_markers: Optional[set[str]] = None,
-    read_chunk_rows: Optional[int] = None,
+    null_markers: set[str] | None = None,
+    read_chunk_rows: int | None = None,
     fast_no_na: bool = False,
     memory_map: bool = False,
 ) -> Iterator[dict[str, Any]]:

@@ -27,7 +27,7 @@ class ExpressionOp:
         self.tree = ast.parse(script.strip(), mode="eval")
 
     @classmethod
-    def from_config(cls, params: dict) -> "ExpressionOp":
+    def from_config(cls, params: dict) -> ExpressionOp:
         script = params.get("script")
         if not script:
             raise ValueError("Missing 'script' for ExpressionOp")

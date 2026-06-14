@@ -5,9 +5,10 @@ from __future__ import annotations
 import logging
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from ..ops import CustomOp, create_op
+
 Fv = Any
 from .config import DType, FlowConfig, OpType, Role, SourceDef, parse_float_strict, parse_int_strict
 from .executor import ExecStep, ExecutionPlan
@@ -21,7 +22,7 @@ class ValidationIssue:
     severity: str
     code: str
     message: str
-    feature: Optional[str] = None
+    feature: str | None = None
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,8 @@ def parse_default(val_str: str, dtype: DType) -> Fv:
         return candidate
     elif dtype.tag == "list":
         inner, length = dtype.inner, dtype.max_len or dtype.length
+        if inner is None:
+            raise ValueError("list dtype requires inner dtype")
         if inner.tag == "int":
             return [parse_int_strict(val_str)] * length
         elif inner.tag == "float":
@@ -218,13 +221,13 @@ class DagBuilder:
         source_cols: list[int] = []
         source_names: list[str] = []
         source_defaults: list[Fv] = []
-        col_names: list[Optional[str]] = [None] * len(sources)
-        for i, s in enumerate(sources):
-            col_id[s] = i
+        col_names: list[str | None] = [None] * len(sources)
+        for i, source_name in enumerate(sources):
+            col_id[source_name] = i
             source_cols.append(i)
-            source_names.append(s)
-            col_names[i] = s
-            source_def = sources[s]
+            source_names.append(source_name)
+            col_names[i] = source_name
+            source_def = sources[source_name]
             source_defaults.append(parse_default(source_def.default_val, source_def.dtype))
         col_count = len(sources)
         for op_def in config.operators:
@@ -251,9 +254,9 @@ class DagBuilder:
         embed_pairs: list[tuple[str, int]] = []
         for op_def in config.operators:
             if op_def.embed is not None:
-                for out_name in op_def.outputs:
-                    if out_name in col_id:
-                        embed_pairs.append((out_name, col_id[out_name]))
+                embed_pairs.extend(
+                    (out_name, col_id[out_name]) for out_name in op_def.outputs if out_name in col_id
+                )
         embed_pairs.sort(key=lambda x: x[0])
         embed_ids = [cid for _, cid in embed_pairs]
 

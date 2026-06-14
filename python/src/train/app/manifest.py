@@ -6,22 +6,22 @@ import hashlib
 import logging
 import subprocess
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 import yaml
 
 logger = logging.getLogger(__name__)
 
 
-def sha256_file(path: Union[str, Path]) -> str:
+def sha256_file(path: str | Path) -> str:
     h = hashlib.sha256()
-    with open(path, "rb") as f:
+    with Path(path).open("rb") as f:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()
 
 
-def current_git_commit(repo_root: Union[str, Path, None] = None) -> str:
+def current_git_commit(repo_root: str | Path | None = None) -> str:
     cmd = ["git", "rev-parse", "HEAD"]
     try:
         return subprocess.check_output(
@@ -37,32 +37,32 @@ def current_git_commit(repo_root: Union[str, Path, None] = None) -> str:
 
 def write_model_manifest(
     *,
-    manifest_path: Union[str, Path],
+    manifest_path: str | Path,
     model_id: str,
     model_version: str,
     model_type: str,
-    weights_path: Union[str, Path],
-    feature_config_path: Union[str, Path],
-    model_config_path: Union[str, Path],
+    weights_path: str | Path,
+    feature_config_path: str | Path,
+    model_config_path: str | Path,
     tasks: list[str],
     label_col_map: dict[str, str],
     metrics: dict[str, float],
-    repo_root: Union[str, Path, None] = None,
-    run_version: Optional[str] = None,
-    published_version: Optional[str] = None,
-    best_version: Optional[str] = None,
-    best_epoch: Optional[int] = None,
-    best_step: Optional[int] = None,
-    best_score: Optional[float] = None,
-    latest_version: Optional[str] = None,
-    latest_epoch: Optional[int] = None,
-    latest_step: Optional[int] = None,
-    checkpoint_dir: Union[str, Path, None] = None,
-    run_manifest_file: Union[str, Path, None] = None,
-    published_weights_file: Union[str, Path, None] = None,
-    best_weights_file: Union[str, Path, None] = None,
-    latest_weights_file: Union[str, Path, None] = None,
-    weight_binding: Optional[dict[str, Any]] = None,
+    repo_root: str | Path | None = None,
+    run_version: str | None = None,
+    published_version: str | None = None,
+    best_version: str | None = None,
+    best_epoch: int | None = None,
+    best_step: int | None = None,
+    best_score: float | None = None,
+    latest_version: str | None = None,
+    latest_epoch: int | None = None,
+    latest_step: int | None = None,
+    checkpoint_dir: str | Path | None = None,
+    run_manifest_file: str | Path | None = None,
+    published_weights_file: str | Path | None = None,
+    best_weights_file: str | Path | None = None,
+    latest_weights_file: str | Path | None = None,
+    weight_binding: dict[str, Any] | None = None,
 ) -> Path:
     manifest_path = Path(manifest_path)
     manifest_dir = manifest_path.parent
@@ -116,7 +116,7 @@ def write_model_manifest(
     if latest_weights_file is not None:
         data["latest_weights_file"] = _relative_to_manifest(Path(latest_weights_file), manifest_dir)
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(manifest_path, "w", encoding="utf-8") as f:
+    with manifest_path.open("w", encoding="utf-8") as f:
         yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
     return manifest_path
 

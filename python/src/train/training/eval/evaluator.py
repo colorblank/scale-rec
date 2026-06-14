@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import torch
@@ -31,8 +31,8 @@ class Evaluator:
         batches: list[dict[str, Any]],
         task_names: list[str],
         label_map: dict[str, str],
-        device: Optional[torch.device] = None,
-        task_metrics: Optional[dict[str, list[str]]] = None,
+        device: torch.device | None = None,
+        task_metrics: dict[str, list[str]] | None = None,
     ) -> dict[str, dict[str, float]]:
         """评估所有 task × metric。
 
@@ -59,7 +59,7 @@ class Evaluator:
                 outputs = model(_to_device(preprocessor.preprocess_batch(rows), device))
 
                 # 提取分组特征
-                group_ids: Optional[np.ndarray] = None
+                group_ids: np.ndarray | None = None
                 has_gauc = "gauc" in self.cfg.metrics
                 if has_gauc:
                     gf = self.cfg.gauc_group_feature
@@ -113,7 +113,7 @@ class Evaluator:
         path = Path(self.cfg.log_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        with open(path, "a", encoding="utf-8") as f:
+        with path.open("a", encoding="utf-8") as f:
             f.write(f"[{ts}]")
             for t in sorted(results):
                 for m, v in results[t].items():

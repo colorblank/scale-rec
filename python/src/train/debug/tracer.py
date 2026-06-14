@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 class StageType(Enum):
@@ -29,7 +29,7 @@ class ValueSnapshot:
     type_name: str
 
     @classmethod
-    def of(cls, val: Any) -> "ValueSnapshot":
+    def of(cls, val: Any) -> ValueSnapshot:
         t = type(val).__name__
         if isinstance(val, list):
             inner = type(val[0]).__name__ if val else "empty"
@@ -76,7 +76,7 @@ class DebugTracer:
     def __init__(self, config: DebugConfig) -> None:
         self.config = config
         self.traces: list[SampleTrace] = []
-        self._current: Optional[SampleTrace] = None
+        self._current: SampleTrace | None = None
         self._total_seen = 0  # global counter across all batches
 
     # ── called by FeatureDag.execute() ──
@@ -120,7 +120,7 @@ class DebugTracer:
         """Record one operator execution."""
         if self._current is None:
             return
-        inp = {n: ValueSnapshot.of(v) for n, v in zip(input_names, input_vals)}
+        inp = {n: ValueSnapshot.of(v) for n, v in zip(input_names, input_vals, strict=False)}
         out = {n: ValueSnapshot.of(output_val) for n in output_names}
         stage = StageTrace(StageType.OPERATOR, op_name, inputs=inp, outputs=out)
         # Anomaly detection
@@ -167,14 +167,12 @@ class DebugTracer:
             return
         Path(self.config.output_dir).mkdir(parents=True, exist_ok=True)
         ts = int(time.time() * 1_000_000)
-        # Summary
         summary = self.build_summary()
         sp = Path(self.config.output_dir) / f"summary_{ts}.json"
-        with open(sp, "w", encoding="utf-8") as f:
+        with sp.open("w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2, default=str)
-        # Traces (JSONL)
         tp = Path(self.config.output_dir) / f"traces_{ts}.jsonl"
-        with open(tp, "w", encoding="utf-8") as f:
+        with tp.open("w", encoding="utf-8") as f:
             for t in self.traces:
                 f.write(json.dumps(t.to_dict(), default=str) + "\n")
         print(f"[Debug] summary → {sp}")

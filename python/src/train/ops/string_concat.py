@@ -19,7 +19,7 @@ class StringConcat:
         self.separator = separator
 
     @classmethod
-    def from_config(cls, params: dict) -> "StringConcat":
+    def from_config(cls, params: dict) -> StringConcat:
         return cls(str(params.get("separator", "_")))
 
     def process(self, inputs: list[Any]) -> str:

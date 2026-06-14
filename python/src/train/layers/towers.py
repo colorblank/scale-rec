@@ -28,7 +28,7 @@ class Activation(Enum):
         return m[self](x)
 
     @classmethod
-    def from_str(cls, s: str) -> "Activation":
+    def from_str(cls, s: str) -> Activation:
         """Parse activation from string: relu, sigmoid, swish, gelu, none."""
         return {
             "relu": cls.RELU,
@@ -100,11 +100,16 @@ class MultiTaskTower(nn.Module):
         outputs = {n: getattr(self, n)(shared) for n in self._tower_names}
         for rel in self._relations:
             probs = {s: torch.sigmoid(outputs[s]) for s in rel.sources}
-            m = {
-                "multiply": lambda: probs[rel.sources[0]] * probs[rel.sources[1]],
-                "add": lambda: probs[rel.sources[0]] + probs[rel.sources[1]],
-                "subtract": lambda: probs[rel.sources[0]] - probs[rel.sources[1]],
-                "divide": lambda: probs[rel.sources[0]] / (probs[rel.sources[1]] + 1e-8),
-            }
-            outputs[rel.target] = m[rel.op]()
+            left = probs[rel.sources[0]]
+            right = probs[rel.sources[1]]
+            if rel.op == "multiply":
+                outputs[rel.target] = left * right
+            elif rel.op == "add":
+                outputs[rel.target] = left + right
+            elif rel.op == "subtract":
+                outputs[rel.target] = left - right
+            elif rel.op == "divide":
+                outputs[rel.target] = left / (right + 1e-8)
+            else:
+                raise ValueError(f"unsupported task relation op: {rel.op}")
         return outputs

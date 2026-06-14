@@ -3,7 +3,7 @@ from __future__ import annotations
 """融合预处理算子：先解析为 token 序列，再逐 token hash。"""
 
 import json
-from typing import Any, Optional
+from typing import Any
 
 from . import register_op
 from .feature_hash import FeatureHash
@@ -31,7 +31,7 @@ class ParsedFeatureHash:
         namespace: str = "",
         salt: str = "",
         version: str = "",
-        key: Optional[str] = None,
+        key: str | None = None,
         sep1: str = "|",
         sep2: str = "#",
         key_index: int = 0,
@@ -61,7 +61,7 @@ class ParsedFeatureHash:
         )
 
     @classmethod
-    def from_config(cls, params: dict) -> "ParsedFeatureHash":
+    def from_config(cls, params: dict) -> ParsedFeatureHash:
         return cls(
             vocab_size=int(params.get("vocab_size", 1000)),
             parse_mode=str(params.get("parse_mode", "json")),
@@ -81,13 +81,16 @@ class ParsedFeatureHash:
         )
 
     def process(self, inputs: list[Any]) -> list[int]:
-        return self._hash.process([self._parse(inputs[0])])
+        result = self._hash.process([self._parse(inputs[0])])
+        if isinstance(result, int):
+            return [result]
+        return result
 
     def process_batch(self, inputs: list[Any]) -> list[list[int]]:
         vals = inputs[0]
         if not vals:
             return []
-        return [self._hash.process([self._parse(val)]) for val in vals]
+        return [self.process([val]) for val in vals]
 
     def _parse(self, value: Any) -> list[str]:
         if self.parse_mode == "json":

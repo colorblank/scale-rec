@@ -3,19 +3,17 @@ from __future__ import annotations
 """训练脚本通用 CLI 组件。"""
 
 import argparse
-import glob
 import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 import torch
 from safetensors.torch import load_file
 
 from ..core.config import ArtifactConfig, EvalConfig, ModelConfig, TrainConfig
-
 from ..models import get_output_spec
 
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
@@ -107,10 +105,10 @@ def configure_logging(
     level: str,
     *,
     file_level: str = "DEBUG",
-    log_dir: Union[str, Path, None] = None,
-    log_file: Union[str, Path, None] = None,
+    log_dir: str | Path | None = None,
+    log_file: str | Path | None = None,
     run_name: str = "train",
-) -> Optional[Path]:
+) -> Path | None:
     """Configure console and optional file logging for training commands."""
 
     root = logging.getLogger()
@@ -150,10 +148,10 @@ def _parse_log_level(level: str) -> int:
 
 def _resolve_log_file(
     *,
-    log_file: Union[str, Path, None],
-    log_dir: Union[str, Path, None],
+    log_file: str | Path | None,
+    log_dir: str | Path | None,
     run_name: str,
-) -> Optional[Path]:
+) -> Path | None:
     if log_file:
         return Path(log_file)
     if not log_dir:
@@ -207,8 +205,11 @@ def _resolve_globbed_data_paths(pattern: str, *, start_date: str, end_date: str)
         raise SystemExit("--start-date must be <= --end-date")
 
     by_date: dict[str, list[str]] = {}
-    for path in glob.glob(pattern):
-        date_text = _extract_basename_date(Path(path))
+    pattern_path = Path(pattern)
+    search_root = pattern_path.parent if pattern_path.parent != Path() else Path()
+    for matched_path in search_root.glob(pattern_path.name):
+        path = str(matched_path)
+        date_text = _extract_basename_date(matched_path)
         if date_text is None:
             continue
         date = _parse_yyyymmdd(date_text, Path(path).name)
@@ -228,14 +229,14 @@ def _resolve_globbed_data_paths(pattern: str, *, start_date: str, end_date: str)
     return resolved
 
 
-def _extract_basename_date(path: Path) -> Optional[str]:
+def _extract_basename_date(path: Path) -> str | None:
     match = _DATE_RE.search(path.name)
     return match.group(1) if match else None
 
 
 def _parse_yyyymmdd(value: str, label: str) -> datetime:
     try:
-        return datetime.strptime(value, "%Y%m%d")
+        return datetime.strptime(value, "%Y%m%d").replace(tzinfo=timezone.utc)
     except ValueError as exc:
         raise SystemExit(f"{label} must be YYYYMMDD: {value}") from exc
 
@@ -255,7 +256,7 @@ def describe_data_paths(paths: list[str]) -> str:
 
 def load_init_weights(
     model: torch.nn.Module,
-    init_weights: Union[str, Path, None],
+    init_weights: str | Path | None,
     device: torch.device,
 ) -> None:
     """Load safetensors model weights for fine-tuning, without optimizer state."""
@@ -275,7 +276,7 @@ def load_init_weights(
 
 
 def train_config_from_args(
-    args: argparse.Namespace, *, export_path: Union[str, Path]
+    args: argparse.Namespace, *, export_path: str | Path
 ) -> TrainConfig:
     config_path = Path(getattr(args, "train_config", DEFAULT_TRAIN_CONFIG))
     base = TrainConfig.from_yaml(config_path) if config_path.exists() else TrainConfig()
@@ -337,7 +338,7 @@ def train_config_from_args(
 
 
 def build_model_for_dag(
-    model_config_path: Union[str, Path],
+    model_config_path: str | Path,
     feat_info,
     device: torch.device,
 ) -> BuiltModel:
@@ -395,7 +396,7 @@ def wrap_unimixer_for_rust_names(model: torch.nn.Module) -> torch.nn.Module:
     def _forward(
         self: torch.nn.Module,
         x_inputs: dict[str, torch.Tensor],
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
     ) -> dict[str, torch.Tensor]:
         t = temperature if temperature is not None else self.temperature
         if t <= 0:

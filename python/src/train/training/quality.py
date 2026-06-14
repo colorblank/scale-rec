@@ -136,11 +136,11 @@ def _embeddable_quality(
 ) -> dict[str, EmbeddableQuality]:
     embed_infos = dict(feat_info.embeddable_features())
     counters: dict[str, Counter[int]] = {name: Counter() for name in embed_infos}
-    total = {name: 0 for name in embed_infos}
-    empty = {name: 0 for name in embed_infos}
-    length_sum = {name: 0 for name in embed_infos}
-    total_items = {name: 0 for name in embed_infos}
-    padded_items = {name: 0 for name in embed_infos}
+    total = dict.fromkeys(embed_infos, 0)
+    empty = dict.fromkeys(embed_infos, 0)
+    length_sum = dict.fromkeys(embed_infos, 0)
+    total_items = dict.fromkeys(embed_infos, 0)
+    padded_items = dict.fromkeys(embed_infos, 0)
     pad_buckets = _embedding_pad_buckets(executor, feat_info)
 
     for row in rows:

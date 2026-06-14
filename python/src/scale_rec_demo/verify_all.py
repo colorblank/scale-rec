@@ -29,9 +29,9 @@ from .paths import DEMO_ARTIFACT_DIR, DISCOVER_FEATURE_CONFIG, MODEL_CONFIGS, RE
 
 def add_header_to_tsv(input_path: Path, output_path: Path, columns: list[str]) -> None:
     """Prepend the columns header to a TSV dataset."""
-    with open(input_path, "r", encoding="utf-8") as f:
+    with input_path.open(encoding="utf-8") as f:
         content = f.read()
-    with open(output_path, "w", encoding="utf-8") as f:
+    with output_path.open("w", encoding="utf-8") as f:
         f.write("\t".join(columns) + "\n" + content)
 
 

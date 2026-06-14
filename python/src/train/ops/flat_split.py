@@ -23,7 +23,7 @@ class FlatSplit:
         self.pad_val = pad_val
 
     @classmethod
-    def from_config(cls, params: dict) -> "FlatSplit":
+    def from_config(cls, params: dict) -> FlatSplit:
         return cls(
             sep=str(params.get("sep", ",")),
             max_len=int(params.get("max_len", 0)),

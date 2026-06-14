@@ -3,9 +3,10 @@ from __future__ import annotations
 """DAG 执行器：ExecutionPlan + DagExecutor，统一 plan-based 执行路径。"""
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from ..ops import CustomOp
+
 Fv = Any
 
 
@@ -21,7 +22,7 @@ class ExecutionPlan:
     steps: list[ExecStep] = field(default_factory=list)
     source_cols: list[int] = field(default_factory=list)
     source_names: list[str] = field(default_factory=list)
-    col_names: list[Optional[str]] = field(default_factory=list)
+    col_names: list[str | None] = field(default_factory=list)
     source_defaults: list[Fv] = field(default_factory=list)
     col_count: int = 0
     embed_ids: list[int] = field(default_factory=list)
@@ -30,8 +31,8 @@ class ExecutionPlan:
     def execute_plan(
         self,
         columns: dict[str, list],
-        skip_op_idx: Optional[set[int]] = None,
-        precomputed: Optional[dict[int, Fv]] = None,
+        skip_op_idx: set[int] | None = None,
+        precomputed: dict[int, Fv] | None = None,
     ) -> list[list]:
         skip_op_idx = skip_op_idx or set()
         precomputed = precomputed or {}
@@ -81,8 +82,8 @@ class DagExecutor:
         self,
         plan: ExecutionPlan,
         sources: dict[str, Any],
-        node_defs: Optional[dict[str, Any]] = None,
-        execution_order: Optional[list[str]] = None,
+        node_defs: dict[str, Any] | None = None,
+        execution_order: list[str] | None = None,
     ) -> None:
         self._plan = plan
         self._sources = sources
@@ -92,8 +93,8 @@ class DagExecutor:
     def execute_plan(
         self,
         columns: dict[str, list],
-        skip_op_idx: Optional[set[int]] = None,
-        precomputed: Optional[dict[int, Fv]] = None,
+        skip_op_idx: set[int] | None = None,
+        precomputed: dict[int, Fv] | None = None,
     ) -> list[list]:
         return self._plan.execute_plan(columns, skip_op_idx, precomputed)
 
@@ -156,10 +157,9 @@ class DagExecutor:
 
     def execute(self, raw_inputs: dict[str, Any]) -> dict[str, Any]:
         """单行执行 DAG，返回 context 字典。"""
-        context: dict[str, Any] = {}
-        for name, val in raw_inputs.items():
-            if name in self._sources:
-                context[name] = val
+        context: dict[str, Any] = {
+            name: val for name, val in raw_inputs.items() if name in self._sources
+        }
         for name, src in self._sources.items():
             if name not in context:
                 from .builder import parse_default

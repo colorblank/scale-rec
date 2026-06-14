@@ -19,7 +19,7 @@ class StringParser:
         self.pad_val = pad_val
 
     @classmethod
-    def from_config(cls, params: dict) -> "StringParser":
+    def from_config(cls, params: dict) -> StringParser:
         return cls(
             sep1=str(params.get("sep1", "#")),
             sep2=str(params.get("sep2", "|")),

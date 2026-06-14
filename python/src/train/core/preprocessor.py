@@ -2,7 +2,6 @@ from __future__ import annotations
 
 """DAG 预处理：从执行结果构建模型输入 tensor。"""
 
-from typing import Union
 
 import torch
 
@@ -70,7 +69,7 @@ class TrainingPreprocessor:
     def __init__(self, dag: object) -> None:
         self._dag = dag
 
-    def preprocess_batch(self, rows: Union[list[dict], dict[str, list]]) -> dict[str, torch.Tensor]:
+    def preprocess_batch(self, rows: list[dict] | dict[str, list]) -> dict[str, torch.Tensor]:
         return self._dag.preprocess_batch(rows)  # type: ignore
 
     @property

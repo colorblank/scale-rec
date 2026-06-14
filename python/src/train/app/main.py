@@ -9,11 +9,11 @@ from __future__ import annotations
 """
 import argparse
 import logging
-import os
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -148,7 +148,7 @@ def _load_dataframes(paths: list[str]) -> pd.DataFrame:
 def _iter_dataframe_batches(
     df: pd.DataFrame,
     batch_size: int,
-    label_col_map: Optional[dict[str, str]] = None,
+    label_col_map: dict[str, str] | None = None,
 ) -> Iterator[dict[str, Any]]:
     if label_col_map is None:
         label_col_map = {}
@@ -173,10 +173,10 @@ def _train_epoch_single(
     dag: FeatureDag,
     df: pd.DataFrame,
     batch_size: int,
-    label_col_map: Optional[dict[str, str]] = None,
+    label_col_map: dict[str, str] | None = None,
     prefetch_batches: int = 0,
-    artifacts: Optional[TrainingArtifactManager] = None,
-    checkpoint_state: Optional[PeriodicCheckpointState] = None,
+    artifacts: TrainingArtifactManager | None = None,
+    checkpoint_state: PeriodicCheckpointState | None = None,
     global_step: int = 0,
     skip_batches: int = 0,
     best_score: float = 0.0,
@@ -255,7 +255,7 @@ def _evaluate_single(
     dag: FeatureDag,
     df: pd.DataFrame,
     batch_size: int,
-    label_col_map: Optional[dict[str, str]] = None,
+    label_col_map: dict[str, str] | None = None,
     prefetch_batches: int = 0,
 ) -> dict[str, dict[str, float]]:
     if label_col_map is None:
@@ -337,7 +337,7 @@ def _predict_all(
 
 
 def _maybe_save_periodic_checkpoint(
-    artifacts: Optional[TrainingArtifactManager],
+    artifacts: TrainingArtifactManager | None,
     model: torch.nn.Module,
     *,
     epoch: int,
@@ -350,7 +350,7 @@ def _maybe_save_periodic_checkpoint(
     best_score: float,
     stale_epochs: int,
     best_epoch: int,
-    optimizer: Optional[torch.optim.Optimizer] = None,
+    optimizer: torch.optim.Optimizer | None = None,
 ) -> None:
     if artifacts is None:
         return
@@ -730,7 +730,7 @@ def _run_all(args: argparse.Namespace) -> None:
 
     results = []
     for model_type, model_config_path in selected:
-        if not model_config_path or not os.path.exists(model_config_path):
+        if not model_config_path or not Path(model_config_path).exists():
             logger.info("[Skip] config not found: %s", model_config_path)
             continue
         built = build_model_for_dag(model_config_path, feat_info, device)

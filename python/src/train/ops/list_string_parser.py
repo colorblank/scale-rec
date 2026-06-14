@@ -15,7 +15,7 @@ class ListStringParser:
         self.key_index = key_index
 
     @classmethod
-    def from_config(cls, params: dict) -> "ListStringParser":
+    def from_config(cls, params: dict) -> ListStringParser:
         return cls(
             sep=str(params.get("sep", ",")),
             key_index=int(params.get("key_index", 0)),
@@ -24,7 +24,7 @@ class ListStringParser:
     def process(self, inputs: list[Any]) -> list[str]:
         str_list = inputs[0]
         if not isinstance(str_list, list):
-            raise ValueError("ListStringParser requires a list of strings as input")
+            raise TypeError("ListStringParser requires a list of strings as input")
 
         result = []
         for item in str_list:
@@ -44,7 +44,7 @@ class ListStringParser:
         results = []
         for str_list in list_of_lists:
             if not isinstance(str_list, list):
-                raise ValueError("ListStringParser requires a list of strings as input")
+                raise TypeError("ListStringParser requires a list of strings as input")
             result = []
             for item in str_list:
                 parts = str(item).split(sep)

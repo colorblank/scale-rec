@@ -2,14 +2,13 @@ from __future__ import annotations
 
 """Static feature schema inference and validation for FlowConfig."""
 from dataclasses import dataclass
-from typing import Optional
 
 from .config import (
     DType,
     EmbedConfig,
     FlowConfig,
-    OpType,
     OperatorDef,
+    OpType,
     Role,
     parse_float_strict,
     parse_int_strict,
@@ -19,11 +18,11 @@ from .config import (
 @dataclass(frozen=True)
 class FeatureDType:
     tag: str
-    inner: "Optional[FeatureDType]" = None
-    length: Optional[int] = None
-    values: Optional[tuple[str, ...]] = None
-    default: Optional[str] = None
-    oov: Optional[str] = None
+    inner: FeatureDType | None = None
+    length: int | None = None
+    values: tuple[str, ...] | None = None
+    default: str | None = None
+    oov: str | None = None
 
     @property
     def is_list(self) -> bool:
@@ -55,9 +54,9 @@ class FeatureSchema:
     rank: int
     dimension: int
     nullable: bool = False
-    default_val: Optional[str] = None
-    cardinality: Optional[int] = None
-    pooling: Optional[str] = None
+    default_val: str | None = None
+    cardinality: int | None = None
+    pooling: str | None = None
 
 
 def infer_feature_schemas(config: FlowConfig) -> dict[str, FeatureSchema]:
@@ -133,14 +132,18 @@ def _validate_default(name: str, dtype: FeatureDType, default_val: str) -> None:
         elif dtype.tag == "float":
             parse_float_strict(default_val)
         elif dtype.tag == "enum":
-            if dtype.values and default_val not in dtype.values and default_val != dtype.oov:
-                raise ValueError(f"unknown enum value '{default_val}'")
+            _validate_enum_default(dtype, default_val)
         elif dtype.tag == "list" and dtype.inner is not None:
             _validate_default(name, dtype.inner, default_val)
     except (TypeError, ValueError) as exc:
         raise ValueError(
             f"source '{name}' default '{default_val}' does not match dtype {dtype}"
         ) from exc
+
+
+def _validate_enum_default(dtype: FeatureDType, default_val: str) -> None:
+    if dtype.values and default_val not in dtype.values and default_val != dtype.oov:
+        raise ValueError(f"unknown enum value '{default_val}'")
 
 
 def _require_schema(
@@ -252,7 +255,7 @@ def _schema(op: OperatorDef, dtype: FeatureDType) -> FeatureSchema:
     )
 
 
-def _require_scalar_number(op: OperatorDef, schema: Optional[FeatureSchema]) -> None:
+def _require_scalar_number(op: OperatorDef, schema: FeatureSchema | None) -> None:
     if schema is None or schema.dtype.tag not in {"int", "float"}:
         got = "missing" if schema is None else str(schema.dtype)
         raise ValueError(f"operator '{op.name}' expects numeric scalar input, got {got}")

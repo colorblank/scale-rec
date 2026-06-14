@@ -6,9 +6,10 @@ import logging
 import random
 import time
 from collections import deque
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Iterator, Optional, Union
+from typing import Any
 
 import numpy as np
 import torch
@@ -81,9 +82,9 @@ def build_resume_state(
     best_epoch: int,
     periodic_checkpoint_seq: int,
     last_periodic_checkpoint_step: int,
-    optimizer: Optional[torch.optim.Optimizer] = None,
-    loss_fn: Optional[torch.nn.Module] = None,
-    ema: Optional["_EMA"] = None,
+    optimizer: torch.optim.Optimizer | None = None,
+    loss_fn: torch.nn.Module | None = None,
+    ema: _EMA | None = None,
 ) -> dict[str, Any]:
     state: dict[str, Any] = {
         "schema_version": 1,
@@ -207,7 +208,7 @@ class Trainer:
     def __init__(
         self,
         model: torch.nn.Module,
-        preprocessor: "TrainingPreprocessor",
+        preprocessor: TrainingPreprocessor,
         task_names: list[str],
         label_map: dict[str, str],
         device: torch.device,
@@ -215,17 +216,17 @@ class Trainer:
         *,
         model_type: str = "",
         flow_config: FlowConfig,
-        data_path: Optional[str] = None,
-        data_paths: Optional[list[str]] = None,
+        data_path: str | None = None,
+        data_paths: list[str] | None = None,
         has_header: bool = True,
         sep: str = "\t",
-        null_markers: Optional[set[str]] = None,
-        read_chunk_rows: Optional[int] = None,
+        null_markers: set[str] | None = None,
+        read_chunk_rows: int | None = None,
         fast_no_na: bool = False,
         memory_map: bool = False,
-        task_specs: Optional[list[TaskSpec]] = None,
-        artifact_manager: Optional[TrainingArtifactManager] = None,
-        repo_root: Union[str, Path, None] = None,
+        task_specs: list[TaskSpec] | None = None,
+        artifact_manager: TrainingArtifactManager | None = None,
+        repo_root: str | Path | None = None,
     ) -> None:
         self.model = model
         self._preprocessor = preprocessor
@@ -272,7 +273,7 @@ class Trainer:
 
         self.eval_batches: list[Batch] = []
         self._n_eval_batches = 0
-        self.feature_quality: Optional[FeatureQualityReport] = None
+        self.feature_quality: FeatureQualityReport | None = None
         self.loss_fn = MultiTaskLoss(
             self.task_names,
             self.label_map,
@@ -280,9 +281,9 @@ class Trainer:
             task_weights=config.task_weights,
             task_specs=self.task_specs,
         )
-        self.lr_scheduler: Optional[LRScheduler] = None
-        self.optimizer: Optional[torch.optim.Optimizer] = None
-        self.ema: Optional[_EMA] = None
+        self.lr_scheduler: LRScheduler | None = None
+        self.optimizer: torch.optim.Optimizer | None = None
+        self.ema: _EMA | None = None
         self.evaluator = Evaluator(config.eval)
         self._best_score = self._initial_best_score()
         self._stale_epochs = 0
@@ -290,7 +291,7 @@ class Trainer:
         self._last_periodic_checkpoint_step = 0
         self._last_periodic_checkpoint_time = time.perf_counter()
         self._periodic_checkpoint_seq = 0
-        self._resume_state: Optional[dict[str, Any]] = None
+        self._resume_state: dict[str, Any] | None = None
         self._resume_start_epoch = 1
         self._resume_batch_in_epoch = 0
         self._resume_epoch = 0
@@ -302,7 +303,7 @@ class Trainer:
 
         logger.info("Model parameters: %s", format_parameter_summary(model))
 
-    def resume_from_checkpoint(self, checkpoint_path: Union[str, Path]) -> None:
+    def resume_from_checkpoint(self, checkpoint_path: str | Path) -> None:
         from safetensors.torch import load_file
 
         path = Path(checkpoint_path)
@@ -568,8 +569,8 @@ class Trainer:
         epoch: int,
         batch_in_epoch: int,
         next_epoch: int,
-        periodic_checkpoint_seq: Optional[int] = None,
-        last_periodic_checkpoint_step: Optional[int] = None,
+        periodic_checkpoint_seq: int | None = None,
+        last_periodic_checkpoint_step: int | None = None,
     ) -> dict[str, Any]:
         return build_resume_state(
             checkpoint_kind=checkpoint_kind,
@@ -731,7 +732,7 @@ class Trainer:
             **self._reader_kwargs(),
         )
 
-    def _effective_read_chunk_rows(self) -> Union[int, str]:
+    def _effective_read_chunk_rows(self) -> int | str:
         if self._read_chunk_rows is not None and self._read_chunk_rows > 0:
             return max(self._read_chunk_rows, self.cfg.batch_size)
         return "auto"
@@ -860,18 +861,17 @@ class Trainer:
         return current > best
 
     def _log_batch(self, n_batches: int, total_loss: float, current_loss: float) -> None:
-        if self.lr_scheduler is None:
-            lr = self.cfg.optim.lr
-        else:
-            lr = self.lr_scheduler.current_lr()
+        lr = self.cfg.optim.lr if self.lr_scheduler is None else self.lr_scheduler.current_lr()
         parts = [
             f"batch {n_batches:4d}  avg_loss={total_loss / n_batches:.6f}  cur_loss={current_loss:.6f}",
             f"lr={lr:.2e}",
         ]
         task_losses = self.loss_fn.last_losses()
         pos_rates = self.loss_fn.last_pos_rates()
-        for task in sorted(task_losses):
-            parts.append(f"{task}={task_losses[task]:.4f}(pr={pos_rates.get(task, 0):.2f})")
+        parts.extend(
+            f"{task}={task_losses[task]:.4f}(pr={pos_rates.get(task, 0):.2f})"
+            for task in sorted(task_losses)
+        )
         logger.info("  " + "  ".join(parts))
 
     def _save_checkpoint(self, score: float) -> None:
@@ -912,8 +912,13 @@ class Trainer:
         if n_batches == 0:
             return
         t_total = t_data + t_preproc + t_forward + t_loss + t_backward
-        ms = lambda seconds: seconds * 1000 / n_batches  # noqa: E731
-        pct = lambda seconds: seconds / t_total * 100 if t_total > 0 else 0  # noqa: E731
+
+        def ms(seconds: float) -> float:
+            return seconds * 1000 / n_batches
+
+        def pct(seconds: float) -> float:
+            return seconds / t_total * 100 if t_total > 0 else 0
+
         logger.info(
             "  [timing epoch %d] total=%.1fs batches=%d | per_batch: "
             "data=%.1fms(%.0f%%) preproc=%.1fms(%.0f%%) forward=%.1fms(%.0f%%) "

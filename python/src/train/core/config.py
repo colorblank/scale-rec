@@ -3,9 +3,9 @@ from __future__ import annotations
 """训练与推理配置的单一入口。"""
 
 from dataclasses import dataclass, field
-from enum import StrEnum
+from enum import Enum
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 import torch.nn as nn
 import yaml
@@ -22,7 +22,7 @@ class Role:
     DISCARD = "discard"
 
 
-class SourceKind(StrEnum):
+class SourceKind(str, Enum):
     USER = "User"
     ITEM = "Item"
     CONTEXT = "Context"
@@ -31,18 +31,18 @@ class SourceKind(StrEnum):
 @dataclass
 class DType:
     tag: str
-    inner: Optional["DType"] = None
-    max_len: Optional[int] = None
-    values: Optional[list[str]] = None
-    default: Optional[str] = None
-    oov: Optional[str] = None
+    inner: DType | None = None
+    max_len: int | None = None
+    values: list[str] | None = None
+    default: str | None = None
+    oov: str | None = None
 
     @property
     def length(self) -> int:
         return self.max_len or 0
 
     @classmethod
-    def from_dict(cls, raw: Union[str, dict]) -> "DType":
+    def from_dict(cls, raw: str | dict) -> DType:
         if isinstance(raw, str):
             return cls(tag=raw)
         if isinstance(raw, dict) and "list" in raw:
@@ -92,7 +92,7 @@ class EmbedConfig:
     vocab_size: int
     embed_dim: int
     pooling: str = "first"  # first | flatten | mean | sum | max
-    seq_len: Optional[int] = None  # pooling=flatten 时的序列长度
+    seq_len: int | None = None  # pooling=flatten 时的序列长度
     truncation: str = "head"  # head | tail
 
 
@@ -101,14 +101,14 @@ class SourceDef:
     name: str
     dtype: DType
     default_val: str
-    source: Optional[SourceKind] = None
-    data_source: Optional[str] = None
-    embed: Optional[EmbedConfig] = None
+    source: SourceKind | None = None
+    data_source: str | None = None
+    embed: EmbedConfig | None = None
     role: str = Role.FEATURE
-    column_index: Optional[int] = None
+    column_index: int | None = None
 
 
-class OpType(StrEnum):
+class OpType(str, Enum):
     BUCKETING = "Bucketing"
     CONCAT_HASH = "ConcatHash"
     CROSS_FEATURE = "CrossFeature"
@@ -225,7 +225,7 @@ def _validate_typed_params(
             raise ValueError(f"{context}.{key} must be int, got bool")
         if not isinstance(value, expected):
             names = ", ".join(t.__name__ for t in expected) if isinstance(expected, tuple) else expected.__name__
-            raise ValueError(f"{context}.{key} must be {names}, got {type(value).__name__}")
+            raise TypeError(f"{context}.{key} must be {names}, got {type(value).__name__}")
 
 
 @dataclass
@@ -235,14 +235,14 @@ class OperatorDef:
     inputs: list[str] = field(default_factory=list)
     outputs: list[str] = field(default_factory=list)
     params: dict = field(default_factory=dict)
-    embed: Optional[EmbedConfig] = None
+    embed: EmbedConfig | None = None
 
 
 @dataclass
 class DataSourceDef:
     name: str
     kind: str
-    description: Optional[str] = None
+    description: str | None = None
     params: dict[str, Any] = field(default_factory=dict)
 
 
@@ -254,13 +254,13 @@ class FlowConfig:
     operators: list[OperatorDef]
 
     @classmethod
-    def from_yaml(cls, path: str) -> "FlowConfig":
-        with open(path, encoding="utf-8") as f:
+    def from_yaml(cls, path: str) -> FlowConfig:
+        with Path(path).open(encoding="utf-8") as f:
             raw = yaml.safe_load(f)
         return cls.from_dict(raw)
 
     @classmethod
-    def from_dict(cls, raw: dict) -> "FlowConfig":
+    def from_dict(cls, raw: dict) -> FlowConfig:
         _validate_mapping_keys(
             "FlowConfig",
             raw,
@@ -386,8 +386,8 @@ class OptimConfig:
     lr: float = 0.005
     weight_decay: float = 1e-4
     momentum: float = 0.0
-    emb_lr: Optional[float] = None
-    emb_weight_decay: Optional[float] = None
+    emb_lr: float | None = None
+    emb_weight_decay: float | None = None
 
 
 @dataclass
@@ -415,16 +415,16 @@ class TrainConfig:
     prefetch_batches: int = 2
     checkpoint_interval_steps: int = 0
     checkpoint_interval_seconds: float = 0.0
-    artifacts: Union[ArtifactConfig, dict[str, Any]] = field(default_factory=ArtifactConfig)
-    optim: Union[OptimConfig, dict[str, Any]] = field(default_factory=OptimConfig)
-    lr_schedule: Union[LRScheduleConfig, dict[str, Any]] = field(default_factory=LRScheduleConfig)
-    eval: Union[EvalConfig, dict[str, Any]] = field(default_factory=EvalConfig)
+    artifacts: ArtifactConfig | dict[str, Any] = field(default_factory=ArtifactConfig)
+    optim: OptimConfig | dict[str, Any] = field(default_factory=OptimConfig)
+    lr_schedule: LRScheduleConfig | dict[str, Any] = field(default_factory=LRScheduleConfig)
+    eval: EvalConfig | dict[str, Any] = field(default_factory=EvalConfig)
     eval_samples: int = 2000
     eval_interval: int = 50
     log_interval: int = 10
     loss_weighting: str = "static"
-    task_weights: Optional[dict[str, float]] = None
-    tasks: Union[list[TaskSpec], list[dict[str, Any]]] = field(default_factory=list)
+    task_weights: dict[str, float] | None = None
+    tasks: list[TaskSpec] | list[dict[str, Any]] = field(default_factory=list)
     grad_max_norm: float = 1.0
     ema_decay: float = 0.999
     early_stopping_patience: int = 5
@@ -444,12 +444,12 @@ class TrainConfig:
             self.tasks = parse_task_specs(self.tasks)  # type: ignore[arg-type]
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "TrainConfig":
+    def from_dict(cls, raw: dict[str, Any]) -> TrainConfig:
         return cls(**raw)
 
     @classmethod
-    def from_yaml(cls, path: Union[str, Path]) -> "TrainConfig":
-        with open(path, encoding="utf-8") as f:
+    def from_yaml(cls, path: str | Path) -> TrainConfig:
+        with Path(path).open(encoding="utf-8") as f:
             raw = yaml.safe_load(f)
         return cls.from_dict(raw)
 
@@ -486,13 +486,13 @@ class ModelConfig:
     params: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_yaml(cls, path: Union[str, Path]) -> "ModelConfig":
-        with open(path, encoding="utf-8") as f:
+    def from_yaml(cls, path: str | Path) -> ModelConfig:
+        with Path(path).open(encoding="utf-8") as f:
             raw = yaml.safe_load(f)
         return cls.from_dict(raw)
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "ModelConfig":
+    def from_dict(cls, raw: dict[str, Any]) -> ModelConfig:
         _validate_mapping_keys("ModelConfig", raw, {"type"} | set(raw.keys()), {"type"})
         mtype = raw["type"]
         params = {k: v for k, v in raw.items() if k != "type"}
@@ -505,9 +505,9 @@ class ModelConfig:
     def build(
         self,
         features: list[FeatureTuple],
-        tokenizer: Optional[nn.Module] = None,
-        pooling_map: Optional[dict[str, str]] = None,
-        total_dim: Optional[int] = None,
+        tokenizer: nn.Module | None = None,
+        pooling_map: dict[str, str] | None = None,
+        total_dim: int | None = None,
     ) -> nn.Module:
         from ..models import build_model
 

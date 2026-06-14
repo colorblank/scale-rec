@@ -30,7 +30,7 @@ class ConcatHash:
         )
 
     @classmethod
-    def from_config(cls, params: dict) -> "ConcatHash":
+    def from_config(cls, params: dict) -> ConcatHash:
         return cls(
             vocab_size=int(params.get("vocab_size", 1000)),
             num_hashes=int(params.get("num_hashes", 1)),

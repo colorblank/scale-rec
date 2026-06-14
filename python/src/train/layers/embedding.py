@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 """FeatureEmbeddings：离散特征索引 → 稠密嵌入拼接，支持变长序列池化。"""
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -21,8 +20,8 @@ class FeatureEmbeddings(nn.Module):
     def __init__(
         self,
         features: list[FeatureTuple],
-        pooling_map: Optional[dict[str, str]] = None,
-        total_dim: Optional[int] = None,
+        pooling_map: dict[str, str] | None = None,
+        total_dim: int | None = None,
     ) -> None:
         super().__init__()
         self.ordered_names = []

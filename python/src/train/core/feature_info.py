@@ -2,13 +2,13 @@ from __future__ import annotations
 
 """特征信息视图：从 DAG 构建结果投影，提供模型构建和广播策略所需的元数据查询。"""
 
-from enum import StrEnum
+from enum import Enum
 from typing import Any
 
 from .config import EmbedConfig, OperatorDef, SourceDef, SourceKind
 
 
-class FeatureScope(StrEnum):
+class FeatureScope(str, Enum):
     USER = "user"
     ITEM = "item"
     CONTEXT = "context"
@@ -18,7 +18,7 @@ class FeatureScope(StrEnum):
     USER_ITEM_CONTEXT = "user_item_context"
 
     @classmethod
-    def from_source_kind(cls, source: SourceKind | None) -> "FeatureScope":
+    def from_source_kind(cls, source: SourceKind | None) -> FeatureScope:
         if source is SourceKind.USER:
             return cls.USER
         if source is SourceKind.CONTEXT:
@@ -26,7 +26,7 @@ class FeatureScope(StrEnum):
         return cls.ITEM
 
     @classmethod
-    def combine(cls, scopes: list["FeatureScope"]) -> "FeatureScope":
+    def combine(cls, scopes: list[FeatureScope]) -> FeatureScope:
         has_user = any(scope.has_user for scope in scopes)
         has_item = any(scope.has_item for scope in scopes)
         has_context = any(scope.has_context for scope in scopes)
@@ -72,7 +72,7 @@ class FeatureInfo:
 
     def embeddable_features(self) -> list[tuple[str, EmbedConfig]]:
         result: list[tuple[str, EmbedConfig]] = []
-        for _, op_def in self._node_defs.items():
+        for op_def in self._node_defs.values():
             if op_def.embed is not None:
                 for out_name in op_def.outputs:
                     schema = self._feature_schemas.get(out_name)

@@ -11,7 +11,7 @@ class ListOverlap:
     """Check if two lists have overlapping elements. Returns 1 if any overlap, 0 otherwise."""
 
     @classmethod
-    def from_config(cls, params: dict) -> "ListOverlap":
+    def from_config(cls, params: dict) -> ListOverlap:
         return cls()
 
     def process(self, inputs: list[Any]) -> int:
@@ -26,7 +26,7 @@ class ListOverlap:
         """Batch overlap: N pairs of lists -> N flags."""
         list_a, list_b = inputs[0], inputs[1]
         result = []
-        for a, b in zip(list_a, list_b):
+        for a, b in zip(list_a, list_b, strict=False):
             sa = {str(x) for x in a if x and str(x).strip()} if isinstance(a, list) else set()
             sb = {str(x) for x in b if x and str(x).strip()} if isinstance(b, list) else set()
             if not sa or not sb:

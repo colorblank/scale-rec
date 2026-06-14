@@ -45,7 +45,7 @@ def test_operator_params_reject_missing_required_field():
 
 
 def test_model_params_reject_wrong_type():
-    with pytest.raises(ValueError, match="cross_layers must be int"):
+    with pytest.raises(TypeError, match="cross_layers must be int"):
         ModelConfig.from_dict({"type": "gdcn_esmm", "cross_layers": "3"})
 
 

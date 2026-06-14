@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 """特征哈希算子：DJB2 多种子哈希，支持逐元素 list 哈希。"""
-from typing import Any, Union
+from typing import Any
 
 from . import register_op
 
@@ -28,7 +28,7 @@ class FeatureHash:
         self.hash_prefix = "::".join(scope_parts) + "::" if scope_parts else ""
 
     @classmethod
-    def from_config(cls, params: dict) -> "FeatureHash":
+    def from_config(cls, params: dict) -> FeatureHash:
         return cls(
             vocab_size=int(params.get("vocab_size", 1000)),
             num_hashes=int(params.get("num_hashes", 1)),
@@ -40,7 +40,7 @@ class FeatureHash:
 
     # ── single-row ──
 
-    def process(self, inputs: list[Any]) -> Union[int, list[int]]:
+    def process(self, inputs: list[Any]) -> int | list[int]:
         row_vals: list[str] = []
         has_list = False
         for v in inputs:
@@ -56,7 +56,7 @@ class FeatureHash:
 
     # ── batch ──
 
-    def process_batch(self, inputs: list[Any]) -> Union[list[int], list[list[int]]]:
+    def process_batch(self, inputs: list[Any]) -> list[int] | list[list[int]]:
         """Columnar batch: list 列逐元素 hash → IntList 列。"""
         if not inputs or not inputs[0]:
             return []
@@ -93,7 +93,7 @@ class FeatureHash:
     def _hash_one(self, key: str, seed: int = 0) -> int:
         return _djb2_seeded(f"{self.hash_prefix}{key}", seed) % self.vocab_size
 
-    def _hash_multi(self, key: str) -> Union[int, list[int]]:
+    def _hash_multi(self, key: str) -> int | list[int]:
         if self.num_hashes == 1:
             return self._hash_one(key, 0)
         return [self._hash_one(key, s) for s in range(self.num_hashes)]

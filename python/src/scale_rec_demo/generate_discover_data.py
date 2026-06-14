@@ -119,7 +119,7 @@ def _load_label_policy(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:
         policy = yaml.safe_load(f)
     if not isinstance(policy, dict):
-        raise ValueError(f"invalid label policy file: {path}")
+        raise TypeError(f"invalid label policy file: {path}")
     return policy
 
 

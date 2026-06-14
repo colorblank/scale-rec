@@ -22,7 +22,8 @@ scale-rec-demo-verify-all = "scale_rec_demo.verify_all:main"
 line-length = 100
 
 [tool.ruff.lint]
-ignore = ["E402"]
+select = ["E", "F", "B", "C4", "DTZ", "ERA", "I", "PERF", "PIE", "PT", "PTH", "RUF", "SIM", "TRY", "UP"]
+ignore = ["E402", "E501", "TRY003", "RUF001", "RUF002", "RUF003"]
 
 [tool.ruff.format]
 quote-style = "double"

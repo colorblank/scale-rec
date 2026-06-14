@@ -51,10 +51,6 @@ def test_discover_config_generator_matches_committed_files() -> None:
 
     # 1. Full discover config
     full_generated = generator.generate_config()
-    with open(
-        repo_root / "examples" / "shared" / "feature_config_discover.yaml",
-        "r",
-        encoding="utf-8",
-    ) as f:
+    with (repo_root / "examples" / "shared" / "feature_config_discover.yaml").open(encoding="utf-8") as f:
         full_committed = yaml.safe_load(f)
     assert full_generated == full_committed

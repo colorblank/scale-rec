@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 """Configurable ESMM: shared bottom + task towers + probability relations."""
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -47,9 +46,9 @@ class ESMM(nn.Module):
         detail_hidden_dims: list[int],
         stock_hidden_dims: list[int],
         stay_hidden_dims: list[int],
-        task_config: Optional[MultiTaskConfig] = None,
-        pooling_map: Optional[dict[str, str]] = None,
-        total_dim: Optional[int] = None,
+        task_config: MultiTaskConfig | None = None,
+        pooling_map: dict[str, str] | None = None,
+        total_dim: int | None = None,
     ) -> None:
         super().__init__()
         self.embeddings = FeatureEmbeddings(features, pooling_map, total_dim=total_dim)

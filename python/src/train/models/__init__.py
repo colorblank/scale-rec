@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 """模型注册表：@register_model 装饰器 + 中央 build() 工厂。"""
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any
 
 import torch.nn as nn
 
@@ -19,8 +20,8 @@ from .unimixer.model import UniMixerModel
 
 # ── registry ──
 OutputSpec = dict[str, Any]
-BuildFn = Callable[[list[FeatureTuple], Optional[nn.Module]], nn.Module]
-OutputSpecFn = Callable[[Optional[nn.Module], Optional[dict[str, Any]]], OutputSpec]
+BuildFn = Callable[[list[FeatureTuple], nn.Module | None], nn.Module]
+OutputSpecFn = Callable[[nn.Module | None, dict[str, Any] | None], OutputSpec]
 
 _registry: dict[str, dict[str, Callable[..., Any]]] = {}
 """Each entry: {build_fn, output_spec_fn}"""
@@ -33,7 +34,7 @@ def register_model(name: str, output_spec_fn: OutputSpecFn, build_fn: BuildFn) -
 def build_model(
     model_type: str,
     features: list[FeatureTuple],
-    tokenizer: Optional[nn.Module] = None,
+    tokenizer: nn.Module | None = None,
     **params: Any,
 ) -> nn.Module:
     """Build any registered model by type name. No if-elif chain."""
@@ -44,8 +45,8 @@ def build_model(
 
 def get_output_spec(
     model_type: str,
-    model_instance: Optional[nn.Module] = None,
-    params: Optional[dict[str, Any]] = None,
+    model_instance: nn.Module | None = None,
+    params: dict[str, Any] | None = None,
 ) -> OutputSpec:
     """Get output spec dict {task_names, label_col_map} for a model type."""
     if model_type not in _registry:
@@ -63,7 +64,7 @@ class TaskConfigEntry:
     tower_dims: list[int] = field(default_factory=list)
 
 
-def _parse_task_config(raw: Optional[dict[str, Any]]) -> Optional[MultiTaskConfig]:
+def _parse_task_config(raw: dict[str, Any] | None) -> MultiTaskConfig | None:
     if not raw:
         return None
     towers = [
@@ -99,7 +100,7 @@ def _parse_mmoe_task_configs(raw: dict[str, Any]) -> list[TaskConfigEntry]:
 
 
 def _spec_pred(
-    model: Optional[nn.Module] = None, params: Optional[dict[str, Any]] = None
+    model: nn.Module | None = None, params: dict[str, Any] | None = None
 ) -> OutputSpec:
     specs = parse_task_specs((params or {}).get("tasks"))
     if specs:
@@ -112,7 +113,7 @@ def _spec_pred(
 
 
 def _build_lr(
-    features: list[FeatureTuple], tokenizer: Optional[nn.Module] = None, **params: Any
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
 ) -> LogisticRegression:
     return LogisticRegression(
         features, pooling_map=params.get("_pooling_map"), total_dim=params.get("_total_dim")
@@ -120,7 +121,7 @@ def _build_lr(
 
 
 def _build_deepfm(
-    features: list[FeatureTuple], tokenizer: Optional[nn.Module] = None, **params: Any
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
 ) -> DeepFM:
     return DeepFM(
         features,
@@ -132,7 +133,7 @@ def _build_deepfm(
 
 
 def _build_mmoe(
-    features: list[FeatureTuple], tokenizer: Optional[nn.Module] = None, **params: Any
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
 ) -> MMoE:
     tcs = [(t.name, t.tower_dims) for t in _parse_mmoe_task_configs(params)]
     return MMoE(
@@ -148,7 +149,7 @@ def _build_mmoe(
 
 
 def _spec_mmoe(
-    model: Optional[nn.Module] = None, params: Optional[dict[str, Any]] = None
+    model: nn.Module | None = None, params: dict[str, Any] | None = None
 ) -> OutputSpec:
     specs = parse_task_specs((params or {}).get("tasks"))
     if specs:
@@ -162,7 +163,7 @@ def _spec_mmoe(
 
 
 def _build_esmm(
-    features: list[FeatureTuple], tokenizer: Optional[nn.Module] = None, **params: Any
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
 ) -> ESMM:
     task_config = _parse_task_config(params.get("task_config")) or _default_esmm_task_config(params)
     return ESMM(
@@ -180,7 +181,7 @@ def _build_esmm(
 
 
 def _build_gdcn_esmm(
-    features: list[FeatureTuple], tokenizer: Optional[nn.Module] = None, **params: Any
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
 ) -> GDCNESMM:
     task_config = _parse_task_config(params.get("task_config")) or _default_esmm_task_config(params)
     return GDCNESMM(
@@ -200,7 +201,7 @@ def _build_gdcn_esmm(
 
 
 def _spec_esmm(
-    model: Optional[nn.Module] = None, params: Optional[dict[str, Any]] = None
+    model: nn.Module | None = None, params: dict[str, Any] | None = None
 ) -> OutputSpec:
     params = params or {}
     specs = parse_task_specs(params.get("tasks"))
@@ -231,7 +232,7 @@ def _spec_esmm(
 
 
 def _spec_unimixer(
-    model: Optional[nn.Module] = None, params: Optional[dict[str, Any]] = None
+    model: nn.Module | None = None, params: dict[str, Any] | None = None
 ) -> OutputSpec:
     specs = parse_task_specs((params or {}).get("tasks"))
     if specs:
@@ -250,7 +251,7 @@ def _spec_unimixer(
 
 
 def _build_unimixer(
-    features: list[FeatureTuple], tokenizer: Optional[nn.Module] = None, **params: Any
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
 ) -> UniMixerModel:
     if tokenizer is None:
         raise ValueError("UniMixer requires external FeatureTokenizer")

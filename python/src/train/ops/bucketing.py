@@ -15,7 +15,7 @@ class Bucketing:
         self.boundaries = sorted(boundaries)
 
     @classmethod
-    def from_config(cls, params: dict) -> "Bucketing":
+    def from_config(cls, params: dict) -> Bucketing:
         return cls([float(x) for x in params.get("boundaries", [])])
 
     def process(self, inputs: list[Any]) -> int:

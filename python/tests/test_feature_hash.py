@@ -119,8 +119,10 @@ class TestFeatureHashMulti:
         cols = [["x", "y"], ["1", "2"]]
         batch = op.process_batch(cols)
         assert len(batch) == 2
-        assert isinstance(batch[0], list) and len(batch[0]) == 3
-        assert isinstance(batch[1], list) and len(batch[1]) == 3
+        assert isinstance(batch[0], list)
+        assert len(batch[0]) == 3
+        assert isinstance(batch[1], list)
+        assert len(batch[1]) == 3
         assert batch[0] == op.process(["x", "1"])
         assert batch[1] == op.process(["y", "2"])
 

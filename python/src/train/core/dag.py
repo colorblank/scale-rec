@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Optional, Union
+from typing import Any
 
 import torch
 
@@ -17,6 +17,7 @@ from .builder import (
     ValidationReport,
     parse_default,
 )
+
 _build = DagBuilder.build
 from .config import EmbedConfig, FlowConfig, OperatorDef, SourceDef
 from .executor import DagExecutor
@@ -41,7 +42,7 @@ class FeatureDag:
         self,
         config: FlowConfig,
         debug_mode: bool = False,
-        tracer: "Optional[Any]" = None,
+        tracer: Any | None = None,
         strict_validation: bool = False,
     ) -> None:
         artifact = _build(config)
@@ -158,7 +159,7 @@ class FeatureDag:
 
         return context
 
-    def preprocess_batch(self, rows: Union[list[dict], dict[str, list]]) -> dict[str, torch.Tensor]:
+    def preprocess_batch(self, rows: list[dict] | dict[str, list]) -> dict[str, torch.Tensor]:
         if isinstance(rows, dict):
             columns = {
                 name: list(values) for name, values in rows.items() if name in self._source_name_set
@@ -189,11 +190,9 @@ class FeatureDag:
         return self._preprocessor.preprocess(result)
 
     def execute(self, raw_inputs: dict[str, FeatureValue], sample_id: int = 0) -> FeatureResult:
-        context: dict[str, FeatureValue] = {}
-
-        for name, val in raw_inputs.items():
-            if name in self.sources:
-                context[name] = val
+        context: dict[str, FeatureValue] = {
+            name: val for name, val in raw_inputs.items() if name in self.sources
+        }
 
         overridden = list(raw_inputs.keys())
         for name, src in self.sources.items():

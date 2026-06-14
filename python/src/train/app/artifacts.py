@@ -6,7 +6,7 @@ import shutil
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 import torch
 import yaml
@@ -35,7 +35,7 @@ class CheckpointRecord:
     score: float
     metric_name: str
     path: Path
-    state_path: Optional[Path] = None
+    state_path: Path | None = None
 
 
 @dataclass
@@ -83,8 +83,8 @@ class TrainingArtifactManager:
     publish_latest_alias: bool = True
     copy_configs: bool = True
     _history: list[CheckpointRecord] = field(default_factory=list, init=False)
-    _best: Optional[CheckpointRecord] = field(default=None, init=False)
-    _latest: Optional[CheckpointRecord] = field(default=None, init=False)
+    _best: CheckpointRecord | None = field(default=None, init=False)
+    _latest: CheckpointRecord | None = field(default=None, init=False)
 
     @classmethod
     def from_config(
@@ -93,11 +93,11 @@ class TrainingArtifactManager:
         *,
         model_name: str,
         model_type: str,
-        artifact_root: Union[str, Path],
-        publish_path: Union[str, Path, None],
-        feature_config_path: Union[str, Path],
-        model_config_path: Union[str, Path],
-    ) -> "TrainingArtifactManager":
+        artifact_root: str | Path,
+        publish_path: str | Path | None,
+        feature_config_path: str | Path,
+        model_config_path: str | Path,
+    ) -> TrainingArtifactManager:
         resolved_model_name = _safe_name(artifact_config.model_name or model_name or model_type)
         run_version = artifact_config.run_version or _utc_version()
         root = Path(artifact_config.artifact_root or artifact_root)
@@ -134,7 +134,7 @@ class TrainingArtifactManager:
         )
 
     def prepare(
-        self, feature_config_path: Union[str, Path], model_config_path: Union[str, Path]
+        self, feature_config_path: str | Path, model_config_path: str | Path
     ) -> None:
         self.paths.run_dir.mkdir(parents=True, exist_ok=True)
         self.paths.checkpoints_dir.mkdir(parents=True, exist_ok=True)
@@ -155,8 +155,8 @@ class TrainingArtifactManager:
         score: float,
         metric_name: str,
         is_best: bool,
-        resume_state: Optional[dict[str, Any]] = None,
-        version: Optional[str] = None,
+        resume_state: dict[str, Any] | None = None,
+        version: str | None = None,
     ) -> CheckpointRecord:
         version = version or f"epoch-{epoch:04d}-step-{step:06d}"
         path = self.paths.checkpoint_path(version)
@@ -193,25 +193,25 @@ class TrainingArtifactManager:
         return list(self._history)
 
     @property
-    def best(self) -> Optional[CheckpointRecord]:
+    def best(self) -> CheckpointRecord | None:
         return self._best
 
     @property
-    def latest(self) -> Optional[CheckpointRecord]:
+    def latest(self) -> CheckpointRecord | None:
         return self._latest
 
     def finalize(
         self,
         *,
-        model: Optional[Any],
+        model: Any | None,
         model_type: str,
         tasks: list[str],
         label_col_map: dict[str, str],
         metrics: dict[str, float],
-        repo_root: Union[str, Path, None],
-        published_version: Optional[str] = None,
-        best_score: Optional[float] = None,
-        published_source: Union[str, Path, None] = None,
+        repo_root: str | Path | None,
+        published_version: str | None = None,
+        best_score: float | None = None,
+        published_source: str | Path | None = None,
     ) -> None:
         self.paths.published_weights_path.parent.mkdir(parents=True, exist_ok=True)
         if published_source is not None:
@@ -238,9 +238,9 @@ class TrainingArtifactManager:
         self,
         *,
         model_type: str,
-        best_score: Optional[float],
-        published_version: Optional[str],
-        published_source: Union[str, Path, None],
+        best_score: float | None,
+        published_version: str | None,
+        published_source: str | Path | None,
     ) -> None:
         data: dict[str, Any] = {
             "schema_version": 1,
@@ -275,7 +275,7 @@ class TrainingArtifactManager:
             ],
         }
         self.paths.run_manifest_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.paths.run_manifest_path, "w", encoding="utf-8") as f:
+        with self.paths.run_manifest_path.open("w", encoding="utf-8") as f:
             yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
 
     def _write_published_manifest(
@@ -285,9 +285,9 @@ class TrainingArtifactManager:
         tasks: list[str],
         label_col_map: dict[str, str],
         metrics: dict[str, float],
-        repo_root: Union[str, Path, None],
-        published_version: Optional[str],
-        best_score: Optional[float],
+        repo_root: str | Path | None,
+        published_version: str | None,
+        best_score: float | None,
     ) -> None:
         manifest_metrics = dict(metrics)
         if best_score is not None:
@@ -335,7 +335,7 @@ class TrainingArtifactManager:
         torch.save(resume_state, path)
 
 
-def resume_state_path(checkpoint_path: Union[str, Path]) -> Path:
+def resume_state_path(checkpoint_path: str | Path) -> Path:
     path = Path(checkpoint_path)
     if path.name.endswith(".resume.pt"):
         return path
@@ -344,7 +344,7 @@ def resume_state_path(checkpoint_path: Union[str, Path]) -> Path:
     return path.with_name(path.stem + ".resume.pt")
 
 
-def checkpoint_weights_path(checkpoint_path: Union[str, Path]) -> Path:
+def checkpoint_weights_path(checkpoint_path: str | Path) -> Path:
     path = Path(checkpoint_path)
     if path.suffix == ".safetensors":
         return path
@@ -353,7 +353,7 @@ def checkpoint_weights_path(checkpoint_path: Union[str, Path]) -> Path:
     raise ValueError(f"checkpoint path must be a .safetensors or .resume.pt file: {path}")
 
 
-def load_resume_state(checkpoint_path: Union[str, Path]) -> dict[str, Any]:
+def load_resume_state(checkpoint_path: str | Path) -> dict[str, Any]:
     path = resume_state_path(checkpoint_path)
     if not path.exists():
         raise FileNotFoundError(f"resume state not found: {path}")
@@ -362,5 +362,5 @@ def load_resume_state(checkpoint_path: Union[str, Path]) -> dict[str, Any]:
     except TypeError:
         state = torch.load(path, map_location="cpu")
     if not isinstance(state, dict):
-        raise ValueError(f"invalid resume state file: {path}")
+        raise TypeError(f"invalid resume state file: {path}")
     return state

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol, Union
+from typing import Any, Protocol
 
 from ..core.config import OpType
 
@@ -11,9 +11,14 @@ class CustomOp(Protocol):
     def process(self, inputs: list[Any]) -> Any: ...
 
 
+class OpFactory(Protocol):
+    @classmethod
+    def from_config(cls, params: dict) -> CustomOp: ...
+
+
 # ── Operator registry ──
 
-OP_REGISTRY: dict[str, type] = {}
+OP_REGISTRY: dict[str, OpFactory] = {}
 
 
 def register_op(op_type: str):
@@ -24,7 +29,7 @@ def register_op(op_type: str):
     return decorator
 
 
-def create_op(op_type: Union[str, OpType], params: dict) -> CustomOp:
+def create_op(op_type: str | OpType, params: dict) -> CustomOp:
     """Look up operator in registry and construct from params."""
     key = op_type.value if isinstance(op_type, OpType) else op_type
     cls = OP_REGISTRY.get(key)
@@ -52,6 +57,7 @@ from .string_concat import StringConcat as StringConcat
 from .string_parser import StringParser as StringParser
 
 __all__ = [
+    "OP_REGISTRY",
     "Bucketing",
     "ConcatHash",
     "CrossFeature",
@@ -68,7 +74,6 @@ __all__ = [
     "Split",
     "StringConcat",
     "StringParser",
-    "OP_REGISTRY",
     "create_op",
     "register_op",
 ]
