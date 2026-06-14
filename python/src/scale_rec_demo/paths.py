@@ -23,4 +23,5 @@ MODEL_CONFIGS = {
     "discover_gdcn_esmm": MODEL_EXAMPLES_DIR / "gdcn_esmm.yaml",
     "discover_unimixer": MODEL_EXAMPLES_DIR / "unimixer.yaml",
     "discover_token_mixer_large": MODEL_EXAMPLES_DIR / "token_mixer_large.yaml",
+    "discover_rankmixer": MODEL_EXAMPLES_DIR / "rankmixer.yaml",
 }

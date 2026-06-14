@@ -20,6 +20,8 @@ pub mod gdcn_esmm;
 pub mod lr;
 /// MMoE 多门控专家混合模型。
 pub mod mmoe;
+/// RankMixer：Token Mixing + Per-token FFN 排序模型。
+pub mod rankmixer;
 /// TokenMixer-Large：Mixing & Reverting 大规模排序模型。
 pub mod token_mixer_large;
 /// UniMixer 双随机矩阵交互模型。
@@ -85,6 +87,7 @@ static REGISTRY: LazyLock<HashMap<&'static str, BuildFn>> = LazyLock::new(|| {
     m.insert("gdcn_esmm", build_gdcn_esmm);
     m.insert("unimixer", build_unimixer);
     m.insert("token_mixer_large", build_token_mixer_large);
+    m.insert("rankmixer", build_rankmixer);
     m
 });
 
@@ -331,6 +334,34 @@ fn build_token_mixer_large(
     ))
 }
 
+fn build_rankmixer(
+    vb: VarBuilder,
+    _features: &[FeatureSpec],
+    tokenizer: Option<FeatureTokenizer>,
+    params: &serde_yaml::Value,
+    _options: &ModelBuildOptions,
+) -> Result<Box<dyn Model>> {
+    let tokenizer = tokenizer.ok_or_else(|| {
+        candle_core::Error::Msg("RankMixer requires external FeatureTokenizer".into())
+    })?;
+    let token_dim = yaml_usize(params, "token_dim", 64);
+    let num_tokens = yaml_usize(params, "num_tokens", 8);
+    let num_blocks = yaml_usize(params, "num_blocks", 2);
+    let num_heads = yaml_usize(params, "num_heads", num_tokens);
+    let hidden_factor = yaml_f64(params, "hidden_factor", 1.0);
+    let task_config = parse_multi_task_config(params)?;
+    Ok(Box::new(rankmixer::model::RankMixerModel::new(
+        tokenizer,
+        token_dim,
+        num_tokens,
+        num_blocks,
+        num_heads,
+        hidden_factor,
+        &task_config,
+        vb,
+    )?))
+}
+
 // ── YAML param helpers ──
 
 fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result<()> {
@@ -424,6 +455,20 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
             ],
             &["task_config"],
         ),
+        "rankmixer" => (
+            &[
+                "tasks",
+                "label_col_map",
+                "metrics",
+                "token_dim",
+                "num_tokens",
+                "num_blocks",
+                "num_heads",
+                "hidden_factor",
+                "task_config",
+            ],
+            &["task_config"],
+        ),
         _ => return Ok(()),
     };
     validate_model_param_keys(model_type, params, allowed, required)?;
@@ -453,6 +498,7 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
         "num_tokens",
         "num_blocks",
         "block_size",
+        "num_heads",
         "num_basis",
         "rank",
     ] {

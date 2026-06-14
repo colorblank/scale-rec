@@ -179,6 +179,55 @@ def test_unimixer_forward():
     assert out["cvr"].shape == (3, 1)
 
 
+def test_rankmixer_forward():
+    from train.models.rankmixer.model import RankMixerModel
+    from train.models.unimixer.tokenizer import FeatureTokenizer
+
+    token_dim = 4
+    num_tokens = 2
+    tokenizer = FeatureTokenizer(FEATURES, token_dim, num_tokens)
+    task_config = MultiTaskConfig(
+        towers=[
+            TowerConfig("ctr", [8], 1, Activation.RELU),
+            TowerConfig("cvr", [8], 1, Activation.RELU),
+        ],
+        relations=[],
+    )
+    model = RankMixerModel(tokenizer, token_dim, num_tokens, 1, num_tokens, 1.0, task_config)
+
+    out = model(_inputs(3))
+
+    assert out["ctr"].shape == (3, 1)
+    assert out["cvr"].shape == (3, 1)
+
+
+def test_rankmixer_builds_from_model_config():
+    from train.models.unimixer.tokenizer import FeatureTokenizer
+
+    tokenizer = FeatureTokenizer(FEATURES, token_dim=4, num_tokens=2)
+    config = ModelConfig.from_dict(
+        {
+            "type": "rankmixer",
+            "token_dim": 4,
+            "num_tokens": 2,
+            "num_blocks": 1,
+            "task_config": {"towers": [{"name": "ctr", "hidden_dims": [8]}]},
+        }
+    )
+
+    model = config.build(FEATURES, tokenizer=tokenizer)
+    out = model(_inputs(3))
+
+    assert out["ctr"].shape == (3, 1)
+
+
+def test_rankmixer_rejects_non_residual_token_mixing_shape():
+    from train.models.rankmixer.block import RankMixerBlock
+
+    with pytest.raises(ValueError, match="num_heads == num_tokens"):
+        RankMixerBlock(token_dim=4, num_tokens=2, num_heads=1, hidden_factor=1.0)
+
+
 def test_unimixer_tokenizer_pools_first_and_flatten_sequences():
     from train.models.unimixer.tokenizer import FeatureTokenizer
 

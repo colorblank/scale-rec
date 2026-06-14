@@ -220,6 +220,101 @@ fn test_unimixer_forward_shape() {
 }
 
 #[test]
+fn test_rankmixer_forward_shape() {
+    use scale_rec::models::rankmixer::model::RankMixerModel;
+    use scale_rec::models::unimixer::tokenizer::FeatureTokenizer;
+
+    let features = dummy_features();
+    let token_dim = 4;
+    let num_tokens = 2;
+    let vb = vb();
+    let tokenizer =
+        FeatureTokenizer::new(vb.pp("tokenizer"), &features, token_dim, num_tokens).unwrap();
+    let task_config = MultiTaskConfig {
+        towers: vec![TowerConfig {
+            name: "ctr".into(),
+            hidden_dims: vec![8],
+            output_dim: 1,
+            activation: Activation::Relu,
+        }],
+        relations: vec![],
+    };
+    let model = RankMixerModel::new(
+        tokenizer,
+        token_dim,
+        num_tokens,
+        1,
+        num_tokens,
+        1.0,
+        &task_config,
+        vb,
+    )
+    .unwrap();
+    let out = model.forward(&dummy_inputs(3)).unwrap();
+    assert!(out.contains_key("ctr"));
+    assert_eq!(out["ctr"].dims(), &[3, 1]);
+}
+
+#[test]
+fn test_modelconfig_build_rankmixer() {
+    use scale_rec::models::unimixer::tokenizer::FeatureTokenizer;
+
+    let features = dummy_features();
+    let vb = vb();
+    let tokenizer = FeatureTokenizer::new(vb.pp("tokenizer"), &features, 4, 2).unwrap();
+    let params = serde_yaml::from_str(
+        r#"
+token_dim: 4
+num_tokens: 2
+num_blocks: 1
+task_config:
+  towers:
+    - {name: ctr, hidden_dims: [8], output_dim: 1, activation: relu}
+"#,
+    )
+    .unwrap();
+    let cfg = ModelConfig {
+        model_type: "rankmixer".into(),
+        params,
+    };
+    let model = cfg.build(vb, &features, Some(tokenizer)).unwrap();
+    let out = model.forward(&dummy_inputs(2)).unwrap();
+    assert_eq!(out["ctr"].dims(), &[2, 1]);
+}
+
+#[test]
+fn test_rankmixer_rejects_non_residual_token_mixing_shape() {
+    use scale_rec::models::unimixer::tokenizer::FeatureTokenizer;
+
+    let features = dummy_features();
+    let vb = vb();
+    let tokenizer = FeatureTokenizer::new(vb.pp("tokenizer"), &features, 4, 2).unwrap();
+    let params = serde_yaml::from_str(
+        r#"
+token_dim: 4
+num_tokens: 2
+num_heads: 1
+task_config:
+  towers:
+    - {name: ctr, hidden_dims: [8], output_dim: 1, activation: relu}
+"#,
+    )
+    .unwrap();
+    let cfg = ModelConfig {
+        model_type: "rankmixer".into(),
+        params,
+    };
+
+    let err = match cfg.build(vb, &features, Some(tokenizer)) {
+        Ok(_) => panic!("invalid RankMixer shape should fail"),
+        Err(err) => err,
+    };
+    assert!(err
+        .to_string()
+        .contains("RankMixer requires num_heads == num_tokens"));
+}
+
+#[test]
 fn test_modelconfig_unimixer_rejects_invalid_task_config() {
     use scale_rec::models::unimixer::tokenizer::FeatureTokenizer;
 

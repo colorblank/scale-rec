@@ -16,6 +16,8 @@ def test_demo_model_configs_exist_and_are_current():
         "discover_lr": EXAMPLES_DIR / "models" / "lr.yaml",
         "discover_gdcn_esmm": EXAMPLES_DIR / "models" / "gdcn_esmm.yaml",
         "discover_unimixer": EXAMPLES_DIR / "models" / "unimixer.yaml",
+        "discover_token_mixer_large": EXAMPLES_DIR / "models" / "token_mixer_large.yaml",
+        "discover_rankmixer": EXAMPLES_DIR / "models" / "rankmixer.yaml",
     }
     ancillary_configs = [
         EXAMPLES_DIR / "shared" / "train_defaults.yaml",
@@ -29,6 +31,8 @@ def test_demo_model_configs_exist_and_are_current():
         "models/lr.yaml",
         "models/gdcn_esmm.yaml",
         "models/unimixer.yaml",
+        "models/token_mixer_large.yaml",
+        "models/rankmixer.yaml",
         "shared/train_defaults.yaml",
         "shared/discover_label_policy.yaml",
         "shared/feature_config_discover.yaml",
@@ -111,4 +115,6 @@ def test_demo_model_path_index_covers_all_example_models():
         "discover_lr": EXAMPLES_DIR / "models" / "lr.yaml",
         "discover_gdcn_esmm": EXAMPLES_DIR / "models" / "gdcn_esmm.yaml",
         "discover_unimixer": EXAMPLES_DIR / "models" / "unimixer.yaml",
+        "discover_token_mixer_large": EXAMPLES_DIR / "models" / "token_mixer_large.yaml",
+        "discover_rankmixer": EXAMPLES_DIR / "models" / "rankmixer.yaml",
     }
