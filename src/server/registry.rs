@@ -12,7 +12,7 @@ use tracing::{info, warn};
 use super::engine::InferenceEngine;
 use super::manifest::{find_manifest, ModelManifest, WeightBinding};
 use crate::feats::builder::DagBuilder;
-use crate::feats::config::{DType, DataSourceDef, FlowConfig};
+use crate::feats::config::{DType, DataSourceDef, FlowConfig, SourceKind};
 use crate::feats::executor::DagExecutor;
 use crate::feats::feature_info::FeatureInfo;
 use crate::layers::embedding::FeatureSpec;
@@ -82,7 +82,7 @@ pub struct ModelServingInfo {
 #[derive(Debug, Clone, Serialize)]
 pub struct FeatureInputInfo {
     pub name: String,
-    pub source: Option<String>,
+    pub source: Option<SourceKind>,
     pub data_source: Option<String>,
     pub dtype: DType,
     pub default_val: String,
@@ -354,7 +354,7 @@ impl ModelRegistry {
         let op_kind = feat_info.op_source_kind();
         let user_ops: std::collections::HashSet<String> = op_kind
             .iter()
-            .filter(|(_, &k)| k == "user")
+            .filter(|(_, &k)| !k.has_item())
             .map(|(n, _)| n.clone())
             .collect();
         let executor = DagExecutor::new(

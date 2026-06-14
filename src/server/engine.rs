@@ -728,7 +728,7 @@ operators:
 
         let user_ops: std::collections::HashSet<String> = op_kind
             .iter()
-            .filter(|(_, &k)| k == "user")
+            .filter(|(_, &k)| !k.has_item())
             .map(|(n, _)| n.clone())
             .collect();
         let user_op_indices: std::collections::HashSet<usize> = executor

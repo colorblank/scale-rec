@@ -4,6 +4,7 @@
 
 pub use super::builder::{DagArtifact, DagBuilder, ValidationIssue, ValidationReport};
 pub use super::executor::{DagExecutor, ExecStep, ExecutionPlan};
+use super::feature_info::{FeatureInfo, FeatureScope};
 use super::ops::Fv;
 use crate::feats::config::{DataSourceDef, FlowConfig, OperatorDef, SourceDef};
 use crate::feats::debug::DebugTracer;
@@ -89,56 +90,15 @@ impl FeatureDag {
         result
     }
 
-    /// Classify each operator by input source: "user", "item", or "cross" (both).
-    pub fn op_source_kind(&self) -> HashMap<String, &str> {
-        let mut feat_kind: HashMap<String, &str> = HashMap::new();
-        for (name, src) in &self.sources {
-            let k = match src.source.as_deref() {
-                Some("User") | Some("Context") => "user",
-                _ => "item",
-            };
-            feat_kind.insert(name.clone(), k);
-        }
-        for node_name in &self.execution_order {
-            let def = &self.node_defs[node_name];
-            let kinds: Vec<&&str> = def
-                .inputs
-                .iter()
-                .filter_map(|inp| feat_kind.get(inp))
-                .collect();
-            let k = if kinds.iter().any(|k| **k == "user") && kinds.iter().any(|k| **k == "item") {
-                "cross"
-            } else if kinds.iter().any(|k| **k == "user") {
-                "user"
-            } else if kinds.iter().any(|k| **k == "item") {
-                "item"
-            } else {
-                kinds.first().copied().unwrap_or(&&"other")
-            };
-            for out_name in &def.outputs {
-                feat_kind.insert(out_name.clone(), k);
-            }
-        }
-        let mut op_kind: HashMap<String, &str> = HashMap::new();
-        for node_name in &self.execution_order {
-            let def = &self.node_defs[node_name];
-            let kinds: Vec<&&str> = def
-                .inputs
-                .iter()
-                .filter_map(|inp| feat_kind.get(inp))
-                .collect();
-            let k = if kinds.iter().any(|k| **k == "user") && kinds.iter().any(|k| **k == "item") {
-                "cross"
-            } else if kinds.iter().any(|k| **k == "user") {
-                "user"
-            } else if kinds.iter().any(|k| **k == "item") {
-                "item"
-            } else {
-                "other"
-            };
-            op_kind.insert(node_name.clone(), k);
-        }
-        op_kind
+    /// Classify each operator by user/item/context-derived feature scope.
+    pub fn op_source_kind(&self) -> HashMap<String, FeatureScope> {
+        FeatureInfo::new(
+            self.sources.clone(),
+            self.node_defs.clone(),
+            self.feature_schemas.clone(),
+            self.execution_order.clone(),
+        )
+        .op_source_kind()
     }
 
     /// Get source names (used to filter inputs in broadcast mode).

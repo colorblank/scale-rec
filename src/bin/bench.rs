@@ -11,6 +11,8 @@ use tokio::time::{self, MissedTickBehavior};
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
+use scale_rec::feats::config::SourceKind;
+
 #[derive(Parser, Clone)]
 struct Args {
     #[arg(long, default_value = "http://localhost:8080")]
@@ -119,7 +121,7 @@ struct FlowConfigForBench {
 #[derive(Debug, Deserialize)]
 struct SourceForBench {
     name: String,
-    source: String,
+    source: SourceKind,
     dtype: String,
     default_val: Option<String>,
 }
@@ -195,7 +197,7 @@ fn load_broadcast_samples(
         let mut user = serde_json::Map::new();
         let mut item = serde_json::Map::new();
         for (source, value) in sources.iter().zip(record.iter()) {
-            let target = if source.source.eq_ignore_ascii_case("item") {
+            let target = if source.source == SourceKind::Item {
                 &mut item
             } else {
                 &mut user

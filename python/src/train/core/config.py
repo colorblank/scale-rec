@@ -22,6 +22,12 @@ class Role:
     DISCARD = "discard"
 
 
+class SourceKind(StrEnum):
+    USER = "User"
+    ITEM = "Item"
+    CONTEXT = "Context"
+
+
 @dataclass
 class DType:
     tag: str
@@ -95,7 +101,7 @@ class SourceDef:
     name: str
     dtype: DType
     default_val: str
-    source: Optional[str] = None
+    source: Optional[SourceKind] = None
     data_source: Optional[str] = None
     embed: Optional[EmbedConfig] = None
     role: str = Role.FEATURE
@@ -298,7 +304,7 @@ class FlowConfig:
             sources.append(
                 SourceDef(
                     name=s["name"],
-                    source=s.get("source"),
+                    source=SourceKind(s["source"]) if s.get("source") else None,
                     data_source=s.get("data_source"),
                     dtype=DType.from_dict(s["dtype"]),
                     default_val=s["default_val"],

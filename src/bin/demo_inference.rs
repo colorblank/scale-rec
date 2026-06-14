@@ -120,7 +120,7 @@ fn main() -> Result<()> {
     let op_kind = feat_info.op_source_kind();
     let user_ops: std::collections::HashSet<String> = op_kind
         .iter()
-        .filter(|(_, &k)| k == "user")
+        .filter(|(_, &k)| !k.has_item())
         .map(|(n, _)| n.clone())
         .collect();
     let executor = DagExecutor::new(

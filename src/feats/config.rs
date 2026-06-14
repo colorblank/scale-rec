@@ -231,13 +231,21 @@ pub struct EmbedConfig {
     pub truncation: TruncationSide,
 }
 
+/// 推荐排序特征的原始来源：用户、物品或上下文。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum SourceKind {
+    User,
+    Item,
+    Context,
+}
+
 /// 原始输入源定义。`embed` 已弃用，全部 embedding 由算子输出配置。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SourceDef {
     pub name: String,
     #[serde(default)]
-    pub source: Option<String>,
+    pub source: Option<SourceKind>,
     #[serde(default)]
     pub data_source: Option<String>,
     pub dtype: DType,
