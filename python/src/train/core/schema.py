@@ -167,18 +167,26 @@ def _infer_operator_output(op: OperatorDef, input_schemas: list[FeatureSchema]) 
         return _schema(op, FeatureDType(DTypeTag.INT))
     if op_type is OpType.DICT_MAPPER:
         if first and first.dtype.is_list:
-            return _schema(op, FeatureDType(DTypeTag.LIST, FeatureDType(DTypeTag.INT), first.dtype.length))
+            return _schema(
+                op, FeatureDType(DTypeTag.LIST, FeatureDType(DTypeTag.INT), first.dtype.length)
+            )
         return _schema(op, FeatureDType(DTypeTag.INT))
     if op_type in {OpType.STRING_PARSER, OpType.JSON_EXTRACT_LIST}:
         return _schema(
-            op, FeatureDType(DTypeTag.LIST, FeatureDType(DTypeTag.STRING), int(params.get("pad_len", 0)) or None)
+            op,
+            FeatureDType(
+                DTypeTag.LIST, FeatureDType(DTypeTag.STRING), int(params.get("pad_len", 0)) or None
+            ),
         )
     if op_type is OpType.LIST_STRING_PARSER:
         length = first.dtype.length if first and first.dtype.is_list else None
         return _schema(op, FeatureDType(DTypeTag.LIST, FeatureDType(DTypeTag.STRING), length))
     if op_type in {OpType.SPLIT, OpType.FLAT_SPLIT}:
         return _schema(
-            op, FeatureDType(DTypeTag.LIST, FeatureDType(DTypeTag.STRING), int(params.get("max_len", 0)) or None)
+            op,
+            FeatureDType(
+                DTypeTag.LIST, FeatureDType(DTypeTag.STRING), int(params.get("max_len", 0)) or None
+            ),
         )
     if op_type is OpType.CROSS_FEATURE:
         if len(input_schemas) != 2:
@@ -203,7 +211,8 @@ def _infer_operator_output(op: OperatorDef, input_schemas: list[FeatureSchema]) 
         return _schema(op, FeatureDType(DTypeTag.FLOAT))
     if op_type is OpType.SEQUENCE_OP:
         return _schema(
-            op, FeatureDType(DTypeTag.LIST, FeatureDType(DTypeTag.INT), int(params.get("max_len", 10)))
+            op,
+            FeatureDType(DTypeTag.LIST, FeatureDType(DTypeTag.INT), int(params.get("max_len", 10))),
         )
     if op_type is OpType.LIST_OVERLAP:
         return _schema(op, FeatureDType(DTypeTag.INT))
@@ -225,7 +234,10 @@ def _infer_operator_output(op: OperatorDef, input_schemas: list[FeatureSchema]) 
     if op_type is OpType.CONCAT_HASH:
         if int(params.get("num_hashes", 1)) > 1:
             return _schema(
-                op, FeatureDType(DTypeTag.LIST, FeatureDType(DTypeTag.INT), int(params.get("num_hashes", 1)))
+                op,
+                FeatureDType(
+                    DTypeTag.LIST, FeatureDType(DTypeTag.INT), int(params.get("num_hashes", 1))
+                ),
             )
         return _schema(op, FeatureDType(DTypeTag.INT))
     if op_type is OpType.FEATURE_HASH:

@@ -87,26 +87,27 @@ fn main() -> Result<()> {
     let vb = VarBuilder::from_varmap(&varmap, DType::F32, &device);
 
     // UniMixer 需要预构建 FeatureTokenizer（共享 VarMap，权重路径 "tokenizer.*"）
-    let tokenizer: Option<FeatureTokenizer> = if model_type == "unimixer" || model_type == "token_mixer_large" {
-        let token_dim = model_config
-            .params
-            .get("token_dim")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(64) as usize;
-        let num_tokens = model_config
-            .params
-            .get("num_tokens")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(8) as usize;
-        Some(FeatureTokenizer::new(
-            vb.pp("tokenizer"),
-            &features,
-            token_dim,
-            num_tokens,
-        )?)
-    } else {
-        None
-    };
+    let tokenizer: Option<FeatureTokenizer> =
+        if model_type == "unimixer" || model_type == "token_mixer_large" {
+            let token_dim = model_config
+                .params
+                .get("token_dim")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(64) as usize;
+            let num_tokens = model_config
+                .params
+                .get("num_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(8) as usize;
+            Some(FeatureTokenizer::new(
+                vb.pp("tokenizer"),
+                &features,
+                token_dim,
+                num_tokens,
+            )?)
+        } else {
+            None
+        };
 
     let model = model_config
         .build(vb, &features, tokenizer)

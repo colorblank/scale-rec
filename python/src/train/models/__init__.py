@@ -16,8 +16,8 @@ from .esmm import ESMM, default_task_config
 from .gdcn_esmm import GDCNESMM
 from .lr import LogisticRegression
 from .mmoe import MMoE
-from .unimixer.model import UniMixerModel
 from .token_mixer_large import TokenMixerLargeModel
+from .unimixer.model import UniMixerModel
 
 # ── registry ──
 OutputSpec = dict[str, Any]

@@ -20,10 +20,10 @@ pub mod gdcn_esmm;
 pub mod lr;
 /// MMoE 多门控专家混合模型。
 pub mod mmoe;
-/// UniMixer 双随机矩阵交互模型。
-pub mod unimixer;
 /// TokenMixer-Large：Mixing & Reverting 大规模排序模型。
 pub mod token_mixer_large;
+/// UniMixer 双随机矩阵交互模型。
+pub mod unimixer;
 
 /// 模型推理 trait：所有模型实现该 trait 以统一前向接口。
 pub trait Model: Send + Sync {
