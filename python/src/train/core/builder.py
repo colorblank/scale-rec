@@ -10,7 +10,16 @@ from typing import Any
 from ..ops import CustomOp, create_op
 
 Fv = Any
-from .config import DType, FlowConfig, OpType, Role, SourceDef, parse_float_strict, parse_int_strict
+from .config import (
+    DType,
+    DTypeTag,
+    FlowConfig,
+    OpType,
+    Role,
+    SourceDef,
+    parse_float_strict,
+    parse_int_strict,
+)
 from .executor import ExecStep, ExecutionPlan
 from .schema import FeatureSchema, infer_feature_schemas
 
@@ -60,30 +69,30 @@ class DagArtifact:
 
 
 def parse_default(val_str: str, dtype: DType) -> Fv:
-    if dtype.tag == "int":
+    if dtype.tag is DTypeTag.INT:
         return parse_int_strict(val_str)
-    elif dtype.tag == "float":
+    if dtype.tag is DTypeTag.FLOAT:
         return parse_float_strict(val_str)
-    elif dtype.tag == "string":
+    if dtype.tag is DTypeTag.STRING:
         return val_str
-    elif dtype.tag == "enum":
+    if dtype.tag is DTypeTag.ENUM:
         candidate = dtype.default if dtype.default is not None else val_str
         if dtype.values and candidate in dtype.values:
             return candidate
         if dtype.oov is not None:
             return dtype.oov
         return candidate
-    elif dtype.tag == "list":
+    if dtype.tag is DTypeTag.LIST:
         inner, length = dtype.inner, dtype.max_len or dtype.length
         if inner is None:
             raise ValueError("list dtype requires inner dtype")
-        if inner.tag == "int":
+        if inner.tag is DTypeTag.INT:
             return [parse_int_strict(val_str)] * length
-        elif inner.tag == "float":
+        if inner.tag is DTypeTag.FLOAT:
             return [parse_float_strict(val_str)] * length
-        elif inner.tag == "string":
+        if inner.tag is DTypeTag.STRING:
             return [val_str] * length
-        elif inner.tag == "enum":
+        if inner.tag is DTypeTag.ENUM:
             candidate = inner.default if inner.default is not None else val_str
             if inner.values and candidate not in inner.values and inner.oov is not None:
                 candidate = inner.oov

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from .config import (
     DType,
+    DTypeTag,
     EmbedConfig,
     FlowConfig,
     OperatorDef,
@@ -17,7 +18,7 @@ from .config import (
 
 @dataclass(frozen=True)
 class FeatureDType:
-    tag: str
+    tag: DTypeTag
     inner: FeatureDType | None = None
     length: int | None = None
     values: tuple[str, ...] | None = None
@@ -26,12 +27,12 @@ class FeatureDType:
 
     @property
     def is_list(self) -> bool:
-        return self.tag == "list"
+        return self.tag is DTypeTag.LIST
 
     @property
     def is_integer_index(self) -> bool:
-        return self.tag == "int" or (
-            self.tag == "list" and self.inner is not None and self.inner.tag == "int"
+        return self.tag is DTypeTag.INT or (
+            self.tag is DTypeTag.LIST and self.inner is not None and self.inner.tag is DTypeTag.INT
         )
 
     @property
@@ -39,12 +40,12 @@ class FeatureDType:
         return self.length or 1 if self.is_list else 1
 
     def __str__(self) -> str:
-        if self.tag == "list" and self.inner is not None:
+        if self.tag is DTypeTag.LIST and self.inner is not None:
             length = "" if self.length is None else f";{self.length}"
             return f"list[{self.inner}{length}]"
-        if self.tag == "enum":
+        if self.tag is DTypeTag.ENUM:
             return "enum"
-        return self.tag
+        return self.tag.value
 
 
 @dataclass(frozen=True)
@@ -111,29 +112,29 @@ def infer_feature_schemas(config: FlowConfig) -> dict[str, FeatureSchema]:
 
 
 def _dtype_from_config(dtype: DType) -> FeatureDType:
-    if dtype.tag == "list":
+    if dtype.tag is DTypeTag.LIST:
         if dtype.inner is None:
             raise ValueError("list dtype requires inner dtype")
         if not dtype.max_len or dtype.max_len <= 0:
             raise ValueError("list dtype requires max_len > 0")
-        return FeatureDType("list", _dtype_from_config(dtype.inner), dtype.max_len)
-    if dtype.tag == "enum":
+        return FeatureDType(DTypeTag.LIST, _dtype_from_config(dtype.inner), dtype.max_len)
+    if dtype.tag is DTypeTag.ENUM:
         values = tuple(dtype.values or ())
         if not values:
             raise ValueError("enum dtype requires values")
-        return FeatureDType("enum", values=values, default=dtype.default, oov=dtype.oov)
+        return FeatureDType(DTypeTag.ENUM, values=values, default=dtype.default, oov=dtype.oov)
     return FeatureDType(dtype.tag)
 
 
 def _validate_default(name: str, dtype: FeatureDType, default_val: str) -> None:
     try:
-        if dtype.tag == "int":
+        if dtype.tag is DTypeTag.INT:
             parse_int_strict(default_val)
-        elif dtype.tag == "float":
+        elif dtype.tag is DTypeTag.FLOAT:
             parse_float_strict(default_val)
-        elif dtype.tag == "enum":
+        elif dtype.tag is DTypeTag.ENUM:
             _validate_enum_default(dtype, default_val)
-        elif dtype.tag == "list" and dtype.inner is not None:
+        elif dtype.tag is DTypeTag.LIST and dtype.inner is not None:
             _validate_default(name, dtype.inner, default_val)
     except (TypeError, ValueError) as exc:
         raise ValueError(
@@ -160,27 +161,27 @@ def _infer_operator_output(op: OperatorDef, input_schemas: list[FeatureSchema]) 
     params = op.params
     if op_type is OpType.BUCKETING:
         _require_scalar_number(op, first)
-        return _schema(op, FeatureDType("int"))
+        return _schema(op, FeatureDType(DTypeTag.INT))
     if op_type is OpType.DICT_MAPPER:
         if first and first.dtype.is_list:
-            return _schema(op, FeatureDType("list", FeatureDType("int"), first.dtype.length))
-        return _schema(op, FeatureDType("int"))
+            return _schema(op, FeatureDType(DTypeTag.LIST, FeatureDType(DTypeTag.INT), first.dtype.length))
+        return _schema(op, FeatureDType(DTypeTag.INT))
     if op_type in {OpType.STRING_PARSER, OpType.JSON_EXTRACT_LIST}:
         return _schema(
-            op, FeatureDType("list", FeatureDType("string"), int(params.get("pad_len", 0)) or None)
+            op, FeatureDType(DTypeTag.LIST, FeatureDType(DTypeTag.STRING), int(params.get("pad_len", 0)) or None)
         )
     if op_type is OpType.LIST_STRING_PARSER:
         length = first.dtype.length if first and first.dtype.is_list else None
-        return _schema(op, FeatureDType("list", FeatureDType("string"), length))
+        return _schema(op, FeatureDType(DTypeTag.LIST, FeatureDType(DTypeTag.STRING), length))
     if op_type in {OpType.SPLIT, OpType.FLAT_SPLIT}:
         return _schema(
-            op, FeatureDType("list", FeatureDType("string"), int(params.get("max_len", 0)) or None)
+            op, FeatureDType(DTypeTag.LIST, FeatureDType(DTypeTag.STRING), int(params.get("max_len", 0)) or None)
         )
     if op_type is OpType.CROSS_FEATURE:
         if len(input_schemas) != 2:
             raise ValueError(f"operator '{op.name}' expects exactly 2 inputs")
         if params.get("cross_type") == "inner_product":
-            return _schema(op, FeatureDType("float"))
+            return _schema(op, FeatureDType(DTypeTag.FLOAT))
         max_len = params.get("max_len")
         if max_len is not None:
             length = int(max_len)
@@ -194,17 +195,17 @@ def _infer_operator_output(op: OperatorDef, input_schemas: list[FeatureSchema]) 
                 length *= item
             if not lengths or length <= 0:
                 length = None
-        return _schema(op, FeatureDType("list", FeatureDType("string"), length))
+        return _schema(op, FeatureDType(DTypeTag.LIST, FeatureDType(DTypeTag.STRING), length))
     if op_type is OpType.EXPRESSION_OP:
-        return _schema(op, FeatureDType("float"))
+        return _schema(op, FeatureDType(DTypeTag.FLOAT))
     if op_type is OpType.SEQUENCE_OP:
         return _schema(
-            op, FeatureDType("list", FeatureDType("int"), int(params.get("max_len", 10)))
+            op, FeatureDType(DTypeTag.LIST, FeatureDType(DTypeTag.INT), int(params.get("max_len", 10)))
         )
     if op_type is OpType.LIST_OVERLAP:
-        return _schema(op, FeatureDType("int"))
+        return _schema(op, FeatureDType(DTypeTag.INT))
     if op_type is OpType.STRING_CONCAT:
-        return _schema(op, FeatureDType("string"))
+        return _schema(op, FeatureDType(DTypeTag.STRING))
     if op_type is OpType.PARSED_FEATURE_HASH:
         mode = str(params.get("parse_mode", "json"))
         if mode in {"json", "structured", "structured_list_split"}:
@@ -217,13 +218,13 @@ def _infer_operator_output(op: OperatorDef, input_schemas: list[FeatureSchema]) 
                 length = int(params.get("pad_len", 0)) or None
         else:
             raise ValueError(f"Unsupported ParsedFeatureHash mode: {mode}")
-        return _schema(op, FeatureDType("list", FeatureDType("int"), length))
+        return _schema(op, FeatureDType(DTypeTag.LIST, FeatureDType(DTypeTag.INT), length))
     if op_type is OpType.CONCAT_HASH:
         if int(params.get("num_hashes", 1)) > 1:
             return _schema(
-                op, FeatureDType("list", FeatureDType("int"), int(params.get("num_hashes", 1)))
+                op, FeatureDType(DTypeTag.LIST, FeatureDType(DTypeTag.INT), int(params.get("num_hashes", 1)))
             )
-        return _schema(op, FeatureDType("int"))
+        return _schema(op, FeatureDType(DTypeTag.INT))
     if op_type is OpType.FEATURE_HASH:
         list_inputs = [s for s in input_schemas if s.dtype.is_list]
         num_hashes = int(params.get("num_hashes", 1))
@@ -237,12 +238,12 @@ def _infer_operator_output(op: OperatorDef, input_schemas: list[FeatureSchema]) 
                     length += schema.dtype.length
                 else:
                     length += 1
-            return _schema(op, FeatureDType("list", FeatureDType("int"), length))
+            return _schema(op, FeatureDType(DTypeTag.LIST, FeatureDType(DTypeTag.INT), length))
         if num_hashes > 1:
-            return _schema(op, FeatureDType("list", FeatureDType("int"), num_hashes))
-        return _schema(op, FeatureDType("int"))
+            return _schema(op, FeatureDType(DTypeTag.LIST, FeatureDType(DTypeTag.INT), num_hashes))
+        return _schema(op, FeatureDType(DTypeTag.INT))
     if op_type is OpType.PLUGIN_OP:
-        return _schema(op, FeatureDType("unknown"))
+        return _schema(op, FeatureDType(DTypeTag("unknown")))
     raise ValueError(f"Unsupported operator for schema inference: {op_type}")
 
 
@@ -256,7 +257,7 @@ def _schema(op: OperatorDef, dtype: FeatureDType) -> FeatureSchema:
 
 
 def _require_scalar_number(op: OperatorDef, schema: FeatureSchema | None) -> None:
-    if schema is None or schema.dtype.tag not in {"int", "float"}:
+    if schema is None or schema.dtype.tag not in {DTypeTag.INT, DTypeTag.FLOAT}:
         got = "missing" if schema is None else str(schema.dtype)
         raise ValueError(f"operator '{op.name}' expects numeric scalar input, got {got}")
 

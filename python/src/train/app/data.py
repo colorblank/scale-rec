@@ -232,7 +232,7 @@ def stream_file_batches(
             continue
         seen.add(s.name)
         names.append(s.name)
-        dt = s.dtype.tag if hasattr(s.dtype, "tag") else str(s.dtype)
+        dt = s.dtype.tag.value if hasattr(s.dtype, "tag") else str(s.dtype)
         dtype[s.name] = DTYPE_PANDAS.get(dt, "str")
         defaults[s.name] = _parse_default(s.default_val, dt)
 

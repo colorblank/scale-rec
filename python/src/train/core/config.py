@@ -30,7 +30,7 @@ class SourceKind(str, Enum):
 
 @dataclass
 class DType:
-    tag: str
+    tag: DTypeTag
     inner: DType | None = None
     max_len: int | None = None
     values: list[str] | None = None
@@ -44,7 +44,7 @@ class DType:
     @classmethod
     def from_dict(cls, raw: str | dict) -> DType:
         if isinstance(raw, str):
-            return cls(tag=raw)
+            return cls(tag=DTypeTag(raw))
         if isinstance(raw, dict) and "list" in raw:
             spec = raw["list"]
             inner_raw = spec.get("item_dtype", spec.get("dtype"))
@@ -53,19 +53,19 @@ class DType:
                 raise ValueError(f"Invalid list DType: {raw}")
             if max_len is None:
                 raise ValueError(f"list dtype requires max_len: {raw}")
-            return cls(tag="list", inner=cls.from_dict(inner_raw), max_len=int(max_len))
+            return cls(tag=DTypeTag.LIST, inner=cls.from_dict(inner_raw), max_len=int(max_len))
         if isinstance(raw, dict) and "enum" in raw:
             spec = raw["enum"]
             if isinstance(spec, list):
                 values = [str(v) for v in spec]
-                return cls(tag="enum", values=values, default=values[0] if values else None)
+                return cls(tag=DTypeTag.ENUM, values=values, default=values[0] if values else None)
             values = [str(v) for v in spec.get("values", [])]
             if not values:
                 raise ValueError(f"enum dtype requires values: {raw}")
             default = spec.get("default")
             oov = spec.get("oov")
             return cls(
-                tag="enum",
+                tag=DTypeTag.ENUM,
                 values=values,
                 default=str(default) if default is not None else values[0],
                 oov=str(oov) if oov is not None else None,
@@ -106,6 +106,14 @@ class SourceDef:
     embed: EmbedConfig | None = None
     role: str = Role.FEATURE
     column_index: int | None = None
+
+
+class DTypeTag(str, Enum):
+    INT = "int"
+    FLOAT = "float"
+    STRING = "string"
+    ENUM = "enum"
+    LIST = "list"
 
 
 class OpType(str, Enum):
