@@ -8,6 +8,7 @@ import torch
 
 from train.core.config import EvalConfig, FlowConfig, LRScheduleConfig, OptimConfig, TrainConfig
 from train.core.dag import FeatureDag
+from train.core.preprocessor import TrainingPreprocessor
 from train.core.task import TaskSpec, parse_task_specs
 from train.training.eval.evaluator import Evaluator
 from train.training.loss.multi_task import MultiTaskLoss
@@ -27,6 +28,10 @@ def _single_label_flow(label: str = "click") -> FlowConfig:
             "operators": [],
         }
     )
+
+
+def _dummy_preprocessor(flow_config: FlowConfig) -> TrainingPreprocessor:
+    return TrainingPreprocessor(FeatureDag(flow_config))
 
 
 def test_train_config_uses_structured_subconfigs():
@@ -169,9 +174,10 @@ def test_multi_task_loss_rejects_missing_model_outputs():
 
 def test_trainer_monitor_score_uses_configured_task_metric_and_mode():
     flow_config = _single_label_flow()
+    preproc = _dummy_preprocessor(flow_config)
     trainer = Trainer(
         torch.nn.Linear(1, 1),
-        dag=None,
+        preproc,
         task_names=["click"],
         label_map={"click": "click"},
         device=torch.device("cpu"),
@@ -189,9 +195,10 @@ def test_trainer_monitor_score_uses_configured_task_metric_and_mode():
 
 def test_trainer_monitor_auto_minimizes_loss_metrics():
     flow_config = _single_label_flow()
+    preproc = _dummy_preprocessor(flow_config)
     trainer = Trainer(
         torch.nn.Linear(1, 1),
-        dag=None,
+        preproc,
         task_names=["click"],
         label_map={"click": "click"},
         device=torch.device("cpu"),
@@ -221,9 +228,10 @@ def test_trainer_iter_batches_reads_all_data_paths(tmp_path):
             "operators": [],
         }
     )
+    preproc = _dummy_preprocessor(flow_config)
     trainer = Trainer(
         torch.nn.Linear(1, 1),
-        dag=None,
+        preproc,
         task_names=["click"],
         label_map={"click": "is_click"},
         device=torch.device("cpu"),
@@ -315,9 +323,10 @@ def test_trainer_periodic_checkpoint_saves_by_step_interval():
             )
 
     flow_config = _single_label_flow()
+    preproc = _dummy_preprocessor(flow_config)
     trainer = Trainer(
         torch.nn.Linear(1, 1),
-        dag=None,
+        preproc,
         task_names=["click"],
         label_map={"click": "click"},
         device=torch.device("cpu"),
@@ -392,9 +401,10 @@ def test_trainer_periodic_checkpoint_saves_by_time_interval(monkeypatch):
             )
 
     flow_config = _single_label_flow()
+    preproc = _dummy_preprocessor(flow_config)
     trainer = Trainer(
         torch.nn.Linear(1, 1),
-        dag=None,
+        preproc,
         task_names=["click"],
         label_map={"click": "click"},
         device=torch.device("cpu"),
@@ -453,7 +463,7 @@ def test_trainer_validation_comes_from_last_data_path(tmp_path):
     )
     trainer = Trainer(
         torch.nn.Linear(1, 1),
-        dag=FeatureDag(flow_config),
+        TrainingPreprocessor(FeatureDag(flow_config)),
         task_names=["click"],
         label_map={"click": "is_click"},
         device=torch.device("cpu"),
@@ -500,7 +510,8 @@ def test_feature_quality_report_tracks_missing_defaults_and_buckets():
     )
     dag = FeatureDag(config)
     report = summarize_feature_quality(
-        dag,
+        dag.executor,
+        dag.feat_info,
         [
             {
                 "features": [
@@ -561,7 +572,8 @@ def test_feature_quality_counts_sequence_padding_as_empty():
     dag = FeatureDag(config)
 
     report = summarize_feature_quality(
-        dag,
+        dag.executor,
+        dag.feat_info,
         [
             {
                 "features": [

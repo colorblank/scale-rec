@@ -105,14 +105,14 @@ class DagExecutor:
         context: dict[str, list] = dict(columns)
         for name, src in self._sources.items():
             if name not in context:
-                from .builder import _parse_default
-                default = _parse_default(src.default_val, src.dtype)
+                from .builder import parse_default
+                default = parse_default(src.default_val, src.dtype)
                 context[name] = [default] * n_rows
             else:
                 col = context[name]
                 if any(v is None for v in col):
-                    from .builder import _parse_default
-                    default = _parse_default(src.default_val, src.dtype)
+                    from .builder import parse_default
+                    default = parse_default(src.default_val, src.dtype)
                     context[name] = [default if v is None else v for v in col]
 
         name_to_op: dict[str, Any] = {}
@@ -143,6 +143,34 @@ class DagExecutor:
                 for out_name in def_.outputs:
                     context[out_name] = output
 
+        return context
+
+    @property
+    def nodes(self) -> dict[str, CustomOp]:
+        """映射 op_name → CustomOp 实例。"""
+        if not hasattr(self, "__nodes_cache"):
+            self.__nodes_cache = {}
+            for i, node_name in enumerate(self._execution_order):
+                self.__nodes_cache[node_name] = self._plan._ops[i]
+        return self.__nodes_cache
+
+    def execute(self, raw_inputs: dict[str, Any]) -> dict[str, Any]:
+        """单行执行 DAG，返回 context 字典。"""
+        context: dict[str, Any] = {}
+        for name, val in raw_inputs.items():
+            if name in self._sources:
+                context[name] = val
+        for name, src in self._sources.items():
+            if name not in context:
+                from .builder import parse_default
+                context[name] = parse_default(src.default_val, src.dtype)
+        for node_name in self._execution_order:
+            def_ = self._node_defs[node_name]
+            op = self.nodes[node_name]
+            op_inputs = [context[inp] for inp in def_.inputs]
+            output = op.process(op_inputs)
+            for out_name in def_.outputs:
+                context[out_name] = output
         return context
 
     def plan(self) -> ExecutionPlan:

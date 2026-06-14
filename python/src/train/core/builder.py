@@ -53,7 +53,7 @@ class DagArtifact:
     ))
 
 
-def _parse_default(val_str: str, dtype: DType) -> Fv:
+def parse_default(val_str: str, dtype: DType) -> Fv:
     if dtype.tag == "int":
         return parse_int_strict(val_str)
     elif dtype.tag == "float":
@@ -225,7 +225,7 @@ class DagBuilder:
             source_names.append(s)
             col_names[i] = s
             source_def = sources[s]
-            source_defaults.append(_parse_default(source_def.default_val, source_def.dtype))
+            source_defaults.append(parse_default(source_def.default_val, source_def.dtype))
         col_count = len(sources)
         for op_def in config.operators:
             for out in op_def.outputs:

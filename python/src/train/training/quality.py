@@ -6,7 +6,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..core.dag import FeatureDag
+from ..core.executor import DagExecutor
+from ..core.feature_info import FeatureInfo
 
 
 @dataclass(frozen=True)
@@ -64,15 +65,16 @@ class FeatureQualityReport:
 
 
 def summarize_feature_quality(
-    dag: FeatureDag,
+    executor: DagExecutor,
+    feat_info: FeatureInfo,
     batches: list[dict[str, Any]],
     *,
     max_rows: int = 2000,
     top_k: int = 5,
 ) -> FeatureQualityReport:
     rows = _collect_rows(batches, max_rows)
-    source_stats = _source_quality(dag, rows)
-    emb_stats = _embeddable_quality(dag, rows, top_k)
+    source_stats = _source_quality(feat_info, rows)
+    emb_stats = _embeddable_quality(executor, feat_info, rows, top_k)
     return FeatureQualityReport(
         rows=len(rows),
         sources=source_stats,
@@ -97,14 +99,17 @@ def _collect_rows(batches: list[dict[str, Any]], max_rows: int) -> list[dict[str
     return rows
 
 
-def _source_quality(dag: FeatureDag, rows: list[dict[str, Any]]) -> dict[str, SourceQuality]:
-    counters = {name: {"total": 0, "missing": 0, "default_hits": 0} for name in dag.sources}
+def _source_quality(feat_info: FeatureInfo, rows: list[dict[str, Any]]) -> dict[str, SourceQuality]:
+    from ..core.builder import parse_default
+
+    sources = feat_info.sources
+    counters = {name: {"total": 0, "missing": 0, "default_hits": 0} for name in sources}
     defaults = {
-        name: dag._parse_default(source.default_val, source.dtype)
-        for name, source in dag.sources.items()
+        name: parse_default(source.default_val, source.dtype)
+        for name, source in sources.items()
     }
     for row in rows:
-        for name in dag.sources:
+        for name in sources:
             counters[name]["total"] += 1
             value = row.get(name)
             if _is_missing(value):
@@ -123,21 +128,24 @@ def _source_quality(dag: FeatureDag, rows: list[dict[str, Any]]) -> dict[str, So
 
 
 def _embeddable_quality(
-    dag: FeatureDag, rows: list[dict[str, Any]], top_k: int
+    executor: DagExecutor,
+    feat_info: FeatureInfo,
+    rows: list[dict[str, Any]],
+    top_k: int,
 ) -> dict[str, EmbeddableQuality]:
-    embed_infos = dict(dag.embeddable_features())
+    embed_infos = dict(feat_info.embeddable_features())
     counters: dict[str, Counter[int]] = {name: Counter() for name in embed_infos}
     total = {name: 0 for name in embed_infos}
     empty = {name: 0 for name in embed_infos}
     length_sum = {name: 0 for name in embed_infos}
     total_items = {name: 0 for name in embed_infos}
     padded_items = {name: 0 for name in embed_infos}
-    pad_buckets = _embedding_pad_buckets(dag)
+    pad_buckets = _embedding_pad_buckets(executor, feat_info)
 
     for row in rows:
-        result = dag.execute(row)
+        result = executor.execute(row)
         for name, embed in embed_infos.items():
-            value = result.features.get(name)
+            value = result.get(name)
             total[name] += 1
             values = value if isinstance(value, list) else [value]
             if isinstance(value, list):
@@ -175,19 +183,21 @@ def _embeddable_quality(
     return report
 
 
-def _embedding_pad_buckets(dag: FeatureDag) -> dict[str, set[int]]:
+def _embedding_pad_buckets(executor: DagExecutor, feat_info: FeatureInfo) -> dict[str, set[int]]:
     providers = {}
-    for op_name, op_def in dag.node_defs.items():
+    node_defs = feat_info.node_defs
+    for op_name, op_def in node_defs.items():
         for output in op_def.outputs:
             providers[output] = op_name
 
+    nodes = executor.nodes
     result: dict[str, set[int]] = {}
-    for feature_name, _ in dag.embeddable_features():
+    for feature_name, _ in feat_info.embeddable_features():
         op_name = providers.get(feature_name)
         if op_name is None:
             continue
-        op_def = dag.node_defs[op_name]
-        op = dag.nodes[op_name]
+        op_def = node_defs[op_name]
+        op = nodes[op_name]
         pad_values: set[int] = set()
         if op_def.op_type == "SequenceOp":
             pad_values.add(int(op_def.params.get("pad_val", 0)))
@@ -198,7 +208,7 @@ def _embedding_pad_buckets(dag: FeatureDag) -> dict[str, set[int]]:
                 upstream_name = providers.get(input_name)
                 if upstream_name is None:
                     continue
-                upstream_def = dag.node_defs[upstream_name]
+                upstream_def = node_defs[upstream_name]
                 if upstream_def.op_type in {
                     "StringParser",
                     "JsonExtractList",

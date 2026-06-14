@@ -15,7 +15,7 @@ from ..ops import CustomOp, create_op
 from .builder import (
     DagBuilder,
     ValidationReport,
-    _parse_default,
+    parse_default,
 )
 _build = DagBuilder.build
 from .config import EmbedConfig, FlowConfig, OperatorDef, SourceDef
@@ -46,7 +46,12 @@ class FeatureDag:
     ) -> None:
         artifact = _build(config)
         self._artifact = artifact
-        self._executor = DagExecutor(artifact.plan, artifact.sources)
+        self._executor = DagExecutor(
+            artifact.plan,
+            artifact.sources,
+            node_defs=artifact.node_defs,
+            execution_order=artifact.execution_order,
+        )
         self._feat_info = FeatureInfo(
             artifact.sources,
             artifact.node_defs,
@@ -80,9 +85,21 @@ class FeatureDag:
     def _validate(self, config: FlowConfig) -> ValidationReport:
         return self.validation_report
 
+    @property
+    def executor(self) -> DagExecutor:
+        return self._executor
+
+    @property
+    def feat_info(self) -> FeatureInfo:
+        return self._feat_info
+
+    @property
+    def preprocessor(self) -> DagPreprocessor:
+        return self._preprocessor
+
     @staticmethod
     def _parse_default(val_str: str, dtype: Any) -> FeatureValue:
-        return _parse_default(val_str, dtype)
+        return parse_default(val_str, dtype)
 
     @staticmethod
     def _create_op(def_: OperatorDef) -> CustomOp:

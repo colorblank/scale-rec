@@ -99,6 +99,14 @@ class FeatureInfo:
             op_kind[node_name] = k
         return op_kind
 
+    @property
+    def sources(self) -> dict[str, SourceDef]:
+        return self._sources
+
+    @property
+    def node_defs(self) -> dict[str, OperatorDef]:
+        return self._node_defs
+
     def source_defs(self) -> dict[str, SourceDef]:
         return self._sources
 
