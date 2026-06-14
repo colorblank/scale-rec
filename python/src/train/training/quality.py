@@ -106,8 +106,7 @@ def _source_quality(feat_info: FeatureInfo, rows: list[dict[str, Any]]) -> dict[
     sources = feat_info.sources
     counters = {name: {"total": 0, "missing": 0, "default_hits": 0} for name in sources}
     defaults = {
-        name: parse_default(source.default_val, source.dtype)
-        for name, source in sources.items()
+        name: parse_default(source.default_val, source.dtype) for name, source in sources.items()
     }
     for row in rows:
         for name in sources:

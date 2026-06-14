@@ -275,9 +275,7 @@ def load_init_weights(
     logging.getLogger(__name__).info("initialized model from %s", path)
 
 
-def train_config_from_args(
-    args: argparse.Namespace, *, export_path: str | Path
-) -> TrainConfig:
+def train_config_from_args(args: argparse.Namespace, *, export_path: str | Path) -> TrainConfig:
     config_path = Path(getattr(args, "train_config", DEFAULT_TRAIN_CONFIG))
     base = TrainConfig.from_yaml(config_path) if config_path.exists() else TrainConfig()
 

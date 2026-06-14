@@ -133,9 +133,7 @@ class TrainingArtifactManager:
             copy_configs=artifact_config.copy_configs,
         )
 
-    def prepare(
-        self, feature_config_path: str | Path, model_config_path: str | Path
-    ) -> None:
+    def prepare(self, feature_config_path: str | Path, model_config_path: str | Path) -> None:
         self.paths.run_dir.mkdir(parents=True, exist_ok=True)
         self.paths.checkpoints_dir.mkdir(parents=True, exist_ok=True)
         if self.copy_configs:

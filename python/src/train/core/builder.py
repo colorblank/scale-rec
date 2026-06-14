@@ -49,9 +49,14 @@ class DagArtifact:
     plan: ExecutionPlan = field(default_factory=ExecutionPlan)
     feature_schemas: dict[str, FeatureSchema] = field(default_factory=dict)
     data_sources: list[Any] = field(default_factory=list)
-    validation_report: ValidationReport = field(default_factory=lambda: ValidationReport(
-        issues=(), source_count=0, embeddable_count=0, intermediate_count=0,
-    ))
+    validation_report: ValidationReport = field(
+        default_factory=lambda: ValidationReport(
+            issues=(),
+            source_count=0,
+            embeddable_count=0,
+            intermediate_count=0,
+        )
+    )
 
 
 def parse_default(val_str: str, dtype: DType) -> Fv:
@@ -105,7 +110,7 @@ def _validate(
     issues = []
 
     for s in operators:
-        if hasattr(s, 'role') and s.role != Role.FEATURE:
+        if hasattr(s, "role") and s.role != Role.FEATURE:
             continue
     for name in sources:
         if name not in downstream_consumers and name not in embeddable:
@@ -255,7 +260,9 @@ class DagBuilder:
         for op_def in config.operators:
             if op_def.embed is not None:
                 embed_pairs.extend(
-                    (out_name, col_id[out_name]) for out_name in op_def.outputs if out_name in col_id
+                    (out_name, col_id[out_name])
+                    for out_name in op_def.outputs
+                    if out_name in col_id
                 )
         embed_pairs.sort(key=lambda x: x[0])
         embed_ids = [cid for _, cid in embed_pairs]

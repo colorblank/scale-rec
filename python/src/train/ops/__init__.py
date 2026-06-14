@@ -23,9 +23,11 @@ OP_REGISTRY: dict[str, OpFactory] = {}
 
 def register_op(op_type: str):
     """Decorator that registers an operator class by its YAML op_type string."""
+
     def decorator(cls):
         OP_REGISTRY[op_type] = cls
         return cls
+
     return decorator
 
 

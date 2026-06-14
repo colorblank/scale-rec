@@ -521,7 +521,9 @@ class Trainer:
             self._data_paths[-1],
         )
         dag = self._preprocessor.dag
-        self.feature_quality = summarize_feature_quality(dag.executor, dag.feat_info, self.eval_batches)
+        self.feature_quality = summarize_feature_quality(
+            dag.executor, dag.feat_info, self.eval_batches
+        )
         logger.info("feature quality: rows=%d", self.feature_quality.rows)
 
     def feature_quality_metrics(self) -> dict[str, float]:

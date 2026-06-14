@@ -75,8 +75,6 @@ class ExecutionPlan:
         return context
 
 
-
-
 class DagExecutor:
     def __init__(
         self,
@@ -107,12 +105,14 @@ class DagExecutor:
         for name, src in self._sources.items():
             if name not in context:
                 from .builder import parse_default
+
                 default = parse_default(src.default_val, src.dtype)
                 context[name] = [default] * n_rows
             else:
                 col = context[name]
                 if any(v is None for v in col):
                     from .builder import parse_default
+
                     default = parse_default(src.default_val, src.dtype)
                     context[name] = [default if v is None else v for v in col]
 
@@ -163,6 +163,7 @@ class DagExecutor:
         for name, src in self._sources.items():
             if name not in context:
                 from .builder import parse_default
+
                 context[name] = parse_default(src.default_val, src.dtype)
         for node_name in self._execution_order:
             def_ = self._node_defs[node_name]

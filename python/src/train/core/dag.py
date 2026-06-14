@@ -168,6 +168,7 @@ class FeatureDag:
             n_rows = len(rows)
             if n_rows > 0:
                 import pandas as pd
+
                 df = pd.DataFrame(rows)
                 columns = {
                     col: df[col].tolist() for col in df.columns if col in self._source_name_set
