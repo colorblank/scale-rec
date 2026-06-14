@@ -6,7 +6,7 @@ use petgraph::prelude::DiGraph;
 
 use super::ops::registry;
 use super::ops::{CustomOp, Fv};
-use crate::feats::config::{FlowConfig, OperatorDef, Role, SourceDef};
+use crate::feats::config::{FlowConfig, OpType, OperatorDef, Role, SourceDef};
 use crate::feats::defaults::source_default;
 use crate::feats::executor::{ExecStep, ExecutionPlan};
 use crate::feats::schema::{infer_feature_schemas, FeatureSchema};
@@ -38,6 +38,129 @@ impl ValidationReport {
 
     pub fn errors(&self) -> impl Iterator<Item = &ValidationIssue> {
         self.issues.iter().filter(|issue| issue.severity == "error")
+    }
+}
+
+fn validate_param_keys(
+    op_name: &str,
+    params: &serde_yaml::Value,
+    allowed: &[&str],
+    required: &[&str],
+) -> Result<(), String> {
+    let Some(map) = params.as_mapping() else {
+        if params.is_null() && required.is_empty() {
+            return Ok(());
+        }
+        return Err(format!("operator '{}' params must be a mapping", op_name));
+    };
+    for key in map.keys().filter_map(|key| key.as_str()) {
+        if !allowed.contains(&key) {
+            return Err(format!(
+                "operator '{}' params has unknown field '{}'",
+                op_name, key
+            ));
+        }
+    }
+    for key in required {
+        if !map.contains_key(serde_yaml::Value::String((*key).to_string())) {
+            return Err(format!(
+                "operator '{}' params missing required field '{}'",
+                op_name, key
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn param<'a>(params: &'a serde_yaml::Value, key: &str) -> Option<&'a serde_yaml::Value> {
+    params.get(key).filter(|value| !value.is_null())
+}
+
+fn expect_str(op_name: &str, params: &serde_yaml::Value, key: &str) -> Result<(), String> {
+    match param(params, key).and_then(|value| value.as_str()) {
+        Some(_) => Ok(()),
+        None => Err(format!(
+            "operator '{}' params.{} must be string",
+            op_name, key
+        )),
+    }
+}
+
+fn expect_optional_str(op_name: &str, params: &serde_yaml::Value, key: &str) -> Result<(), String> {
+    match param(params, key) {
+        Some(value) if value.as_str().is_none() => Err(format!(
+            "operator '{}' params.{} must be string",
+            op_name, key
+        )),
+        _ => Ok(()),
+    }
+}
+
+fn expect_usize(op_name: &str, params: &serde_yaml::Value, key: &str) -> Result<(), String> {
+    match param(params, key).and_then(|value| value.as_u64()) {
+        Some(_) => Ok(()),
+        None => Err(format!(
+            "operator '{}' params.{} must be non-negative integer",
+            op_name, key
+        )),
+    }
+}
+
+fn expect_optional_usize(
+    op_name: &str,
+    params: &serde_yaml::Value,
+    key: &str,
+) -> Result<(), String> {
+    match param(params, key) {
+        Some(value) if value.as_u64().is_none() => Err(format!(
+            "operator '{}' params.{} must be non-negative integer",
+            op_name, key
+        )),
+        _ => Ok(()),
+    }
+}
+
+fn expect_optional_i64(op_name: &str, params: &serde_yaml::Value, key: &str) -> Result<(), String> {
+    match param(params, key) {
+        Some(value) if value.as_i64().is_none() => Err(format!(
+            "operator '{}' params.{} must be integer",
+            op_name, key
+        )),
+        _ => Ok(()),
+    }
+}
+
+fn expect_sequence(op_name: &str, params: &serde_yaml::Value, key: &str) -> Result<(), String> {
+    match param(params, key).and_then(|value| value.as_sequence()) {
+        Some(_) => Ok(()),
+        None => Err(format!(
+            "operator '{}' params.{} must be list",
+            op_name, key
+        )),
+    }
+}
+
+fn expect_mapping(op_name: &str, params: &serde_yaml::Value, key: &str) -> Result<(), String> {
+    match param(params, key).and_then(|value| value.as_mapping()) {
+        Some(_) => Ok(()),
+        None => Err(format!(
+            "operator '{}' params.{} must be mapping",
+            op_name, key
+        )),
+    }
+}
+
+fn expect_optional_mapping(
+    op_name: &str,
+    params: &serde_yaml::Value,
+    key: &str,
+) -> Result<(), String> {
+    match param(params, key) {
+        Some(value) if value.as_mapping().is_none() => Err(format!(
+            "operator '{}' params.{} must be mapping",
+            op_name, key
+        )),
+        _ => Ok(()),
     }
 }
 
@@ -241,7 +364,131 @@ impl DagBuilder {
     }
 
     fn create_op(def: &OperatorDef) -> Result<Box<dyn CustomOp>, String> {
+        Self::validate_operator_params(def)?;
         registry::create_op(def.op_type, &def.params)
+    }
+
+    fn validate_operator_params(def: &OperatorDef) -> Result<(), String> {
+        let (allowed, required): (&[&str], &[&str]) = match def.op_type {
+            OpType::Bucketing => (&["boundaries"], &["boundaries"]),
+            OpType::ConcatHash | OpType::FeatureHash => (
+                &[
+                    "vocab_size",
+                    "num_hashes",
+                    "separator",
+                    "namespace",
+                    "salt",
+                    "version",
+                ],
+                &["vocab_size"],
+            ),
+            OpType::CrossFeature => (&["cross_type", "max_len"], &[]),
+            OpType::DictMapper => (&["mapping", "default_idx"], &["mapping"]),
+            OpType::ExpressionOp => (&["script"], &["script"]),
+            OpType::FlatSplit | OpType::Split => (&["sep", "max_len", "pad_val"], &[]),
+            OpType::JsonExtractList => (&["key", "pad_len", "pad_val"], &[]),
+            OpType::ListOverlap => (&[], &[]),
+            OpType::ListStringParser => (&["sep", "key_index"], &[]),
+            OpType::ParsedFeatureHash => (
+                &[
+                    "vocab_size",
+                    "parse_mode",
+                    "num_hashes",
+                    "separator",
+                    "namespace",
+                    "salt",
+                    "version",
+                    "key",
+                    "sep1",
+                    "sep2",
+                    "key_index",
+                    "sep",
+                    "max_len",
+                    "pad_len",
+                    "pad_val",
+                ],
+                &["vocab_size"],
+            ),
+            OpType::PluginOp => (&["path", "lib", "symbol", "args"], &[]),
+            OpType::SequenceOp => (&["max_len", "pad_val"], &["max_len"]),
+            OpType::StringConcat => (&["separator"], &[]),
+            OpType::StringParser => (&["sep1", "sep2", "key_index", "pad_len", "pad_val"], &[]),
+        };
+        validate_param_keys(&def.name, &def.params, allowed, required)?;
+        match def.op_type {
+            OpType::Bucketing => expect_sequence(&def.name, &def.params, "boundaries"),
+            OpType::ConcatHash | OpType::FeatureHash => {
+                expect_usize(&def.name, &def.params, "vocab_size")?;
+                expect_optional_usize(&def.name, &def.params, "num_hashes")?;
+                expect_optional_str(&def.name, &def.params, "separator")?;
+                expect_optional_str(&def.name, &def.params, "namespace")?;
+                expect_optional_str(&def.name, &def.params, "salt")?;
+                expect_optional_str(&def.name, &def.params, "version")
+            }
+            OpType::CrossFeature => {
+                expect_optional_str(&def.name, &def.params, "cross_type")?;
+                expect_optional_usize(&def.name, &def.params, "max_len")
+            }
+            OpType::DictMapper => {
+                expect_mapping(&def.name, &def.params, "mapping")?;
+                expect_optional_i64(&def.name, &def.params, "default_idx")
+            }
+            OpType::ExpressionOp => expect_str(&def.name, &def.params, "script"),
+            OpType::FlatSplit | OpType::Split => {
+                expect_optional_str(&def.name, &def.params, "sep")?;
+                expect_optional_usize(&def.name, &def.params, "max_len")?;
+                expect_optional_str(&def.name, &def.params, "pad_val")
+            }
+            OpType::JsonExtractList => {
+                expect_optional_str(&def.name, &def.params, "key")?;
+                expect_optional_usize(&def.name, &def.params, "pad_len")?;
+                expect_optional_str(&def.name, &def.params, "pad_val")
+            }
+            OpType::ListOverlap => Ok(()),
+            OpType::ListStringParser => {
+                expect_optional_str(&def.name, &def.params, "sep")?;
+                expect_optional_usize(&def.name, &def.params, "key_index")
+            }
+            OpType::ParsedFeatureHash => {
+                expect_usize(&def.name, &def.params, "vocab_size")?;
+                for key in [
+                    "parse_mode",
+                    "separator",
+                    "namespace",
+                    "salt",
+                    "version",
+                    "key",
+                    "sep1",
+                    "sep2",
+                    "sep",
+                    "pad_val",
+                ] {
+                    expect_optional_str(&def.name, &def.params, key)?;
+                }
+                for key in ["num_hashes", "key_index", "max_len", "pad_len"] {
+                    expect_optional_usize(&def.name, &def.params, key)?;
+                }
+                Ok(())
+            }
+            OpType::PluginOp => {
+                for key in ["path", "lib", "symbol"] {
+                    expect_optional_str(&def.name, &def.params, key)?;
+                }
+                expect_optional_mapping(&def.name, &def.params, "args")
+            }
+            OpType::SequenceOp => {
+                expect_usize(&def.name, &def.params, "max_len")?;
+                expect_optional_i64(&def.name, &def.params, "pad_val")
+            }
+            OpType::StringConcat => expect_optional_str(&def.name, &def.params, "separator"),
+            OpType::StringParser => {
+                expect_optional_str(&def.name, &def.params, "sep1")?;
+                expect_optional_str(&def.name, &def.params, "sep2")?;
+                expect_optional_usize(&def.name, &def.params, "key_index")?;
+                expect_optional_usize(&def.name, &def.params, "pad_len")?;
+                expect_optional_str(&def.name, &def.params, "pad_val")
+            }
+        }
     }
 
     fn validate(

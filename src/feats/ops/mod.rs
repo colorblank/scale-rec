@@ -24,6 +24,8 @@ pub mod list_string_parser;
 pub mod parsed_feature_hash;
 /// 动态加载插件算子。
 pub mod plugin;
+/// 算子注册中心。
+pub mod registry;
 /// 序列填充/截断算子。
 pub mod sequence;
 /// 字符串分割算子。
@@ -32,8 +34,6 @@ pub mod split;
 pub mod string_concat;
 /// 结构化字符串解析算子。
 pub mod string_parser;
-/// 算子注册中心。
-pub mod registry;
 
 /// Bucketing 算子重新导出。
 pub use bucketing::Bucketing;

@@ -10,6 +10,54 @@ use scale_rec::layers::embedding::FeatureSpec;
 use scale_rec::models::{lr, Model};
 
 #[test]
+fn dag_rejects_unknown_operator_param() {
+    let yaml = r#"
+version: 1.0.0
+sources:
+  - name: user_id
+    dtype: int
+    default_val: "0"
+operators:
+  - name: user_hash
+    op_type: FeatureHash
+    inputs: [user_id]
+    outputs: [user_id_idx]
+    params:
+      vocab_size: 100
+      typo: 1
+"#;
+    let config = FlowConfig::from_yaml(yaml).unwrap();
+    let err = match FeatureDag::from_config(config, false, None) {
+        Ok(_) => panic!("unknown operator param should fail"),
+        Err(err) => err,
+    };
+    assert!(err.contains("unknown field 'typo'"));
+}
+
+#[test]
+fn dag_rejects_missing_required_operator_param() {
+    let yaml = r#"
+version: 1.0.0
+sources:
+  - name: user_id
+    dtype: int
+    default_val: "0"
+operators:
+  - name: user_hash
+    op_type: FeatureHash
+    inputs: [user_id]
+    outputs: [user_id_idx]
+    params: {}
+"#;
+    let config = FlowConfig::from_yaml(yaml).unwrap();
+    let err = match FeatureDag::from_config(config, false, None) {
+        Ok(_) => panic!("missing operator param should fail"),
+        Err(err) => err,
+    };
+    assert!(err.contains("missing required field 'vocab_size'"));
+}
+
+#[test]
 fn dag_execute_uses_compiled_plan_ops() {
     let yaml = r#"
 version: 1.0.0

@@ -60,9 +60,14 @@ impl CustomOp for Bucketing {
 }
 
 pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
-    let boundaries = params.get("boundaries")
+    let boundaries = params
+        .get("boundaries")
         .and_then(|v| v.as_sequence())
-        .map(|seq| seq.iter().filter_map(|v| v.as_f64().map(|f| f as f32)).collect())
+        .map(|seq| {
+            seq.iter()
+                .filter_map(|v| v.as_f64().map(|f| f as f32))
+                .collect()
+        })
         .unwrap_or_default();
     Ok(Box::new(Bucketing::new(boundaries)))
 }

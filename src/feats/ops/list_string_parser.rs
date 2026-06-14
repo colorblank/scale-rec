@@ -61,8 +61,15 @@ impl CustomOp for ListStringParser {
 }
 
 pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
-    let sep = params.get("sep").and_then(|v| v.as_str()).unwrap_or(",").to_string();
-    let key_index = params.get("key_index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+    let sep = params
+        .get("sep")
+        .and_then(|v| v.as_str())
+        .unwrap_or(",")
+        .to_string();
+    let key_index = params
+        .get("key_index")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as usize;
     Ok(Box::new(ListStringParser::new(sep, key_index)))
 }
 

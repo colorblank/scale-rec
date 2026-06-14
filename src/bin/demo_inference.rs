@@ -123,7 +123,12 @@ fn main() -> Result<()> {
         .filter(|(_, &k)| k == "user")
         .map(|(n, _)| n.clone())
         .collect();
-    let executor = DagExecutor::new(artifact.plan, artifact.sources, artifact.execution_order, artifact.data_sources);
+    let executor = DagExecutor::new(
+        artifact.plan,
+        artifact.sources,
+        artifact.execution_order,
+        artifact.data_sources,
+    );
     let user_op_indices: std::collections::HashSet<usize> = executor
         .plan()
         .steps

@@ -104,6 +104,7 @@ impl ModelConfig {
         tokenizer: Option<FeatureTokenizer>,
         options: &ModelBuildOptions,
     ) -> Result<Box<dyn Model>> {
+        validate_model_params(self.model_type.as_str(), &self.params)?;
         match REGISTRY.get(self.model_type.as_str()) {
             Some(build_fn) => build_fn(vb, features, tokenizer, &self.params, options),
             None => candle_core::bail!(
@@ -296,6 +297,205 @@ fn build_unimixer(
 }
 
 // ── YAML param helpers ──
+
+fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result<()> {
+    let (allowed, required): (&[&str], &[&str]) = match model_type {
+        "lr" => (&["tasks", "label_col_map", "metrics"], &[]),
+        "deepfm" => (
+            &[
+                "tasks",
+                "label_col_map",
+                "metrics",
+                "fm_k",
+                "deep_hidden_dims",
+            ],
+            &[],
+        ),
+        "mmoe" => (
+            &[
+                "tasks",
+                "label_col_map",
+                "metrics",
+                "shared_bottom_dims",
+                "num_experts",
+                "expert_hidden_dims",
+                "expert_output_dim",
+                "task_configs",
+            ],
+            &[],
+        ),
+        "esmm" => (
+            &[
+                "tasks",
+                "label_col_map",
+                "metrics",
+                "shared_bottom_dims",
+                "click_hidden_dims",
+                "cvr_hidden_dims",
+                "detail_hidden_dims",
+                "stock_hidden_dims",
+                "stay_hidden_dims",
+                "task_config",
+            ],
+            &[],
+        ),
+        "gdcn_esmm" => (
+            &[
+                "tasks",
+                "label_col_map",
+                "metrics",
+                "cross_layers",
+                "deep_hidden_dims",
+                "shared_bottom_dims",
+                "click_hidden_dims",
+                "cvr_hidden_dims",
+                "detail_hidden_dims",
+                "stock_hidden_dims",
+                "stay_hidden_dims",
+                "task_config",
+            ],
+            &[],
+        ),
+        "unimixer" => (
+            &[
+                "tasks",
+                "label_col_map",
+                "metrics",
+                "token_dim",
+                "num_tokens",
+                "num_blocks",
+                "block_size",
+                "use_lite",
+                "hidden_factor",
+                "num_basis",
+                "rank",
+                "task_config",
+                "use_siamese",
+            ],
+            &["task_config"],
+        ),
+        _ => return Ok(()),
+    };
+    validate_model_param_keys(model_type, params, allowed, required)?;
+    for key in [
+        "tasks",
+        "deep_hidden_dims",
+        "shared_bottom_dims",
+        "expert_hidden_dims",
+        "task_configs",
+        "click_hidden_dims",
+        "cvr_hidden_dims",
+        "detail_hidden_dims",
+        "stock_hidden_dims",
+        "stay_hidden_dims",
+    ] {
+        expect_optional_seq(model_type, params, key)?;
+    }
+    for key in ["label_col_map", "metrics", "task_config"] {
+        expect_optional_mapping(model_type, params, key)?;
+    }
+    for key in [
+        "fm_k",
+        "num_experts",
+        "expert_output_dim",
+        "cross_layers",
+        "token_dim",
+        "num_tokens",
+        "num_blocks",
+        "block_size",
+        "num_basis",
+        "rank",
+    ] {
+        expect_optional_usize(model_type, params, key)?;
+    }
+    for key in ["use_lite", "use_siamese"] {
+        expect_optional_bool(model_type, params, key)?;
+    }
+    expect_optional_f64(model_type, params, "hidden_factor")?;
+    Ok(())
+}
+
+fn validate_model_param_keys(
+    model_type: &str,
+    params: &serde_yaml::Value,
+    allowed: &[&str],
+    required: &[&str],
+) -> Result<()> {
+    let Some(map) = params.as_mapping() else {
+        if params.is_null() && required.is_empty() {
+            return Ok(());
+        }
+        candle_core::bail!("model '{}' params must be a mapping", model_type);
+    };
+    for key in map.keys().filter_map(|key| key.as_str()) {
+        if !allowed.contains(&key) {
+            candle_core::bail!("model '{}' params has unknown field '{}'", model_type, key);
+        }
+    }
+    for key in required {
+        if !map.contains_key(serde_yaml::Value::String((*key).to_string())) {
+            candle_core::bail!(
+                "model '{}' params missing required field '{}'",
+                model_type,
+                key
+            );
+        }
+    }
+    Ok(())
+}
+
+fn model_param<'a>(params: &'a serde_yaml::Value, key: &str) -> Option<&'a serde_yaml::Value> {
+    params.get(key).filter(|value| !value.is_null())
+}
+
+fn expect_optional_seq(model_type: &str, params: &serde_yaml::Value, key: &str) -> Result<()> {
+    if let Some(value) = model_param(params, key) {
+        if value.as_sequence().is_none() {
+            candle_core::bail!("model '{}' params.{} must be list", model_type, key);
+        }
+    }
+    Ok(())
+}
+
+fn expect_optional_mapping(model_type: &str, params: &serde_yaml::Value, key: &str) -> Result<()> {
+    if let Some(value) = model_param(params, key) {
+        if value.as_mapping().is_none() {
+            candle_core::bail!("model '{}' params.{} must be mapping", model_type, key);
+        }
+    }
+    Ok(())
+}
+
+fn expect_optional_usize(model_type: &str, params: &serde_yaml::Value, key: &str) -> Result<()> {
+    if let Some(value) = model_param(params, key) {
+        if value.as_u64().is_none() {
+            candle_core::bail!(
+                "model '{}' params.{} must be non-negative integer",
+                model_type,
+                key
+            );
+        }
+    }
+    Ok(())
+}
+
+fn expect_optional_bool(model_type: &str, params: &serde_yaml::Value, key: &str) -> Result<()> {
+    if let Some(value) = model_param(params, key) {
+        if value.as_bool().is_none() {
+            candle_core::bail!("model '{}' params.{} must be bool", model_type, key);
+        }
+    }
+    Ok(())
+}
+
+fn expect_optional_f64(model_type: &str, params: &serde_yaml::Value, key: &str) -> Result<()> {
+    if let Some(value) = model_param(params, key) {
+        if value.as_f64().is_none() {
+            candle_core::bail!("model '{}' params.{} must be number", model_type, key);
+        }
+    }
+    Ok(())
+}
 
 fn yaml_usize(v: &serde_yaml::Value, key: &str, default: usize) -> usize {
     v.get(key)

@@ -29,13 +29,17 @@ impl DictMapper {
 }
 
 pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
-    let default_idx = params.get("default_idx").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-    let mapping = params.get("mapping")
+    let default_idx = params
+        .get("default_idx")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0) as i32;
+    let mapping = params
+        .get("mapping")
         .and_then(|v| v.as_mapping())
         .map(|map| {
-            map.iter().filter_map(|(k, v)| {
-                Some((k.as_str()?.to_string(), v.as_i64()? as i32))
-            }).collect::<HashMap<String, i32>>()
+            map.iter()
+                .filter_map(|(k, v)| Some((k.as_str()?.to_string(), v.as_i64()? as i32)))
+                .collect::<HashMap<String, i32>>()
         })
         .unwrap_or_default();
     Ok(Box::new(DictMapper::new(mapping, default_idx)))

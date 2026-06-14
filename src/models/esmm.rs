@@ -3,7 +3,7 @@ use super::Model;
 use crate::layers::embedding::{FeatureEmbeddings, FeatureSpec};
 use crate::layers::mlp::Mlp;
 use crate::layers::towers::{
-    Activation, apply_relation, MultiTaskConfig, RelationOp, TaskRelation, TaskTower, TowerConfig,
+    apply_relation, Activation, MultiTaskConfig, RelationOp, TaskRelation, TaskTower, TowerConfig,
 };
 use candle_core::{Result, Tensor};
 use candle_nn::VarBuilder;
@@ -164,5 +164,3 @@ impl Model for ESMM {
         Ok(outputs)
     }
 }
-
-

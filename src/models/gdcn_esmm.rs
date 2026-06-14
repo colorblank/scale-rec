@@ -3,9 +3,7 @@ use super::Model;
 use crate::layers::embedding::{FeatureEmbeddings, FeatureSpec};
 use crate::layers::gdcn::GatedCrossNetwork;
 use crate::layers::mlp::Mlp;
-use crate::layers::towers::{
-    Activation, apply_relation, MultiTaskConfig, TaskRelation, TaskTower,
-};
+use crate::layers::towers::{apply_relation, Activation, MultiTaskConfig, TaskRelation, TaskTower};
 use crate::models::esmm::default_task_config;
 use candle_core::{Result, Tensor};
 use candle_nn::{Module, VarBuilder};
@@ -139,5 +137,3 @@ impl Model for GDCNESMM {
         Ok(outputs)
     }
 }
-
-

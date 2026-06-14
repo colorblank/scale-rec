@@ -2,7 +2,7 @@
 //!
 //! 新代码请直接使用 builder/executor/feature_info 模块，而非此 facade。
 
-pub use super::builder::{DagBuilder, DagArtifact, ValidationIssue, ValidationReport};
+pub use super::builder::{DagArtifact, DagBuilder, ValidationIssue, ValidationReport};
 pub use super::executor::{DagExecutor, ExecStep, ExecutionPlan};
 use super::ops::Fv;
 use crate::feats::config::{DataSourceDef, FlowConfig, OperatorDef, SourceDef};

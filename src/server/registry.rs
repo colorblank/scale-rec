@@ -11,8 +11,8 @@ use tracing::{info, warn};
 
 use super::engine::InferenceEngine;
 use super::manifest::{find_manifest, ModelManifest, WeightBinding};
-use crate::feats::config::{DType, DataSourceDef, FlowConfig};
 use crate::feats::builder::DagBuilder;
+use crate::feats::config::{DType, DataSourceDef, FlowConfig};
 use crate::feats::executor::DagExecutor;
 use crate::feats::feature_info::FeatureInfo;
 use crate::layers::embedding::FeatureSpec;
@@ -262,8 +262,7 @@ impl ModelRegistry {
         let yaml = std::fs::read_to_string(&feature_config_path)
             .map_err(|e| format!("read feature config: {}", e))?;
         let flow_config = FlowConfig::from_yaml(&yaml).map_err(|e| format!("parse: {}", e))?;
-        let artifact =
-            DagBuilder::build(flow_config).map_err(|e| format!("dag: {}", e))?;
+        let artifact = DagBuilder::build(flow_config).map_err(|e| format!("dag: {}", e))?;
         let feat_info = FeatureInfo::new(
             artifact.sources.clone(),
             artifact.node_defs.clone(),
@@ -358,7 +357,12 @@ impl ModelRegistry {
             .filter(|(_, &k)| k == "user")
             .map(|(n, _)| n.clone())
             .collect();
-        let executor = DagExecutor::new(artifact.plan, artifact.sources, artifact.execution_order, artifact.data_sources);
+        let executor = DagExecutor::new(
+            artifact.plan,
+            artifact.sources,
+            artifact.execution_order,
+            artifact.data_sources,
+        );
         let user_op_indices: std::collections::HashSet<usize> = executor
             .plan()
             .steps

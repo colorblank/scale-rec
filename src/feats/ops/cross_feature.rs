@@ -13,7 +13,11 @@ impl CrossFeature {
 }
 
 pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
-    let cross_type = params.get("cross_type").and_then(|v| v.as_str()).unwrap_or("cartesian").to_string();
+    let cross_type = params
+        .get("cross_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("cartesian")
+        .to_string();
     Ok(Box::new(CrossFeature::new(cross_type)))
 }
 

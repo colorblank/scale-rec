@@ -194,10 +194,7 @@ impl MultiTaskTower {
 ///
 /// 从 `outputs` 中取出 `sources` 任务的 logits，经 sigmoid 转换后按 `op` 运算，
 /// 返回推导目标的概率值。
-pub fn apply_relation(
-    rel: &TaskRelation,
-    outputs: &HashMap<String, Tensor>,
-) -> Result<Tensor> {
+pub fn apply_relation(rel: &TaskRelation, outputs: &HashMap<String, Tensor>) -> Result<Tensor> {
     if rel.sources.is_empty() {
         return Err(candle_core::Error::Msg(format!(
             "relation '{}' has no sources",

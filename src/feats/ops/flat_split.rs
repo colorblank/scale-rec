@@ -82,9 +82,17 @@ impl CustomOp for FlatSplit {
 }
 
 pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
-    let sep = params.get("sep").and_then(|v| v.as_str()).unwrap_or(",").to_string();
+    let sep = params
+        .get("sep")
+        .and_then(|v| v.as_str())
+        .unwrap_or(",")
+        .to_string();
     let max_len = params.get("max_len").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-    let pad_val = params.get("pad_val").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let pad_val = params
+        .get("pad_val")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
     Ok(Box::new(FlatSplit::new(sep, max_len, pad_val)))
 }
 

@@ -20,7 +20,10 @@ static OP_REGISTRY: LazyLock<HashMap<OpType, OpFactory>> = LazyLock::new(|| {
     m.insert(OpType::JsonExtractList, super::json_extract_list::create);
     m.insert(OpType::ListOverlap, super::list_overlap::create);
     m.insert(OpType::ListStringParser, super::list_string_parser::create);
-    m.insert(OpType::ParsedFeatureHash, super::parsed_feature_hash::create);
+    m.insert(
+        OpType::ParsedFeatureHash,
+        super::parsed_feature_hash::create,
+    );
     m.insert(OpType::PluginOp, super::plugin::create);
     m.insert(OpType::SequenceOp, super::sequence::create);
     m.insert(OpType::Split, super::split::create);
@@ -44,10 +47,22 @@ mod tests {
     #[test]
     fn all_16_ops_are_registered() {
         let expected = [
-            OpType::Bucketing, OpType::ConcatHash, OpType::CrossFeature, OpType::DictMapper,
-            OpType::ExpressionOp, OpType::FeatureHash, OpType::FlatSplit, OpType::JsonExtractList,
-            OpType::ListOverlap, OpType::ListStringParser, OpType::ParsedFeatureHash, OpType::PluginOp,
-            OpType::SequenceOp, OpType::Split, OpType::StringConcat, OpType::StringParser,
+            OpType::Bucketing,
+            OpType::ConcatHash,
+            OpType::CrossFeature,
+            OpType::DictMapper,
+            OpType::ExpressionOp,
+            OpType::FeatureHash,
+            OpType::FlatSplit,
+            OpType::JsonExtractList,
+            OpType::ListOverlap,
+            OpType::ListStringParser,
+            OpType::ParsedFeatureHash,
+            OpType::PluginOp,
+            OpType::SequenceOp,
+            OpType::Split,
+            OpType::StringConcat,
+            OpType::StringParser,
         ];
         for op in &expected {
             assert!(OP_REGISTRY.contains_key(op), "{:?} is not registered", op);

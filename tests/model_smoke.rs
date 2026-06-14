@@ -243,7 +243,33 @@ task_config: 1
         Ok(_) => panic!("invalid task_config should fail"),
         Err(err) => err,
     };
-    assert!(err.to_string().contains("parse unimixer task_config"));
+    assert!(err
+        .to_string()
+        .contains("params.task_config must be mapping"));
+}
+
+#[test]
+fn test_modelconfig_rejects_wrong_param_type_before_defaulting() {
+    let features = dummy_features();
+    let vb = vb();
+    let params = serde_yaml::from_str(
+        r#"
+cross_layers: "3"
+"#,
+    )
+    .unwrap();
+    let cfg = ModelConfig {
+        model_type: "gdcn_esmm".into(),
+        params,
+    };
+
+    let err = match cfg.build(vb, &features, None) {
+        Ok(_) => panic!("wrong param type should fail"),
+        Err(err) => err,
+    };
+    assert!(err
+        .to_string()
+        .contains("params.cross_layers must be non-negative integer"));
 }
 
 #[test]

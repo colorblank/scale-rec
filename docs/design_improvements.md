@@ -8,14 +8,14 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 
 - Python 侧位于 `python/src/train`，负责数据读取、特征预处理、PyTorch 训练、评估、checkpoint、artifact 管理和 safetensors 导出。
 - Rust 侧位于 `src`，负责共享特征配置解析、Candle 模型推理、HTTP serving、多模型 registry、manifest 加载和压测工具。
-- 双端共享同一份 YAML 特征配置。Rust 通过 `src/feats/config.rs` / `src/feats/dag.rs` 解析和执行，Python 通过 `python/src/train/core/config.py` / `python/src/train/core/dag.py` 镜像实现。
+- 双端共享同一份 YAML 特征配置。Rust 通过 `src/feats/config.rs`、`DagBuilder`、`DagExecutor`、`FeatureInfo` 解析、校验、执行和暴露特征元数据；Python 通过 `python/src/train/core/config.py`、`DagBuilder`、`DagExecutor`、`FeatureInfo`、`DagPreprocessor` 镜像实现，`FeatureDag` 仅保留为兼容 facade。
 - 特征 source 已支持 `role = feature | label | discard`，训练侧按 role 分离 feature/label/discard，推理侧只暴露 feature 输入契约。
-- 模型特征规格统一来自 `FeatureDag.embeddable_features()`，模型配置不重复声明特征清单。
+- 模型特征规格统一来自 `FeatureInfo.embeddable_features()`，模型配置不重复声明特征清单。
 - 模型任务语义通过模型 YAML 中的 `tasks`、`label_col_map`、`metrics` 和 `task_config` 表达；`tasks` 负责监督、损失和评估，`task_config` 负责 tower/relation/forward 结构。
 - Python 训练后导出 safetensors，Rust 通过 Candle `VarMap` 加载。权重 key 必须与 Rust `VarBuilder::pp()` 路径严格对齐。
 - Rust serving 以 manifest 为主路径加载模型，支持同一 `model_id` 多版本、alias、固定/加权 routing、按版本查询 feature contract。
 - HTTP 服务提供 `/health`、`/models`、`/models/{model}`、`/models/{model}/features`、`/models/{model}/versions/{version}/features`、alias/routing 管理、`/predict`、`/predict/broadcast`。
-- Python 训练入口已经统一到列式 batch 预处理路径，`stream_file_batches()` 直接产出 `dict[str, list]`，`FeatureDag.preprocess_batch()` 优先处理列式输入。
+- Python 训练入口已经统一到列式 batch 预处理路径，`stream_file_batches()` 直接产出 `dict[str, list]`，训练/评估/metrics 使用 `TrainingPreprocessor`，底层通过 `DagPreprocessor` 完成 tensor 构造。
 - `examples/` 已按 `examples/shared/` 和 `examples/models/` 拆分，目前模型示例包括 `lr.yaml`、`gdcn_esmm.yaml`、`unimixer.yaml`。
 - 训练和推理一致性验证集中在 `python/src/scale_rec_demo/verify_all.py`，覆盖 discover LR、GDCN+ESMM、UniMixer 主线。
 
@@ -39,38 +39,43 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 - **周期 checkpoint 和 resume**：训练侧已经保存 optimizer、loss、EMA、step、epoch、best score、stale epochs、周期 checkpoint 计数器和 Python/NumPy/Torch/CUDA RNG 状态，支持 `resume_from_checkpoint()`。
 - **发布产物结构化**：`TrainingArtifactManager` 已统一 run/checkpoints/serving/configs 目录，默认复制 feature/model config，并写出 run manifest 与 serving manifest。
 - **权重加载校验**：Rust registry 在 `VarMap::load()` 前检查 safetensors key 缺失和 shape mismatch，是重要稳定性防线。
+- **FeatureDag 深化拆分**：Rust/Python 均已拆出 `DagBuilder`、`DagExecutor`、`FeatureInfo`，Python 额外拆出 `DagPreprocessor` / `TrainingPreprocessor`；训练、评估、metrics、quality 和 Rust serving/demo 调用方已迁移到新 seam，`FeatureDag` 仅作为兼容 facade。
+- **operator type 枚举化**：Rust `OperatorDef.op_type` 已从 `String` 改为 `OpType` enum，Python 已从 `str` 改为 `OpType(StrEnum)`；schema 推导、quality padding 识别和 Rust registry 不再用字符串判断 operator 类型。
+- **apply_relation 去重**：ESMM/GDCN-ESMM 的 relation 应用逻辑已收敛到 `layers::towers::apply_relation()`，避免多任务概率关系重复实现。
 
 ## 3. 架构分析
 
 ### 3.1 FeatureDag 与特征契约
 
-当前特征系统的 Module seam 比较清晰：
+当前特征系统的 Module seam 已从单一 `FeatureDag` 深化为构建、执行、元数据和预处理四个角色：
 
 - `FlowConfig` 描述 source、operator、embed、data source 和 role。
-- `FeatureDag` 完成拓扑排序、算子创建、schema 推导、验证和执行。
-- Rust `ExecutionPlan` 将算子输入输出预解析为列 id，服务端推理主路径已使用 plan，减少批量推理中的 HashMap 查找。
-- Python `FeatureDag.preprocess_batch()` 负责训练侧从列式 batch 到模型输入 tensor，并保留 list-of-dicts 兼容路径。
+- `DagBuilder` 完成拓扑排序、算子创建、schema 推导、验证和预编译 `ExecutionPlan`。
+- `DagExecutor` 负责执行 seam，Rust serving 和 demo inference 使用 plan-based execution，Python feature quality 已迁移到 executor + metadata seam。
+- `FeatureInfo` 负责 embeddable features、source kind、node defs/source defs 等只读元数据查询，模型构建和 broadcast 策略不再依赖 `FeatureDag` facade。
+- `DagPreprocessor` / `TrainingPreprocessor` 负责训练侧从列式 batch 或兼容 list-of-dicts 输入到模型 tensor 的转换。
 - 当前已支持 `ParsedFeatureHash` 和 `ConcatHash` 两个融合算子，减少“解析 + hash”链路中的中间对象和配置层级。
 
 优势：
 
 - YAML 是训练和推理共享的特征契约，降低特征漂移风险。
 - DAG 构建阶段已有 source 消费率、输出利用率、data source 引用和拓扑校验。
-- Rust 推理已优先使用 plan-based execution，broadcast 模式可预计算 user-only 子图并复用到 item batch。
+- Rust 推理主路径已收敛到预编译 plan；Rust broadcast 模式可预计算 user-only 子图并复用到 item batch。
 - `FeatureSchema` 已开始承载 dtype、list 长度、pooling、default、role 等运行时契约信息。
+- `OpType` 已双端枚举化，schema 推导、quality padding 识别和 registry 创建路径不再依赖 operator type 字符串判断。
 
 剩余风险：
 
-- Rust 单样本执行路径、旧批量路径和 plan 路径仍并存。默认值填充、缺失列处理和错误信息可能出现语义差异。
 - 默认值解析虽然已集中到 `src/feats/defaults.rs` 的 `source_default()`，但 Python `_parse_default()` 仍需持续保持语义一致。
+- Python 训练预处理仍通过 `TrainingPreprocessor` 包装兼容 facade，后续可继续迁移到直接组合 `DagExecutor` + `DagPreprocessor`。
 - `FeatureSchema` 还没有完全成为唯一执行契约，部分算子参数仍在 DAG 构建时用 `unwrap_or(...)` 默认值解释。
 - Rust feature config 已 `deny_unknown_fields`，但 Python dataclass 解析仍会忽略未知 YAML 字段，双端严格性不一致。
-- operator params 仍是松散 YAML，拼写错误或类型错误可能被默认值吞掉，例如 `FeatureDag` 创建算子时大量使用 `yaml_i64(...).unwrap_or(...)`。
+- operator params 仍是松散 YAML，拼写错误或类型错误可能被算子工厂中的默认值吞掉，例如部分 Rust 算子 `create()` 仍使用 `yaml_i64(...).unwrap_or(...)`。
 
 改进方向：
 
-- 将 plan 执行路径定义为 Rust serving 唯一主路径，旧 batch 路径只保留测试或兼容用途，并用一致性测试约束差异。
-- 为 operator params 建立 typed config，而不是在 `FeatureDag` 中散落读取和默认值。
+- 继续压缩 `FeatureDag` facade 的使用面，最终只保留兼容入口或彻底删除 facade。
+- 为 operator params 建立 typed config，而不是在各算子工厂中散落读取和默认值。
 - Python 配置解析增加 unknown field 检测，至少与 Rust feature config 的严格性对齐。
 - 让 `FeatureSchema` 成为 tensor 构造、默认值、seq_len、pooling 和 feature contract 的唯一来源。
 - 对所有融合算子的 parse mode、seq_len、padding、hash scope 增加 Python/Rust golden consistency 覆盖。
@@ -193,14 +198,15 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 
 当前最需要“加深”的 Module 不是简单增加新接口，而是让高变化复杂度集中到更少、更深的 seam 后面：
 
-- `FeatureDag` 同时承担 DAG 构建、schema 推导、验证、单样本执行、批量执行、tensor 预处理和调试支持，Interface 接近 Implementation 复杂度。
+- ~~`FeatureDag` 同时承担 DAG 构建、schema 推导、验证、单样本执行、批量执行、tensor 预处理和调试支持，Interface 接近 Implementation 复杂度。~~ ✅ 已拆为 `DagBuilder` / `DagExecutor` / `FeatureInfo` / `DagPreprocessor`，`FeatureDag` 保留兼容 facade。
 - `Trainer` 同时承担训练循环、数据迭代、评估、EMA、checkpoint、resume、artifact、日志和 prefetch，Locality 较弱。
 - ~~Rust operator params 解析散落在 `FeatureDag` 内部~~ ✅ 已重构为 registry 模式，每个算子自包含 `create()` 工厂函数
+- ~~operator type 使用字符串判断~~ ✅ 已重构为 Rust/Python 双端 `OpType` 枚举，schema、quality 和 registry 路径使用枚举分发。
 - Python/Rust operator 双端实现仍依赖人工同步，缺少一个统一的 operator contract 测试矩阵。
 
 改进方向：
 
-- `FeatureDag` 长期拆成 `DagBuilder`、`DagExecutor`、`DagPreprocessor`，但先以测试 seam 固化行为，再拆 Implementation。
+- 继续收敛 `FeatureDag` facade，减少兼容层暴露的旧接口，最终让新代码只依赖 `DagBuilder`、`DagExecutor`、`FeatureInfo` 和 `DagPreprocessor`。
 - `Trainer` 长期拆出 `CheckpointManager`、`ResumeState`、`TrainingLoop`、`EvaluatorAdapter`，优先让 checkpoint/resume 成为深 Module。
 - 为 operator params 建立 typed config 和 shared golden fixtures，让新增算子的测试面成为稳定 Interface。
 - 删除重复常量和胶水逻辑，例如训练入口的 null marker、batch 配置和 label mapping 处理。
@@ -230,7 +236,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 需要优先补齐的功能缺口：
 
 - 认证和权限：预测端点、模型查询端点、alias/routing 管理端点目前都无认证。
-- 限流和过载保护：缺少 rate limit、并发限制、请求超时和全局 backpressure。
+- 限流和过载保护：全局 rate limit、并发限制和请求超时已具备，但仍缺少按 IP、租户或 API key 的额度隔离和更细粒度 backpressure。
 - 发布控制面持久化：alias、routing、default version 目前是内存状态，缺少可审计、可回滚的持久化发布索引。
 - 模型级 schema 元数据：`/models` 还应返回 schema hash、embeddable schema、tasks、metrics、label map、weight binding 和加载时间。
 - 配置兼容策略：feature config、model config、manifest schema 的版本兼容规则尚未系统化。
@@ -284,7 +290,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 当前 Python 训练链路已经从 row records 向 columnar batch 前进：
 
 - `stream_file_batches()` 使用 pandas chunk 读取，只保留 feature/label `usecols`，再 yield `dict[str, list]`。
-- `FeatureDag.preprocess_batch()` 优先处理列式输入，list-of-dicts 作为兼容路径。
+- `TrainingPreprocessor` 通过兼容 facade 优先处理列式输入，list-of-dicts 作为兼容路径。
 - `Trainer` 支持 `ThreadPoolExecutor` prefetch，能隐藏一部分数据读取和预处理开销。
 - 训练开始会记录数据摘要、reader 配置、prefetch、checkpoint interval、optimizer 和任务映射，便于定位无监督 batch 或标签列不匹配。
 
@@ -292,7 +298,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 
 - 底层仍是 pandas chunked CSV，超大训练集会受 CSV parse、dtype conversion 和 Python list materialization 限制。
 - `build_item_index()` 仍构造大字典，物品规模很大时内存压力明显。
-- `FeatureDag.preprocess_batch()` 仍包含逐行 DAG 语义和 Python list/tensor 转换，算子复杂时 CPU 开销明显。
+- Python 预处理链路仍包含部分逐行 DAG 语义和 Python list/tensor 转换，算子复杂时 CPU 开销明显。
 - prefetch 只是隐藏部分 CPU 开销，还不是读取、预处理、设备拷贝的完整 producer/consumer 流水线。
 
 改进方向：
@@ -309,7 +315,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 1. **添加认证和权限控制**：至少用 API key 或 mTLS 保护 HTTP 服务；alias/routing 管理端点必须先受保护。
 2. **建立 CI/CD 基础管线**：强制 `cargo fmt --check`、`cargo clippy --locked`、`cargo test --locked`、`uvx ruff check`、`uvx ruff format --check`、`uv run pytest`。
 3. **把 alias/routing/default version 持久化**：避免服务重启丢失发布控制状态，并支持审计和回滚。
-4. **收紧模型/operator 配置校验**：未知字段、错误类型、缺失必填参数必须 fail fast，不能静默走默认值。
+4. **收紧模型/operator params 校验**：operator type 已枚举化，但 params 仍是松散 YAML；未知字段、错误类型、缺失必填参数必须 fail fast，不能静默走默认值。
 5. **Docker 非 root 运行**：`docker/Dockerfile` 和 `docker/Dockerfile.mkl` 添加非 root `USER`，并确认模型目录权限。
 6. **API error 脱敏**：对外只返回稳定 code 和必要 message，内部路径和详细错误写入日志。
 7. **细粒度限流**：在现有全局 rate limit/concurrency/timeout 基础上，增加按 IP、租户或 API key 的额度隔离。
@@ -335,10 +341,10 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 
 ### P3：重构与平台化
 
-1. 拆分 `FeatureDag`：`DagBuilder` + `DagExecutor` + `DagPreprocessor`，先固化测试 seam 再拆 Implementation。
+1. 继续收敛 `FeatureDag` facade：删除新代码对旧 facade 属性/方法的依赖，最终只保留兼容入口或移除。
 2. 拆分 `Trainer`：`CheckpointManager` + `ResumeState` + `TrainingLoop` + `EvaluatorAdapter`。
 3. ~~为所有公共 API 补充 rustdoc/docstring，并在 CI 中逐步启用 missing docs 检查。~~ ✅ 已完成，`#![warn(missing_docs)]` 已启用。
-4. ~~标准化 operator 注册和 typed params，降低新增算子的 Rust/Python 双端维护成本。~~ ✅ 已完成，双端均使用 registry 模式。
+4. ~~标准化 operator 注册和 operator type 分发，降低新增算子的 Rust/Python 双端维护成本。~~ ✅ 已完成，双端均使用 registry 模式和 `OpType` 枚举。
 5. 为模型 state_dict key 对齐建立自动化测试或导出检查脚本。
 6. 建立模型发布、回滚、灰度和兼容检查流程，把 runtime alias/routing 接入持久化控制面。
 7. 将训练侧 feature quality 写入 manifest，并在服务端加载后可查询。
@@ -351,7 +357,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 
 **第 3 阶段（1-2 月）**：固定压测矩阵、FeatureHash cache 治理、tensor 构造优化、Python Arrow/Polars pipeline 试点。目标是在可复现基线上提升吞吐。
 
-**第 4 阶段（2-4 月）**：拆分 `FeatureDag` 和 `Trainer`，标准化 operator params，建立模型 key 对齐测试和发布兼容检查。目标是提升长期演进的 Locality 和 Leverage。
+**第 4 阶段（2-4 月）**：继续收敛 `FeatureDag` facade、拆分 `Trainer`、标准化 operator params，建立模型 key 对齐测试和发布兼容检查。目标是提升长期演进的 Locality 和 Leverage。
 
 ## 8. 验收建议
 

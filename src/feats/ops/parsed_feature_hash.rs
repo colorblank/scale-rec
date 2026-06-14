@@ -203,22 +203,73 @@ impl ParsedFeatureHash {
 }
 
 pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
-    let vocab_size = params.get("vocab_size").and_then(|v| v.as_u64()).unwrap_or(1000) as u32;
-    let parse_mode = params.get("parse_mode").and_then(|v| v.as_str()).unwrap_or("json").to_string();
-    let num_hashes = params.get("num_hashes").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
-    let separator = params.get("separator").and_then(|v| v.as_str()).unwrap_or("|").to_string();
-    let namespace = params.get("namespace").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let salt = params.get("salt").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let version = params.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let key = params.get("key").and_then(|v| v.as_str()).map(|s| s.to_string());
-    let sep1 = params.get("sep1").and_then(|v| v.as_str()).unwrap_or("|").to_string();
-    let sep2 = params.get("sep2").and_then(|v| v.as_str()).unwrap_or("#").to_string();
-    let key_index = params.get("key_index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-    let sep = params.get("sep").and_then(|v| v.as_str()).unwrap_or(",").to_string();
+    let vocab_size = params
+        .get("vocab_size")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(1000) as u32;
+    let parse_mode = params
+        .get("parse_mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("json")
+        .to_string();
+    let num_hashes = params
+        .get("num_hashes")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(1) as u32;
+    let separator = params
+        .get("separator")
+        .and_then(|v| v.as_str())
+        .unwrap_or("|")
+        .to_string();
+    let namespace = params
+        .get("namespace")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let salt = params
+        .get("salt")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let version = params
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let key = params
+        .get("key")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let sep1 = params
+        .get("sep1")
+        .and_then(|v| v.as_str())
+        .unwrap_or("|")
+        .to_string();
+    let sep2 = params
+        .get("sep2")
+        .and_then(|v| v.as_str())
+        .unwrap_or("#")
+        .to_string();
+    let key_index = params
+        .get("key_index")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as usize;
+    let sep = params
+        .get("sep")
+        .and_then(|v| v.as_str())
+        .unwrap_or(",")
+        .to_string();
     let max_len = params.get("max_len").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
     let pad_len = params.get("pad_len").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-    let pad_val = params.get("pad_val").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    Ok(Box::new(ParsedFeatureHash::new(vocab_size, parse_mode, num_hashes, separator, namespace, salt, version, key, sep1, sep2, key_index, sep, max_len, pad_len, pad_val)?))
+    let pad_val = params
+        .get("pad_val")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    Ok(Box::new(ParsedFeatureHash::new(
+        vocab_size, parse_mode, num_hashes, separator, namespace, salt, version, key, sep1, sep2,
+        key_index, sep, max_len, pad_len, pad_val,
+    )?))
 }
 
 impl CustomOp for ParsedFeatureHash {

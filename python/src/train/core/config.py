@@ -121,6 +121,107 @@ class OpType(StrEnum):
     STRING_PARSER = "StringParser"
 
 
+_OP_PARAM_SPECS: dict[OpType, tuple[set[str], set[str], dict[str, type | tuple[type, ...]]]] = {
+    OpType.BUCKETING: ({"boundaries"}, {"boundaries"}, {"boundaries": list}),
+    OpType.CONCAT_HASH: (
+        {"vocab_size", "num_hashes", "separator", "namespace", "salt", "version"},
+        {"vocab_size"},
+        {"vocab_size": int, "num_hashes": int, "separator": str, "namespace": str, "salt": str, "version": str},
+    ),
+    OpType.CROSS_FEATURE: ({"cross_type", "max_len"}, set(), {"cross_type": str, "max_len": int}),
+    OpType.DICT_MAPPER: ({"mapping", "default_idx"}, {"mapping"}, {"mapping": dict, "default_idx": int}),
+    OpType.EXPRESSION_OP: ({"script"}, {"script"}, {"script": str}),
+    OpType.FEATURE_HASH: (
+        {"vocab_size", "num_hashes", "separator", "namespace", "salt", "version"},
+        {"vocab_size"},
+        {"vocab_size": int, "num_hashes": int, "separator": str, "namespace": str, "salt": str, "version": str},
+    ),
+    OpType.FLAT_SPLIT: ({"sep", "max_len", "pad_val"}, set(), {"sep": str, "max_len": int, "pad_val": str}),
+    OpType.JSON_EXTRACT_LIST: ({"key", "pad_len", "pad_val"}, set(), {"key": str, "pad_len": int, "pad_val": str}),
+    OpType.LIST_OVERLAP: (set(), set(), {}),
+    OpType.LIST_STRING_PARSER: ({"sep", "key_index"}, set(), {"sep": str, "key_index": int}),
+    OpType.PARSED_FEATURE_HASH: (
+        {
+            "vocab_size", "parse_mode", "num_hashes", "separator", "namespace", "salt", "version",
+            "key", "sep1", "sep2", "key_index", "sep", "max_len", "pad_len", "pad_val",
+        },
+        {"vocab_size"},
+        {
+            "vocab_size": int, "parse_mode": str, "num_hashes": int, "separator": str,
+            "namespace": str, "salt": str, "version": str, "key": str, "sep1": str,
+            "sep2": str, "key_index": int, "sep": str, "max_len": int, "pad_len": int,
+            "pad_val": str,
+        },
+    ),
+    OpType.PLUGIN_OP: ({"path", "lib", "symbol", "args"}, set(), {"path": str, "lib": str, "symbol": str, "args": dict}),
+    OpType.SEQUENCE_OP: ({"max_len", "pad_val"}, {"max_len"}, {"max_len": int, "pad_val": int}),
+    OpType.SPLIT: ({"sep", "max_len", "pad_val"}, set(), {"sep": str, "max_len": int, "pad_val": str}),
+    OpType.STRING_CONCAT: ({"separator"}, set(), {"separator": str}),
+    OpType.STRING_PARSER: (
+        {"sep1", "sep2", "key_index", "pad_len", "pad_val"},
+        set(),
+        {"sep1": str, "sep2": str, "key_index": int, "pad_len": int, "pad_val": str},
+    ),
+}
+
+
+_COMMON_MODEL_KEYS = {"tasks", "label_col_map", "metrics"}
+_MODEL_PARAM_SPECS: dict[str, tuple[set[str], set[str], dict[str, type | tuple[type, ...]]]] = {
+    "lr": (_COMMON_MODEL_KEYS, set(), {"tasks": list, "label_col_map": dict, "metrics": dict}),
+    "deepfm": (_COMMON_MODEL_KEYS | {"fm_k", "deep_hidden_dims"}, set(), {"fm_k": int, "deep_hidden_dims": list, "tasks": list, "label_col_map": dict, "metrics": dict}),
+    "mmoe": (
+        _COMMON_MODEL_KEYS | {"shared_bottom_dims", "num_experts", "expert_hidden_dims", "expert_output_dim", "task_configs"},
+        set(),
+        {"shared_bottom_dims": list, "num_experts": int, "expert_hidden_dims": list, "expert_output_dim": int, "task_configs": list, "tasks": list, "label_col_map": dict, "metrics": dict},
+    ),
+    "esmm": (
+        _COMMON_MODEL_KEYS | {"shared_bottom_dims", "click_hidden_dims", "cvr_hidden_dims", "detail_hidden_dims", "stock_hidden_dims", "stay_hidden_dims", "task_config"},
+        set(),
+        {"shared_bottom_dims": list, "click_hidden_dims": list, "cvr_hidden_dims": list, "detail_hidden_dims": list, "stock_hidden_dims": list, "stay_hidden_dims": list, "task_config": dict, "tasks": list, "label_col_map": dict, "metrics": dict},
+    ),
+    "gdcn_esmm": (
+        _COMMON_MODEL_KEYS | {"cross_layers", "deep_hidden_dims", "shared_bottom_dims", "click_hidden_dims", "cvr_hidden_dims", "detail_hidden_dims", "stock_hidden_dims", "stay_hidden_dims", "task_config"},
+        set(),
+        {"cross_layers": int, "deep_hidden_dims": list, "shared_bottom_dims": list, "click_hidden_dims": list, "cvr_hidden_dims": list, "detail_hidden_dims": list, "stock_hidden_dims": list, "stay_hidden_dims": list, "task_config": dict, "tasks": list, "label_col_map": dict, "metrics": dict},
+    ),
+    "unimixer": (
+        _COMMON_MODEL_KEYS | {"token_dim", "num_tokens", "num_blocks", "block_size", "use_lite", "hidden_factor", "num_basis", "rank", "task_config", "use_siamese"},
+        {"task_config"},
+        {"token_dim": int, "num_tokens": int, "num_blocks": int, "block_size": int, "use_lite": bool, "hidden_factor": (int, float), "num_basis": int, "rank": int, "task_config": dict, "use_siamese": bool, "tasks": list, "label_col_map": dict, "metrics": dict},
+    ),
+}
+
+
+def _validate_mapping_keys(context: str, raw: dict[str, Any], allowed: set[str], required: set[str]) -> None:
+    unknown = set(raw) - allowed
+    if unknown:
+        raise ValueError(f"{context} has unknown field(s): {sorted(unknown)}")
+    missing = required - set(raw)
+    if missing:
+        raise ValueError(f"{context} missing required field(s): {sorted(missing)}")
+
+
+def _validate_typed_params(
+    context: str,
+    params: dict[str, Any],
+    allowed: set[str],
+    required: set[str],
+    types: dict[str, type | tuple[type, ...]],
+) -> None:
+    _validate_mapping_keys(context, params, allowed, required)
+    for key, expected in types.items():
+        if key not in params or params[key] is None:
+            continue
+        value = params[key]
+        if isinstance(value, bool) and (
+            expected is int or (isinstance(expected, tuple) and int in expected and bool not in expected)
+        ):
+            raise ValueError(f"{context}.{key} must be int, got bool")
+        if not isinstance(value, expected):
+            names = ", ".join(t.__name__ for t in expected) if isinstance(expected, tuple) else expected.__name__
+            raise ValueError(f"{context}.{key} must be {names}, got {type(value).__name__}")
+
+
 @dataclass
 class OperatorDef:
     name: str
@@ -154,17 +255,45 @@ class FlowConfig:
 
     @classmethod
     def from_dict(cls, raw: dict) -> "FlowConfig":
+        _validate_mapping_keys(
+            "FlowConfig",
+            raw,
+            {"version", "data_sources", "sources", "operators"},
+            {"version", "sources", "operators"},
+        )
         data_sources = [
+            _validate_mapping_keys(
+                f"data_sources[{idx}]",
+                ds,
+                {"name", "kind", "description", "params"},
+                {"name", "kind"},
+            )
+            or
             DataSourceDef(
                 name=str(ds["name"]),
                 kind=str(ds["kind"]),
                 description=ds.get("description"),
                 params=ds.get("params", {}),
             )
-            for ds in raw.get("data_sources", [])
+            for idx, ds in enumerate(raw.get("data_sources", []))
         ]
         sources = []
-        for s in raw.get("sources", []):
+        for idx, s in enumerate(raw.get("sources", [])):
+            _validate_mapping_keys(
+                f"sources[{idx}]",
+                s,
+                {
+                    "name",
+                    "source",
+                    "data_source",
+                    "dtype",
+                    "default_val",
+                    "embed",
+                    "role",
+                    "column_index",
+                },
+                {"name", "dtype", "default_val"},
+            )
             embed = EmbedConfig(**s["embed"]) if "embed" in s else None
             sources.append(
                 SourceDef(
@@ -185,12 +314,21 @@ class FlowConfig:
                     f"source '{source.name}' references unknown data_source '{source.data_source}'"
                 )
         operators = []
-        for o in raw.get("operators", []):
+        for idx, o in enumerate(raw.get("operators", [])):
+            _validate_mapping_keys(
+                f"operators[{idx}]",
+                o,
+                {"name", "op_type", "inputs", "outputs", "params", "embed"},
+                {"name", "op_type", "inputs", "outputs"},
+            )
+            op_type = OpType(o["op_type"])
+            allowed, required, types = _OP_PARAM_SPECS[op_type]
+            _validate_typed_params(f"operator '{o['name']}' params", o.get("params", {}), allowed, required, types)
             embed = EmbedConfig(**o["embed"]) if "embed" in o else None
             operators.append(
                 OperatorDef(
                     name=o["name"],
-                    op_type=OpType(o["op_type"]),
+                    op_type=op_type,
                     inputs=o.get("inputs", []),
                     outputs=o.get("outputs", []),
                     params=o.get("params", {}),
@@ -349,8 +487,13 @@ class ModelConfig:
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "ModelConfig":
+        _validate_mapping_keys("ModelConfig", raw, {"type"} | set(raw.keys()), {"type"})
         mtype = raw["type"]
         params = {k: v for k, v in raw.items() if k != "type"}
+        if mtype not in _MODEL_PARAM_SPECS:
+            raise ValueError(f"Unknown model type: {mtype}. Registered: {sorted(_MODEL_PARAM_SPECS)}")
+        allowed, required, types = _MODEL_PARAM_SPECS[mtype]
+        _validate_typed_params(f"model '{mtype}' params", params, allowed, required, types)
         return cls(type=mtype, params=params)
 
     def build(

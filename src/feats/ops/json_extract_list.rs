@@ -125,9 +125,16 @@ impl CustomOp for JsonExtractList {
 }
 
 pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
-    let key = params.get("key").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let key = params
+        .get("key")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
     let pad_len = params.get("pad_len").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-    let pad_val = params.get("pad_val").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let pad_val = params
+        .get("pad_val")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
     Ok(Box::new(JsonExtractList::new(key, pad_len, pad_val)))
 }
 

@@ -52,7 +52,11 @@ impl CustomOp for StringConcat {
 }
 
 pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
-    let separator = params.get("separator").and_then(|v| v.as_str()).unwrap_or("_").to_string();
+    let separator = params
+        .get("separator")
+        .and_then(|v| v.as_str())
+        .unwrap_or("_")
+        .to_string();
     Ok(Box::new(StringConcat::new(separator)))
 }
 

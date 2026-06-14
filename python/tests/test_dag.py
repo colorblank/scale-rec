@@ -2,10 +2,51 @@ from pathlib import Path
 
 import pytest
 
-from train.core.config import FlowConfig
+from train.core.config import FlowConfig, ModelConfig
 from train.core.dag import FeatureDag
 
 FIXTURE_DIR = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
+
+
+def test_operator_params_reject_unknown_field():
+    raw = {
+        "version": "1.0.0",
+        "sources": [{"name": "user_id", "dtype": "string", "default_val": ""}],
+        "operators": [
+            {
+                "name": "user_hash",
+                "op_type": "FeatureHash",
+                "inputs": ["user_id"],
+                "outputs": ["user_id_idx"],
+                "params": {"vocab_size": 10, "typo": 1},
+            }
+        ],
+    }
+    with pytest.raises(ValueError, match="unknown field"):
+        FlowConfig.from_dict(raw)
+
+
+def test_operator_params_reject_missing_required_field():
+    raw = {
+        "version": "1.0.0",
+        "sources": [{"name": "user_id", "dtype": "string", "default_val": ""}],
+        "operators": [
+            {
+                "name": "user_hash",
+                "op_type": "FeatureHash",
+                "inputs": ["user_id"],
+                "outputs": ["user_id_idx"],
+                "params": {},
+            }
+        ],
+    }
+    with pytest.raises(ValueError, match="missing required"):
+        FlowConfig.from_dict(raw)
+
+
+def test_model_params_reject_wrong_type():
+    with pytest.raises(ValueError, match="cross_layers must be int"):
+        ModelConfig.from_dict({"type": "gdcn_esmm", "cross_layers": "3"})
 
 
 def test_dag_from_yaml():
