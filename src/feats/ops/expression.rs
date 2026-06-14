@@ -21,6 +21,7 @@ impl ExpressionOp {
     }
 }
 
+/// 从 YAML params 创建 ExpressionOp 算子。
 pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
     let script = params
         .get("script")

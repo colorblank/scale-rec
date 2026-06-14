@@ -83,6 +83,7 @@ pub struct FeatureInfo {
 }
 
 impl FeatureInfo {
+    /// 创建只读特征元数据视图。
     pub fn new(
         sources: HashMap<String, SourceDef>,
         node_defs: HashMap<String, OperatorDef>,
@@ -97,6 +98,7 @@ impl FeatureInfo {
         }
     }
 
+    /// 返回所有需要 embedding 的 operator 输出特征。
     pub fn embeddable_features(&self) -> Vec<(&str, &EmbedConfig)> {
         let mut result = Vec::new();
         for (_, op) in &self.node_defs {
@@ -110,6 +112,7 @@ impl FeatureInfo {
         result
     }
 
+    /// 返回每个 operator 的来源作用域。
     pub fn op_source_kind(&self) -> HashMap<String, FeatureScope> {
         let mut feat_kind: HashMap<String, FeatureScope> = HashMap::new();
         for (name, src) in &self.sources {
@@ -140,14 +143,17 @@ impl FeatureInfo {
         op_kind
     }
 
+    /// 返回 source 定义映射。
     pub fn source_defs(&self) -> &HashMap<String, SourceDef> {
         &self.sources
     }
 
+    /// 返回所有 source 名称。
     pub fn source_names(&self) -> Vec<&str> {
         self.sources.keys().map(|s| s.as_str()).collect()
     }
 
+    /// 返回指定 operator 的输出特征名列表。
     pub fn op_outputs(&self, op_name: &str) -> Option<&Vec<String>> {
         self.node_defs.get(op_name).map(|d| &d.outputs)
     }

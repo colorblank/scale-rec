@@ -30,12 +30,14 @@ pub struct ValidationReport {
 }
 
 impl ValidationReport {
+    /// 返回所有 warning 级别的 DAG 校验问题。
     pub fn warnings(&self) -> impl Iterator<Item = &ValidationIssue> {
         self.issues
             .iter()
             .filter(|issue| issue.severity == "warning")
     }
 
+    /// 返回所有 error 级别的 DAG 校验问题。
     pub fn errors(&self) -> impl Iterator<Item = &ValidationIssue> {
         self.issues.iter().filter(|issue| issue.severity == "error")
     }

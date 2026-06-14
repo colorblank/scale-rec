@@ -108,7 +108,9 @@ impl std::fmt::Display for Fv {
 
 /// 自定义算子 trait：所有特征算子必须实现。
 pub trait CustomOp: Send + Sync {
+    /// 返回算子类型名称。
     fn name(&self) -> &str;
+    /// 处理单行输入，返回单行输出。
     fn process(&self, inputs: &[Fv]) -> Result<Fv, String>;
 
     /// Batch: columnar inputs → Vec of results. Default falls back to row-by-row.

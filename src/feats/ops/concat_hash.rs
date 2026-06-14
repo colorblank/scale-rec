@@ -28,6 +28,7 @@ impl ConcatHash {
     }
 }
 
+/// 从 YAML params 创建 ConcatHash 算子。
 pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
     let vocab_size = params
         .get("vocab_size")

@@ -141,6 +141,7 @@ pub struct DebugTracer {
 }
 
 impl DebugTracer {
+    /// 创建新的调试追踪器。
     pub fn new(config: DebugConfig) -> Self {
         DebugTracer {
             config,

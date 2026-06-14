@@ -60,6 +60,7 @@ impl CustomOp for ListStringParser {
     }
 }
 
+/// 从 YAML params 创建 ListStringParser 算子。
 pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
     let sep = params
         .get("sep")

@@ -75,6 +75,7 @@ impl CustomOp for Split {
     }
 }
 
+/// 从 YAML params 创建 Split 算子。
 pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
     let sep = params
         .get("sep")

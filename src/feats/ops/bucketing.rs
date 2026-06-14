@@ -59,6 +59,7 @@ impl CustomOp for Bucketing {
     }
 }
 
+/// 从 YAML params 创建 Bucketing 算子。
 pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
     let boundaries = params
         .get("boundaries")

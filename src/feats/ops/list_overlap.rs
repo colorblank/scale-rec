@@ -50,6 +50,7 @@ impl CustomOp for ListOverlap {
     }
 }
 
+/// 从 YAML params 创建 ListOverlap 算子。
 pub fn create(_params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
     Ok(Box::new(ListOverlap::new()))
 }

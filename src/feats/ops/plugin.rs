@@ -13,6 +13,7 @@ pub struct PluginOp {
     op_name: String,
 }
 
+/// 从 YAML params 创建 PluginOp 算子。
 pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
     let path = params
         .get("path")

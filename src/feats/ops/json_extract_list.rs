@@ -124,6 +124,7 @@ impl CustomOp for JsonExtractList {
     }
 }
 
+/// 从 YAML params 创建 JsonExtractList 算子。
 pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
     let key = params
         .get("key")

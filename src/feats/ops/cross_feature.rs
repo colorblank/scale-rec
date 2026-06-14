@@ -12,6 +12,7 @@ impl CrossFeature {
     }
 }
 
+/// 从 YAML params 创建 CrossFeature 算子。
 pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
     let cross_type = params
         .get("cross_type")

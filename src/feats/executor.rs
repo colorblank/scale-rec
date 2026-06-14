@@ -23,6 +23,7 @@ pub struct ExecutionPlan {
 }
 
 impl ExecutionPlan {
+    /// 创建预编译执行计划。
     pub fn new(
         steps: Vec<ExecStep>,
         ops: Vec<Box<dyn CustomOp>>,
@@ -45,6 +46,7 @@ impl ExecutionPlan {
         }
     }
 
+    /// 按列式输入执行预编译计划，并返回完整列上下文。
     pub fn execute_plan(
         &self,
         columns: &HashMap<String, Vec<Fv>>,
@@ -112,10 +114,12 @@ impl ExecutionPlan {
         Ok(context)
     }
 
+    /// 返回可嵌入特征对应的列 id 列表。
     pub fn embed_ids(&self) -> &[usize] {
         &self.embed_ids
     }
 
+    /// 返回 source 名称到列 id 的映射。
     pub fn source_col_map(&self) -> HashMap<String, usize> {
         self.source_names
             .iter()
@@ -134,6 +138,7 @@ pub struct DagExecutor {
 }
 
 impl DagExecutor {
+    /// 创建 DAG 执行器。
     pub fn new(
         plan: ExecutionPlan,
         sources: HashMap<String, SourceDef>,
@@ -148,6 +153,7 @@ impl DagExecutor {
         }
     }
 
+    /// 委托内部 `ExecutionPlan` 执行列式输入。
     pub fn execute_plan(
         &self,
         columns: &HashMap<String, Vec<Fv>>,
@@ -157,18 +163,22 @@ impl DagExecutor {
         self.plan.execute_plan(columns, skip_op_idx, precomputed)
     }
 
+    /// 返回内部预编译执行计划。
     pub fn plan(&self) -> &ExecutionPlan {
         &self.plan
     }
 
+    /// 返回 DAG 的 source 定义。
     pub fn source_defs(&self) -> &HashMap<String, SourceDef> {
         &self.sources
     }
 
+    /// 返回算子拓扑执行顺序。
     pub fn execution_order(&self) -> &[String] {
         &self.execution_order
     }
 
+    /// 返回 DAG 绑定的数据源定义。
     pub fn data_sources(&self) -> &[crate::feats::config::DataSourceDef] {
         &self.data_sources
     }

@@ -19,6 +19,7 @@ impl DictMapper {
             default_idx,
         }
     }
+    /// 返回 mapping 中最大的索引值。
     pub fn max_idx(&self) -> i32 {
         self.mapping.values().copied().max().unwrap_or(0)
     }
@@ -28,6 +29,7 @@ impl DictMapper {
     }
 }
 
+/// 从 YAML params 创建 DictMapper 算子。
 pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
     let default_idx = params
         .get("default_idx")

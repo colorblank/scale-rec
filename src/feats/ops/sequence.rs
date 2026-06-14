@@ -13,6 +13,7 @@ impl SequenceOp {
     }
 }
 
+/// 从 YAML params 创建 SequenceOp 算子。
 pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
     let max_len = params.get("max_len").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
     let pad_val = params.get("pad_val").and_then(|v| v.as_i64()).unwrap_or(0) as i32;

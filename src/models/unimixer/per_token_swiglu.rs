@@ -150,6 +150,7 @@ impl PerTokenSwiGlu {
         Ok((up_gate_linears, down_linears))
     }
 
+    /// 预构建并缓存每个 token 的线性层权重。
     pub fn warmup(&self) -> Result<()> {
         self.cached_linears().map(|_| ())
     }

@@ -150,6 +150,7 @@ impl UniMixing {
         Ok((w_b_star, w_r))
     }
 
+    /// 按给定温度预计算并缓存 mixing 矩阵。
     pub fn warmup(&self, temperature: f64) -> Result<()> {
         self.cached_mixing(temperature).map(|_| ())
     }
