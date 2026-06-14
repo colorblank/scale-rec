@@ -343,7 +343,7 @@ def build_model_for_dag(
     model_config = ModelConfig.from_yaml(model_config_path)
     features = feat_info.feature_tuples()
     tokenizer = None
-    if model_config.type == "unimixer":
+    if model_config.type in ("unimixer", "token_mixer_large"):
         from ..models.unimixer.tokenizer import FeatureTokenizer
 
         params = model_config.params

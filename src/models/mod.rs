@@ -22,6 +22,8 @@ pub mod lr;
 pub mod mmoe;
 /// UniMixer 双随机矩阵交互模型。
 pub mod unimixer;
+/// TokenMixer-Large：Mixing & Reverting 大规模排序模型。
+pub mod token_mixer_large;
 
 /// 模型推理 trait：所有模型实现该 trait 以统一前向接口。
 pub trait Model: Send + Sync {
@@ -82,6 +84,7 @@ static REGISTRY: LazyLock<HashMap<&'static str, BuildFn>> = LazyLock::new(|| {
     m.insert("esmm", build_esmm);
     m.insert("gdcn_esmm", build_gdcn_esmm);
     m.insert("unimixer", build_unimixer);
+    m.insert("token_mixer_large", build_token_mixer_large);
     m
 });
 
@@ -296,6 +299,38 @@ fn build_unimixer(
     )?))
 }
 
+fn build_token_mixer_large(
+    vb: VarBuilder,
+    _features: &[FeatureSpec],
+    tokenizer: Option<FeatureTokenizer>,
+    params: &serde_yaml::Value,
+    _options: &ModelBuildOptions,
+) -> Result<Box<dyn Model>> {
+    let tokenizer = tokenizer.ok_or_else(|| {
+        candle_core::Error::Msg("TokenMixerLarge requires external FeatureTokenizer".into())
+    })?;
+    let token_dim = yaml_usize(params, "token_dim", 64);
+    let num_tokens = yaml_usize(params, "num_tokens", 8);
+    let num_blocks = yaml_usize(params, "num_blocks", 2);
+    let num_heads = yaml_usize(params, "num_heads", 8);
+    let hidden_factor = yaml_f64(params, "hidden_factor", 1.0);
+    let down_init_scale = yaml_f64(params, "down_init_scale", 0.01);
+    let task_config = parse_multi_task_config(params)?;
+    Ok(Box::new(
+        token_mixer_large::model::TokenMixerLargeModel::new(
+            tokenizer,
+            token_dim,
+            num_tokens,
+            num_blocks,
+            num_heads,
+            hidden_factor,
+            &task_config,
+            vb,
+            down_init_scale,
+        )?,
+    ))
+}
+
 // ── YAML param helpers ──
 
 fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result<()> {
@@ -371,6 +406,21 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
                 "rank",
                 "task_config",
                 "use_siamese",
+            ],
+            &["task_config"],
+        ),
+        "token_mixer_large" => (
+            &[
+                "tasks",
+                "label_col_map",
+                "metrics",
+                "token_dim",
+                "num_tokens",
+                "num_blocks",
+                "num_heads",
+                "hidden_factor",
+                "task_config",
+                "down_init_scale",
             ],
             &["task_config"],
         ),

@@ -21,7 +21,7 @@ from .paths import DEMO_ARTIFACT_DIR, DISCOVER_FEATURE_CONFIG
 FLOW_CONFIG = FlowConfig.from_yaml(str(DISCOVER_FEATURE_CONFIG))
 SOURCE_NAMES = [source.name for source in FLOW_CONFIG.sources]
 REPO_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_LABEL_POLICY = REPO_ROOT / "examples" / "discover_label_policy.yaml"
+DEFAULT_LABEL_POLICY = REPO_ROOT / "examples" / "shared" / "discover_label_policy.yaml"
 
 STOCK_CODES = [f"60{i:04d}" for i in range(200)]
 ENTITY_CODES = {

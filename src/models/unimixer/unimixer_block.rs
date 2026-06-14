@@ -55,7 +55,8 @@ impl UniMixerBlock {
             let standard = UniMixing::new(embed_dim, block_size, vb.pp("unimixing"))?;
             UniMixingLayer::Standard(standard)
         };
-        let pswiglu = PerTokenSwiGlu::new(num_tokens, token_dim, hidden_factor, vb.pp("pswiglu"))?;
+        let pswiglu =
+            PerTokenSwiGlu::new(num_tokens, token_dim, hidden_factor, vb.pp("pswiglu"), 1.0)?;
         let siamese_norm = SiameseNorm::new(embed_dim, 1e-5, vb.pp("siamese_norm"))?;
         Ok(Self {
             embed_dim,

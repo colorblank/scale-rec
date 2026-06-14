@@ -34,11 +34,13 @@ impl PerTokenSwiGlu {
     /// - `token_dim`: Token 维度 D
     /// - `hidden_factor`: 隐藏层维度扩展因子 n (默认一般为 1.0)
     /// - `vb`: 变量构建器
+    /// - `down_init_scale`: Down 矩阵初始化缩放系数 (TokenMixer-Large, 默认 1.0)
     pub fn new(
         num_tokens: usize,
         token_dim: usize,
         hidden_factor: f64,
         vb: VarBuilder,
+        down_init_scale: f64,
     ) -> Result<Self> {
         let hidden_dim = (token_dim as f64 * hidden_factor) as usize;
         if hidden_dim == 0 {
@@ -70,8 +72,8 @@ impl PerTokenSwiGlu {
         )?;
         let b_gate = vb.get_with_hints((1, num_tokens, hidden_dim), "b_gate", Init::Const(0.0))?;
 
-        // W_down 权重
-        let down_bound = (6.0 / (hidden_dim as f64 + token_dim as f64)).sqrt();
+        // W_down 权重 (TokenMixer-Large: down_init_scale < 1.0 使初始输出接近零)
+        let down_bound = (6.0 / (hidden_dim as f64 + token_dim as f64)).sqrt() * down_init_scale;
         let w_down = vb.get_with_hints(
             (num_tokens, token_dim, hidden_dim),
             "w_down",
@@ -237,7 +239,7 @@ mod tests {
         let device = Device::Cpu;
         let varmap = VarMap::new();
         let vb = VarBuilder::from_varmap(&varmap, candle_core::DType::F32, &device);
-        let module = PerTokenSwiGlu::new(2, 3, 1.0, vb).unwrap();
+        let module = PerTokenSwiGlu::new(2, 3, 1.0, vb, 1.0).unwrap();
         // Keep varmap alive for the module lifetime in tests.
         let _ = Box::leak(Box::new(varmap));
         module

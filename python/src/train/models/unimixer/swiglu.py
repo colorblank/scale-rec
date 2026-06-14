@@ -8,7 +8,9 @@ import torch.nn as nn
 
 
 class PerTokenSwiGlu(nn.Module):
-    def __init__(self, num_tokens: int, token_dim: int, hidden_factor: float) -> None:
+    def __init__(
+        self, num_tokens: int, token_dim: int, hidden_factor: float, down_init_scale: float = 1.0
+    ) -> None:
         super().__init__()
         h = int(token_dim * hidden_factor)
         if h <= 0:
@@ -17,7 +19,7 @@ class PerTokenSwiGlu(nn.Module):
         self.hidden_dim = h
         ub = math.sqrt(6.0 / (token_dim + h))
         gb = math.sqrt(6.0 / (token_dim + h))
-        db = math.sqrt(6.0 / (h + token_dim))
+        db = math.sqrt(6.0 / (h + token_dim)) * down_init_scale
         self.w_up = nn.Parameter(torch.empty(num_tokens, h, token_dim).uniform_(-ub, ub))
         self.b_up = nn.Parameter(torch.zeros(1, num_tokens, h))
         self.w_gate = nn.Parameter(torch.empty(num_tokens, h, token_dim).uniform_(-gb, gb))

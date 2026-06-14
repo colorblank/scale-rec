@@ -1,0 +1,31 @@
+type: token_mixer_large
+token_dim: 64
+num_tokens: 4
+num_blocks: 2
+num_heads: 4
+hidden_factor: 1.0
+down_init_scale: 0.01
+label_col_map:
+  click: is_click
+  cvr: is_cvr
+  detail: is_click_detail
+  stock: is_click_stock
+  stay: stay_time_label
+tasks:
+  - {name: click, label: is_click, loss: bce, metrics: [auc, logloss]}
+  - {name: cvr, label: is_cvr, loss: bce, metrics: [auc, logloss]}
+  - {name: detail, label: is_click_detail, loss: bce, metrics: [auc, logloss]}
+  - {name: stock, label: is_click_stock, loss: bce, metrics: [auc, logloss]}
+  - {name: stay, label: stay_time_label, loss: weighted_bce_stay, metrics: [mae, mse]}
+task_config:
+  towers:
+    - {name: click,  hidden_dims: [16, 8], output_dim: 1, activation: relu}
+    - {name: cvr,    hidden_dims: [16, 8], output_dim: 1, activation: relu}
+    - {name: detail, hidden_dims: [8],    output_dim: 1, activation: relu}
+    - {name: stock,  hidden_dims: [8],    output_dim: 1, activation: relu}
+    - {name: stay,   hidden_dims: [8],    output_dim: 1, activation: none}
+  relations:
+    - {target: ctcvr,    sources: [click, cvr],    op: multiply}
+    - {target: ctdetail, sources: [click, detail], op: multiply}
+    - {target: ctstock,  sources: [click, stock],  op: multiply}
+    - {target: ctstay,   sources: [detail, stay],  op: multiply}

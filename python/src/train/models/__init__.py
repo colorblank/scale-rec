@@ -17,6 +17,7 @@ from .gdcn_esmm import GDCNESMM
 from .lr import LogisticRegression
 from .mmoe import MMoE
 from .unimixer.model import UniMixerModel
+from .token_mixer_large import TokenMixerLargeModel
 
 # ── registry ──
 OutputSpec = dict[str, Any]
@@ -267,9 +268,30 @@ def _build_unimixer(
     )
 
 
+def _build_token_mixer_large(
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
+) -> TokenMixerLargeModel:
+    if tokenizer is None:
+        raise ValueError("TokenMixerLarge requires external FeatureTokenizer")
+    tc = _parse_task_config(params.get("task_config"))
+    if tc is None:
+        raise ValueError("TokenMixerLarge requires task_config")
+    return TokenMixerLargeModel(
+        tokenizer=tokenizer,
+        token_dim=params.get("token_dim", 64),
+        num_tokens=params.get("num_tokens", 8),
+        num_blocks=params.get("num_blocks", 2),
+        num_heads=params.get("num_heads", 8),
+        hidden_factor=params.get("hidden_factor", 1.0),
+        task_config=tc,
+        down_init_scale=params.get("down_init_scale", 0.01),
+    )
+
+
 register_model("lr", _spec_pred, _build_lr)
 register_model("deepfm", _spec_pred, _build_deepfm)
 register_model("mmoe", _spec_mmoe, _build_mmoe)
 register_model("esmm", _spec_esmm, _build_esmm)
 register_model("gdcn_esmm", _spec_esmm, _build_gdcn_esmm)
 register_model("unimixer", _spec_unimixer, _build_unimixer)
+register_model("token_mixer_large", _spec_unimixer, _build_token_mixer_large)

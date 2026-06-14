@@ -87,7 +87,7 @@ fn main() -> Result<()> {
     let vb = VarBuilder::from_varmap(&varmap, DType::F32, &device);
 
     // UniMixer 需要预构建 FeatureTokenizer（共享 VarMap，权重路径 "tokenizer.*"）
-    let tokenizer: Option<FeatureTokenizer> = if model_type == "unimixer" {
+    let tokenizer: Option<FeatureTokenizer> = if model_type == "unimixer" || model_type == "token_mixer_large" {
         let token_dim = model_config
             .params
             .get("token_dim")
