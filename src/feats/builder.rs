@@ -241,7 +241,7 @@ impl DagBuilder {
     }
 
     fn create_op(def: &OperatorDef) -> Result<Box<dyn CustomOp>, String> {
-        registry::create_op(&def.op_type, &def.params)
+        registry::create_op(def.op_type, &def.params)
     }
 
     fn validate(

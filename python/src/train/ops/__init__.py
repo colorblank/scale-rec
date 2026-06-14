@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Any, Protocol, Union
+
+from ..core.config import OpType
 
 
 class CustomOp(Protocol):
@@ -22,11 +24,12 @@ def register_op(op_type: str):
     return decorator
 
 
-def create_op(op_type: str, params: dict) -> CustomOp:
+def create_op(op_type: Union[str, OpType], params: dict) -> CustomOp:
     """Look up operator in registry and construct from params."""
-    cls = OP_REGISTRY.get(op_type)
+    key = op_type.value if isinstance(op_type, OpType) else op_type
+    cls = OP_REGISTRY.get(key)
     if cls is None:
-        raise ValueError(f"Unsupported operator type: {op_type}")
+        raise ValueError(f"Unsupported operator type: {key}")
     return cls.from_config(params)
 
 

@@ -6,6 +6,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..core.config import OpType
 from ..core.executor import DagExecutor
 from ..core.feature_info import FeatureInfo
 
@@ -199,21 +200,21 @@ def _embedding_pad_buckets(executor: DagExecutor, feat_info: FeatureInfo) -> dic
         op_def = node_defs[op_name]
         op = nodes[op_name]
         pad_values: set[int] = set()
-        if op_def.op_type == "SequenceOp":
+        if op_def.op_type is OpType.SEQUENCE_OP:
             pad_values.add(int(op_def.params.get("pad_val", 0)))
-        elif op_def.op_type == "ParsedFeatureHash" and hasattr(op, "_hash"):
+        elif op_def.op_type is OpType.PARSED_FEATURE_HASH and hasattr(op, "_hash"):
             pad_values.add(op._hash._hash_one(str(op_def.params.get("pad_val", ""))))
-        elif op_def.op_type == "FeatureHash" and hasattr(op, "_hash_one"):
+        elif op_def.op_type is OpType.FEATURE_HASH and hasattr(op, "_hash_one"):
             for input_name in op_def.inputs:
                 upstream_name = providers.get(input_name)
                 if upstream_name is None:
                     continue
                 upstream_def = node_defs[upstream_name]
                 if upstream_def.op_type in {
-                    "StringParser",
-                    "JsonExtractList",
-                    "Split",
-                    "FlatSplit",
+                    OpType.STRING_PARSER,
+                    OpType.JSON_EXTRACT_LIST,
+                    OpType.SPLIT,
+                    OpType.FLAT_SPLIT,
                 }:
                     pad_values.add(op._hash_one(str(upstream_def.params.get("pad_val", ""))))
         if pad_values:

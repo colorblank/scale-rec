@@ -250,12 +250,33 @@ pub struct SourceDef {
     pub column_index: Option<usize>,
 }
 
+/// 算子类型枚举。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum OpType {
+    Bucketing,
+    ConcatHash,
+    CrossFeature,
+    DictMapper,
+    ExpressionOp,
+    FeatureHash,
+    FlatSplit,
+    JsonExtractList,
+    ListOverlap,
+    ListStringParser,
+    ParsedFeatureHash,
+    PluginOp,
+    SequenceOp,
+    Split,
+    StringConcat,
+    StringParser,
+}
+
 /// 算子节点定义。`params` 使用原生 YAML 值，由各算子自行解析。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OperatorDef {
     pub name: String,
-    pub op_type: String,
+    pub op_type: OpType,
     pub inputs: Vec<String>,
     pub outputs: Vec<String>,
     #[serde(default)]

@@ -8,6 +8,7 @@ from .config import (
     DType,
     EmbedConfig,
     FlowConfig,
+    OpType,
     OperatorDef,
     Role,
     parse_float_strict,
@@ -154,25 +155,25 @@ def _infer_operator_output(op: OperatorDef, input_schemas: list[FeatureSchema]) 
     first = input_schemas[0] if input_schemas else None
     op_type = op.op_type
     params = op.params
-    if op_type == "Bucketing":
+    if op_type is OpType.BUCKETING:
         _require_scalar_number(op, first)
         return _schema(op, FeatureDType("int"))
-    if op_type == "DictMapper":
+    if op_type is OpType.DICT_MAPPER:
         if first and first.dtype.is_list:
             return _schema(op, FeatureDType("list", FeatureDType("int"), first.dtype.length))
         return _schema(op, FeatureDType("int"))
-    if op_type in {"StringParser", "JsonExtractList"}:
+    if op_type in {OpType.STRING_PARSER, OpType.JSON_EXTRACT_LIST}:
         return _schema(
             op, FeatureDType("list", FeatureDType("string"), int(params.get("pad_len", 0)) or None)
         )
-    if op_type == "ListStringParser":
+    if op_type is OpType.LIST_STRING_PARSER:
         length = first.dtype.length if first and first.dtype.is_list else None
         return _schema(op, FeatureDType("list", FeatureDType("string"), length))
-    if op_type in {"Split", "FlatSplit"}:
+    if op_type in {OpType.SPLIT, OpType.FLAT_SPLIT}:
         return _schema(
             op, FeatureDType("list", FeatureDType("string"), int(params.get("max_len", 0)) or None)
         )
-    if op_type == "CrossFeature":
+    if op_type is OpType.CROSS_FEATURE:
         if len(input_schemas) != 2:
             raise ValueError(f"operator '{op.name}' expects exactly 2 inputs")
         if params.get("cross_type") == "inner_product":
@@ -191,17 +192,17 @@ def _infer_operator_output(op: OperatorDef, input_schemas: list[FeatureSchema]) 
             if not lengths or length <= 0:
                 length = None
         return _schema(op, FeatureDType("list", FeatureDType("string"), length))
-    if op_type == "ExpressionOp":
+    if op_type is OpType.EXPRESSION_OP:
         return _schema(op, FeatureDType("float"))
-    if op_type == "SequenceOp":
+    if op_type is OpType.SEQUENCE_OP:
         return _schema(
             op, FeatureDType("list", FeatureDType("int"), int(params.get("max_len", 10)))
         )
-    if op_type == "ListOverlap":
+    if op_type is OpType.LIST_OVERLAP:
         return _schema(op, FeatureDType("int"))
-    if op_type == "StringConcat":
+    if op_type is OpType.STRING_CONCAT:
         return _schema(op, FeatureDType("string"))
-    if op_type == "ParsedFeatureHash":
+    if op_type is OpType.PARSED_FEATURE_HASH:
         mode = str(params.get("parse_mode", "json"))
         if mode in {"json", "structured", "structured_list_split"}:
             length = int(params.get("pad_len", 0)) or None
@@ -214,13 +215,13 @@ def _infer_operator_output(op: OperatorDef, input_schemas: list[FeatureSchema]) 
         else:
             raise ValueError(f"Unsupported ParsedFeatureHash mode: {mode}")
         return _schema(op, FeatureDType("list", FeatureDType("int"), length))
-    if op_type == "ConcatHash":
+    if op_type is OpType.CONCAT_HASH:
         if int(params.get("num_hashes", 1)) > 1:
             return _schema(
                 op, FeatureDType("list", FeatureDType("int"), int(params.get("num_hashes", 1)))
             )
         return _schema(op, FeatureDType("int"))
-    if op_type == "FeatureHash":
+    if op_type is OpType.FEATURE_HASH:
         list_inputs = [s for s in input_schemas if s.dtype.is_list]
         num_hashes = int(params.get("num_hashes", 1))
         if list_inputs:
@@ -237,7 +238,7 @@ def _infer_operator_output(op: OperatorDef, input_schemas: list[FeatureSchema]) 
         if num_hashes > 1:
             return _schema(op, FeatureDType("list", FeatureDType("int"), num_hashes))
         return _schema(op, FeatureDType("int"))
-    if op_type == "PluginOp":
+    if op_type is OpType.PLUGIN_OP:
         return _schema(op, FeatureDType("unknown"))
     raise ValueError(f"Unsupported operator for schema inference: {op_type}")
 

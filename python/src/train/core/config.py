@@ -3,6 +3,7 @@ from __future__ import annotations
 """训练与推理配置的单一入口。"""
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -101,10 +102,29 @@ class SourceDef:
     column_index: Optional[int] = None
 
 
+class OpType(StrEnum):
+    BUCKETING = "Bucketing"
+    CONCAT_HASH = "ConcatHash"
+    CROSS_FEATURE = "CrossFeature"
+    DICT_MAPPER = "DictMapper"
+    EXPRESSION_OP = "ExpressionOp"
+    FEATURE_HASH = "FeatureHash"
+    FLAT_SPLIT = "FlatSplit"
+    JSON_EXTRACT_LIST = "JsonExtractList"
+    LIST_OVERLAP = "ListOverlap"
+    LIST_STRING_PARSER = "ListStringParser"
+    PARSED_FEATURE_HASH = "ParsedFeatureHash"
+    PLUGIN_OP = "PluginOp"
+    SEQUENCE_OP = "SequenceOp"
+    SPLIT = "Split"
+    STRING_CONCAT = "StringConcat"
+    STRING_PARSER = "StringParser"
+
+
 @dataclass
 class OperatorDef:
     name: str
-    op_type: str
+    op_type: OpType
     inputs: list[str] = field(default_factory=list)
     outputs: list[str] = field(default_factory=list)
     params: dict = field(default_factory=dict)
@@ -170,7 +190,7 @@ class FlowConfig:
             operators.append(
                 OperatorDef(
                     name=o["name"],
-                    op_type=o["op_type"],
+                    op_type=OpType(o["op_type"]),
                     inputs=o.get("inputs", []),
                     outputs=o.get("outputs", []),
                     params=o.get("params", {}),

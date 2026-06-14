@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 
 use crate::feats::config::{
-    parse_float_strict, parse_int_strict, DType, EmbedConfig, OperatorDef, PoolingStrategy, Role,
-    SourceDef,
+    parse_float_strict, parse_int_strict, DType, EmbedConfig, OpType, OperatorDef, PoolingStrategy,
+    Role, SourceDef,
 };
 
 /// 特征数据类型枚举：推断出的具体类型及约束。
@@ -177,31 +177,31 @@ fn infer_operator_output(
     inputs: &[FeatureSchema],
 ) -> Result<FeatureSchema, String> {
     let first = inputs.first();
-    let dtype = match op.op_type.as_str() {
-        "Bucketing" => {
+    let dtype = match op.op_type {
+        OpType::Bucketing => {
             require_scalar_number(op, first)?;
             FeatureDType::Int
         }
-        "DictMapper" => match first.map(|s| &s.dtype) {
+        OpType::DictMapper => match first.map(|s| &s.dtype) {
             Some(FeatureDType::List { length, .. }) => FeatureDType::List {
                 dtype: Box::new(FeatureDType::Int),
                 length: *length,
             },
             _ => FeatureDType::Int,
         },
-        "StringParser" | "JsonExtractList" => FeatureDType::List {
+        OpType::StringParser | OpType::JsonExtractList => FeatureDType::List {
             dtype: Box::new(FeatureDType::String),
             length: yaml_usize(&op.params, "pad_len").filter(|v| *v > 0),
         },
-        "ListStringParser" => FeatureDType::List {
+        OpType::ListStringParser => FeatureDType::List {
             dtype: Box::new(FeatureDType::String),
             length: first.and_then(|s| s.dtype.list_len()),
         },
-        "Split" | "FlatSplit" => FeatureDType::List {
+        OpType::Split | OpType::FlatSplit => FeatureDType::List {
             dtype: Box::new(FeatureDType::String),
             length: yaml_usize(&op.params, "max_len").filter(|v| *v > 0),
         },
-        "CrossFeature" => {
+        OpType::CrossFeature => {
             if inputs.len() != 2 {
                 return Err(format!("operator '{}' expects exactly 2 inputs", op.name));
             }
@@ -225,14 +225,14 @@ fn infer_operator_output(
                 }
             }
         }
-        "ExpressionOp" => FeatureDType::Float,
-        "SequenceOp" => FeatureDType::List {
+        OpType::ExpressionOp => FeatureDType::Float,
+        OpType::SequenceOp => FeatureDType::List {
             dtype: Box::new(FeatureDType::Int),
             length: Some(yaml_usize(&op.params, "max_len").unwrap_or(10)),
         },
-        "ListOverlap" => FeatureDType::Int,
-        "StringConcat" => FeatureDType::String,
-        "ParsedFeatureHash" => {
+        OpType::ListOverlap => FeatureDType::Int,
+        OpType::StringConcat => FeatureDType::String,
+        OpType::ParsedFeatureHash => {
             let mode = yaml_str(&op.params, "parse_mode").unwrap_or("json");
             let length = match mode {
                 "json" | "structured" | "structured_list_split" => {
@@ -251,7 +251,7 @@ fn infer_operator_output(
                 length,
             }
         }
-        "ConcatHash" => {
+        OpType::ConcatHash => {
             let num_hashes = yaml_usize(&op.params, "num_hashes").unwrap_or(1);
             if num_hashes > 1 {
                 FeatureDType::List {
@@ -262,7 +262,7 @@ fn infer_operator_output(
                 FeatureDType::Int
             }
         }
-        "FeatureHash" => {
+        OpType::FeatureHash => {
             let list_inputs: Vec<&FeatureSchema> =
                 inputs.iter().filter(|s| s.dtype.is_list()).collect();
             let num_hashes = yaml_usize(&op.params, "num_hashes").unwrap_or(1);
@@ -291,13 +291,7 @@ fn infer_operator_output(
                 FeatureDType::Int
             }
         }
-        "PluginOp" => FeatureDType::Unknown,
-        _ => {
-            return Err(format!(
-                "Unsupported operator for schema inference: {}",
-                op.op_type
-            ))
-        }
+        OpType::PluginOp => FeatureDType::Unknown,
     };
     Ok(FeatureSchema {
         name: op

@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 from ..ops import CustomOp, create_op
 Fv = Any
-from .config import DType, FlowConfig, Role, SourceDef, parse_float_strict, parse_int_strict
+from .config import DType, FlowConfig, OpType, Role, SourceDef, parse_float_strict, parse_int_strict
 from .executor import ExecStep, ExecutionPlan
 from .schema import FeatureSchema, infer_feature_schemas
 
@@ -83,7 +83,7 @@ def parse_default(val_str: str, dtype: DType) -> Fv:
     return 0
 
 
-def _create_op(op_type: str, params: Any) -> CustomOp:
+def _create_op(op_type: OpType, params: Any) -> CustomOp:
     return create_op(op_type, params)
 
 
