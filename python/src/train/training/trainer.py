@@ -26,7 +26,7 @@ from ..app.data import (
 )
 from ..app.export import export_to_safetensors
 from ..core.config import FlowConfig, TrainConfig
-from ..core.dag import FeatureDag
+from ..core.preprocessor import TrainingPreprocessor
 from ..core.task import TaskSpec, legacy_task_specs
 from .eval.evaluator import Evaluator
 from .loss.multi_task import MultiTaskLoss, _to_device
@@ -129,22 +129,22 @@ def _collect_batches(batches: Iterator[Batch], max_samples: int) -> list[Batch]:
     return result
 
 
-def _prepare_batch(dag: FeatureDag, batch: Batch) -> Batch:
+def _prepare_batch(preprocessor: TrainingPreprocessor, batch: Batch) -> Batch:
     prepared = dict(batch)
-    prepared["features"] = dag.preprocess_batch(batch["features"])
+    prepared["features"] = preprocessor.preprocess_batch(batch["features"])
     return prepared
 
 
 def iter_preprocessed_batches(
-    dag: FeatureDag,
+    preprocessor: TrainingPreprocessor,
     batches: Iterator[Batch],
     *,
     prefetch_batches: int = 0,
 ) -> Iterator[Batch]:
     prefetch_batches = max(int(prefetch_batches), 0)
-    if prefetch_batches <= 0 or dag is None or getattr(dag, "tracer", None) is not None:
+    if prefetch_batches <= 0:
         for batch in batches:
-            yield _prepare_batch(dag, batch)
+            yield _prepare_batch(preprocessor, batch)
         return
 
     executor = ThreadPoolExecutor(max_workers=prefetch_batches)
@@ -157,7 +157,7 @@ def iter_preprocessed_batches(
                 batch = next(batch_iter)
             except StopIteration:
                 return False
-            pending.append(executor.submit(_prepare_batch, dag, batch))
+            pending.append(executor.submit(_prepare_batch, preprocessor, batch))
             return True
 
         for _ in range(prefetch_batches):
@@ -207,7 +207,7 @@ class Trainer:
     def __init__(
         self,
         model: torch.nn.Module,
-        dag: FeatureDag,
+        preprocessor: "TrainingPreprocessor",
         task_names: list[str],
         label_map: dict[str, str],
         device: torch.device,
@@ -228,7 +228,7 @@ class Trainer:
         repo_root: Union[str, Path, None] = None,
     ) -> None:
         self.model = model
-        self.dag = dag
+        self._preprocessor = preprocessor
         self.cfg = config
         self.task_specs = (
             task_specs
@@ -422,7 +422,7 @@ class Trainer:
             avg_loss = self._train_epoch(epoch)
             eval_results = self.evaluator.evaluate(
                 self.model,
-                self.dag,
+                self._preprocessor,
                 self.eval_batches,
                 self.task_names,
                 self.label_map,
@@ -519,7 +519,7 @@ class Trainer:
             self._n_eval_batches,
             self._data_paths[-1],
         )
-        self.feature_quality = summarize_feature_quality(self.dag, self.eval_batches)
+        self.feature_quality = summarize_feature_quality(self._preprocessor.dag, self.eval_batches)
         logger.info("feature quality: rows=%d", self.feature_quality.rows)
 
     def feature_quality_metrics(self) -> dict[str, float]:
@@ -605,7 +605,7 @@ class Trainer:
         t0_epoch = time.perf_counter()
 
         batch_iter = iter_preprocessed_batches(
-            self.dag, self._iter_batches(), prefetch_batches=self.cfg.prefetch_batches
+            self._preprocessor, self._iter_batches(), prefetch_batches=self.cfg.prefetch_batches
         )
         skip_batches = (
             self._resume_batch_in_epoch
@@ -740,7 +740,7 @@ class Trainer:
         self.model.eval()
         results = self.evaluator.evaluate(
             self.model,
-            self.dag,
+            self._preprocessor,
             self.eval_batches,
             self.task_names,
             self.label_map,

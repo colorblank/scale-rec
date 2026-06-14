@@ -1,11 +1,14 @@
-//! 特征 DAG 执行器：拓扑排序、算子调度、单样本执行。
-use super::ops::{CustomOp, Fv};
+//! FeatureDag facade —— 委派给 DagBuilder / DagExecutor / FeatureInfo。
+//!
+//! 新代码请直接使用 builder/executor/feature_info 模块，而非此 facade。
+
+pub use super::builder::{DagBuilder, DagArtifact, ValidationIssue, ValidationReport};
+pub use super::executor::{DagExecutor, ExecStep, ExecutionPlan};
+use super::ops::Fv;
 use crate::feats::config::{DataSourceDef, FlowConfig, OperatorDef, SourceDef};
 use crate::feats::debug::DebugTracer;
 use crate::feats::defaults::source_default;
-use crate::feats::schema::{infer_feature_schemas, FeatureSchema};
-use petgraph::algo::toposort;
-use petgraph::prelude::DiGraph;
+use crate::feats::schema::FeatureSchema;
 use std::collections::{HashMap, HashSet};
 
 /// 特征值的类型别名。
@@ -18,56 +21,7 @@ pub struct FeatureResult {
     pub computed_names: HashSet<String>,
 }
 
-/// DAG 校验问题：包含严重级别、错误码和描述。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ValidationIssue {
-    pub severity: &'static str,
-    pub code: &'static str,
-    pub message: String,
-    pub feature: Option<String>,
-}
-
-/// DAG 校验报告：汇总 source 消费率、embed 利用率和中间结果。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ValidationReport {
-    pub issues: Vec<ValidationIssue>,
-    pub source_count: usize,
-    pub embeddable_count: usize,
-    pub intermediate_count: usize,
-}
-
-impl ValidationReport {
-    pub fn warnings(&self) -> impl Iterator<Item = &ValidationIssue> {
-        self.issues
-            .iter()
-            .filter(|issue| issue.severity == "warning")
-    }
-
-    pub fn errors(&self) -> impl Iterator<Item = &ValidationIssue> {
-        self.issues.iter().filter(|issue| issue.severity == "error")
-    }
-}
-
-/// 预编译执行计划：运算符 + 整数索引列，运行时零 HashMap 查找。
-pub struct ExecutionPlan {
-    pub steps: Vec<ExecStep>,
-    pub ops: Vec<Box<dyn CustomOp>>,
-    source_cols: Vec<usize>,
-    source_names: Vec<String>,
-    col_names: Vec<Option<String>>,
-    source_defaults: Vec<Fv>,
-    col_count: usize,
-    embed_ids: Vec<usize>,
-}
-
-/// 预编译执行步骤：算子索引 + 输入/输出列索引。
-pub struct ExecStep {
-    pub op_idx: usize,
-    pub input_cols: Vec<usize>,
-    pub output_cols: Vec<usize>,
-}
-
-/// 特征 DAG 执行引擎。
+/// 特征 DAG 执行引擎（facade）。
 ///
 /// 根据 FlowConfig 构建算子图，拓扑排序后按序执行单样本处理。
 pub struct FeatureDag {
@@ -89,180 +43,14 @@ impl FeatureDag {
         debug_mode: bool,
         tracer: Option<DebugTracer>,
     ) -> Result<Self, String> {
-        use crate::feats::config::Role;
-
-        let feature_schemas = infer_feature_schemas(&config.sources, &config.operators)?;
-        let data_source_names: HashSet<String> = config
-            .data_sources
-            .iter()
-            .map(|source| source.name.clone())
-            .collect();
-        for source in &config.sources {
-            if let Some(data_source) = &source.data_source {
-                if !data_source_names.contains(data_source) {
-                    return Err(format!(
-                        "source '{}' references unknown data_source '{}'",
-                        source.name, data_source
-                    ));
-                }
-            }
-        }
-        let data_sources = config.data_sources.clone();
-
-        let mut sources = HashMap::new();
-        for s in config.sources {
-            if s.role != Role::Feature {
-                tracing::info!("source '{}' skipped (role={:?})", s.name, s.role);
-                continue;
-            }
-            if sources.contains_key(&s.name) {
-                return Err(format!("Duplicate source name: '{}'", s.name));
-            }
-            sources.insert(s.name.clone(), s);
-        }
-        let mut valid_inputs: HashSet<String> = sources.keys().cloned().collect();
-        let mut nodes = HashMap::new();
-        let mut node_defs = HashMap::new();
-        let mut graph = DiGraph::<String, ()>::new();
-        let mut name_to_idx = HashMap::new();
-        for op_def in &config.operators {
-            if nodes.contains_key(&op_def.name) {
-                return Err(format!("Duplicate operator name: '{}'", op_def.name));
-            }
-            let op = Self::create_op(op_def)?;
-            nodes.insert(op_def.name.clone(), op);
-            node_defs.insert(op_def.name.clone(), op_def.clone());
-            let idx = graph.add_node(op_def.name.clone());
-            name_to_idx.insert(op_def.name.clone(), idx);
-        }
-        let mut output_to_provider = HashMap::new();
-        for op_def in &config.operators {
-            for out in &op_def.outputs {
-                if valid_inputs.contains(out) {
-                    return Err(format!("Duplicate output name '{}'", out));
-                }
-                valid_inputs.insert(out.clone());
-                output_to_provider.insert(out.clone(), op_def.name.clone());
-            }
-        }
-        for op_def in &config.operators {
-            for input_name in &op_def.inputs {
-                if !valid_inputs.contains(input_name) {
-                    return Err(format!(
-                        "Operator '{}' references unknown input '{}'",
-                        op_def.name, input_name
-                    ));
-                }
-            }
-        }
-        for op_def in &config.operators {
-            let target_idx = name_to_idx[&op_def.name];
-            for input_name in &op_def.inputs {
-                if let Some(provider_name) = output_to_provider.get(input_name) {
-                    let source_idx = name_to_idx[provider_name];
-                    graph.add_edge(source_idx, target_idx, ());
-                }
-            }
-        }
-        let sorted_indices =
-            toposort(&graph, None).map_err(|_| "Cycle detected in feature DAG".to_string())?;
-        let execution_order: Vec<String> = sorted_indices
-            .iter()
-            .map(|&idx| graph[idx].clone())
-            .collect();
-
-        // Build precompiled execution plan (column IDs for zero-HashMap execution)
-        let mut col_id: HashMap<String, usize> = HashMap::new();
-        let mut source_cols: Vec<usize> = Vec::new();
-        let mut source_names: Vec<String> = Vec::new();
-        let mut source_defaults: Vec<Fv> = Vec::new();
-        let mut col_names: Vec<Option<String>> = vec![None; sources.len()];
-        for (i, s) in sources.keys().enumerate() {
-            col_id.insert(s.clone(), i);
-            source_cols.push(i);
-            source_names.push(s.clone());
-            col_names[i] = Some(s.clone());
-            let source_def = sources
-                .get(s)
-                .ok_or_else(|| format!("source '{}' missing while building execution plan", s))?;
-            source_defaults.push(source_default(source_def));
-        }
-        let mut col_count = sources.len();
-        // Assign IDs to operator outputs
-        for op_def in &config.operators {
-            for out in &op_def.outputs {
-                if !col_id.contains_key(out) {
-                    col_id.insert(out.clone(), col_count);
-                    col_names.push(Some(out.clone()));
-                    col_count += 1;
-                }
-            }
-        }
-        // Build steps with pre-resolved column indices
-        let mut plan_steps: Vec<ExecStep> = Vec::with_capacity(execution_order.len());
-        let mut plan_ops: Vec<Box<dyn CustomOp>> = Vec::with_capacity(nodes.len());
-        let mut op_name_to_idx: HashMap<String, usize> = HashMap::new();
-        for (i, node_name) in execution_order.iter().enumerate() {
-            op_name_to_idx.insert(node_name.clone(), i);
-            plan_ops.push(nodes.remove(node_name).ok_or_else(|| {
-                format!("operator '{}' missing after topological sort", node_name)
-            })?);
-        }
-        for node_name in &execution_order {
-            let def = &node_defs[node_name];
-            let op_idx = op_name_to_idx[node_name];
-            let input_cols: Vec<usize> = def
-                .inputs
-                .iter()
-                .map(|inp| {
-                    col_id
-                        .get(inp)
-                        .copied()
-                        .ok_or_else(|| format!("input column '{}' missing from plan", inp))
-                })
-                .collect::<Result<_, _>>()?;
-            let output_cols: Vec<usize> = def
-                .outputs
-                .iter()
-                .map(|out| {
-                    col_id
-                        .get(out)
-                        .copied()
-                        .ok_or_else(|| format!("output column '{}' missing from plan", out))
-                })
-                .collect::<Result<_, _>>()?;
-            plan_steps.push(ExecStep {
-                op_idx,
-                input_cols,
-                output_cols,
-            });
-        }
-        // Embeddable column IDs — 全部来自算子 embed 配置
-        let mut embed_pairs: Vec<(&str, usize)> = Vec::new();
-        for op_def in &config.operators {
-            if op_def.embed.is_some() {
-                for out_name in &op_def.outputs {
-                    if let Some(&id) = col_id.get(out_name) {
-                        embed_pairs.push((out_name, id));
-                    }
-                }
-            }
-        }
-        embed_pairs.sort_by_key(|(name, _)| *name);
-
-        let validation_report = Self::validate(&sources, &config.operators, &embed_pairs);
-
-        let embed_ids: Vec<usize> = embed_pairs.into_iter().map(|(_, id)| id).collect();
-        let plan = ExecutionPlan {
-            steps: plan_steps,
-            ops: plan_ops,
-            source_cols,
-            source_names,
-            col_names,
-            source_defaults,
-            col_count,
-            embed_ids,
-        };
+        let artifact = DagBuilder::build(config)?;
+        let data_sources = artifact.data_sources;
+        let sources = artifact.sources;
+        let node_defs = artifact.node_defs;
+        let execution_order = artifact.execution_order;
+        let plan = artifact.plan;
+        let feature_schemas = artifact.feature_schemas;
+        let validation_report = artifact.validation_report;
 
         Ok(Self {
             sources,
@@ -277,99 +65,11 @@ impl FeatureDag {
         })
     }
 
-    fn validate(
-        sources: &HashMap<String, SourceDef>,
-        operators: &[OperatorDef],
-        embed_pairs: &[(&str, usize)],
-    ) -> ValidationReport {
-        let embeddable: HashSet<&str> = embed_pairs.iter().map(|(n, _)| *n).collect();
-        let mut downstream: HashSet<&str> = HashSet::new();
-        for op in operators {
-            for inp in &op.inputs {
-                downstream.insert(inp.as_str());
-            }
-        }
-
-        let orphan_src: Vec<&str> = sources
-            .keys()
-            .filter(|n| !downstream.contains(n.as_str()) && !embeddable.contains(n.as_str()))
-            .map(|s| s.as_str())
-            .collect();
-
-        let mut orphan_out: Vec<(&str, &str)> = Vec::new();
-        let mut intermediate = 0usize;
-        for op in operators {
-            for out in &op.outputs {
-                if embeddable.contains(out.as_str()) {
-                    continue;
-                }
-                if downstream.contains(out.as_str()) {
-                    intermediate += 1;
-                    continue;
-                }
-                orphan_out.push((op.name.as_str(), out.as_str()));
-            }
-        }
-
-        let mut issues = Vec::new();
-        for source in &orphan_src {
-            issues.push(ValidationIssue {
-                severity: "warning",
-                code: "orphan_source",
-                message: format!("source '{}' is not consumed and not embeddable", source),
-                feature: Some((*source).to_string()),
-            });
-        }
-        for (op_name, output) in &orphan_out {
-            issues.push(ValidationIssue {
-                severity: "warning",
-                code: "orphan_output",
-                message: format!(
-                    "operator '{}' output '{}' has no consumer and no embed",
-                    op_name, output
-                ),
-                feature: Some((*output).to_string()),
-            });
-        }
-
-        tracing::info!(
-            consumed = sources.len() - orphan_src.len(),
-            total = sources.len(),
-            orphan = orphan_src.len(),
-            "DAG source validation summary"
-        );
-        tracing::info!(
-            embeddable = embeddable.len(),
-            intermediate,
-            orphan = orphan_out.len(),
-            "DAG output validation summary"
-        );
-        if !orphan_src.is_empty() {
-            tracing::warn!(?orphan_src, "DAG orphan sources");
-        }
-        if !orphan_out.is_empty() {
-            tracing::warn!(
-                count = orphan_out.len(),
-                "DAG orphan outputs have no consumer and no embed"
-            );
-        }
-        ValidationReport {
-            issues,
-            source_count: sources.len(),
-            embeddable_count: embeddable.len(),
-            intermediate_count: intermediate,
-        }
-    }
-
-    fn create_op(def: &OperatorDef) -> Result<Box<dyn CustomOp>, String> {
-        use super::ops::registry;
-        registry::create_op(&def.op_type, &def.params)
-    }
-
     /// 获取原始输入源定义。
     pub fn source_defs(&self) -> &HashMap<String, SourceDef> {
         &self.sources
     }
+
     /// 获取算子节点定义。
     pub fn operator_defs(&self) -> &HashMap<String, OperatorDef> {
         &self.node_defs
@@ -391,16 +91,14 @@ impl FeatureDag {
 
     /// Classify each operator by input source: "user", "item", or "cross" (both).
     pub fn op_source_kind(&self) -> HashMap<String, &str> {
-        // Classify sources by their `source` field (User/Context→broadcast, Item/ItemStats→item)
         let mut feat_kind: HashMap<String, &str> = HashMap::new();
         for (name, src) in &self.sources {
             let k = match src.source.as_deref() {
                 Some("User") | Some("Context") => "user",
-                _ => "item", // Item, ItemStats, None, and anything else
+                _ => "item",
             };
             feat_kind.insert(name.clone(), k);
         }
-        // Propagate through operators in topological order
         for node_name in &self.execution_order {
             let def = &self.node_defs[node_name];
             let kinds: Vec<&&str> = def
@@ -421,7 +119,6 @@ impl FeatureDag {
                 feat_kind.insert(out_name.clone(), k);
             }
         }
-        // Map operator name → kind
         let mut op_kind: HashMap<String, &str> = HashMap::new();
         for node_name in &self.execution_order {
             let def = &self.node_defs[node_name];
@@ -448,6 +145,7 @@ impl FeatureDag {
     pub fn source_names(&self) -> Vec<&str> {
         self.sources.keys().map(|s| s.as_str()).collect()
     }
+
     /// Get operator outputs by operator name.
     pub fn op_outputs(&self, op_name: &str) -> Option<&Vec<String>> {
         self.node_defs.get(op_name).map(|d| &d.outputs)
@@ -464,7 +162,6 @@ impl FeatureDag {
 
         let mut context: HashMap<String, FeatureValue> = HashMap::new();
 
-        // Stage 1: raw inputs first (avoid allocating defaults that will be overwritten)
         let mut overridden = Vec::new();
         for (name, val) in raw_inputs {
             if self.sources.contains_key(name) {
@@ -473,7 +170,6 @@ impl FeatureDag {
             }
         }
 
-        // Stage 2: fill defaults only for missing keys
         for (name, source_def) in &self.sources {
             if !context.contains_key(name) {
                 let default_val = source_default(source_def);
@@ -481,7 +177,6 @@ impl FeatureDag {
             }
         }
 
-        // tracer disabled — needs update for Fv enum
         let _ = &self.tracer;
 
         let source_names: HashSet<String> = self.sources.keys().cloned().collect();
@@ -519,8 +214,7 @@ impl FeatureDag {
         })
     }
 
-    /// Batch DAG execution on columnar data. Operators with `process_batch()` are
-    /// invoked once per column, eliminating per-row trait object dispatch overhead.
+    /// Batch DAG execution on columnar data.
     pub fn execute_batch(
         &self,
         columns: &HashMap<String, Vec<FeatureValue>>,
@@ -530,7 +224,6 @@ impl FeatureDag {
     }
 
     /// Batch execution with precomputed single-value features broadcast to all rows.
-    /// Used for broadcast mode: user features are precomputed once, then injected.
     pub fn execute_batch_precomputed(
         &self,
         columns: &HashMap<String, Vec<FeatureValue>>,
@@ -544,25 +237,21 @@ impl FeatureDag {
 
         let mut context: HashMap<String, Vec<FeatureValue>> = HashMap::new();
 
-        // Stage 1: raw inputs
         for (name, col) in columns {
             if self.sources.contains_key(name) {
                 context.insert(name.clone(), col.clone());
             }
         }
-        // Stage 2: fill defaults for missing keys
         for (name, source_def) in &self.sources {
             if !context.contains_key(name) {
                 let default = source_default(source_def);
                 context.insert(name.clone(), vec![default; n_rows]);
             }
         }
-        // Stage 2.5: inject precomputed values (broadcast single value to N rows)
         for (name, val) in precomputed {
             context.insert(name.clone(), vec![val.clone(); n_rows]);
         }
 
-        // Stage 3: execute operators in topological order (bulk, zero-copy refs)
         let default_col: Vec<FeatureValue> = vec![Fv::Int(0); n_rows];
         for (op_idx, node_name) in self.execution_order.iter().enumerate() {
             if skip_ops.contains(node_name) {
@@ -613,90 +302,5 @@ impl FeatureDag {
             };
             tracing::info!(origin, name, type_name, "feature snapshot entry");
         }
-    }
-}
-
-impl ExecutionPlan {
-    /// Fast execution using pre-compiled column indices. Zero HashMap lookups.
-    pub fn execute_plan(
-        &self,
-        columns: &HashMap<String, Vec<Fv>>,
-        skip_op_idx: &HashSet<usize>,
-        precomputed: &HashMap<usize, Fv>,
-    ) -> Result<Vec<Vec<Fv>>, String> {
-        let n_rows = columns.values().next().map(|v| v.len()).unwrap_or(0);
-        if n_rows == 0 {
-            return Ok(Vec::new());
-        }
-
-        let mut context: Vec<Vec<Fv>> = vec![Vec::with_capacity(n_rows); self.col_count];
-
-        // Stage 1: fill sources from input
-        for i in 0..self.source_cols.len() {
-            let name = &self.source_names[i];
-            let cid = self.source_cols[i];
-            let source_default = self.source_defaults.get(i).cloned().unwrap_or(Fv::Int(0));
-            if let Some(col) = columns.get(name) {
-                if col.len() == n_rows {
-                    context[cid] = col.clone();
-                } else {
-                    let mut fixed = vec![source_default; n_rows];
-                    for (row, val) in col.iter().take(n_rows).enumerate() {
-                        fixed[row] = val.clone();
-                    }
-                    context[cid] = fixed;
-                }
-            } else {
-                context[cid] = vec![source_default; n_rows];
-            }
-        }
-        // Stage 2: inject precomputed (broadcast mode)
-        for (&col_id, val) in precomputed.iter() {
-            if col_id < context.len() {
-                context[col_id] = vec![val.clone(); n_rows];
-            }
-        }
-
-        // Stage 3: execute steps in order
-        for step in &self.steps {
-            if skip_op_idx.contains(&step.op_idx) {
-                continue;
-            }
-            let op = &self.ops[step.op_idx];
-            let input_slices: Vec<&[Fv]> = step
-                .input_cols
-                .iter()
-                .map(|&cid| {
-                    context.get(cid).map(|c| c.as_slice()).ok_or_else(|| {
-                        let name = self
-                            .col_names
-                            .get(cid)
-                            .and_then(|n| n.as_deref())
-                            .unwrap_or("<unknown>");
-                        format!("missing required column '{}' (id={})", name, cid)
-                    })
-                })
-                .collect::<Result<_, String>>()?;
-            let result_vec = op
-                .process_batch(&input_slices, n_rows)
-                .map_err(|e| format!("step {}: {}", step.op_idx, e))?;
-            for &cid in &step.output_cols {
-                context[cid] = result_vec.clone();
-            }
-        }
-        Ok(context)
-    }
-
-    /// 返回 embeddable 列的索引列表。
-    pub fn embed_ids(&self) -> &[usize] {
-        &self.embed_ids
-    }
-    /// 返回 source 名称到列索引的映射。
-    pub fn source_col_map(&self) -> HashMap<String, usize> {
-        self.source_names
-            .iter()
-            .enumerate()
-            .map(|(i, n)| (n.clone(), i))
-            .collect()
     }
 }

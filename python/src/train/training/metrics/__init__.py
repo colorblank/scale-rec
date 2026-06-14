@@ -6,7 +6,7 @@ from typing import Any, Optional
 import numpy as np
 import torch
 
-from ...core.dag import FeatureDag
+from ...core.preprocessor import TrainingPreprocessor
 from ..loss.multi_task import MultiTaskLoss as MultiTaskLoss
 from ..loss.multi_task import _pick_labels, _to_device
 from ..loss.multi_task import compute_loss as compute_loss
@@ -66,7 +66,7 @@ def compute_metrics(
 
 def compute_aucs(
     model: torch.nn.Module,
-    dag: FeatureDag,
+    preprocessor: TrainingPreprocessor,
     batches: list[Batch],
     task_names: list[str],
     label_map: dict[str, str],
@@ -82,7 +82,7 @@ def compute_aucs(
     with torch.no_grad():
         for batch in batches:
             rows = [{k: v for k, v in r.items() if v is not None} for r in batch["features"]]
-            outputs = model(_to_device(dag.preprocess_batch(rows), device))
+            outputs = model(_to_device(preprocessor.preprocess_batch(rows), device))
             for task in task_names:
                 if task not in outputs:
                     continue

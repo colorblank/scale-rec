@@ -15,7 +15,7 @@ import torch
 from safetensors.torch import load_file
 
 from ..core.config import ArtifactConfig, EvalConfig, ModelConfig, TrainConfig
-from ..core.dag import FeatureDag
+
 from ..models import get_output_spec
 
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
@@ -338,11 +338,11 @@ def train_config_from_args(
 
 def build_model_for_dag(
     model_config_path: Union[str, Path],
-    dag: FeatureDag,
+    feat_info,
     device: torch.device,
 ) -> BuiltModel:
     model_config = ModelConfig.from_yaml(model_config_path)
-    features = dag.feature_tuples()
+    features = feat_info.feature_tuples()
     tokenizer = None
     if model_config.type == "unimixer":
         from ..models.unimixer.tokenizer import FeatureTokenizer
@@ -352,15 +352,15 @@ def build_model_for_dag(
             features,
             params.get("token_dim", 64),
             params.get("num_tokens", 8),
-            pooling_map=dag.feature_pooling(),
-            seq_len_map=dag.feature_seq_lens(),
+            pooling_map=feat_info.feature_pooling(),
+            seq_len_map=feat_info.feature_seq_lens(),
         )
 
     model = model_config.build(
         features,
         tokenizer=tokenizer,
-        pooling_map=dag.feature_pooling(),
-        total_dim=dag.feature_total_dim(),
+        pooling_map=feat_info.feature_pooling(),
+        total_dim=feat_info.feature_total_dim(),
     )
     if model_config.type == "unimixer":
         model = wrap_unimixer_for_rust_names(model)

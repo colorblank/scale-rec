@@ -23,6 +23,8 @@ from safetensors.torch import load_file
 
 from ..core.config import FlowConfig
 from ..core.dag import FeatureDag
+from ..core.feature_info import FeatureInfo
+from ..core.preprocessor import TrainingPreprocessor
 from ..training.trainer import (
     Trainer,
     build_resume_state,
@@ -411,7 +413,8 @@ def _run_single(args: argparse.Namespace) -> None:
 
     flow_config = FlowConfig.from_yaml(feature_config)
     dag = FeatureDag(flow_config, debug_mode=args.debug > 0)
-    features = dag.feature_tuples()
+    feat_info = FeatureInfo(dag.sources, dag.node_defs, dag.feature_schemas, dag.execution_order)
+    features = feat_info.feature_tuples()
     logger.info(
         "%d sources, %d ops → %d features",
         len(flow_config.sources),
@@ -419,7 +422,7 @@ def _run_single(args: argparse.Namespace) -> None:
         len(features),
     )
 
-    built = build_model_for_dag(model_config, dag, device)
+    built = build_model_for_dag(model_config, feat_info, device)
     from ..models.params import format_parameter_summary
 
     logger.info(
@@ -611,12 +614,13 @@ def _run_discover(args: argparse.Namespace) -> None:
 
     fc = FlowConfig.from_yaml(args.feature_config)
     dag = FeatureDag(fc)
-    features = dag.feature_tuples()
+    feat_info = FeatureInfo(dag.sources, dag.node_defs, dag.feature_schemas, dag.execution_order)
+    features = feat_info.feature_tuples()
     logger.info(
         "%d sources, %d ops → %d features", len(fc.sources), len(fc.operators), len(features)
     )
 
-    built = build_model_for_dag(args.model_config, dag, device)
+    built = build_model_for_dag(args.model_config, feat_info, device)
     from ..models.params import format_parameter_summary
 
     logger.info(
@@ -650,7 +654,7 @@ def _run_discover(args: argparse.Namespace) -> None:
 
     trainer = Trainer(
         built.model,
-        dag,
+        TrainingPreprocessor(dag),
         built.spec["task_names"],
         label_col_map,
         device,
@@ -689,7 +693,8 @@ def _run_all(args: argparse.Namespace) -> None:
 
     flow_config = FlowConfig.from_yaml(args.feature_config)
     dag = FeatureDag(flow_config, debug_mode=args.debug > 0)
-    features = dag.feature_tuples()
+    feat_info = FeatureInfo(dag.sources, dag.node_defs, dag.feature_schemas, dag.execution_order)
+    features = feat_info.feature_tuples()
     logger.info("%d features, %d ops", len(features), len(flow_config.operators))
 
     logger.info("[Data files] %s", describe_data_paths(data_paths))
@@ -728,7 +733,7 @@ def _run_all(args: argparse.Namespace) -> None:
         if not model_config_path or not os.path.exists(model_config_path):
             logger.info("[Skip] config not found: %s", model_config_path)
             continue
-        built = build_model_for_dag(model_config_path, dag, device)
+        built = build_model_for_dag(model_config_path, feat_info, device)
         model = built.model
         spec = built.spec
         label_col_map = spec.get("label_col_map", {})

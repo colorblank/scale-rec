@@ -12,7 +12,9 @@ use tracing::{info, warn};
 use super::engine::InferenceEngine;
 use super::manifest::{find_manifest, ModelManifest, WeightBinding};
 use crate::feats::config::{DType, DataSourceDef, FlowConfig};
-use crate::feats::dag::FeatureDag;
+use crate::feats::builder::DagBuilder;
+use crate::feats::executor::DagExecutor;
+use crate::feats::feature_info::FeatureInfo;
 use crate::layers::embedding::FeatureSpec;
 use crate::models::unimixer::tokenizer::FeatureTokenizer;
 use crate::models::{ModelBuildOptions, ModelConfig};
@@ -260,9 +262,15 @@ impl ModelRegistry {
         let yaml = std::fs::read_to_string(&feature_config_path)
             .map_err(|e| format!("read feature config: {}", e))?;
         let flow_config = FlowConfig::from_yaml(&yaml).map_err(|e| format!("parse: {}", e))?;
-        let dag =
-            FeatureDag::from_config(flow_config, false, None).map_err(|e| format!("dag: {}", e))?;
-        let embed_features: Vec<FeatureSpec> = dag
+        let artifact =
+            DagBuilder::build(flow_config).map_err(|e| format!("dag: {}", e))?;
+        let feat_info = FeatureInfo::new(
+            artifact.sources.clone(),
+            artifact.node_defs.clone(),
+            artifact.feature_schemas.clone(),
+            artifact.execution_order.clone(),
+        );
+        let embed_features: Vec<FeatureSpec> = feat_info
             .embeddable_features()
             .iter()
             .map(|(n, e)| FeatureSpec {
@@ -271,7 +279,8 @@ impl ModelRegistry {
                 embed_dim: e.embed_dim,
                 pooling: e.pooling,
                 seq_len: e.seq_len.or_else(|| {
-                    dag.feature_schemas
+                    artifact
+                        .feature_schemas
                         .get(*n)
                         .and_then(|schema| schema.dtype.list_len())
                 }),
@@ -343,7 +352,35 @@ impl ModelRegistry {
             .as_ref()
             .map(|m| m.model_version.clone())
             .unwrap_or_else(|| "default".to_string());
-        let engine = Arc::new(InferenceEngine::new(dag, model, embed_features, device));
+        let op_kind = feat_info.op_source_kind();
+        let user_ops: std::collections::HashSet<String> = op_kind
+            .iter()
+            .filter(|(_, &k)| k == "user")
+            .map(|(n, _)| n.clone())
+            .collect();
+        let executor = DagExecutor::new(artifact.plan, artifact.sources, artifact.execution_order, artifact.data_sources);
+        let user_op_indices: std::collections::HashSet<usize> = executor
+            .plan()
+            .steps
+            .iter()
+            .filter(|s| user_ops.contains(&executor.execution_order()[s.op_idx]))
+            .map(|s| s.op_idx)
+            .collect();
+        let broadcast_precompute_skip_indices: std::collections::HashSet<usize> = executor
+            .plan()
+            .steps
+            .iter()
+            .filter(|s| !user_ops.contains(&executor.execution_order()[s.op_idx]))
+            .map(|s| s.op_idx)
+            .collect();
+        let engine = Arc::new(InferenceEngine::new(
+            executor,
+            model,
+            embed_features,
+            device,
+            user_op_indices,
+            broadcast_precompute_skip_indices,
+        ));
         let info = ModelVersionInfo {
             version: version.clone(),
             loaded_at: loaded_at.clone(),
@@ -615,7 +652,7 @@ impl ModelRegistry {
         let resolved = self.resolve(name, version, None)?;
         let mut required_inputs: Vec<FeatureInputInfo> = resolved
             .engine
-            .dag
+            .executor
             .source_defs()
             .values()
             .map(|source| FeatureInputInfo {
@@ -630,7 +667,7 @@ impl ModelRegistry {
         Some(FeatureContract {
             model: resolved.model_name,
             version: resolved.version,
-            data_sources: resolved.engine.dag.data_sources.clone(),
+            data_sources: resolved.engine.executor.data_sources().to_vec(),
             required_inputs,
         })
     }

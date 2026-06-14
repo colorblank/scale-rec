@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 from ...core.config import EvalConfig
-from ...core.dag import FeatureDag
+from ...core.preprocessor import TrainingPreprocessor
 from ..loss.multi_task import _pick_labels, _to_device
 from ..metrics import compute_metrics, get_available_metrics
 
@@ -27,7 +27,7 @@ class Evaluator:
     def evaluate(
         self,
         model: torch.nn.Module,
-        dag: FeatureDag,
+        preprocessor: TrainingPreprocessor,
         batches: list[dict[str, Any]],
         task_names: list[str],
         label_map: dict[str, str],
@@ -56,7 +56,7 @@ class Evaluator:
                     rows = features
                 else:
                     rows = [{k: v for k, v in r.items() if v is not None} for r in features]
-                outputs = model(_to_device(dag.preprocess_batch(rows), device))
+                outputs = model(_to_device(preprocessor.preprocess_batch(rows), device))
 
                 # 提取分组特征
                 group_ids: Optional[np.ndarray] = None

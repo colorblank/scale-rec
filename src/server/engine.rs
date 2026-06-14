@@ -5,8 +5,9 @@ use std::time::Instant;
 use candle_core::{Device, Tensor};
 
 use crate::feats::config::{DType, PoolingStrategy, TruncationSide};
-use crate::feats::dag::{FeatureDag, FeatureValue};
+use crate::feats::dag::FeatureValue;
 use crate::feats::defaults::source_default;
+use crate::feats::executor::DagExecutor;
 use crate::feats::ops::Fv;
 use crate::layers::embedding::FeatureSpec;
 use crate::models::Model;
@@ -93,11 +94,10 @@ impl std::error::Error for InferenceError {}
 pub type InferenceResult<T> = Result<T, InferenceError>;
 
 pub struct InferenceEngine {
-    pub dag: FeatureDag,
+    pub executor: DagExecutor,
     pub model: Box<dyn Model>,
     pub embed_features: Vec<FeatureSpec>,
     pub device: Device,
-    // Pre-cached plan data
     embed_ids: Vec<usize>,
     user_op_indices: HashSet<usize>,
     broadcast_precompute_skip_indices: HashSet<usize>,
@@ -107,38 +107,19 @@ pub struct InferenceEngine {
 pub type FeatureRow = HashMap<String, serde_json::Value>;
 /// 单行预测结果的类型别名。
 pub type PredictionRow = HashMap<String, f32>;
-
 impl InferenceEngine {
     /// 构造推理引擎。
     pub fn new(
-        dag: FeatureDag,
+        executor: DagExecutor,
         model: Box<dyn Model>,
         embed_features: Vec<FeatureSpec>,
         device: Device,
+        user_op_indices: HashSet<usize>,
+        broadcast_precompute_skip_indices: HashSet<usize>,
     ) -> Self {
-        let embed_ids = dag.plan.embed_ids().to_vec();
-        let op_kind = dag.op_source_kind();
-        let user_ops: HashSet<String> = op_kind
-            .iter()
-            .filter(|(_, &k)| k == "user")
-            .map(|(n, _)| n.clone())
-            .collect();
-        let user_op_indices: HashSet<usize> = dag
-            .plan
-            .steps
-            .iter()
-            .filter(|s| user_ops.contains(&dag.execution_order[s.op_idx]))
-            .map(|s| s.op_idx)
-            .collect();
-        let broadcast_precompute_skip_indices: HashSet<usize> = dag
-            .plan
-            .steps
-            .iter()
-            .filter(|s| !user_ops.contains(&dag.execution_order[s.op_idx]))
-            .map(|s| s.op_idx)
-            .collect();
+        let embed_ids = executor.plan().embed_ids().to_vec();
         Self {
-            dag,
+            executor,
             model,
             embed_features,
             device,
@@ -166,8 +147,7 @@ impl InferenceEngine {
         // Plan-based execution: zero HashMap during operator loop
         let start_dag = Instant::now();
         let context = self
-            .dag
-            .plan
+            .executor
             .execute_plan(&columns, &HashSet::new(), &HashMap::new())
             .map_err(|e| InferenceError::feature(format!("DAG: {}", e)))?;
         metrics.dag_us = start_dag.elapsed().as_micros() as u64;
@@ -187,7 +167,7 @@ impl InferenceEngine {
     ) -> InferenceResult<HashMap<String, Vec<FeatureValue>>> {
         let n = rows.len();
         let mut columns: HashMap<String, Vec<FeatureValue>> = self
-            .dag
+            .executor
             .source_defs()
             .iter()
             .map(|(name, source)| (name.clone(), vec![source_default(source); n]))
@@ -197,7 +177,7 @@ impl InferenceEngine {
         let mut empty_sequences = 0;
 
         for (row_idx, row) in rows.iter().enumerate() {
-            for (key, _source) in self.dag.source_defs() {
+            for (key, _source) in self.executor.source_defs() {
                 if !row.contains_key(key) {
                     default_hits += 1;
                     tracing::debug!(key = %key, row = row_idx, "default value hit");
@@ -206,7 +186,7 @@ impl InferenceEngine {
 
             for (key, val) in row {
                 if let Some(col) = columns.get_mut(key) {
-                    let source = self.dag.source_defs().get(key).ok_or_else(|| {
+                    let source = self.executor.source_defs().get(key).ok_or_else(|| {
                         InferenceError::internal(format!("source '{}' missing from DAG", key))
                     })?;
                     let fv = json_to_feature_typed(val, &source.dtype).map_err(|err| {
@@ -269,7 +249,7 @@ impl InferenceEngine {
         let start_parse1 = Instant::now();
         let mut one: HashMap<String, Vec<FeatureValue>> = HashMap::new();
         for (k, v) in user {
-            if let Some(source) = self.dag.source_defs().get(k) {
+            if let Some(source) = self.executor.source_defs().get(k) {
                 let fv = json_to_feature_typed(v, &source.dtype).map_err(|err| {
                     InferenceError::bad_request(format!("user field '{}': {}", k, err))
                 })?;
@@ -280,8 +260,7 @@ impl InferenceEngine {
 
         let start_dag1 = Instant::now();
         let full_1 = self
-            .dag
-            .plan
+            .executor
             .execute_plan(
                 &one,
                 &self.broadcast_precompute_skip_indices,
@@ -291,7 +270,7 @@ impl InferenceEngine {
 
         // Extract user-derived outputs (column IDs from user-only ops)
         let mut precomputed: HashMap<usize, Fv> = HashMap::new();
-        for step in &self.dag.plan.steps {
+        for step in &self.executor.plan().steps {
             if !self.user_op_indices.contains(&step.op_idx) {
                 continue;
             }
@@ -309,7 +288,7 @@ impl InferenceEngine {
         let start_parse2 = Instant::now();
         let n = items.len();
         let mut columns: HashMap<String, Vec<FeatureValue>> = self
-            .dag
+            .executor
             .source_defs()
             .iter()
             .map(|(name, source)| (name.clone(), vec![source_default(source); n]))
@@ -330,7 +309,7 @@ impl InferenceEngine {
         for (row_idx, item) in items.iter().enumerate() {
             for (key, val) in item {
                 if let Some(col) = columns.get_mut(key) {
-                    let source = self.dag.source_defs().get(key).ok_or_else(|| {
+                    let source = self.executor.source_defs().get(key).ok_or_else(|| {
                         InferenceError::internal(format!("source '{}' missing from DAG", key))
                     })?;
                     let fv = json_to_feature_typed(val, &source.dtype).map_err(|err| {
@@ -347,8 +326,7 @@ impl InferenceEngine {
 
         let start_dag2 = Instant::now();
         let context = self
-            .dag
-            .plan
+            .executor
             .execute_plan(&columns, &self.user_op_indices, &precomputed)
             .map_err(|e| InferenceError::feature(format!("DAG: {}", e)))?;
         metrics.dag_us = dag1_us + start_dag2.elapsed().as_micros() as u64;
@@ -686,8 +664,10 @@ mod tests {
 
     #[test]
     fn test_predict_broadcast_correctness() {
+        use crate::feats::builder::DagBuilder;
         use crate::feats::config::FlowConfig;
-        use crate::feats::dag::FeatureDag;
+        use crate::feats::executor::DagExecutor;
+        use crate::feats::feature_info::FeatureInfo;
         use crate::models::lr::LogisticRegression;
         use candle_nn::VarMap;
 
@@ -718,9 +698,22 @@ operators:
 "#;
 
         let flow_config = FlowConfig::from_yaml(yaml).unwrap();
-        let dag = FeatureDag::from_config(flow_config, false, None).unwrap();
+        let artifact = DagBuilder::build(flow_config).unwrap();
+        let feat_info = FeatureInfo::new(
+            artifact.sources.clone(),
+            artifact.node_defs.clone(),
+            artifact.feature_schemas.clone(),
+            artifact.execution_order.clone(),
+        );
+        let op_kind = feat_info.op_source_kind();
+        let executor = DagExecutor::new(
+            artifact.plan,
+            artifact.sources,
+            artifact.execution_order,
+            artifact.data_sources,
+        );
 
-        let embed_specs: Vec<FeatureSpec> = dag
+        let embed_specs: Vec<FeatureSpec> = feat_info
             .embeddable_features()
             .iter()
             .map(|(n, e)| FeatureSpec {
@@ -733,12 +726,39 @@ operators:
             })
             .collect();
 
+        let user_ops: std::collections::HashSet<String> = op_kind
+            .iter()
+            .filter(|(_, &k)| k == "user")
+            .map(|(n, _)| n.clone())
+            .collect();
+        let user_op_indices: std::collections::HashSet<usize> = executor
+            .plan()
+            .steps
+            .iter()
+            .filter(|s| user_ops.contains(&executor.execution_order()[s.op_idx]))
+            .map(|s| s.op_idx)
+            .collect();
+        let broadcast_precompute_skip_indices: std::collections::HashSet<usize> = executor
+            .plan()
+            .steps
+            .iter()
+            .filter(|s| !user_ops.contains(&executor.execution_order()[s.op_idx]))
+            .map(|s| s.op_idx)
+            .collect();
+
         let device = Device::Cpu;
         let varmap = VarMap::new();
         let vb = candle_nn::VarBuilder::from_varmap(&varmap, candle_core::DType::F32, &device);
 
         let model = Box::new(LogisticRegression::new(vb, &embed_specs).unwrap());
-        let engine = InferenceEngine::new(dag, model, embed_specs, device.clone());
+        let engine = InferenceEngine::new(
+            executor,
+            model,
+            embed_specs,
+            device.clone(),
+            user_op_indices,
+            broadcast_precompute_skip_indices,
+        );
 
         let mut user = HashMap::new();
         user.insert("user_id".to_string(), serde_json::json!(42));

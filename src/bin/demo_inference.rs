@@ -5,8 +5,10 @@ use std::collections::HashMap;
 use anyhow::{Context, Result};
 use candle_core::{DType, Device};
 use candle_nn::{VarBuilder, VarMap};
+use scale_rec::feats::builder::DagBuilder;
 use scale_rec::feats::config::FlowConfig;
-use scale_rec::feats::dag::FeatureDag;
+use scale_rec::feats::executor::DagExecutor;
+use scale_rec::feats::feature_info::FeatureInfo;
 use scale_rec::layers::embedding::FeatureSpec;
 use scale_rec::models::unimixer::tokenizer::FeatureTokenizer;
 use scale_rec::models::ModelConfig;
@@ -39,11 +41,16 @@ fn main() -> Result<()> {
     let yaml_str =
         std::fs::read_to_string(feature_config_path).context("Failed to read feature config")?;
     let flow_config = FlowConfig::from_yaml(&yaml_str).context("Invalid feature config YAML")?;
-    let dag =
-        FeatureDag::from_config(flow_config, false, None).map_err(|e| anyhow::anyhow!("{}", e))?;
+    let artifact = DagBuilder::build(flow_config).map_err(|e| anyhow::anyhow!("{}", e))?;
+    let feat_info = FeatureInfo::new(
+        artifact.sources.clone(),
+        artifact.node_defs.clone(),
+        artifact.feature_schemas.clone(),
+        artifact.execution_order.clone(),
+    );
 
     // 2. 获取 embeddable features
-    let embed_features = dag.embeddable_features();
+    let embed_features = feat_info.embeddable_features();
     let features: Vec<FeatureSpec> = embed_features
         .iter()
         .map(|(name, emb)| FeatureSpec {
@@ -52,7 +59,8 @@ fn main() -> Result<()> {
             embed_dim: emb.embed_dim,
             pooling: emb.pooling,
             seq_len: emb.seq_len.or_else(|| {
-                dag.feature_schemas
+                artifact
+                    .feature_schemas
                     .get(*name)
                     .and_then(|schema| schema.dtype.list_len())
             }),
@@ -109,7 +117,35 @@ fn main() -> Result<()> {
     model.warmup().context("Failed to warm up model caches")?;
     info!(path = %safetensors_path, "loaded weights");
 
-    let engine = InferenceEngine::new(dag, model, features, device);
+    let op_kind = feat_info.op_source_kind();
+    let user_ops: std::collections::HashSet<String> = op_kind
+        .iter()
+        .filter(|(_, &k)| k == "user")
+        .map(|(n, _)| n.clone())
+        .collect();
+    let executor = DagExecutor::new(artifact.plan, artifact.sources, artifact.execution_order, artifact.data_sources);
+    let user_op_indices: std::collections::HashSet<usize> = executor
+        .plan()
+        .steps
+        .iter()
+        .filter(|s| user_ops.contains(&executor.execution_order()[s.op_idx]))
+        .map(|s| s.op_idx)
+        .collect();
+    let broadcast_precompute_skip_indices: std::collections::HashSet<usize> = executor
+        .plan()
+        .steps
+        .iter()
+        .filter(|s| !user_ops.contains(&executor.execution_order()[s.op_idx]))
+        .map(|s| s.op_idx)
+        .collect();
+    let engine = InferenceEngine::new(
+        executor,
+        model,
+        features,
+        device,
+        user_op_indices,
+        broadcast_precompute_skip_indices,
+    );
 
     // 5. 读取 CSV，并复用服务端 InferenceEngine 的 source-aware 解析和 tensor 构造。
     let mut reader = csv::ReaderBuilder::new()
@@ -126,7 +162,7 @@ fn main() -> Result<()> {
         .map(|(i, h)| (h.to_string(), i))
         .collect();
 
-    let source_names: Vec<String> = engine.dag.source_defs().keys().cloned().collect();
+    let source_names: Vec<String> = engine.executor.source_defs().keys().cloned().collect();
     let mut rows: Vec<FeatureRow> = Vec::new();
 
     for result in reader.records() {
