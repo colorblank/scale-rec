@@ -87,13 +87,47 @@ def parse_float_strict(raw: str) -> float:
     return float(text)
 
 
+class PoolingMode(str, Enum):
+    FIRST = "first"
+    FLATTEN = "flatten"
+    MEAN = "mean"
+    SUM = "sum"
+    MAX = "max"
+
+
+class TruncationSide(str, Enum):
+    HEAD = "head"
+    TAIL = "tail"
+
+
+class CrossType(str, Enum):
+    INNER_PRODUCT = "inner_product"
+    CARTESIAN = "cartesian"
+
+
+class ParseMode(str, Enum):
+    JSON = "json"
+    STRUCTURED = "structured"
+    STRUCTURED_FLAT_SPLIT = "structured_flat_split"
+    STRUCTURED_LIST_SPLIT = "structured_list_split"
+    SPLIT = "split"
+    LIST_SPLIT = "list_split"
+    FLAT_SPLIT = "flat_split"
+
+
 @dataclass
 class EmbedConfig:
     vocab_size: int
     embed_dim: int
-    pooling: str = "first"  # first | flatten | mean | sum | max
-    seq_len: int | None = None  # pooling=flatten 时的序列长度
-    truncation: str = "head"  # head | tail
+    pooling: PoolingMode = PoolingMode.FIRST
+    seq_len: int | None = None
+    truncation: TruncationSide = TruncationSide.HEAD
+
+    def __post_init__(self) -> None:
+        if isinstance(self.pooling, str):
+            object.__setattr__(self, "pooling", PoolingMode(self.pooling))
+        if isinstance(self.truncation, str):
+            object.__setattr__(self, "truncation", TruncationSide(self.truncation))
 
 
 @dataclass
@@ -678,7 +712,7 @@ class ModelConfig:
         self,
         features: list[FeatureTuple],
         tokenizer: nn.Module | None = None,
-        pooling_map: dict[str, str] | None = None,
+        pooling_map: dict[str, PoolingMode] | None = None,
         total_dim: int | None = None,
     ) -> nn.Module:
         from ..models import build_model

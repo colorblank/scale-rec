@@ -2,8 +2,13 @@ from __future__ import annotations
 
 """FeatureEmbeddings：离散特征索引 → 稠密嵌入拼接，支持变长序列池化。"""
 
+from typing import TYPE_CHECKING
+
 import torch
 import torch.nn as nn
+
+if TYPE_CHECKING:
+    from ..core.config import PoolingMode
 
 FeatureTuple = tuple[str, int, int]
 FeatureTensorMap = dict[str, torch.Tensor]
@@ -20,7 +25,7 @@ class FeatureEmbeddings(nn.Module):
     def __init__(
         self,
         features: list[FeatureTuple],
-        pooling_map: dict[str, str] | None = None,
+        pooling_map: dict[str, PoolingMode] | None = None,
         total_dim: int | None = None,
     ) -> None:
         super().__init__()
@@ -38,14 +43,16 @@ class FeatureEmbeddings(nn.Module):
 
     def _pool(self, emb: torch.Tensor, name: str) -> torch.Tensor:
         """Pool (batch, seq, dim) → (batch, pooled_dim)."""
-        p = self.pooling_map.get(name, "first")
-        if p == "mean":
+        from ..core.config import PoolingMode
+
+        p = self.pooling_map.get(name, PoolingMode.FIRST)
+        if p is PoolingMode.MEAN:
             return emb.mean(dim=1)
-        elif p == "sum":
+        if p is PoolingMode.SUM:
             return emb.sum(dim=1)
-        elif p == "max":
+        if p is PoolingMode.MAX:
             return emb.max(dim=1).values
-        elif p == "flatten":
+        if p is PoolingMode.FLATTEN:
             return emb.reshape(emb.shape[0], -1)  # (batch, seq, dim) → (batch, seq*dim)
         return emb[:, 0, :]
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import torch
 
+from .config import PoolingMode, TruncationSide
 from .feature_info import FeatureInfo
 
 
@@ -24,22 +25,22 @@ class DagPreprocessor:
                 col = context.get(name)
                 val = col[i] if col is not None and i < len(col) else 0
                 pooling = embed_infos[name].pooling
-                if pooling == "first" and isinstance(val, list):
+                if pooling is PoolingMode.FIRST and isinstance(val, list):
                     val = val[0] if val else 0
                 feature_lists[name].append(val)
 
         tensors: dict[str, torch.Tensor] = {}
         for name, vals in feature_lists.items():
             pooling = embed_infos[name].pooling
-            if pooling != "first":
+            if pooling is not PoolingMode.FIRST:
                 if not vals:
                     tensors[name] = torch.tensor([], dtype=torch.long)
                     continue
                 if not isinstance(vals[0], list):
                     raise ValueError(
-                        f"feature '{name}' pooling '{pooling}' requires list-valued inputs"
+                        f"feature '{name}' pooling '{pooling.value}' requires list-valued inputs"
                     )
-                if pooling == "flatten":
+                if pooling is PoolingMode.FLATTEN:
                     seq_len = embed_infos[name].seq_len
                     if not seq_len or seq_len <= 0:
                         raise ValueError(f"feature '{name}' pooling flatten requires seq_len > 0")
@@ -47,10 +48,10 @@ class DagPreprocessor:
                     seq_len = embed_infos[name].seq_len
                     if not seq_len or seq_len <= 0:
                         raise ValueError(
-                            f"feature '{name}' pooling '{pooling}' requires fixed max_len > 0"
+                            f"feature '{name}' pooling '{pooling.value}' requires fixed max_len > 0"
                         )
                 trunc = embed_infos[name].truncation
-                if trunc == "tail":
+                if trunc is TruncationSide.TAIL:
                     padded = [v[-seq_len:] + [0] * max(seq_len - len(v), 0) for v in vals]
                 else:
                     padded = [v[:seq_len] + [0] * max(seq_len - len(v), 0) for v in vals]

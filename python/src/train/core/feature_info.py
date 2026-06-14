@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
-from .config import EmbedConfig, OperatorDef, SourceDef, SourceKind
+from .config import EmbedConfig, OperatorDef, PoolingMode, SourceDef, SourceKind
 
 
 class FeatureScope(str, Enum):
@@ -102,13 +102,13 @@ class FeatureInfo:
     def feature_total_dim(self) -> int:
         total = 0
         for _, emb in self.embeddable_features():
-            if emb.pooling == "flatten" and emb.seq_len:
+            if emb.pooling is PoolingMode.FLATTEN and emb.seq_len:
                 total += emb.embed_dim * emb.seq_len
             else:
                 total += emb.embed_dim
         return total
 
-    def feature_pooling(self) -> dict[str, str]:
+    def feature_pooling(self) -> dict[str, PoolingMode]:
         return {name: emb.pooling for name, emb in self.embeddable_features()}
 
     def feature_seq_lens(self) -> dict[str, int]:

@@ -10,7 +10,7 @@ from typing import Any
 
 import pandas as pd
 
-from ..core.config import FlowConfig, parse_float_strict, parse_int_strict
+from ..core.config import DTypeTag, FlowConfig, Role, parse_float_strict, parse_int_strict
 
 logger = logging.getLogger(__name__)
 
@@ -18,11 +18,10 @@ NULL_MARKERS = {"NULL", "\\N", "null", "None", ""}
 DTYPE_PANDAS = {"int": "Int64", "float": "float64", "string": "str", "enum": "str"}
 
 
-def _parse_default(val_str: str, dtype_tag: str) -> Any:
-    """按 dtype 解析配置中的 default_val。"""
-    if dtype_tag == "int":
+def _parse_default(val_str: str, dtype_tag: DTypeTag) -> Any:
+    if dtype_tag is DTypeTag.INT:
         return parse_int_strict(val_str) if val_str else 0
-    elif dtype_tag == "float":
+    if dtype_tag is DTypeTag.FLOAT:
         return parse_float_strict(val_str) if val_str else 0.0
     return str(val_str)
 
@@ -46,12 +45,13 @@ def _build_reader_params(
     default_vals: dict[str, Any] = {}
     for s in sources:
         n = s["name"]
-        dt = s.get("dtype", "string")
-        dtype[n] = DTYPE_PANDAS.get(dt, "str")
+        raw_dt = s.get("dtype", "string")
+        dt = DTypeTag(raw_dt) if isinstance(raw_dt, str) else None
+        dtype[n] = DTYPE_PANDAS.get(raw_dt, "str") if isinstance(raw_dt, str) else "str"
         default_val = s.get("default_val", "")
-        if dt == "int":
+        if dt is DTypeTag.INT:
             default_vals[n] = parse_int_strict(default_val) if default_val else 0
-        elif dt == "float":
+        elif dt is DTypeTag.FLOAT:
             default_vals[n] = parse_float_strict(default_val) if default_val else 0.0
         else:
             default_vals[n] = str(default_val) if default_val else ""
@@ -120,7 +120,7 @@ def build_item_index(
     if null_markers is None:
         null_markers = NULL_MARKERS
     # 只保留 feature-role 的 source（物品文件不应含标签）
-    feature_only = [s for s in item_sources if s.get("role", "feature") == "feature"]
+    feature_only = [s for s in item_sources if s.get("role", Role.FEATURE) == Role.FEATURE]
     na_vals = list(null_markers)
     params, names, _dtype, default_vals = _build_reader_params(
         feature_only, has_header, separator, na_vals
@@ -232,9 +232,9 @@ def stream_file_batches(
             continue
         seen.add(s.name)
         names.append(s.name)
-        dt = s.dtype.tag.value if hasattr(s.dtype, "tag") else str(s.dtype)
-        dtype[s.name] = DTYPE_PANDAS.get(dt, "str")
-        defaults[s.name] = _parse_default(s.default_val, dt)
+        dtype_tag = s.dtype.tag if hasattr(s.dtype, "tag") else DTypeTag.STRING
+        dtype[s.name] = DTYPE_PANDAS.get(dtype_tag.value, "str")
+        defaults[s.name] = _parse_default(s.default_val, dtype_tag)
 
     feature_names = _unique_source_names(feature_sources)
     label_names = _unique_source_names(label_sources)

@@ -19,7 +19,7 @@ from .builder import (
 )
 
 _build = DagBuilder.build
-from .config import EmbedConfig, FlowConfig, OperatorDef, SourceDef
+from .config import EmbedConfig, FlowConfig, OperatorDef, PoolingMode, SourceDef
 from .executor import DagExecutor
 from .feature_info import FeatureInfo
 from .preprocessor import DagPreprocessor
@@ -115,7 +115,7 @@ class FeatureDag:
     def feature_total_dim(self) -> int:
         return self._feat_info.feature_total_dim()
 
-    def feature_pooling(self) -> dict[str, str]:
+    def feature_pooling(self) -> dict[str, PoolingMode]:
         return self._feat_info.feature_pooling()
 
     def feature_seq_lens(self) -> dict[str, int]:

@@ -4,12 +4,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .config import (
+    CrossType,
     DType,
     DTypeTag,
     EmbedConfig,
     FlowConfig,
     OperatorDef,
     OpType,
+    ParseMode,
+    PoolingMode,
     Role,
     parse_float_strict,
     parse_int_strict,
@@ -180,7 +183,7 @@ def _infer_operator_output(op: OperatorDef, input_schemas: list[FeatureSchema]) 
     if op_type is OpType.CROSS_FEATURE:
         if len(input_schemas) != 2:
             raise ValueError(f"operator '{op.name}' expects exactly 2 inputs")
-        if params.get("cross_type") == "inner_product":
+        if CrossType(params.get("cross_type", "cartesian")) is CrossType.INNER_PRODUCT:
             return _schema(op, FeatureDType(DTypeTag.FLOAT))
         max_len = params.get("max_len")
         if max_len is not None:
@@ -207,17 +210,17 @@ def _infer_operator_output(op: OperatorDef, input_schemas: list[FeatureSchema]) 
     if op_type is OpType.STRING_CONCAT:
         return _schema(op, FeatureDType(DTypeTag.STRING))
     if op_type is OpType.PARSED_FEATURE_HASH:
-        mode = str(params.get("parse_mode", "json"))
-        if mode in {"json", "structured", "structured_list_split"}:
+        mode = ParseMode(params.get("parse_mode", "json"))
+        if mode in {ParseMode.JSON, ParseMode.STRUCTURED, ParseMode.STRUCTURED_LIST_SPLIT}:
             length = int(params.get("pad_len", 0)) or None
-        elif mode in {"split", "flat_split", "structured_flat_split"}:
+        elif mode in {ParseMode.SPLIT, ParseMode.FLAT_SPLIT, ParseMode.STRUCTURED_FLAT_SPLIT}:
             length = int(params.get("max_len", 0)) or None
-        elif mode == "list_split":
+        elif mode is ParseMode.LIST_SPLIT:
             length = first.dtype.length if first and first.dtype.is_list else None
             if not length:
                 length = int(params.get("pad_len", 0)) or None
         else:
-            raise ValueError(f"Unsupported ParsedFeatureHash mode: {mode}")
+            raise ValueError(f"Unsupported ParsedFeatureHash mode: {mode.value}")
         return _schema(op, FeatureDType(DTypeTag.LIST, FeatureDType(DTypeTag.INT), length))
     if op_type is OpType.CONCAT_HASH:
         if int(params.get("num_hashes", 1)) > 1:
@@ -267,12 +270,15 @@ def _validate_embed(name: str, dtype: FeatureDType, embed: EmbedConfig) -> None:
         raise ValueError(f"embed '{name}' vocab_size must be positive")
     if embed.embed_dim <= 0:
         raise ValueError(f"embed '{name}' embed_dim must be positive")
-    if embed.pooling not in {"first", "mean", "sum", "max", "flatten"}:
-        raise ValueError(f"embed '{name}' has unsupported pooling '{embed.pooling}'")
+    if embed.pooling is PoolingMode.FIRST:
+        pass  # always valid
+    elif embed.pooling in {PoolingMode.MEAN, PoolingMode.SUM, PoolingMode.MAX, PoolingMode.FLATTEN}:
+        if not dtype.is_list:
+            raise ValueError(f"embed '{name}' pooling '{embed.pooling.value}' requires list[int]")
+    else:
+        raise ValueError(f"embed '{name}' has unsupported pooling '{embed.pooling.value}'")
     if not dtype.is_integer_index:
         raise ValueError(f"embeddable feature '{name}' must be int or list[int], got {dtype}")
-    if embed.pooling in {"mean", "sum", "max", "flatten"} and not dtype.is_list:
-        raise ValueError(f"embed '{name}' pooling '{embed.pooling}' requires list[int]")
     if dtype.is_list:
         seq_len = embed.seq_len or dtype.length
         if not seq_len:

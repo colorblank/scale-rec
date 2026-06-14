@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ..core.config import ParseMode
 from . import register_op
 from .feature_hash import FeatureHash
 
@@ -25,7 +26,7 @@ class ParsedFeatureHash:
         self,
         vocab_size: int,
         *,
-        parse_mode: str,
+        parse_mode: ParseMode,
         num_hashes: int = 1,
         separator: str = "|",
         namespace: str = "",
@@ -42,6 +43,8 @@ class ParsedFeatureHash:
     ) -> None:
         if num_hashes != 1:
             raise ValueError("ParsedFeatureHash only supports num_hashes=1 for list outputs")
+        if isinstance(parse_mode, str):
+            parse_mode = ParseMode(parse_mode)
         self.parse_mode = parse_mode
         self.key = key
         self.sep1 = sep1
@@ -64,7 +67,7 @@ class ParsedFeatureHash:
     def from_config(cls, params: dict) -> ParsedFeatureHash:
         return cls(
             vocab_size=int(params.get("vocab_size", 1000)),
-            parse_mode=str(params.get("parse_mode", "json")),
+            parse_mode=ParseMode(params.get("parse_mode", "json")),
             num_hashes=int(params.get("num_hashes", 1)),
             separator=str(params.get("separator", "|")),
             namespace=str(params.get("namespace", "")),
@@ -93,19 +96,19 @@ class ParsedFeatureHash:
         return [self.process([val]) for val in vals]
 
     def _parse(self, value: Any) -> list[str]:
-        if self.parse_mode == "json":
+        if self.parse_mode is ParseMode.JSON:
             return self._parse_json(value)
-        if self.parse_mode == "structured":
+        if self.parse_mode is ParseMode.STRUCTURED:
             return self._parse_structured(value)
-        if self.parse_mode == "structured_flat_split":
+        if self.parse_mode is ParseMode.STRUCTURED_FLAT_SPLIT:
             return self._parse_structured_flat_split(value)
-        if self.parse_mode == "split":
+        if self.parse_mode is ParseMode.SPLIT:
             return self._normalize_max((str(value) if value is not None else "").split(self.sep))
-        if self.parse_mode == "list_split":
+        if self.parse_mode is ParseMode.LIST_SPLIT:
             return self._parse_list_split(value)
-        if self.parse_mode == "flat_split":
+        if self.parse_mode is ParseMode.FLAT_SPLIT:
             return self._parse_flat_split(value)
-        raise ValueError(f"Unsupported ParsedFeatureHash mode: {self.parse_mode}")
+        raise ValueError(f"Unsupported ParsedFeatureHash mode: {self.parse_mode.value}")
 
     def _parse_json(self, value: Any) -> list[str]:
         s = str(value) if value else ""

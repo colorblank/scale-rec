@@ -5,6 +5,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
+from ..core.config import PoolingMode
 from ..layers.embedding import FeatureEmbeddings, FeatureTensorMap, FeatureTuple
 from ..layers.fm import fm_interaction
 from ..layers.mlp import Mlp
@@ -19,7 +20,7 @@ class DeepFM(nn.Module):
         features: list[FeatureTuple],
         fm_k: int,
         deep_hidden_dims: list[int],
-        pooling_map: dict[str, str] | None = None,
+        pooling_map: dict[str, PoolingMode] | None = None,
         total_dim: int | None = None,
     ) -> None:
         super().__init__()

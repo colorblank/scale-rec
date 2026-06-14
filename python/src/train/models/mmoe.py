@@ -2,9 +2,14 @@ from __future__ import annotations
 
 """MMoE：多门控专家混合。"""
 
+from typing import TYPE_CHECKING
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+if TYPE_CHECKING:
+    from ..core.config import PoolingMode
 
 from ..layers.embedding import FeatureEmbeddings, FeatureTensorMap, FeatureTuple
 from ..layers.mlp import Mlp
@@ -22,7 +27,7 @@ class MMoE(nn.Module):
         expert_hidden_dims: list[int],
         expert_output_dim: int,
         task_configs: list[tuple[str, list[int]]],
-        pooling_map: dict[str, str] | None = None,
+        pooling_map: dict[str, PoolingMode] | None = None,
         total_dim: int | None = None,
     ) -> None:
         """Build MMoE: embeddings + optional shared_bottom + N experts + K gates + K towers."""

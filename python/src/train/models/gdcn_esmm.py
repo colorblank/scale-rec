@@ -2,8 +2,13 @@ from __future__ import annotations
 
 """GDCN + ESMM: gated cross network shared representation with ESMM task towers."""
 
+from typing import TYPE_CHECKING
+
 import torch
 import torch.nn as nn
+
+if TYPE_CHECKING:
+    from ..core.config import PoolingMode
 
 from ..layers.embedding import FeatureEmbeddings, FeatureTensorMap, FeatureTuple
 from ..layers.gdcn import GatedCrossNetwork
@@ -27,7 +32,7 @@ class GDCNESMM(nn.Module):
         stock_hidden_dims: list[int] | None = None,
         stay_hidden_dims: list[int] | None = None,
         task_config: MultiTaskConfig | None = None,
-        pooling_map: dict[str, str] | None = None,
+        pooling_map: dict[str, PoolingMode] | None = None,
         total_dim: int | None = None,
     ) -> None:
         super().__init__()
