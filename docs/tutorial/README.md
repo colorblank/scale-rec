@@ -40,7 +40,7 @@ Rust HTTP 排序推理服务
 | [03. 特征工程契约](03_feature_contract.md) | 讲 sources、operators、embedding、role、DAG、hash 空间、序列 padding 和 Python/Rust 一致性 | `examples/shared/feature_config_discover.yaml`、`python/src/train/core/dag.py`、`src/feats/dag.rs` | 已添加 |
 | 04. 离线训练流程 | 跑通 demo 和生产流式训练，解释 batch、eval、checkpoint、early stopping、EMA | `python/src/train/app/main.py`、`python/src/train/training/trainer.py`、`examples/shared/train_defaults.yaml` | 待添加 |
 | 05. 多日训练与增量微调 | 讲 `--data-glob`、日期闭区间、最后日期验证集、`--init-weights` 微调语义 | `python/src/train/app/cli.py`、`python/src/train/app/data.py` | 待添加 |
-| 06. 模型结构与权重绑定 | 讲 LR baseline、DeepFM/MMoE/ESMM/GDCN+ESMM/UniMixer、任务塔、safetensors key 与 Candle 路径 | `python/src/train/models`、`src/models`、`python/src/train/app/export.py` | 待添加 |
+| 06. 模型结构与权重绑定 | 讲 LR baseline、DeepFM/MMoE/ESMM/GDCN+ESMM/UniMixer/TokenMixer-Large/RankMixer、任务塔、safetensors key 与 Candle 路径 | `python/src/train/models`、`src/models`、`python/src/train/app/export.py` | 待添加 |
 | 07. 训练评估与特征质量 | 讲 loss、AUC、回归指标、feature quality、序列 padding 空值率、bucket 利用率 | `python/src/train/training/metrics`、`python/src/train/training/quality.py` | 待添加 |
 | 08. 产物发布与版本管理 | 讲 run manifest、serving manifest、sha256、model version、publish path、回滚策略 | `python/src/train/app/manifest.py`、`src/server/manifest.rs` | 待添加 |
 | 09. Rust 在线推理服务 | 讲 model registry、`/predict`、`/predict/broadcast`、多版本加载、fallback version | `src/server`、`docs/API.md` | 待添加 |

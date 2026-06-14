@@ -16,8 +16,8 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 - Rust serving 以 manifest 为主路径加载模型，支持同一 `model_id` 多版本、alias、固定/加权 routing、按版本查询 feature contract。
 - HTTP 服务提供 `/health`、`/models`、`/models/{model}`、`/models/{model}/features`、`/models/{model}/versions/{version}/features`、alias/routing 管理、`/predict`、`/predict/broadcast`。
 - Python 训练入口已经统一到列式 batch 预处理路径，`stream_file_batches()` 直接产出 `dict[str, list]`，训练/评估/metrics 使用 `TrainingPreprocessor`，底层通过 `DagPreprocessor` 完成 tensor 构造。
-- `examples/` 已按 `examples/shared/` 和 `examples/models/` 拆分，目前模型示例包括 `lr.yaml`、`gdcn_esmm.yaml`、`unimixer.yaml`。
-- 训练和推理一致性验证集中在 `python/src/scale_rec_demo/verify_all.py`，覆盖 discover LR、GDCN+ESMM、UniMixer 主线。
+- `examples/` 已按 `examples/shared/` 和 `examples/models/` 拆分，目前模型示例包括 `lr.yaml`、`gdcn_esmm.yaml`、`unimixer.yaml`、`token_mixer_large.yaml`、`rankmixer.yaml`。
+- 训练和推理一致性验证集中在 `python/src/scale_rec_demo/verify_all.py`，覆盖 discover LR、GDCN+ESMM、UniMixer、TokenMixer-Large 和 RankMixer 主线。
 
 这套设计的核心优势是：特征契约有单一来源，训练与推理模型结构可对齐，线上服务不携带 Python 运行时，同时已经具备多模型注册、发布 manifest、Golden consistency、模型 smoke test、算子级测试、周期 checkpoint、resume、压测工具和任务级配置。
 
@@ -40,7 +40,7 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 - **发布产物结构化**：`TrainingArtifactManager` 已统一 run/checkpoints/serving/configs 目录，默认复制 feature/model config，并写出 run manifest 与 serving manifest。
 - **权重加载校验**：Rust registry 在 `VarMap::load()` 前检查 safetensors key 缺失和 shape mismatch，是重要稳定性防线。
 - **FeatureDag 深化拆分**：Rust/Python 均已拆出 `DagBuilder`、`DagExecutor`、`FeatureInfo`，Python 额外拆出 `DagPreprocessor` / `TrainingPreprocessor`；训练、评估、metrics、quality 和 Rust serving/demo 调用方已迁移到新 seam，`FeatureDag` 仅作为兼容 facade。
-- **operator type 枚举化**：Rust `OperatorDef.op_type` 已从 `String` 改为 `OpType` enum，Python 已从 `str` 改为 `OpType(StrEnum)`；schema 推导、quality padding 识别和 Rust registry 不再用字符串判断 operator 类型。
+- **operator type 枚举化**：Rust `OperatorDef.op_type` 已从 `String` 改为 `OpType` enum，Python 已从 `str` 改为 `OpType(str, Enum)`；schema 推导、quality padding 识别和 Rust registry 不再用字符串判断 operator 类型。
 - **apply_relation 去重**：ESMM/GDCN-ESMM 的 relation 应用逻辑已收敛到 `layers::towers::apply_relation()`，避免多任务概率关系重复实现。
 
 ## 3. 架构分析
@@ -69,14 +69,13 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 - 默认值解析虽然已集中到 `src/feats/defaults.rs` 的 `source_default()`，但 Python `_parse_default()` 仍需持续保持语义一致。
 - Python 训练预处理仍通过 `TrainingPreprocessor` 包装兼容 facade，后续可继续迁移到直接组合 `DagExecutor` + `DagPreprocessor`。
 - `FeatureSchema` 还没有完全成为唯一执行契约，部分算子参数仍在 DAG 构建时用 `unwrap_or(...)` 默认值解释。
-- Rust feature config 已 `deny_unknown_fields`，但 Python dataclass 解析仍会忽略未知 YAML 字段，双端严格性不一致。
-- operator params 仍是松散 YAML，拼写错误或类型错误可能被算子工厂中的默认值吞掉，例如部分 Rust 算子 `create()` 仍使用 `yaml_i64(...).unwrap_or(...)`。
+- Python/Rust 已对 operator params 做 allowlist、required 和基础类型校验，但还不是每个算子独立 typed config；复杂参数的语义校验仍主要在算子工厂中完成。
 
 改进方向：
 
 - 继续压缩 `FeatureDag` facade 的使用面，最终只保留兼容入口或彻底删除 facade。
 - 为 operator params 建立 typed config，而不是在各算子工厂中散落读取和默认值。
-- Python 配置解析增加 unknown field 检测，至少与 Rust feature config 的严格性对齐。
+- 继续把复杂 operator params 收敛为 typed config，而不是只依赖通用 YAML allowlist。
 - 让 `FeatureSchema` 成为 tensor 构造、默认值、seq_len、pooling 和 feature contract 的唯一来源。
 - 对所有融合算子的 parse mode、seq_len、padding、hash scope 增加 Python/Rust golden consistency 覆盖。
 
@@ -84,9 +83,9 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 
 模型层已从中央 enum 逐步转为 registry 模式：
 
-- Rust `src/models/mod.rs` 的 `ModelConfig` 是 `type` + flattened YAML params，`REGISTRY` 注册 `lr`、`deepfm`、`mmoe`、`esmm`、`gdcn_esmm`、`unimixer`。
+- Rust `src/models/mod.rs` 的 `ModelConfig` 是 `type` + flattened YAML params，`REGISTRY` 注册 `lr`、`deepfm`、`mmoe`、`esmm`、`gdcn_esmm`、`unimixer`、`token_mixer_large`、`rankmixer`。
 - Python `python/src/train/models/__init__.py` 使用 `register_model()` / `build_model()` 注册同名模型。
-- UniMixer 仍通过外部 `FeatureTokenizer` 注入，避免模型内部重复构建特征规格。
+- UniMixer、TokenMixer-Large 和 RankMixer 通过外部 `FeatureTokenizer` 注入，避免模型内部重复构建特征规格。
 - Rust registry 已支持 manifest-driven loading、多版本、默认版本、alias、routing、feature contract 查询和权重 key/shape 校验。
 
 优势：
@@ -99,14 +98,14 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 剩余风险：
 
 - Rust 和 Python 模型仍是双份实现，新增 layer、task tower 或 naming prefix 时必须人工保持 `state_dict` key 对齐。
-- Rust `ModelConfig.params` 是自由 YAML，缺少每个模型的 typed param schema；许多参数类型错误会走默认值。
+- Rust/Python 已对模型 params 做 allowlist、required 和基础类型校验，但模型参数仍不是独立 typed config，错误信息和默认值语义还可以继续集中化。
 - legacy hidden dims 路径与 `task_config` 路径仍并存，长期会增加多任务模型的配置心智负担。
 - `/models` 返回的 `ModelServingInfo` 仍偏 serving 状态，缺少 schema hash、tasks、metrics、label map、weight binding 等关键元数据。
 
 改进方向：
 
 - 为每个模型补充自动化 state_dict key 对齐测试或导出检查脚本。
-- 为 Rust/Python 模型参数建立显式 schema，错误字段和错误类型应 fail fast。
+- 为 Rust/Python 模型参数建立更细的 typed config，减少通用 YAML 参数读取和默认值分散。
 - 逐步收敛 legacy hidden dims 参数，以 `task_config` / `tasks` 作为多任务配置主入口。
 - 扩展 `/models` 和 manifest 加载后的内存元数据，返回 schema hash、tasks、metrics、labels、loaded_at 和 weight binding。
 

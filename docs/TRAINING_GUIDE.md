@@ -6,11 +6,11 @@
 
 | 章节 | 解决的问题 |
 |---|---|
-| [快速开始](#快速开始) | 生成 demo 数据、训练 GDCN+ESMM / UniMixer、跑端到端验证 |
+| [快速开始](#快速开始) | 生成 demo 数据、训练 GDCN+ESMM / UniMixer / RankMixer、跑端到端验证 |
 | [数据格式](#数据格式) | discover TSV 和训练输入参数 |
 | [特征配置](#特征配置) | feature config 的 data_sources、sources、operators、role |
 | [训练流程](#训练流程) | 数据、标签、模型、训练配置如何组合 |
-| [模型配置](#模型配置) | LR / GDCN+ESMM / UniMixer 的任务级配置 |
+| [模型配置](#模型配置) | LR / GDCN+ESMM / UniMixer / TokenMixer-Large / RankMixer 的任务级配置 |
 | [训练参数](#训练参数) / [训练技巧](#训练技巧) / [评估监控](#评估监控) | 训练超参、优化策略、日志与评估 |
 | [保存与推理导出](#保存与推理导出) | checkpoint、发布权重、serving manifest、加载规则 |
 | [HTTP 压测](#http-压测) | bench 使用方式和后端构建建议 |
@@ -47,7 +47,19 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --model-name model_discover_unimixer \
   --run-version 20260526_120000
 
-# 2c. 可选：周期保存 checkpoint
+# 2c. 可选：训练 RankMixer
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
+  python -m train.app.main discover \
+  --data python/artifacts/demo/discover_train_data.txt \
+  --feature-config examples/shared/feature_config_discover.yaml \
+  --model-config examples/models/rankmixer.yaml \
+  --train-config examples/shared/train_defaults.yaml \
+  --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
+  --artifact-dir python/artifacts/demo \
+  --model-name model_discover_rankmixer \
+  --run-version 20260526_120000
+
+# 2d. 可选：周期保存 checkpoint
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m train.app.main discover \
   --data python/artifacts/demo/discover_train_data.txt \
@@ -61,7 +73,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --model-name model_gdcn_esmm \
   --run-version 20260526_120000
 
-# 2d. 可选：训练 LR 单目标 baseline
+# 2e. 可选：训练 LR 单目标 baseline
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m train.app.main discover \
   --data python/artifacts/demo/discover_train_data.txt \
@@ -75,7 +87,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 # 3. 端到端验证
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m scale_rec_demo.verify_all --models discover_lr,discover_gdcn_esmm --force-train
+  python -m scale_rec_demo.verify_all --models discover_lr,discover_gdcn_esmm,discover_rankmixer --force-train
 ```
 
 多日文件训练和增量微调示例：
@@ -126,7 +138,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 标签列包含 `is_click`、`is_cvr`、`is_click_detail`、`is_click_stock`、`stay_time_label` 等字段；具体是否启用某个派生标签，由 `examples/shared/discover_label_policy.yaml` 控制。
 
-如果你要同时训练 GDCN+ESMM 和 UniMixer，建议保留完整标签集合，复用同一份 TSV。
+如果你要同时训练 GDCN+ESMM、UniMixer、TokenMixer-Large 和 RankMixer，建议保留完整标签集合，复用同一份 TSV。
 
 | 参数 | 默认 | 说明 |
 |------|------|------|
@@ -285,7 +297,7 @@ for name, tensor in tensors.items():
 - `bucket_utilization` 极低：检查 hash 输入是否大面积为空、`vocab_size` 是否过大、算子是否只看到了 padding token。
 - tensor shape 不符合预期：检查 `embed.pooling`、`embed.seq_len`、上游 schema 的 `pad_len/max_len`。
 - Python/Rust 不一致：先用 `dag.execute(row)` 看 Python 单样本输出，再跑 golden consistency 或 `scale_rec_demo.verify_all` 对比 Rust 推理。
-- 如果要验证“训练 -> 导出 -> 推理”整条链路，优先跑 `scale_rec_demo.verify_all --models discover_lr,discover_gdcn_esmm,discover_unimixer --force-train`；这会先训练模型、再导出 safetensors、最后调用 Rust `demo_inference` 做逐模型比对。
+- 如果要验证“训练 -> 导出 -> 推理”整条链路，优先跑 `scale_rec_demo.verify_all --models discover_lr,discover_gdcn_esmm,discover_unimixer,discover_token_mixer_large,discover_rankmixer --force-train`；这会先训练模型、再导出 safetensors、最后调用 Rust `demo_inference` 做逐模型比对。
 
 ## 模型配置
 
@@ -349,6 +361,16 @@ GDCN+ESMM 将门控交叉网络与 ESMM 多任务预测塔相结合。底层利�
 ### UniMixer 配置
 
 `examples/models/unimixer.yaml` 复用同一套 `tasks:` 约定，区别在于 `type: unimixer`，以及 UniMixer 自身的 token、block、rank 等结构参数。训练、评估和导出层面对它的处理方式与 GDCN+ESMM 一致。
+
+### TokenMixer-Large 配置
+
+`examples/models/token_mixer_large.yaml` 使用 `type: token_mixer_large`。它通过共享 `FeatureTokenizer` 得到 `[batch, num_tokens, token_dim]` token 序列，再堆叠 TokenMixer-Large block，最后接同一套多任务 tower。关键结构参数是 `token_dim`、`num_tokens`、`num_blocks`、`num_heads`、`hidden_factor` 和 `down_init_scale`。
+
+### RankMixer 配置
+
+`examples/models/rankmixer.yaml` 使用 `type: rankmixer`。它实现论文 RankMixer 的 dense 版本：共享 `FeatureTokenizer` 负责特征 tokenization；每个 RankMixer block 先做无参数 multi-head token mixing，再做 residual + LayerNorm，然后使用 per-token GELU FFN 建模不同 feature subspace，最后再次 residual + LayerNorm。模型输出对 token 维做 mean pooling 后进入 `MultiTaskTower`。
+
+RankMixer 当前要求 `num_heads == num_tokens`，以保持 token mixing 后的形状可与输入做 residual；`token_dim` 也必须能被 `num_heads` 整除。Sparse-MoE、ReLU routing 和 DTSI-MoE 属于论文扩展方向，当前实现未启用。
 
 ### 任务定义建议
 
@@ -889,12 +911,12 @@ python/src/train/
 ├── core/        — FlowConfig、FeatureDag、TaskSpec、schema
 ├── app/         — CLI、入口、artifact/manifest 管理
 ├── training/    — trainer、loss、metrics、eval、optim、quality
-├── models/      — discover 主线模型 (GDCN+ESMM / UniMixer)
+├── models/      — discover 主线模型 (GDCN+ESMM / UniMixer / TokenMixer-Large / RankMixer)
 ├── layers/      — MLP、Embedding、Tokenizer、Towers
 └── ops/         — 特征算子
 python/src/scale_rec_demo/
 ├── generate_discover_data.py  — 合成数据生成
-├── verify_all.py              — discover 主线与 UniMixer 一致性验证
+├── verify_all.py              — discover 主线模型一致性验证
 └── paths.py                   — demo 路径常量
 python/artifacts/demo/         — 本地训练输出
 ```

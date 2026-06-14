@@ -47,7 +47,9 @@ examples/
 ├── models/                          # 按模型拆分的配置目录
 │   ├── lr.yaml                      # LR 单目标基线配置
 │   ├── gdcn_esmm.yaml               # GDCN+ESMM 模型配置
-│   └── unimixer.yaml                # UniMixer 模型配置
+│   ├── unimixer.yaml                # UniMixer 模型配置
+│   ├── token_mixer_large.yaml       # TokenMixer-Large 模型配置
+│   └── rankmixer.yaml               # RankMixer 模型配置
 └── shared/                          # 共享配置目录
     ├── feature_config_discover.yaml # 特征契约：原始列、DAG、embedding、标签 role
     ├── train_defaults.yaml          # 训练策略：batch、optimizer、eval、early stopping
