@@ -30,6 +30,7 @@ class SourceQuality:
 class EmbeddableQuality:
     total: int = 0
     empty_sequences: int = 0
+    truncations: int = 0
     mean_length: float = 0.0
     total_items: int = 0
     padded_items: int = 0
@@ -42,8 +43,28 @@ class EmbeddableQuality:
         return self.empty_sequences / self.total if self.total else 0.0
 
     @property
+    def truncation_rate(self) -> float:
+        return self.truncations / self.total if self.total else 0.0
+
+    @property
     def padding_rate(self) -> float:
         return self.padded_items / self.total_items if self.total_items else 0.0
+
+
+@dataclass(frozen=True)
+class FeatureHashCacheStats:
+    total: int = 0
+    hits: int = 0
+    misses: int = 0
+    cache_size: int = 0
+
+    @property
+    def hit_rate(self) -> float:
+        return self.hits / self.total if self.total else 0.0
+
+    @property
+    def miss_rate(self) -> float:
+        return self.misses / self.total if self.total else 0.0
 
 
 @dataclass(frozen=True)
@@ -51,6 +72,7 @@ class FeatureQualityReport:
     rows: int
     sources: dict[str, SourceQuality]
     embeddables: dict[str, EmbeddableQuality]
+    hash_cache: dict[str, FeatureHashCacheStats] = field(default_factory=dict)
 
     def to_metrics(self, prefix: str = "feature_quality") -> dict[str, float]:
         metrics: dict[str, float] = {f"{prefix}.rows": float(self.rows)}
@@ -59,9 +81,15 @@ class FeatureQualityReport:
             metrics[f"{prefix}.source.{name}.default_rate"] = stat.default_rate
         for name, stat in self.embeddables.items():
             metrics[f"{prefix}.emb.{name}.empty_sequence_rate"] = stat.empty_sequence_rate
+            metrics[f"{prefix}.emb.{name}.truncation_rate"] = stat.truncation_rate
             metrics[f"{prefix}.emb.{name}.mean_length"] = stat.mean_length
             metrics[f"{prefix}.emb.{name}.padding_rate"] = stat.padding_rate
             metrics[f"{prefix}.emb.{name}.bucket_utilization"] = stat.bucket_utilization
+        for name, stat in self.hash_cache.items():
+            metrics[f"{prefix}.hash_cache.{name}.total"] = float(stat.total)
+            metrics[f"{prefix}.hash_cache.{name}.hit_rate"] = stat.hit_rate
+            metrics[f"{prefix}.hash_cache.{name}.miss_rate"] = stat.miss_rate
+            metrics[f"{prefix}.hash_cache.{name}.cache_size"] = float(stat.cache_size)
         return metrics
 
 
@@ -75,11 +103,12 @@ def summarize_feature_quality(
 ) -> FeatureQualityReport:
     rows = _collect_rows(batches, max_rows)
     source_stats = _source_quality(feat_info, rows)
-    emb_stats = _embeddable_quality(executor, feat_info, rows, top_k)
+    emb_stats, hash_cache_stats = _embeddable_quality(executor, feat_info, rows, top_k)
     return FeatureQualityReport(
         rows=len(rows),
         sources=source_stats,
         embeddables=emb_stats,
+        hash_cache=hash_cache_stats,
     )
 
 
@@ -132,15 +161,19 @@ def _embeddable_quality(
     feat_info: FeatureInfo,
     rows: list[dict[str, Any]],
     top_k: int,
-) -> dict[str, EmbeddableQuality]:
+) -> tuple[dict[str, EmbeddableQuality], dict[str, FeatureHashCacheStats]]:
     embed_infos = dict(feat_info.embeddable_features())
     counters: dict[str, Counter[int]] = {name: Counter() for name in embed_infos}
     total = dict.fromkeys(embed_infos, 0)
     empty = dict.fromkeys(embed_infos, 0)
+    truncations = dict.fromkeys(embed_infos, 0)
     length_sum = dict.fromkeys(embed_infos, 0)
     total_items = dict.fromkeys(embed_infos, 0)
     padded_items = dict.fromkeys(embed_infos, 0)
     pad_buckets = _embedding_pad_buckets(executor, feat_info)
+
+    truncation_limits = _embedding_truncation_limits(executor, feat_info, embed_infos)
+    hash_ops = _enable_hash_cache_stats(executor, feat_info, embed_infos)
 
     for row in rows:
         result = executor.execute(row)
@@ -150,6 +183,9 @@ def _embeddable_quality(
             values = value if isinstance(value, list) else [value]
             if isinstance(value, list):
                 seq_len = embed.seq_len or len(value)
+                limit = truncation_limits.get(name)
+                if limit is not None and len(value) >= limit:
+                    truncations[name] += 1
                 tensor_pad = max(seq_len - len(value), 0)
                 pad_items = tensor_pad + sum(
                     1 for item in value if _is_padding_bucket(name, item, pad_buckets)
@@ -167,12 +203,15 @@ def _embeddable_quality(
                 if isinstance(item, int):
                     counters[name][item] += 1
 
+    hash_cache = _read_hash_cache_stats(hash_ops)
+
     report = {}
     for name, embed in embed_infos.items():
         unique = len(counters[name])
         report[name] = EmbeddableQuality(
             total=total[name],
             empty_sequences=empty[name],
+            truncations=truncations[name],
             mean_length=length_sum[name] / total[name] if total[name] else 0.0,
             total_items=total_items[name],
             padded_items=padded_items[name],
@@ -180,16 +219,86 @@ def _embeddable_quality(
             bucket_utilization=unique / embed.vocab_size if embed.vocab_size else 0.0,
             top_buckets=tuple(counters[name].most_common(top_k)),
         )
-    return report
+    return report, hash_cache
+
+
+def _provider_map(feat_info: FeatureInfo) -> dict[str, str]:
+    providers: dict[str, str] = {}
+    for op_name, op_def in feat_info.node_defs.items():
+        for output in op_def.outputs:
+            providers[output] = op_name
+    return providers
+
+
+def _embedding_truncation_limits(
+    executor: DagExecutor,
+    feat_info: FeatureInfo,
+    embed_infos: dict[str, Any],
+) -> dict[str, int]:
+    providers = _provider_map(feat_info)
+    node_defs = feat_info.node_defs
+    limits: dict[str, int] = {}
+    for name, embed in embed_infos.items():
+        if embed.seq_len is not None:
+            limits[name] = embed.seq_len
+        else:
+            op_name = providers.get(name)
+            if op_name is not None:
+                op_def = node_defs.get(op_name)
+                if op_def is not None:
+                    limit = op_def.params.get("max_len") or op_def.params.get("pad_len")
+                    if limit is not None and int(limit) > 0:
+                        limits[name] = int(limit)
+    return limits
+
+
+def _enable_hash_cache_stats(
+    executor: DagExecutor,
+    feat_info: FeatureInfo,
+    embed_infos: dict[str, Any],
+) -> dict[str, Any]:
+    providers = _provider_map(feat_info)
+    node_defs = feat_info.node_defs
+    nodes = executor.nodes
+    ops: dict[str, Any] = {}
+    for name in embed_infos:
+        op_name = providers.get(name)
+        if op_name is None:
+            continue
+        op_def = node_defs.get(op_name)
+        if op_def is None:
+            continue
+        if op_def.op_type is OpType.FEATURE_HASH:
+            op = nodes.get(op_name)
+            if op is not None and hasattr(op, "enable_cache_stats"):
+                op.enable_cache_stats()
+                ops[name] = op
+        elif op_def.op_type is OpType.PARSED_FEATURE_HASH:
+            op = nodes.get(op_name)
+            inner = getattr(op, "_hash", None)
+            if inner is not None and hasattr(inner, "enable_cache_stats"):
+                inner.enable_cache_stats()
+                ops[name] = inner
+    return ops
+
+
+def _read_hash_cache_stats(ops: dict[str, Any]) -> dict[str, FeatureHashCacheStats]:
+    result: dict[str, FeatureHashCacheStats] = {}
+    for name, op in ops.items():
+        stats = op.disable_cache_stats() if hasattr(op, "disable_cache_stats") else None
+        if stats is not None:
+            result[name] = FeatureHashCacheStats(
+                total=stats["total"],
+                hits=stats["hits"],
+                misses=stats["misses"],
+                cache_size=stats["cache_size"],
+            )
+    return result
 
 
 def _embedding_pad_buckets(executor: DagExecutor, feat_info: FeatureInfo) -> dict[str, set[int]]:
-    providers = {}
+    providers = _provider_map(feat_info)
     node_defs = feat_info.node_defs
-    for op_name, op_def in node_defs.items():
-        for output in op_def.outputs:
-            providers[output] = op_name
-
     nodes = executor.nodes
     result: dict[str, set[int]] = {}
     for feature_name, _ in feat_info.embeddable_features():

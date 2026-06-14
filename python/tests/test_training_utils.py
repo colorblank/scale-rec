@@ -527,9 +527,18 @@ def test_feature_quality_report_tracks_missing_defaults_and_buckets():
     assert report.sources["user_id"].missing_rate == 0.5
     assert report.sources["age"].default_rate == 0.5
     assert report.embeddables["user_id_idx"].unique_buckets >= 1
+    assert report.embeddables["user_id_idx"].truncations == 0
+    assert report.embeddables["age_bucket"].truncations == 0
+    assert "user_id_idx" in report.hash_cache
+    cache = report.hash_cache["user_id_idx"]
+    assert cache.total == 2
+    assert cache.cache_size == 2
+    assert cache.hit_rate == 0.0
     metrics = report.to_metrics()
     assert metrics["feature_quality.source.user_id.missing_rate"] == 0.5
     assert "feature_quality.emb.age_bucket.bucket_utilization" in metrics
+    assert metrics["feature_quality.hash_cache.user_id_idx.hit_rate"] == 0.0
+    assert metrics["feature_quality.hash_cache.user_id_idx.cache_size"] == 2.0
 
 
 def test_feature_quality_counts_sequence_padding_as_empty():
@@ -587,9 +596,14 @@ def test_feature_quality_counts_sequence_padding_as_empty():
 
     stat = report.embeddables["kw_ids"]
     assert stat.empty_sequence_rate == 0.5
+    assert stat.truncation_rate == 1.0
     assert stat.mean_length == 0.5
     assert stat.padding_rate == pytest.approx(5 / 6)
+    assert report.to_metrics()["feature_quality.emb.kw_ids.truncation_rate"] == 1.0
     assert report.to_metrics()["feature_quality.emb.kw_ids.padding_rate"] == pytest.approx(5 / 6)
+    assert "kw_ids" in report.hash_cache
+    assert report.hash_cache["kw_ids"].total == 6
+    assert report.hash_cache["kw_ids"].cache_size > 0
 
 
 def test_parameter_counting_utility():

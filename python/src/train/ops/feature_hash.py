@@ -26,6 +26,8 @@ class FeatureHash:
         self.separator = separator
         scope_parts = [str(part) for part in (namespace, salt, version) if str(part)]
         self.hash_prefix = "::".join(scope_parts) + "::" if scope_parts else ""
+        self._cache_stats: dict[str, int] | None = None
+        self._cache_keys: set[tuple[str, int]] | None = None
 
     @classmethod
     def from_config(cls, params: dict) -> FeatureHash:
@@ -90,7 +92,35 @@ class FeatureHash:
 
     # ── internal ──
 
+    def enable_cache_stats(self) -> None:
+        self._cache_stats = {"total": 0, "hits": 0, "misses": 0}
+        self._cache_keys = set()
+
+    def read_cache_stats(self) -> dict[str, int] | None:
+        if self._cache_stats is None:
+            return None
+        return {
+            "total": self._cache_stats["total"],
+            "hits": self._cache_stats["hits"],
+            "misses": self._cache_stats["misses"],
+            "cache_size": len(self._cache_keys) if self._cache_keys else 0,
+        }
+
+    def disable_cache_stats(self) -> dict[str, int] | None:
+        result = self.read_cache_stats()
+        self._cache_stats = None
+        self._cache_keys = None
+        return result
+
     def _hash_one(self, key: str, seed: int = 0) -> int:
+        if self._cache_stats is not None and self._cache_keys is not None:
+            cache_key = (key, seed)
+            self._cache_stats["total"] += 1
+            if cache_key in self._cache_keys:
+                self._cache_stats["hits"] += 1
+            else:
+                self._cache_stats["misses"] += 1
+                self._cache_keys.add(cache_key)
         return _djb2_seeded(f"{self.hash_prefix}{key}", seed) % self.vocab_size
 
     def _hash_multi(self, key: str) -> int | list[int]:
