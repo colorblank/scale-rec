@@ -3,7 +3,9 @@ use super::Model;
 use crate::layers::embedding::{FeatureEmbeddings, FeatureSpec};
 use crate::layers::gdcn::GatedCrossNetwork;
 use crate::layers::mlp::Mlp;
-use crate::layers::towers::{Activation, MultiTaskConfig, RelationOp, TaskRelation, TaskTower};
+use crate::layers::towers::{
+    Activation, apply_relation, MultiTaskConfig, TaskRelation, TaskTower,
+};
 use crate::models::esmm::default_task_config;
 use candle_core::{Result, Tensor};
 use candle_nn::{Module, VarBuilder};
@@ -138,42 +140,4 @@ impl Model for GDCNESMM {
     }
 }
 
-fn apply_relation(relation: &TaskRelation, outputs: &HashMap<String, Tensor>) -> Result<Tensor> {
-    if relation.sources.is_empty() {
-        candle_core::bail!("relation '{}' has no sources", relation.target);
-    }
-    let get_prob = |name: &str| -> Result<Tensor> {
-        let logit = outputs
-            .get(name)
-            .ok_or_else(|| candle_core::Error::Msg(format!("task '{}' not found", name)))?;
-        candle_nn::ops::sigmoid(logit)
-    };
-    match relation.op {
-        RelationOp::Multiply => {
-            let mut result = get_prob(&relation.sources[0])?;
-            for source in &relation.sources[1..] {
-                result = result.mul(&get_prob(source)?)?;
-            }
-            Ok(result)
-        }
-        RelationOp::Add => {
-            let mut result = get_prob(&relation.sources[0])?;
-            for source in &relation.sources[1..] {
-                result = result.broadcast_add(&get_prob(source)?)?;
-            }
-            Ok(result)
-        }
-        RelationOp::Subtract => {
-            if relation.sources.len() != 2 {
-                candle_core::bail!("relation '{}' subtract requires 2 sources", relation.target);
-            }
-            get_prob(&relation.sources[0])?.broadcast_sub(&get_prob(&relation.sources[1])?)
-        }
-        RelationOp::Divide => {
-            if relation.sources.len() != 2 {
-                candle_core::bail!("relation '{}' divide requires 2 sources", relation.target);
-            }
-            get_prob(&relation.sources[0])?.broadcast_div(&get_prob(&relation.sources[1])?)
-        }
-    }
-}
+

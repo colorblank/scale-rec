@@ -175,7 +175,7 @@ impl MultiTaskTower {
             outputs.insert(tower.name().to_string(), tower.forward(shared_output)?);
         }
         for rel in &self.relations {
-            let derived = self.apply_relation(rel, &outputs)?;
+            let derived = apply_relation(rel, &outputs)?;
             outputs.insert(rel.target.clone(), derived);
         }
         Ok(outputs)
@@ -188,39 +188,60 @@ impl MultiTaskTower {
             .map(|t| t.forward(shared_output))
             .collect()
     }
+}
 
-    fn apply_relation(
-        &self,
-        rel: &TaskRelation,
-        outputs: &HashMap<String, Tensor>,
-    ) -> Result<Tensor> {
-        let get_prob = |name: &str| -> Result<Tensor> {
-            let logit = outputs
-                .get(name)
-                .ok_or_else(|| candle_core::Error::Msg(format!("Task '{}' not found", name)))?;
-            candle_nn::ops::sigmoid(logit)
-        };
-        match rel.op {
-            RelationOp::Multiply => {
-                let mut result = get_prob(&rel.sources[0])?;
-                for name in &rel.sources[1..] {
-                    result = result.mul(&get_prob(name)?)?;
-                }
-                Ok(result)
+/// 应用任务间概率关系推导（如 CTCVR = sigmoid(click) × sigmoid(cvr)）。
+///
+/// 从 `outputs` 中取出 `sources` 任务的 logits，经 sigmoid 转换后按 `op` 运算，
+/// 返回推导目标的概率值。
+pub fn apply_relation(
+    rel: &TaskRelation,
+    outputs: &HashMap<String, Tensor>,
+) -> Result<Tensor> {
+    if rel.sources.is_empty() {
+        return Err(candle_core::Error::Msg(format!(
+            "relation '{}' has no sources",
+            rel.target
+        )));
+    }
+    let get_prob = |name: &str| -> Result<Tensor> {
+        let logit = outputs
+            .get(name)
+            .ok_or_else(|| candle_core::Error::Msg(format!("task '{}' not found", name)))?;
+        candle_nn::ops::sigmoid(logit)
+    };
+    match rel.op {
+        RelationOp::Multiply => {
+            let mut result = get_prob(&rel.sources[0])?;
+            for name in &rel.sources[1..] {
+                result = result.mul(&get_prob(name)?)?;
             }
-            RelationOp::Add => {
-                let mut result = get_prob(&rel.sources[0])?;
-                for name in &rel.sources[1..] {
-                    result = result.broadcast_add(&get_prob(name)?)?;
-                }
-                Ok(result)
+            Ok(result)
+        }
+        RelationOp::Add => {
+            let mut result = get_prob(&rel.sources[0])?;
+            for name in &rel.sources[1..] {
+                result = result.broadcast_add(&get_prob(name)?)?;
             }
-            RelationOp::Subtract => {
-                get_prob(&rel.sources[0])?.broadcast_sub(&get_prob(&rel.sources[1])?)
+            Ok(result)
+        }
+        RelationOp::Subtract => {
+            if rel.sources.len() != 2 {
+                return Err(candle_core::Error::Msg(format!(
+                    "relation '{}' subtract requires 2 sources",
+                    rel.target
+                )));
             }
-            RelationOp::Divide => {
-                get_prob(&rel.sources[0])?.broadcast_div(&get_prob(&rel.sources[1])?)
+            get_prob(&rel.sources[0])?.broadcast_sub(&get_prob(&rel.sources[1])?)
+        }
+        RelationOp::Divide => {
+            if rel.sources.len() != 2 {
+                return Err(candle_core::Error::Msg(format!(
+                    "relation '{}' divide requires 2 sources",
+                    rel.target
+                )));
             }
+            get_prob(&rel.sources[0])?.broadcast_div(&get_prob(&rel.sources[1])?)
         }
     }
 }
