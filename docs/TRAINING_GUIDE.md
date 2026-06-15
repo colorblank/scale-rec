@@ -2,6 +2,35 @@
 
 本文档面向模型训练和发布流程，按“快速跑通、配置说明、训练策略、保存发布、服务加载、压测”的顺序组织。HTTP 请求和响应格式已独立到 [HTTP API](API.md)。
 
+如果你想先建立整体心智模型，再回来看实操命令，建议先读 [推荐排序系统教程](tutorial/README.md)。教程章节和本手册的对应关系大致是：
+
+- [01. 排序系统全链路架构](tutorial/01_project_structure.md)
+- [02. 样本表、标签与任务定义](tutorial/02_samples_labels_tasks.md)
+- [03. 特征工程契约](tutorial/03_feature_contract.md)
+- [04. 离线训练流程](tutorial/04_offline_training_flow.md)
+- [05. 多日训练与增量微调](tutorial/05_multi_day_incremental.md)
+- [06. 模型结构与权重绑定](tutorial/06_model_structure_and_weight_binding.md)
+- [07. 训练评估与特征质量](tutorial/07_evaluation_and_feature_quality.md)
+- [08. 产物发布与版本管理](tutorial/08_artifact_publish_and_versioning.md)
+- [09. Rust 在线推理服务](tutorial/09_rust_inference_service.md)
+- [10. 性能优化与大文件训练](tutorial/10_performance_and_large_files.md)
+- [11. Debug 与一致性验证](tutorial/11_debug_and_consistency.md)
+
+## 教程对照
+
+如果你是按教程主线学习，再回来看手册，可以按下面的对照快速定位：
+
+| 教程章节 | 手册重点 |
+|---|---|
+| [04. 离线训练流程](tutorial/04_offline_training_flow.md) | `快速开始`、`训练流程`、`训练参数`、`训练技巧`、`评估监控` |
+| [05. 多日训练与增量微调](tutorial/05_multi_day_incremental.md) | `快速开始` 中的 `--data-glob` 示例、`数据格式`、`保存与推理导出` |
+| [06. 模型结构与权重绑定](tutorial/06_model_structure_and_weight_binding.md) | `模型配置`、`保存与推理导出`、模型加载规则 |
+| [07. 训练评估与特征质量](tutorial/07_evaluation_and_feature_quality.md) | `评估监控`、`特征预处理 Debug`、feature quality 输出 |
+| [08. 产物发布与版本管理](tutorial/08_artifact_publish_and_versioning.md) | `保存与推理导出`、manifest、`run.manifest.yaml`、发布目录结构 |
+| [09. Rust 在线推理服务](tutorial/09_rust_inference_service.md) | `保存与推理导出` 里的服务加载、`HTTP 压测` 前的服务约定 |
+| [10. 性能优化与大文件训练](tutorial/10_performance_and_large_files.md) | `数据格式`、`训练参数` 中的 chunk / memory map / prefetch |
+| [11. Debug 与一致性验证](tutorial/11_debug_and_consistency.md) | `特征预处理 Debug`、`保存与推理导出`、一致性验证流程 |
+
 ## 阅读顺序
 
 | 章节 | 解决的问题 |
@@ -16,6 +45,8 @@
 | [HTTP 压测](#http-压测) | bench 使用方式和后端构建建议 |
 
 ## 快速开始
+
+对应教程： [01. 排序系统全链路架构](tutorial/01_project_structure.md)、[04. 离线训练流程](tutorial/04_offline_training_flow.md)、[05. 多日训练与增量微调](tutorial/05_multi_day_incremental.md)。
 
 ```bash
 # 1. 生成合成数据
@@ -108,6 +139,8 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 ## 训练流程
 
+对应教程： [01. 排序系统全链路架构](tutorial/01_project_structure.md)、[04. 离线训练流程](tutorial/04_offline_training_flow.md)、[06. 模型结构与权重绑定](tutorial/06_model_structure_and_weight_binding.md)。
+
 训练链路分成 4 层配置，默认优先级从低到高是：`train_defaults.yaml` < 模型 YAML < 命令行参数。
 
 `single`、`discover`、`all` 三个训练入口现在共用同一套批次预处理与可选预取逻辑；区别只在于数据来源、模型配置和是否启用 discover TSV 的流式读取。
@@ -131,6 +164,8 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 6. 最终导出 safetensors 权重和 manifest。
 
 ## 数据格式
+
+对应教程： [02. 样本表、标签与任务定义](tutorial/02_samples_labels_tasks.md)、[05. 多日训练与增量微调](tutorial/05_multi_day_incremental.md)。
 
 45 列 Tab 分隔 TSV，无 header。列定义见 `examples/shared/feature_config_discover.yaml`。
 
@@ -164,6 +199,8 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 ## 特征配置
 
+对应教程： [03. 特征工程契约](tutorial/03_feature_contract.md)。
+
 `examples/shared/feature_config_discover.yaml` 定义四部分：
 
 - **data_sources**：在线取数来源目录，例如 request、HBase、ES、Flink、Milvus 等
@@ -195,6 +232,8 @@ sources:
 `data_sources` 与 `sources[].data_source` 用于发布在线请求契约。训练导出时 feature config 会被复制到 run 的 `serving/configs/feature_config.yaml`，Rust 服务加载 manifest 后会从这份归档配置提供 `/models/{model}/features` 和 `/models/{model}/versions/{version}/features` 接口。接口只告诉调用方“需要哪些字段、字段从哪个来源准备”，不会在 Rust 推理服务内直接访问 HBase/ES/Flink/Milvus。
 
 ## 特征预处理 Debug
+
+对应教程： [03. 特征工程契约](tutorial/03_feature_contract.md)、[11. Debug 与一致性验证](tutorial/11_debug_and_consistency.md)。
 
 排查特征预处理时，建议按从单样本到批量、从局部到整体的顺序看。核心目标是确认四件事：原始列是否读到、默认值是否符合预期、每个算子输出是否正确、最终送入模型的 tensor 形状和值是否正确。
 
@@ -301,6 +340,8 @@ for name, tensor in tensors.items():
 
 ## 模型配置
 
+对应教程： [06. 模型结构与权重绑定](tutorial/06_model_structure_and_weight_binding.md)。
+
 ### LR 单目标基线配置
 
 `examples/models/lr.yaml`：
@@ -382,6 +423,8 @@ RankMixer 当前要求 `num_heads == num_tokens`，以保持 token mixing 后的
 
 
 ## 训练参数
+
+对应教程： [04. 离线训练流程](tutorial/04_offline_training_flow.md)、[05. 多日训练与增量微调](tutorial/05_multi_day_incremental.md)。
 
 下面这些参数来自 `examples/shared/train_defaults.yaml`，CLI 只负责覆盖，不再在代码里写死。
 
@@ -525,6 +568,8 @@ stay_time_label:
 
 ## 训练技巧
 
+对应教程： [04. 离线训练流程](tutorial/04_offline_training_flow.md)、[07. 训练评估与特征质量](tutorial/07_evaluation_and_feature_quality.md)。
+
 这些策略的具体数值默认来自 `examples/shared/train_defaults.yaml`。是否启用、采用什么阈值，都应从配置读取。
 
 ### 学习率调度
@@ -572,6 +617,8 @@ L = Σ exp(-log_var_i) × L_i + 0.5 × log_var_i
 σ 越低 → 任务学得越好 → 自动分配更高权重。
 
 ## 评估监控
+
+对应教程： [07. 训练评估与特征质量](tutorial/07_evaluation_and_feature_quality.md)。
 
 ### 监控指标与 checkpoint 选择
 
@@ -650,6 +697,8 @@ best metric=val/click_auc=0.7622
 ```
 
 ## 保存与推理导出
+
+对应教程： [08. 产物发布与版本管理](tutorial/08_artifact_publish_and_versioning.md)、[09. Rust 在线推理服务](tutorial/09_rust_inference_service.md)。
 
 训练侧由 `TrainingArtifactManager` 管理权重、checkpoint 和 manifest。它的保存逻辑分成 run 产物和 serving 发布产物两层。
 
@@ -784,6 +833,8 @@ manifest 加载时，所有相对路径都基于 manifest 所在目录解析；�
 
 ## HTTP 压测
 
+对应教程： [10. 性能优化与大文件训练](tutorial/10_performance_and_large_files.md)。
+
 压测 discover 模型时不要只用 bench 默认随机数据。默认随机数据是通用 synthetic schema，只适合验证 HTTP 链路；真实性能压测必须使用 discover TSV + feature config，让 bench 按 `User/Context/Item` 拆分并构造 `/predict/broadcast` 请求。
 
 GDCN+ESMM 和 UniMixer 实测报告见 `docs/http_benchmark_report.md`。
@@ -905,6 +956,8 @@ target/release/server \
 压测时只比较同一平台、同一后端、同一构建参数下的结果。不要把 `Accelerate`、`Metal`、`MKL` 的结果混用。
 
 ## 代码架构
+
+对应教程： [01. 排序系统全链路架构](tutorial/01_project_structure.md)。
 
 ```
 python/src/train/

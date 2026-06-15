@@ -2,7 +2,27 @@
 
 Rust HTTP 服务由 `src/bin/server.rs` 启动，路由定义在 `src/server/routes.rs`。所有接口使用 JSON，请求和响应字段名保持 snake_case。
 
+如果你先看教程，会更容易理解这些接口背后的特征契约和发布约束：
+
+- [09. Rust 在线推理服务](tutorial/09_rust_inference_service.md)
+- [08. 产物发布与版本管理](tutorial/08_artifact_publish_and_versioning.md)
+- [03. 特征工程契约](tutorial/03_feature_contract.md)
+
+## 教程对照
+
+API 文档按接口展开，教程按系统链路展开。对照关系如下：
+
+| API 主题 | 对应教程 |
+|---|---|
+| `/models/{model}/features` | [03. 特征工程契约](tutorial/03_feature_contract.md)、[09. Rust 在线推理服务](tutorial/09_rust_inference_service.md) |
+| `/predict` | [01. 排序系统全链路架构](tutorial/01_project_structure.md)、[09. Rust 在线推理服务](tutorial/09_rust_inference_service.md) |
+| `/predict/broadcast` | [02. 样本表、标签与任务定义](tutorial/02_samples_labels_tasks.md)、[09. Rust 在线推理服务](tutorial/09_rust_inference_service.md) |
+| serving manifest / 版本选择 | [08. 产物发布与版本管理](tutorial/08_artifact_publish_and_versioning.md) |
+| 错误响应 / 兼容加载 | [08. 产物发布与版本管理](tutorial/08_artifact_publish_and_versioning.md)、[11. Debug 与一致性验证](tutorial/11_debug_and_consistency.md) |
+
 ## 启动服务
+
+对应教程： [08. 产物发布与版本管理](tutorial/08_artifact_publish_and_versioning.md)、[09. Rust 在线推理服务](tutorial/09_rust_inference_service.md)。
 
 推荐通过 serving manifest 加载模型：
 
@@ -34,6 +54,8 @@ cargo run --bin server --release -- \
 
 ## 通用约定
 
+对应教程： [01. 排序系统全链路架构](tutorial/01_project_structure.md)、[08. 产物发布与版本管理](tutorial/08_artifact_publish_and_versioning.md)。
+
 Base URL:
 
 ```text
@@ -58,6 +80,8 @@ application/json
 
 ## 接口列表
 
+对应教程： [09. Rust 在线推理服务](tutorial/09_rust_inference_service.md)。
+
 | 端点 | 方法 | 说明 |
 |---|---|---|
 | `/health` | GET | 健康检查，返回服务状态和已加载模型 |
@@ -69,6 +93,8 @@ application/json
 | `/predict/broadcast` | POST | Broadcast 推理，1 个 user/context 与 N 个 item 组合得到 N 个预测 |
 
 ## GET /health
+
+对应教程： [09. Rust 在线推理服务](tutorial/09_rust_inference_service.md)。
 
 返回服务状态和当前 registry 中的模型信息。
 
@@ -100,6 +126,8 @@ curl http://127.0.0.1:8080/health
 ```
 
 ## GET /models
+
+对应教程： [09. Rust 在线推理服务](tutorial/09_rust_inference_service.md)。
 
 查询全部已加载模型。
 
@@ -144,6 +172,8 @@ curl http://127.0.0.1:8080/models
 
 ## GET /models/{model}
 
+对应教程： [09. Rust 在线推理服务](tutorial/09_rust_inference_service.md)。
+
 查询指定模型。
 
 ```bash
@@ -171,6 +201,8 @@ curl http://127.0.0.1:8080/models/model_gdcn_esmm
 模型不存在时返回 `404 REGISTRY_ERROR`。
 
 ## GET /models/{model}/features
+
+对应教程： [03. 特征工程契约](tutorial/03_feature_contract.md)、[09. Rust 在线推理服务](tutorial/09_rust_inference_service.md)。
 
 查询模型默认版本的请求特征契约。服务从该版本 serving manifest 指向的 `feature_config_file` 加载契约，因此返回内容与模型权重发布时归档的特征配置一致。
 
@@ -219,6 +251,8 @@ curl http://127.0.0.1:8080/models/model_gdcn_esmm/features
 
 ## GET /models/{model}/versions/{version}/features
 
+对应教程： [03. 特征工程契约](tutorial/03_feature_contract.md)、[09. Rust 在线推理服务](tutorial/09_rust_inference_service.md)。
+
 查询指定版本的请求特征契约。
 
 ```bash
@@ -228,6 +262,8 @@ curl http://127.0.0.1:8080/models/model_gdcn_esmm/versions/20260526_120000/featu
 响应结构与 `/models/{model}/features` 一致。模型或版本不存在时返回 `404 REGISTRY_ERROR`。
 
 ## POST /predict
+
+对应教程： [01. 排序系统全链路架构](tutorial/01_project_structure.md)、[09. Rust 在线推理服务](tutorial/09_rust_inference_service.md)。
 
 Pointwise 推理。`features` 中每一行都是一个完整样本，服务逐行执行 FeatureDag 后调用模型。
 
@@ -273,6 +309,8 @@ curl -X POST http://127.0.0.1:8080/predict \
 `version` 是实际使用的版本。请求版本不存在且成功回退时，这里会返回 `fallback_version`。
 
 ## POST /predict/broadcast
+
+对应教程： [02. 样本表、标签与任务定义](tutorial/02_samples_labels_tasks.md)、[09. Rust 在线推理服务](tutorial/09_rust_inference_service.md)。
 
 Broadcast 推理。服务会把一个 `user` 特征对象和 `items` 中每个 item 合并为完整样本，输出长度与 `items` 相同。
 
@@ -327,6 +365,8 @@ curl -X POST http://127.0.0.1:8080/predict/broadcast \
 
 ## 错误响应
 
+对应教程： [08. 产物发布与版本管理](tutorial/08_artifact_publish_and_versioning.md)、[11. Debug 与一致性验证](tutorial/11_debug_and_consistency.md)。
+
 服务代码中显式返回的业务错误使用 `ApiError` JSON 格式：
 
 ```json
@@ -360,6 +400,8 @@ Malformed JSON、缺少必填字段等 Axum `Json` extractor 错误由框架默�
 - 如果 fallback 版本也不存在，返回 `404 REGISTRY_ERROR`。
 
 ## 请求特征格式
+
+对应教程： [03. 特征工程契约](tutorial/03_feature_contract.md)、[09. Rust 在线推理服务](tutorial/09_rust_inference_service.md)。
 
 特征字段是 JSON object，key 为 feature config 中的 source 名。value 支持数字、字符串、数组等 JSON 类型，具体解析由 `examples/shared/feature_config_discover.yaml` 中的 source dtype 和 operator DAG 决定。
 

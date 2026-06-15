@@ -38,14 +38,14 @@ Rust HTTP 排序推理服务
 | [01. 排序系统全链路架构](01_project_structure.md) | 建立训练、配置、导出、在线推理的整体心智模型 | `README.md`、`python/src/train`、`src/server`、`examples` | 已添加 |
 | [02. 样本表、标签与任务定义](02_samples_labels_tasks.md) | 说明一行样本如何对应 user-item-context，click/cvr/detail/stock/stay 等任务如何进入 loss | `examples/shared/feature_config_discover.yaml`、`examples/shared/discover_label_policy.yaml`、`examples/models/gdcn_esmm.yaml` | 已添加 |
 | [03. 特征工程契约](03_feature_contract.md) | 讲 sources、operators、embedding、role、DAG、hash 空间、序列 padding 和 Python/Rust 一致性 | `examples/shared/feature_config_discover.yaml`、`python/src/train/core/dag.py`、`src/feats/dag.rs` | 已添加 |
-| 04. 离线训练流程 | 跑通 demo 和生产流式训练，解释 batch、eval、checkpoint、early stopping、EMA | `python/src/train/app/main.py`、`python/src/train/training/trainer.py`、`examples/shared/train_defaults.yaml` | 待添加 |
-| 05. 多日训练与增量微调 | 讲 `--data-glob`、日期闭区间、最后日期验证集、`--init-weights` 微调语义 | `python/src/train/app/cli.py`、`python/src/train/app/data.py` | 待添加 |
-| 06. 模型结构与权重绑定 | 讲 LR baseline、DeepFM/MMoE/ESMM/GDCN+ESMM/UniMixer/TokenMixer-Large/RankMixer、任务塔、safetensors key 与 Candle 路径 | `python/src/train/models`、`src/models`、`python/src/train/app/export.py` | 待添加 |
-| 07. 训练评估与特征质量 | 讲 loss、AUC、回归指标、feature quality、序列 padding 空值率、bucket 利用率 | `python/src/train/training/metrics`、`python/src/train/training/quality.py` | 待添加 |
-| 08. 产物发布与版本管理 | 讲 run manifest、serving manifest、sha256、model version、publish path、回滚策略 | `python/src/train/app/manifest.py`、`src/server/manifest.rs` | 待添加 |
-| 09. Rust 在线推理服务 | 讲 model registry、`/predict`、`/predict/broadcast`、多版本加载、fallback version | `src/server`、`docs/API.md` | 待添加 |
-| 10. 性能优化与大文件训练 | 讲 50GB/日数据、pandas chunk、memory map、fast-no-na、流式 eval、服务压测 | `python/src/train/app/data.py`、`src/bin/bench.rs` | 待添加 |
-| 11. Debug 与一致性验证 | 讲单样本 trace、batch tensor、Python/Rust golden consistency、权重 key 排查 | `python/src/train/debug`、`tests/golden_consistency.rs` | 待添加 |
+| [04. 离线训练流程](04_offline_training_flow.md) | 跑通 demo 和生产流式训练，解释 batch、eval、checkpoint、early stopping、EMA | `python/src/train/app/main.py`、`python/src/train/training/trainer.py`、`examples/shared/train_defaults.yaml` | 已添加 |
+| [05. 多日训练与增量微调](05_multi_day_incremental.md) | 讲 `--data-glob`、日期闭区间、最后日期验证集、`--init-weights` 微调语义 | `python/src/train/app/cli.py`、`python/src/train/training/trainer.py` | 已添加 |
+| [06. 模型结构与权重绑定](06_model_structure_and_weight_binding.md) | 讲 LR baseline、DeepFM/MMoE/ESMM/GDCN+ESMM/UniMixer/TokenMixer-Large/RankMixer、任务塔、safetensors key 与 Candle 路径 | `python/src/train/models`、`src/models`、`python/src/train/app/export.py` | 已添加 |
+| [07. 训练评估与特征质量](07_evaluation_and_feature_quality.md) | 讲 loss、AUC、回归指标、feature quality、序列 padding 空值率、bucket 利用率 | `python/src/train/training/metrics`、`python/src/train/training/quality.py` | 已添加 |
+| [08. 产物发布与版本管理](08_artifact_publish_and_versioning.md) | 讲 run manifest、serving manifest、sha256、model version、publish path、回滚策略 | `python/src/train/app/manifest.py`、`python/src/train/app/artifacts.py`、`src/server/manifest.rs` | 已添加 |
+| [09. Rust 在线推理服务](09_rust_inference_service.md) | 讲 model registry、`/predict`、`/predict/broadcast`、多版本加载、fallback version | `src/server`、`docs/API.md` | 已添加 |
+| [10. 性能优化与大文件训练](10_performance_and_large_files.md) | 讲 50GB/日数据、pandas chunk、memory map、fast-no-na、流式 eval、服务压测 | `python/src/train/app/data.py`、`src/bin/bench.rs` | 已添加 |
+| [11. Debug 与一致性验证](11_debug_and_consistency.md) | 讲单样本 trace、batch tensor、Python/Rust golden consistency、权重 key 排查 | `python/src/train/debug`、`tests/golden_consistency.rs` | 已添加 |
 
 ## 推荐阅读路径
 

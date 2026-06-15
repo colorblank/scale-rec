@@ -1,5 +1,7 @@
 # 02. 样本表、标签与任务定义
 
+[目录](README.md) | [上一章](01_project_structure.md) | [下一章](03_feature_contract.md)
+
 推荐排序模型训练的第一步不是选模型，而是定义一行样本代表什么、哪些字段是特征、哪些字段是监督标签、每个标签对应哪个任务。scale-rec 的 discover 示例采用典型的 pointwise 排序样本：
 
 ```text

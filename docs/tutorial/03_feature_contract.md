@@ -1,5 +1,7 @@
 # 03. 特征工程契约
 
+[目录](README.md) | [上一章](01_project_structure.md) | [下一章](04_offline_training_flow.md)
+
 推荐排序系统最容易出线上离线不一致的地方是特征工程。scale-rec 的设计原则是：特征配置是一份训练和推理共享的契约，Python 训练和 Rust 推理都按同一份 YAML 执行同一条 DAG。
 
 这一章讲清楚五件事：
@@ -118,6 +120,19 @@ operator 定义一个 DAG 节点：
 | `embed` | 如果存在，说明这个输出是模型输入特征 |
 
 训练时 `FeatureDag` 会拓扑排序执行 operators。在线推理时 Rust 侧也会解析同一份 operators，因此 Python/Rust 都支持的算子才适合作为线上特征。
+
+如果你要继续查具体算子语义，建议按这几个入口看：
+
+- [特征算子总览](../feature_operators.md#4-全部-16-个算子)
+- [算子速查表](../feature_operators.md#7-算子速查表)
+- [扩展新算子](../feature_operators.md#8-扩展新算子)
+
+其中最常和本章搭配阅读的是：
+
+- `Bucketing`、`DictMapper`、`FeatureHash`：离散化和低/高基数映射
+- `StringParser`、`Split`、`FlatSplit`、`ListStringParser`：字符串和列表解析
+- `JsonExtractList`、`SequenceOp`：列表抽取和定长序列化
+- `CrossFeature`、`ListOverlap`、`ConcatHash`、`ParsedFeatureHash`：交叉、重叠和融合预处理
 
 ## embeddable feature 如何产生
 
