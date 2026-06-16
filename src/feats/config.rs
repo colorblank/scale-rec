@@ -231,12 +231,13 @@ pub struct EmbedConfig {
     pub truncation: TruncationSide,
 }
 
-/// 推荐排序特征的原始来源：用户、物品或上下文。
+/// 推荐排序特征的原始来源：用户、物品、上下文或标签。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SourceKind {
     User,
     Item,
     Context,
+    Label,
 }
 
 /// 原始输入源定义。`embed` 已弃用，全部 embedding 由算子输出配置。
@@ -319,7 +320,13 @@ pub struct FlowConfig {
 impl FlowConfig {
     /// 从 YAML 字符串解析 FlowConfig。
     pub fn from_yaml(yaml: &str) -> Result<Self, serde_yaml::Error> {
-        serde_yaml::from_str(yaml)
+        let mut config: Self = serde_yaml::from_str(yaml)?;
+        for source in &mut config.sources {
+            if matches!(source.source, Some(SourceKind::Label)) {
+                source.role = Role::Label;
+            }
+        }
+        Ok(config)
     }
 }
 

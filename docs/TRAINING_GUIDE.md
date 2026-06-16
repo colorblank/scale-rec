@@ -206,7 +206,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 - **data_sources**：在线取数来源目录，例如 request、HBase、ES、Flink、Milvus 等
 - **sources**（45 列）：列名、类型、默认值、角色，以及可选的 `data_source`
 - **operators**（70 个）：16 种算子组成的 DAG
-- **role 标记**：`feature`（入模型）、`label`（入 loss）、`discard`（读后丢弃）
+- **role 标记**：`feature`（入模型）、`label`（入 loss，标签列不依赖 `source`）、`discard`（读后丢弃）
 
 其中 `operators` 里已经使用了一部分融合节点，比如 `ParsedFeatureHash` 和 `ConcatHash`。它们把“解析 + hash”这类常见链路合并成单个算子，减少 DAG 深度和中间值开销；如果某个中间结果还要被 `ListOverlap` 或其它下游算子复用，就保留拆分节点，不要强行融合。
 
@@ -219,7 +219,7 @@ sources:
     data_source: user_profile_hbase
     dtype: string
     default_val: ''
-  - name: is_click         # 标签列
+  - name: is_click         # 标签列，只写 role=label
     dtype: int
     default_val: '0'
     role: label

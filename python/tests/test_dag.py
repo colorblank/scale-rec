@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from train.core.config import FlowConfig, ModelConfig
+from train.core.config import FlowConfig, ModelConfig, SourceKind
 from train.core.dag import FeatureDag
 
 FIXTURE_DIR = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
@@ -24,6 +24,27 @@ def test_operator_params_reject_unknown_field():
     }
     with pytest.raises(ValueError, match="unknown field"):
         FlowConfig.from_dict(raw)
+
+
+def test_label_source_is_normalized_to_label_role():
+    raw = {
+        "version": "1.0.0",
+        "sources": [
+            {"name": "user_id", "dtype": "string", "default_val": ""},
+            {
+                "name": "is_click",
+                "source": "Label",
+                "dtype": "int",
+                "default_val": "0",
+            },
+        ],
+        "operators": [],
+    }
+    config = FlowConfig.from_dict(raw)
+
+    assert config.sources[1].source is SourceKind.LABEL
+    assert [s.name for s in config.label_sources] == ["is_click"]
+    assert [s.name for s in config.feature_sources] == ["user_id"]
 
 
 def test_operator_params_reject_missing_required_field():

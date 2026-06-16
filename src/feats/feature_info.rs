@@ -29,6 +29,9 @@ impl FeatureScope {
             Some(SourceKind::User) => Self::User,
             Some(SourceKind::Context) => Self::Context,
             Some(SourceKind::Item) | None => Self::Item,
+            Some(SourceKind::Label) => {
+                unreachable!("label sources do not have a feature scope")
+            }
         }
     }
 

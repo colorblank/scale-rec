@@ -206,6 +206,7 @@ sources:
   dtype: string
   default_val: ''
   data_source: user_profile_hbase
+# labels only use role=label; source is reserved for feature routing
 - name: is_click
   dtype: int
   default_val: '0'

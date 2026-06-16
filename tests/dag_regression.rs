@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use candle_core::{DType, Device, Tensor};
 use candle_nn::{VarBuilder, VarMap};
-use scale_rec::feats::config::{FlowConfig, PoolingStrategy};
+use scale_rec::feats::builder::DagBuilder;
+use scale_rec::feats::config::{FlowConfig, PoolingStrategy, Role, SourceKind};
 use scale_rec::feats::dag::{FeatureDag, FeatureValue};
 use scale_rec::feats::ops::Fv;
 use scale_rec::feats::schema::FeatureDType;
@@ -55,6 +56,29 @@ operators:
         Err(err) => err,
     };
     assert!(err.contains("missing required field 'vocab_size'"));
+}
+
+#[test]
+fn flow_config_normalizes_label_sources_to_label_role() {
+    let yaml = r#"
+version: 1.0.0
+sources:
+  - name: user_id
+    dtype: string
+    default_val: ""
+  - name: is_click
+    source: Label
+    dtype: int
+    default_val: "0"
+operators: []
+"#;
+    let config = FlowConfig::from_yaml(yaml).unwrap();
+    assert!(matches!(config.sources[1].source, Some(SourceKind::Label)));
+    assert_eq!(config.sources[1].role, Role::Label);
+
+    let artifact = DagBuilder::build(config).unwrap();
+    assert!(artifact.sources.contains_key("user_id"));
+    assert!(!artifact.sources.contains_key("is_click"));
 }
 
 #[test]

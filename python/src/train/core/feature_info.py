@@ -23,6 +23,8 @@ class FeatureScope(str, Enum):
             return cls.USER
         if source is SourceKind.CONTEXT:
             return cls.CONTEXT
+        if source is SourceKind.LABEL:
+            raise ValueError("label sources do not have a feature scope")
         return cls.ITEM
 
     @classmethod

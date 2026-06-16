@@ -11,7 +11,7 @@ use tokio::time::{self, MissedTickBehavior};
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
-use scale_rec::feats::config::SourceKind;
+use scale_rec::feats::config::{Role, SourceKind};
 
 #[derive(Parser, Clone)]
 struct Args {
@@ -122,6 +122,8 @@ struct FlowConfigForBench {
 struct SourceForBench {
     name: String,
     source: SourceKind,
+    #[serde(default)]
+    role: Role,
     dtype: String,
     default_val: Option<String>,
 }
@@ -137,7 +139,12 @@ fn load_input_data(args: &Args) -> Option<InputData> {
             std::fs::read_to_string(feature_config_path).expect("failed to read feature config");
         let flow: FlowConfigForBench =
             serde_yaml::from_str(&feature_yaml).expect("failed to parse feature config");
-        let rows = load_broadcast_samples(path, &flow.sources, args.separator, args.no_header);
+        let feature_sources: Vec<SourceForBench> = flow
+            .sources
+            .into_iter()
+            .filter(|source| source.role == Role::Feature)
+            .collect();
+        let rows = load_broadcast_samples(path, &feature_sources, args.separator, args.no_header);
         if rows.is_empty() {
             warn!("input file contains no rows");
             return None;

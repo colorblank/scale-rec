@@ -12,7 +12,7 @@
 
 ## 一行样本的结构
 
-`examples/shared/feature_config_discover.yaml` 的 `sources` 定义了样本列。每个 source 可以带 `source` 字段，用来标记它属于 Item、User 还是 Context：
+`examples/shared/feature_config_discover.yaml` 的 `sources` 定义了样本列。对真正参与推理的特征列，可以用 `source` 字段标记它属于 Item、User 还是 Context；训练标签列只写 `role: label`，不需要也不应该写 `source`：
 
 ```yaml
 - name: item_id
@@ -66,7 +66,7 @@ feature config 里通过 `role` 区分字段用途：
 | `label` | 监督标签列，被训练 loss/metric 使用，不作为模型输入 |
 | `discard` | 读取后丢弃，用于兼容数据格式或保留非建模字段 |
 
-一个字段是不是训练标签，首先由 `role: label` 标出来；这个标签是否真的参与 loss，还要看 model config 里的 `tasks`。
+一个字段是不是训练标签，首先由 `role: label` 标出来；标签列不应依赖 `source`。这个标签是否真的参与 loss，还要看 model config 里的 `tasks`。
 
 ## 当前 discover 标签
 
@@ -187,7 +187,7 @@ batch["labels"]   -> MultiTaskLoss 按 tasks[].label 读取
 
 1. 一行样本是否代表一个 user-item-context 打分样本。
 2. Item/User/Context 字段是否能满足在线推理请求构造。
-3. label 列是否全部在 feature config 中标为 `role: label`。
+3. label 列是否全部在 feature config 中标为 `role: label`，且没有被 operators 当作 feature 输入。
 4. model config 的 `tasks[].label` 是否都能在训练文件中找到。
 5. 无 header 文件的列顺序是否严格等于 feature config 的 source 顺序。
 6. 训练用 label 没有被 operators 当作 feature 输入。

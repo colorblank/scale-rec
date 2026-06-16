@@ -26,6 +26,7 @@ class SourceKind(str, Enum):
     USER = "User"
     ITEM = "Item"
     CONTEXT = "Context"
+    LABEL = "Label"
 
 
 @dataclass
@@ -563,6 +564,9 @@ class FlowConfig:
                     column_index=s.get("column_index"),
                 )
             )
+        for source in sources:
+            if source.source is SourceKind.LABEL:
+                source.role = Role.LABEL
         data_source_names = {source.name for source in data_sources}
         for source in sources:
             if source.data_source and source.data_source not in data_source_names:
