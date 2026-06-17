@@ -47,6 +47,7 @@ def write_model_manifest(
     tasks: list[str],
     label_col_map: dict[str, str],
     metrics: dict[str, float],
+    task_specs: list[dict[str, Any]] | None = None,
     repo_root: str | Path | None = None,
     run_version: str | None = None,
     published_version: str | None = None,
@@ -86,6 +87,7 @@ def write_model_manifest(
         "model_config_file": _relative_to_manifest(model_config_path, manifest_dir),
         "model_config_sha256": sha256_file(model_config_path),
         "tasks": tasks,
+        "task_specs": task_specs or [],
         "label_col_map": label_col_map,
         "metrics": metrics,
     }

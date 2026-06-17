@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 use super::engine::InferenceEngine;
-use super::manifest::{find_manifest, ModelManifest, WeightBinding};
+use super::manifest::{find_manifest, ModelManifest, TaskSpecManifest, WeightBinding};
 use crate::feats::builder::DagBuilder;
 use crate::feats::config::{DType, DataSourceDef, FlowConfig, SourceKind};
 use crate::feats::executor::DagExecutor;
@@ -36,6 +36,14 @@ pub struct ModelVersionInfo {
     pub model_type: String,
     pub manifest_path: Option<String>,
     pub is_default: bool,
+    pub schema_hash: Option<String>,
+    pub feature_config_sha256: Option<String>,
+    pub model_config_sha256: Option<String>,
+    pub tasks: Vec<String>,
+    pub task_specs: Vec<TaskSpecManifest>,
+    pub label_col_map: HashMap<String, String>,
+    pub metrics: HashMap<String, f64>,
+    pub weight_binding: WeightBinding,
 }
 
 /// 模型别名映射。
@@ -72,6 +80,13 @@ pub enum RoutingPolicy {
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelServingInfo {
     pub name: String,
+    pub loaded_at: Option<String>,
+    pub schema_hash: Option<String>,
+    pub tasks: Vec<String>,
+    pub task_specs: Vec<TaskSpecManifest>,
+    pub label_col_map: HashMap<String, String>,
+    pub metrics: HashMap<String, f64>,
+    pub weight_binding: Option<WeightBinding>,
     pub default_version: Option<String>,
     pub aliases: Vec<ModelAliasInfo>,
     pub routing: Option<RoutingPolicy>,
@@ -391,6 +406,26 @@ impl ModelRegistry {
             model_type: model_type.clone(),
             manifest_path: manifest_path.as_ref().map(|p| p.display().to_string()),
             is_default: false,
+            schema_hash: manifest.as_ref().map(|m| m.feature_config_sha256.clone()),
+            feature_config_sha256: manifest.as_ref().map(|m| m.feature_config_sha256.clone()),
+            model_config_sha256: manifest.as_ref().map(|m| m.model_config_sha256.clone()),
+            tasks: manifest
+                .as_ref()
+                .map(|m| m.tasks.clone())
+                .unwrap_or_default(),
+            task_specs: manifest
+                .as_ref()
+                .map(|m| m.task_specs.clone())
+                .unwrap_or_default(),
+            label_col_map: manifest
+                .as_ref()
+                .map(|m| m.label_col_map.clone())
+                .unwrap_or_default(),
+            metrics: manifest
+                .as_ref()
+                .map(|m| m.metrics.clone())
+                .unwrap_or_default(),
+            weight_binding: weight_binding.clone(),
         };
 
         let mut models = self
@@ -700,8 +735,28 @@ impl ModelRegistry {
             })
             .collect();
         aliases.sort_by(|a, b| a.alias.cmp(&b.alias));
+        let default_info = entry
+            .default_version
+            .as_ref()
+            .and_then(|version| entry.versions.get(version))
+            .map(|loaded| &loaded.info);
         ModelServingInfo {
             name: name.to_string(),
+            loaded_at: default_info.map(|info| info.loaded_at.clone()),
+            schema_hash: default_info.and_then(|info| info.schema_hash.clone()),
+            tasks: default_info
+                .map(|info| info.tasks.clone())
+                .unwrap_or_default(),
+            task_specs: default_info
+                .map(|info| info.task_specs.clone())
+                .unwrap_or_default(),
+            label_col_map: default_info
+                .map(|info| info.label_col_map.clone())
+                .unwrap_or_default(),
+            metrics: default_info
+                .map(|info| info.metrics.clone())
+                .unwrap_or_default(),
+            weight_binding: default_info.map(|info| info.weight_binding.clone()),
             default_version: entry.default_version.clone(),
             aliases,
             routing: entry.routing.clone(),
@@ -1122,6 +1177,7 @@ mod tests {
             model_config_file: "model.yaml".into(),
             model_config_sha256: hex(sha256_bytes(b"model")),
             tasks: vec![],
+            task_specs: vec![],
             label_col_map: HashMap::new(),
             metrics: HashMap::new(),
             best_version: None,

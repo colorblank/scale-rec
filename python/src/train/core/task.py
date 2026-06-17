@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Task contract shared by model output, labels, loss, and metrics."""
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
@@ -16,6 +16,38 @@ class TaskSpec:
     pos_weight: float | None = None
     metrics: tuple[str, ...] = field(default_factory=tuple)
     output_kind: str = "binary_logit"
+
+
+@dataclass(frozen=True)
+class TaskContract:
+    specs: tuple[TaskSpec, ...] = field(default_factory=tuple)
+
+    @classmethod
+    def from_specs(cls, specs: list[TaskSpec] | tuple[TaskSpec, ...] | None) -> TaskContract:
+        return cls(tuple(specs or ()))
+
+    @classmethod
+    def from_raw(cls, raw: list[dict[str, Any]] | None) -> TaskContract:
+        return cls.from_specs(parse_task_specs(raw))
+
+    @property
+    def task_names(self) -> list[str]:
+        return [spec.name for spec in self.specs]
+
+    @property
+    def label_col_map(self) -> dict[str, str]:
+        return {spec.name: spec.label for spec in self.specs}
+
+    @property
+    def output_kinds(self) -> dict[str, str]:
+        return {spec.name: spec.output_kind for spec in self.specs}
+
+    @property
+    def task_metrics(self) -> dict[str, list[str]]:
+        return {spec.name: list(spec.metrics) for spec in self.specs}
+
+    def to_manifest(self) -> list[dict[str, Any]]:
+        return [asdict(spec) | {"metrics": list(spec.metrics)} for spec in self.specs]
 
 
 def parse_task_specs(raw: list[dict[str, Any]] | None) -> list[TaskSpec]:
@@ -78,15 +110,21 @@ def legacy_task_specs(
 
 
 def task_names(specs: list[TaskSpec]) -> list[str]:
-    return [spec.name for spec in specs]
+    return TaskContract.from_specs(specs).task_names
 
 
 def label_map(specs: list[TaskSpec]) -> dict[str, str]:
-    return {spec.name: spec.label for spec in specs}
+    return TaskContract.from_specs(specs).label_col_map
 
 
 def output_kinds(specs: list[TaskSpec]) -> dict[str, str]:
-    return {spec.name: spec.output_kind for spec in specs}
+    return TaskContract.from_specs(specs).output_kinds
+
+
+def task_specs_to_manifest(
+    specs: list[TaskSpec] | tuple[TaskSpec, ...] | None,
+) -> list[dict[str, Any]]:
+    return TaskContract.from_specs(specs).to_manifest()
 
 
 def _default_output_kind(loss: str) -> str:

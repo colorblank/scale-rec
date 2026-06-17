@@ -64,6 +64,38 @@ fn default_allow_extra_tensors() -> bool {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+/// 训练任务契约：任务名、标签、损失、权重、指标和输出语义。
+pub struct TaskSpecManifest {
+    pub name: String,
+    pub label: String,
+    #[serde(default = "default_task_loss")]
+    pub loss: String,
+    #[serde(default = "default_task_weight")]
+    pub weight: f64,
+    #[serde(default)]
+    pub mask: Option<String>,
+    #[serde(default)]
+    pub pos_weight: Option<f64>,
+    #[serde(default)]
+    pub metrics: Vec<String>,
+    #[serde(default = "default_task_output_kind")]
+    pub output_kind: String,
+}
+
+fn default_task_loss() -> String {
+    "bce".into()
+}
+
+fn default_task_weight() -> f64 {
+    1.0
+}
+
+fn default_task_output_kind() -> String {
+    "binary_logit".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 /// 模型发布 Manifest：关联特征配置、模型配置和权重文件的元数据。
 pub struct ModelManifest {
     pub schema_version: u32,
@@ -85,6 +117,8 @@ pub struct ModelManifest {
     pub model_config_sha256: String,
     #[serde(default)]
     pub tasks: Vec<String>,
+    #[serde(default)]
+    pub task_specs: Vec<TaskSpecManifest>,
     #[serde(default)]
     pub label_col_map: HashMap<String, String>,
     #[serde(default)]
@@ -210,6 +244,7 @@ mod tests {
             model_config_file: "model.yaml".into(),
             model_config_sha256: "def".into(),
             tasks: vec![],
+            task_specs: vec![],
             label_col_map: HashMap::new(),
             metrics: HashMap::new(),
             best_version: None,

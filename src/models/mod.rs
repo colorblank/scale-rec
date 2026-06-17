@@ -285,32 +285,17 @@ fn build_esmm(
     _options: &ModelBuildOptions,
 ) -> Result<Box<dyn Model>> {
     let shared_bottom_dims: Vec<usize> = yaml_usize_seq(params, "shared_bottom_dims");
-    let click_hidden_dims: Vec<usize> = yaml_usize_seq(params, "click_hidden_dims");
-    let cvr_hidden_dims: Vec<usize> = yaml_usize_seq(params, "cvr_hidden_dims");
-    let detail_hidden_dims: Vec<usize> = yaml_usize_seq(params, "detail_hidden_dims");
-    let stock_hidden_dims: Vec<usize> = yaml_usize_seq(params, "stock_hidden_dims");
-    let stay_hidden_dims: Vec<usize> = yaml_usize_seq(params, "stay_hidden_dims");
-    if let Some(task_config) = params.get("task_config") {
-        let task_config = serde_yaml::from_value(task_config.clone())
-            .map_err(|e| candle_core::Error::Msg(format!("parse esmm task_config: {}", e)))?;
-        Ok(Box::new(esmm::ESMM::with_task_config(
-            vb,
-            features,
-            &shared_bottom_dims,
-            &task_config,
-        )?))
-    } else {
-        Ok(Box::new(esmm::ESMM::new(
-            vb,
-            features,
-            &shared_bottom_dims,
-            &click_hidden_dims,
-            &cvr_hidden_dims,
-            &detail_hidden_dims,
-            &stock_hidden_dims,
-            &stay_hidden_dims,
-        )?))
-    }
+    let task_config = params
+        .get("task_config")
+        .ok_or_else(|| candle_core::Error::Msg("ESMM requires task_config".into()))?;
+    let task_config = serde_yaml::from_value(task_config.clone())
+        .map_err(|e| candle_core::Error::Msg(format!("parse esmm task_config: {}", e)))?;
+    Ok(Box::new(esmm::ESMM::with_task_config(
+        vb,
+        features,
+        &shared_bottom_dims,
+        &task_config,
+    )?))
 }
 
 fn build_gdcn_esmm(
@@ -323,36 +308,19 @@ fn build_gdcn_esmm(
     let cross_layers = yaml_usize(params, "cross_layers", 3);
     let deep_hidden_dims: Vec<usize> = yaml_usize_seq(params, "deep_hidden_dims");
     let shared_bottom_dims: Vec<usize> = yaml_usize_seq(params, "shared_bottom_dims");
-    let click_hidden_dims: Vec<usize> = yaml_usize_seq(params, "click_hidden_dims");
-    let cvr_hidden_dims: Vec<usize> = yaml_usize_seq(params, "cvr_hidden_dims");
-    let detail_hidden_dims: Vec<usize> = yaml_usize_seq(params, "detail_hidden_dims");
-    let stock_hidden_dims: Vec<usize> = yaml_usize_seq(params, "stock_hidden_dims");
-    let stay_hidden_dims: Vec<usize> = yaml_usize_seq(params, "stay_hidden_dims");
-    if let Some(task_config) = params.get("task_config") {
-        let task_config = serde_yaml::from_value(task_config.clone())
-            .map_err(|e| candle_core::Error::Msg(format!("parse gdcn_esmm task_config: {}", e)))?;
-        Ok(Box::new(gdcn_esmm::GDCNESMM::with_task_config(
-            vb,
-            features,
-            cross_layers,
-            &deep_hidden_dims,
-            &shared_bottom_dims,
-            &task_config,
-        )?))
-    } else {
-        Ok(Box::new(gdcn_esmm::GDCNESMM::new(
-            vb,
-            features,
-            cross_layers,
-            &deep_hidden_dims,
-            &shared_bottom_dims,
-            &click_hidden_dims,
-            &cvr_hidden_dims,
-            &detail_hidden_dims,
-            &stock_hidden_dims,
-            &stay_hidden_dims,
-        )?))
-    }
+    let task_config = params
+        .get("task_config")
+        .ok_or_else(|| candle_core::Error::Msg("GDCNESMM requires task_config".into()))?;
+    let task_config = serde_yaml::from_value(task_config.clone())
+        .map_err(|e| candle_core::Error::Msg(format!("parse gdcn_esmm task_config: {}", e)))?;
+    Ok(Box::new(gdcn_esmm::GDCNESMM::with_task_config(
+        vb,
+        features,
+        cross_layers,
+        &deep_hidden_dims,
+        &shared_bottom_dims,
+        &task_config,
+    )?))
 }
 
 fn build_unimixer(
@@ -490,14 +458,9 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
                 "label_col_map",
                 "metrics",
                 "shared_bottom_dims",
-                "click_hidden_dims",
-                "cvr_hidden_dims",
-                "detail_hidden_dims",
-                "stock_hidden_dims",
-                "stay_hidden_dims",
                 "task_config",
             ],
-            &[],
+            &["task_config"],
         ),
         "gdcn_esmm" => (
             &[
@@ -507,14 +470,9 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
                 "cross_layers",
                 "deep_hidden_dims",
                 "shared_bottom_dims",
-                "click_hidden_dims",
-                "cvr_hidden_dims",
-                "detail_hidden_dims",
-                "stock_hidden_dims",
-                "stay_hidden_dims",
                 "task_config",
             ],
-            &[],
+            &["task_config"],
         ),
         "unimixer" => (
             &[

@@ -500,6 +500,7 @@ class Trainer:
                 label_col_map=self.label_map,
                 metrics=self.feature_quality_metrics(),
                 repo_root=self.repo_root,
+                task_specs=self.task_specs,
                 published_version=published_version,
                 best_score=self._best_score,
                 published_source=published_source,

@@ -7,9 +7,7 @@ from typing import Any
 
 import torch.nn as nn
 
-from ..core.task import label_map as task_label_map
-from ..core.task import output_kinds as task_output_kinds
-from ..core.task import parse_task_specs, task_names
+from ..core.task import TaskContract, parse_task_specs
 from ..layers.embedding import FeatureTuple
 from ..layers.towers import Activation, MultiTaskConfig, TaskRelation, TowerConfig
 from .deepfm import DeepFM
@@ -112,18 +110,23 @@ def _output_kinds(
     return kinds
 
 
+def _contract_spec(specs: list[Any], relation_names: list[str] | None = None) -> OutputSpec:
+    contract = TaskContract.from_specs(specs)
+    return {
+        "tasks": list(contract.specs),
+        "task_names": contract.task_names,
+        "label_col_map": contract.label_col_map,
+        "output_kinds": _output_kinds(contract.task_names, relation_names, contract.output_kinds),
+    }
+
+
 # ── register built-in models ──
 
 
 def _spec_pred(model: nn.Module | None = None, params: dict[str, Any] | None = None) -> OutputSpec:
     specs = parse_task_specs((params or {}).get("tasks"))
     if specs:
-        return {
-            "tasks": specs,
-            "task_names": task_names(specs),
-            "label_col_map": task_label_map(specs),
-            "output_kinds": task_output_kinds(specs),
-        }
+        return _contract_spec(specs)
     return {
         "task_names": ["pred"],
         "label_col_map": {"pred": "is_click"},
@@ -170,12 +173,7 @@ def _build_mmoe(
 def _spec_mmoe(model: nn.Module | None = None, params: dict[str, Any] | None = None) -> OutputSpec:
     specs = parse_task_specs((params or {}).get("tasks"))
     if specs:
-        return {
-            "tasks": specs,
-            "task_names": task_names(specs),
-            "label_col_map": task_label_map(specs),
-            "output_kinds": task_output_kinds(specs),
-        }
+        return _contract_spec(specs)
     names = model.task_names if model else []
     return {
         "task_names": names,
@@ -187,7 +185,9 @@ def _spec_mmoe(model: nn.Module | None = None, params: dict[str, Any] | None = N
 def _build_esmm(
     features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
 ) -> ESMM:
-    task_config = _parse_task_config(params.get("task_config")) or _default_esmm_task_config(params)
+    task_config = _parse_task_config(params.get("task_config"))
+    if task_config is None:
+        raise ValueError("ESMM requires task_config")
     return ESMM(
         features,
         params.get("shared_bottom_dims", []),
@@ -205,7 +205,9 @@ def _build_esmm(
 def _build_gdcn_esmm(
     features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
 ) -> GDCNESMM:
-    task_config = _parse_task_config(params.get("task_config")) or _default_esmm_task_config(params)
+    task_config = _parse_task_config(params.get("task_config"))
+    if task_config is None:
+        raise ValueError("GDCNESMM requires task_config")
     return GDCNESMM(
         features,
         cross_layers=params.get("cross_layers", 3),
@@ -228,13 +230,7 @@ def _spec_esmm(model: nn.Module | None = None, params: dict[str, Any] | None = N
     relation_names = [relation.target for relation in task_config.relations]
     specs = parse_task_specs(params.get("tasks"))
     if specs:
-        names = task_names(specs)
-        return {
-            "tasks": specs,
-            "task_names": names,
-            "label_col_map": task_label_map(specs),
-            "output_kinds": _output_kinds(names, relation_names, task_output_kinds(specs)),
-        }
+        return _contract_spec(specs, relation_names)
     if model is not None:
         names = list(getattr(model, "task_names", []))
         base_kinds = {
@@ -270,13 +266,7 @@ def _spec_unimixer(
     if task_config is not None:
         relation_names = [relation.target for relation in task_config.relations]
     if specs:
-        names = task_names(specs)
-        return {
-            "tasks": specs,
-            "task_names": names,
-            "label_col_map": task_label_map(specs),
-            "output_kinds": _output_kinds(names, relation_names, task_output_kinds(specs)),
-        }
+        return _contract_spec(specs, relation_names)
     if model is not None:
         tt = getattr(model, "task_towers", None) or model.unimixer.task_towers
         names = list(tt._tower_names) if hasattr(tt, "_tower_names") else []

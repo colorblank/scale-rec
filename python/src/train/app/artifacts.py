@@ -12,6 +12,7 @@ import torch
 import yaml
 
 from ..core.config import ArtifactConfig
+from ..core.task import TaskSpec, task_specs_to_manifest
 from .export import export_to_safetensors
 from .manifest import write_model_manifest
 
@@ -207,6 +208,7 @@ class TrainingArtifactManager:
         label_col_map: dict[str, str],
         metrics: dict[str, float],
         repo_root: str | Path | None,
+        task_specs: list[TaskSpec] | None = None,
         published_version: str | None = None,
         best_score: float | None = None,
         published_source: str | Path | None = None,
@@ -225,6 +227,7 @@ class TrainingArtifactManager:
         self._write_published_manifest(
             model_type=model_type,
             tasks=tasks,
+            task_specs=task_specs,
             label_col_map=label_col_map,
             metrics=metrics,
             repo_root=repo_root,
@@ -281,6 +284,7 @@ class TrainingArtifactManager:
         *,
         model_type: str,
         tasks: list[str],
+        task_specs: list[TaskSpec] | None,
         label_col_map: dict[str, str],
         metrics: dict[str, float],
         repo_root: str | Path | None,
@@ -299,6 +303,7 @@ class TrainingArtifactManager:
             feature_config_path=self.paths.feature_config_path,
             model_config_path=self.paths.model_config_path,
             tasks=tasks,
+            task_specs=task_specs_to_manifest(task_specs),
             label_col_map=label_col_map,
             metrics=manifest_metrics,
             repo_root=repo_root,

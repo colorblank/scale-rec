@@ -625,6 +625,7 @@ def _run_single(args: argparse.Namespace) -> None:
         label_col_map=built.spec["label_col_map"],
         metrics={"best_score": best_score},
         repo_root=args.repo_root,
+        task_specs=built.spec.get("tasks"),
         published_version=artifacts.best.version if artifacts.best is not None else None,
         best_score=best_score,
         published_source=artifacts.paths.best_alias_path if artifacts.best is not None else None,
@@ -897,6 +898,7 @@ def _run_all(args: argparse.Namespace) -> None:
             label_col_map=label_col_map,
             metrics={"best_score": best_score},
             repo_root=args.repo_root,
+            task_specs=spec.get("tasks"),
             published_version=artifacts.best.version if artifacts.best is not None else None,
             best_score=best_score,
             published_source=artifacts.paths.best_alias_path
