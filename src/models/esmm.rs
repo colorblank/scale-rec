@@ -1,5 +1,5 @@
 //! Configurable ESMM: shared bottom + task towers + probability relations.
-use super::Model;
+use super::{Model, ModelOutput, OutputKind};
 use crate::layers::embedding::{FeatureEmbeddings, FeatureSpec};
 use crate::layers::mlp::Mlp;
 use crate::layers::towers::{
@@ -24,30 +24,35 @@ pub fn default_task_config(
                 hidden_dims: click_hidden_dims.to_vec(),
                 output_dim: 1,
                 activation: Activation::Relu,
+                output_kind: OutputKind::BinaryLogit,
             },
             TowerConfig {
                 name: "cvr".into(),
                 hidden_dims: cvr_hidden_dims.to_vec(),
                 output_dim: 1,
                 activation: Activation::Relu,
+                output_kind: OutputKind::BinaryLogit,
             },
             TowerConfig {
                 name: "detail".into(),
                 hidden_dims: detail_hidden_dims.to_vec(),
                 output_dim: 1,
                 activation: Activation::Relu,
+                output_kind: OutputKind::BinaryLogit,
             },
             TowerConfig {
                 name: "stock".into(),
                 hidden_dims: stock_hidden_dims.to_vec(),
                 output_dim: 1,
                 activation: Activation::Relu,
+                output_kind: OutputKind::BinaryLogit,
             },
             TowerConfig {
                 name: "stay".into(),
                 hidden_dims: stay_hidden_dims.to_vec(),
                 output_dim: 1,
                 activation: Activation::Relu,
+                output_kind: OutputKind::BinaryLogit,
             },
         ],
         relations: vec![
@@ -148,18 +153,19 @@ impl ESMM {
 }
 
 impl Model for ESMM {
-    fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<HashMap<String, Tensor>> {
+    fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<ModelOutput> {
         let concat = self.embeddings.forward(x_inputs)?;
         let shared_output = match &self.shared_bottom {
             Some(b) => b.forward(&concat)?,
             None => concat,
         };
-        let mut outputs = HashMap::new();
+        let mut outputs = ModelOutput::new();
         for (name, tower) in &self.towers {
-            outputs.insert(name.clone(), tower.forward(&shared_output)?);
+            outputs.insert_binary_logit(name.clone(), tower.forward(&shared_output)?);
         }
         for relation in &self.relations {
-            outputs.insert(relation.target.clone(), apply_relation(relation, &outputs)?);
+            outputs
+                .insert_probability(relation.target.clone(), apply_relation(relation, &outputs)?);
         }
         Ok(outputs)
     }

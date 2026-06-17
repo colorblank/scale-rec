@@ -1,5 +1,5 @@
 //! DeepFM：FM 一阶 + FM 二阶 + Deep MLP 的联合模型。
-use super::Model;
+use super::{Model, ModelOutput};
 use crate::layers::embedding::{FeatureEmbeddings, FeatureSpec};
 use crate::layers::fm::fm_interaction;
 use crate::layers::mlp::Mlp;
@@ -57,7 +57,7 @@ impl DeepFM {
 }
 
 impl Model for DeepFM {
-    fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<HashMap<String, Tensor>> {
+    fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<ModelOutput> {
         let first_order = self.fm_first_embeddings.forward(x_inputs)?.sum_keepdim(1)?;
         let fm_stacked = Tensor::cat(&self.fm_second_embeddings.forward_stacked(x_inputs)?, 1)?;
         let second_order = fm_interaction(&fm_stacked)?;
@@ -67,8 +67,8 @@ impl Model for DeepFM {
             .broadcast_add(&second_order)?
             .broadcast_add(&deep_out)?
             .broadcast_add(&self.global_bias)?;
-        let mut outputs = HashMap::new();
-        outputs.insert("pred".to_string(), logits);
+        let mut outputs = ModelOutput::new();
+        outputs.insert_binary_logit("pred", logits);
         Ok(outputs)
     }
 }

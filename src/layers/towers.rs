@@ -2,7 +2,9 @@
 use candle_core::{Result, Tensor};
 use candle_nn::{linear, Linear, Module, VarBuilder};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::HashSet;
+
+use crate::models::{ModelOutput, OutputKind};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -30,6 +32,12 @@ pub struct TowerConfig {
     pub output_dim: usize,
     #[serde(default)]
     pub activation: Activation,
+    #[serde(default = "default_output_kind")]
+    pub output_kind: OutputKind,
+}
+
+fn default_output_kind() -> OutputKind {
+    OutputKind::BinaryLogit
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,6 +74,7 @@ pub struct TaskTower {
     name: String,
     layers: Vec<Linear>,
     activation: Activation,
+    output_kind: OutputKind,
 }
 
 impl TaskTower {
@@ -87,6 +96,7 @@ impl TaskTower {
             name: config.name.clone(),
             layers,
             activation: config.activation.clone(),
+            output_kind: config.output_kind,
         })
     }
 
@@ -122,6 +132,11 @@ impl TaskTower {
     pub fn name(&self) -> &str {
         &self.name
     }
+
+    /// 返回该塔输出的语义类型。
+    pub fn output_kind(&self) -> OutputKind {
+        self.output_kind
+    }
 }
 
 impl Module for TaskTower {
@@ -136,6 +151,7 @@ impl Module for TaskTower {
 pub struct MultiTaskTower {
     towers: Vec<TaskTower>,
     relations: Vec<TaskRelation>,
+    relation_targets: HashSet<String>,
 }
 
 impl MultiTaskTower {
@@ -149,6 +165,11 @@ impl MultiTaskTower {
         Ok(Self {
             towers,
             relations: config.relations.clone(),
+            relation_targets: config
+                .relations
+                .iter()
+                .map(|relation| relation.target.clone())
+                .collect(),
         })
     }
 
@@ -166,17 +187,26 @@ impl MultiTaskTower {
         self.towers.len()
     }
 
+    /// 判断输出是否为关系推导出的概率。
+    pub fn is_relation_output(&self, name: &str) -> bool {
+        self.relation_targets.contains(name)
+    }
+
     /// 前向: hidden → act → ... → output logits。
     /// 前向：各塔独立输出 → 关系推导（sigmoid 后运算）。
     /// 返回 `{task_name: logits}` 字典。
-    pub fn forward(&self, shared_output: &Tensor) -> Result<HashMap<String, Tensor>> {
-        let mut outputs: HashMap<String, Tensor> = HashMap::new();
+    pub fn forward(&self, shared_output: &Tensor) -> Result<ModelOutput> {
+        let mut outputs = ModelOutput::new();
         for tower in &self.towers {
-            outputs.insert(tower.name().to_string(), tower.forward(shared_output)?);
+            outputs.insert(
+                tower.name().to_string(),
+                tower.forward(shared_output)?,
+                tower.output_kind(),
+            );
         }
         for rel in &self.relations {
             let derived = apply_relation(rel, &outputs)?;
-            outputs.insert(rel.target.clone(), derived);
+            outputs.insert_probability(rel.target.clone(), derived);
         }
         Ok(outputs)
     }
@@ -194,7 +224,7 @@ impl MultiTaskTower {
 ///
 /// 从 `outputs` 中取出 `sources` 任务的 logits，经 sigmoid 转换后按 `op` 运算，
 /// 返回推导目标的概率值。
-pub fn apply_relation(rel: &TaskRelation, outputs: &HashMap<String, Tensor>) -> Result<Tensor> {
+pub fn apply_relation(rel: &TaskRelation, outputs: &ModelOutput) -> Result<Tensor> {
     if rel.sources.is_empty() {
         return Err(candle_core::Error::Msg(format!(
             "relation '{}' has no sources",
@@ -202,10 +232,17 @@ pub fn apply_relation(rel: &TaskRelation, outputs: &HashMap<String, Tensor>) -> 
         )));
     }
     let get_prob = |name: &str| -> Result<Tensor> {
-        let logit = outputs
+        let output = outputs
             .get(name)
             .ok_or_else(|| candle_core::Error::Msg(format!("task '{}' not found", name)))?;
-        candle_nn::ops::sigmoid(logit)
+        match output.kind {
+            OutputKind::BinaryLogit => candle_nn::ops::sigmoid(&output.tensor),
+            OutputKind::Probability => Ok(output.tensor.clone()),
+            OutputKind::Regression | OutputKind::Score => Err(candle_core::Error::Msg(format!(
+                "relation '{}' source '{}' must be binary_logit or probability, got {:?}",
+                rel.target, name, output.kind
+            ))),
+        }
     };
     match rel.op {
         RelationOp::Multiply => {

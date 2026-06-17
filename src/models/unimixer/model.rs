@@ -4,7 +4,7 @@ use super::siamese_norm::{SiameseNorm, SiameseNormOutput};
 use super::tokenizer::FeatureTokenizer;
 use super::unimixer_block::{BlockOutput, UniMixerBlock};
 use crate::layers::towers::{MultiTaskConfig, MultiTaskTower};
-use crate::models::Model;
+use crate::models::{Model, ModelOutput};
 use candle_core::{Result, Tensor};
 use candle_nn::VarBuilder;
 use std::collections::HashMap;
@@ -111,7 +111,7 @@ impl UniMixerModel {
         &self,
         x_inputs: &HashMap<String, Tensor>,
         temperature: f64,
-    ) -> Result<HashMap<String, Tensor>> {
+    ) -> Result<ModelOutput> {
         if temperature <= 0.0 {
             candle_core::bail!("temperature must be > 0");
         }
@@ -169,7 +169,7 @@ impl UniMixerModel {
 }
 
 impl Model for UniMixerModel {
-    fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<HashMap<String, Tensor>> {
+    fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<ModelOutput> {
         self.forward_with_temperature(x_inputs, self.temperature)
     }
 

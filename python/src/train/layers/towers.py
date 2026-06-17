@@ -8,6 +8,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from train.core.model_output import ModelOutput
+
 
 class Activation(Enum):
     RELU = auto()
@@ -45,6 +47,7 @@ class TowerConfig:
     hidden_dims: list[int] = field(default_factory=list)
     output_dim: int = 1
     activation: Activation = Activation.RELU
+    output_kind: str = "binary_logit"
 
 
 class TaskTower(nn.Module):
@@ -54,6 +57,7 @@ class TaskTower(nn.Module):
         """Build tower from TowerConfig with hidden.{i} and output.{n} naming."""
         super().__init__()
         self.name = config.name
+        self.output_kind = config.output_kind
         self._act = config.activation
         self.hidden = nn.ModuleDict()
         in_dim = input_dim
@@ -94,22 +98,44 @@ class MultiTaskTower(nn.Module):
             setattr(self, tc.name, TaskTower(tc, input_dim))
         self._tower_names = [tc.name for tc in config.towers]
         self._relations = config.relations
+        self._relation_names = [rel.target for rel in config.relations]
 
-    def forward(self, shared: torch.Tensor) -> dict[str, torch.Tensor]:
+    def forward(self, shared: torch.Tensor) -> ModelOutput:
         """Run all towers, then apply task relations (sigmoid before op)."""
-        outputs = {n: getattr(self, n)(shared) for n in self._tower_names}
+        outputs = ModelOutput()
+        for name in self._tower_names:
+            tower = getattr(self, name)
+            outputs.insert(name, tower(shared), tower.output_kind)
         for rel in self._relations:
-            probs = {s: torch.sigmoid(outputs[s]) for s in rel.sources}
+            probs = {s: _relation_probability(rel, outputs, s) for s in rel.sources}
             left = probs[rel.sources[0]]
             right = probs[rel.sources[1]]
             if rel.op == "multiply":
-                outputs[rel.target] = left * right
+                outputs.insert_probability(rel.target, left * right)
             elif rel.op == "add":
-                outputs[rel.target] = left + right
+                outputs.insert_probability(rel.target, left + right)
             elif rel.op == "subtract":
-                outputs[rel.target] = left - right
+                outputs.insert_probability(rel.target, left - right)
             elif rel.op == "divide":
-                outputs[rel.target] = left / (right + 1e-8)
+                outputs.insert_probability(rel.target, left / (right + 1e-8))
             else:
                 raise ValueError(f"unsupported task relation op: {rel.op}")
         return outputs
+
+    @property
+    def relation_names(self) -> list[str]:
+        return list(self._relation_names)
+
+
+def _relation_probability(rel: TaskRelation, outputs: ModelOutput, source: str) -> torch.Tensor:
+    output = outputs.get(source)
+    if output is None:
+        raise ValueError(f"Relation '{rel.target}' source '{source}' is missing")
+    if output.kind == "binary_logit":
+        return torch.sigmoid(output.tensor)
+    if output.kind == "probability":
+        return output.tensor
+    raise ValueError(
+        f"Relation '{rel.target}' source '{source}' must be binary_logit or probability, "
+        f"got {output.kind}"
+    )

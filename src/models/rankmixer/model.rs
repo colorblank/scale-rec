@@ -3,7 +3,7 @@
 use super::block::RankMixerBlock;
 use crate::layers::towers::{MultiTaskConfig, MultiTaskTower};
 use crate::models::unimixer::tokenizer::FeatureTokenizer;
-use crate::models::Model;
+use crate::models::{Model, ModelOutput};
 use candle_core::{Result, Tensor};
 use candle_nn::VarBuilder;
 use std::collections::HashMap;
@@ -62,7 +62,7 @@ impl RankMixerModel {
 }
 
 impl Model for RankMixerModel {
-    fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<HashMap<String, Tensor>> {
+    fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<ModelOutput> {
         let mut x = self.tokenizer.forward(x_inputs)?;
         for block in &self.blocks {
             x = block.forward(&x)?;

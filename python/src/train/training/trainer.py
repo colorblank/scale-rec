@@ -225,6 +225,7 @@ class Trainer:
         fast_no_na: bool = False,
         memory_map: bool = False,
         task_specs: list[TaskSpec] | None = None,
+        output_kinds: dict[str, str] | None = None,
         artifact_manager: TrainingArtifactManager | None = None,
         repo_root: str | Path | None = None,
     ) -> None:
@@ -280,6 +281,7 @@ class Trainer:
             mode=config.loss_weighting,
             task_weights=config.task_weights,
             task_specs=self.task_specs,
+            output_kinds=output_kinds,
         )
         self.lr_scheduler: LRScheduler | None = None
         self.optimizer: torch.optim.Optimizer | None = None

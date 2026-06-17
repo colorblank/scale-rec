@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 
 from ..core.config import PoolingMode
+from ..core.model_output import ModelOutput
 from ..layers.embedding import FeatureEmbeddings, FeatureTensorMap, FeatureTuple
 from ..layers.fm import fm_interaction
 from ..layers.mlp import Mlp
@@ -32,10 +33,10 @@ class DeepFM(nn.Module):
         self.deep_mlp = Mlp(self.deep_total_dim, deep_hidden_dims, 1, Activation.RELU)
         self.global_bias = nn.Parameter(torch.zeros(1))
 
-    def forward(self, x_inputs: FeatureTensorMap) -> dict[str, torch.Tensor]:
+    def forward(self, x_inputs: FeatureTensorMap) -> ModelOutput:
         """Forward: FM first + FM second + Deep MLP + global_bias -> {"pred": logits}."""
         first = self.fm_first(x_inputs).sum(dim=1, keepdim=True)
         stacked = torch.cat(self.fm_second.forward_stacked(x_inputs), dim=1)
         second = fm_interaction(stacked)
         deep_out = self.deep_mlp(self.deep(x_inputs))
-        return {"pred": first + second + deep_out + self.global_bias}
+        return ModelOutput.binary_logits({"pred": first + second + deep_out + self.global_bias})

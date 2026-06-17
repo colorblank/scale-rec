@@ -11,6 +11,7 @@ use crate::feats::executor::DagExecutor;
 use crate::feats::ops::Fv;
 use crate::layers::embedding::FeatureSpec;
 use crate::models::Model;
+use crate::models::OutputKind;
 
 /// 推理各阶段耗时指标（微秒）。
 #[derive(Debug, Clone, Default)]
@@ -367,24 +368,33 @@ impl InferenceEngine {
         let forward_us = start_forward.elapsed().as_micros() as u64;
 
         let start_response = Instant::now();
-        let mut out_keys: Vec<&String> = outputs.keys().collect();
+        let mut out_keys: Vec<&String> = outputs.iter().map(|(key, _)| key).collect();
         out_keys.sort();
         let mut result: Vec<PredictionRow> = vec![HashMap::new(); n];
         for key in &out_keys {
-            let vals: Vec<f32> = outputs
-                .get(*key)
-                .ok_or_else(|| InferenceError::model(format!("output '{}' missing", key)))?
+            let output = outputs
+                .get(key)
+                .ok_or_else(|| InferenceError::model(format!("output '{}' missing", key)))?;
+            let vals: Vec<f32> = output
+                .tensor
                 .flatten_all()
                 .map_err(|e| InferenceError::model(format!("flatten output '{}': {}", key, e)))?
                 .to_vec1::<f32>()
                 .map_err(|e| InferenceError::model(format!("copy output '{}': {}", key, e)))?;
             for (i, v) in vals.iter().enumerate() {
-                result[i].insert(key.to_string(), *v);
+                result[i].insert(key.to_string(), serving_value(output.kind, *v));
             }
         }
         let response_us = start_response.elapsed().as_micros() as u64;
 
         Ok((result, tensor_us, forward_us, response_us))
+    }
+}
+
+fn serving_value(kind: OutputKind, value: f32) -> f32 {
+    match kind {
+        OutputKind::BinaryLogit => 1.0 / (1.0 + (-value).exp()),
+        OutputKind::Probability | OutputKind::Regression | OutputKind::Score => value,
     }
 }
 
@@ -554,6 +564,15 @@ fn json_to_feature_typed(val: &serde_json::Value, dtype: &DType) -> Result<Featu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn serving_value_converts_logits_and_keeps_probabilities() {
+        let prob = serving_value(OutputKind::BinaryLogit, 0.0);
+        assert!((prob - 0.5).abs() < 1e-6);
+
+        let relation_prob = serving_value(OutputKind::Probability, 0.25);
+        assert!((relation_prob - 0.25).abs() < 1e-6);
+    }
 
     #[test]
     fn json_int_rejects_fractional_number() {

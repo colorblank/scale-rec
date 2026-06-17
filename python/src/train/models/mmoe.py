@@ -11,6 +11,7 @@ import torch.nn.functional as F
 if TYPE_CHECKING:
     from ..core.config import PoolingMode
 
+from ..core.model_output import ModelOutput
 from ..layers.embedding import FeatureEmbeddings, FeatureTensorMap, FeatureTuple
 from ..layers.mlp import Mlp
 from ..layers.towers import Activation
@@ -66,14 +67,14 @@ class MMoE(nn.Module):
             setattr(self, f"task_{t}_tower", tower)
             self._towers.append(tower)
 
-    def forward(self, x_inputs: FeatureTensorMap) -> dict[str, torch.Tensor]:
+    def forward(self, x_inputs: FeatureTensorMap) -> ModelOutput:
         """Forward: embed -> shared -> experts -> gate softmax -> weighted sum -> task towers."""
         concat = self.embeddings(x_inputs)
         shared = self.shared_bottom(concat) if hasattr(self, "shared_bottom") else concat
         experts = torch.cat([e(shared).unsqueeze(1) for e in self._experts], dim=1)
-        outputs = {}
+        outputs = ModelOutput()
         for t in range(len(self.task_names)):
             g = F.softmax(self._gates[t](shared), dim=1)
             gated = (experts * g.unsqueeze(2)).sum(dim=1)
-            outputs[self.task_names[t]] = self._towers[t](gated)
+            outputs.insert_binary_logit(self.task_names[t], self._towers[t](gated))
         return outputs

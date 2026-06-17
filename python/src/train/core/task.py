@@ -15,6 +15,7 @@ class TaskSpec:
     mask: str | None = None
     pos_weight: float | None = None
     metrics: tuple[str, ...] = field(default_factory=tuple)
+    output_kind: str = "binary_logit"
 
 
 def parse_task_specs(raw: list[dict[str, Any]] | None) -> list[TaskSpec]:
@@ -28,8 +29,11 @@ def parse_task_specs(raw: list[dict[str, Any]] | None) -> list[TaskSpec]:
             raise ValueError(f"Duplicate task spec: {name}")
         seen.add(name)
         loss = str(item.get("loss", "bce"))
-        if loss not in {"bce", "weighted_bce_stay"}:
+        if loss not in {"bce", "weighted_bce_stay", "mse", "mae", "huber"}:
             raise ValueError(f"Unsupported loss for task '{name}': {loss}")
+        output_kind = str(item.get("output_kind", item.get("output", _default_output_kind(loss))))
+        if output_kind not in {"binary_logit", "probability", "regression", "score"}:
+            raise ValueError(f"Unsupported output_kind for task '{name}': {output_kind}")
         metrics = item.get("metrics", ())
         if isinstance(metrics, str):
             metrics = tuple(x.strip() for x in metrics.split(",") if x.strip())
@@ -42,6 +46,7 @@ def parse_task_specs(raw: list[dict[str, Any]] | None) -> list[TaskSpec]:
                 mask=item.get("mask"),
                 pos_weight=None if item.get("pos_weight") is None else float(item["pos_weight"]),
                 metrics=tuple(metrics),
+                output_kind=output_kind,
             )
         )
     return specs
@@ -66,6 +71,7 @@ def legacy_task_specs(
                 loss="weighted_bce_stay" if name == "stay" else "bce",
                 weight=float(weights.get(name, 1.0)),
                 metrics=metrics,
+                output_kind="binary_logit",
             )
         )
     return specs
@@ -77,3 +83,13 @@ def task_names(specs: list[TaskSpec]) -> list[str]:
 
 def label_map(specs: list[TaskSpec]) -> dict[str, str]:
     return {spec.name: spec.label for spec in specs}
+
+
+def output_kinds(specs: list[TaskSpec]) -> dict[str, str]:
+    return {spec.name: spec.output_kind for spec in specs}
+
+
+def _default_output_kind(loss: str) -> str:
+    if loss in {"mse", "mae", "huber"}:
+        return "regression"
+    return "binary_logit"

@@ -1,5 +1,5 @@
 //! GDCN + ESMM: gated cross network shared representation with ESMM task towers.
-use super::Model;
+use super::{Model, ModelOutput};
 use crate::layers::embedding::{FeatureEmbeddings, FeatureSpec};
 use crate::layers::gdcn::GatedCrossNetwork;
 use crate::layers::mlp::Mlp;
@@ -116,7 +116,7 @@ impl GDCNESMM {
 }
 
 impl Model for GDCNESMM {
-    fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<HashMap<String, Tensor>> {
+    fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<ModelOutput> {
         let dense = self.embeddings.forward(x_inputs)?;
         let cross_out = self.cross.forward(&dense)?;
         let mut shared = match &self.deep {
@@ -127,12 +127,13 @@ impl Model for GDCNESMM {
             shared = shared_bottom.forward(&shared)?;
         }
 
-        let mut outputs = HashMap::new();
+        let mut outputs = ModelOutput::new();
         for (name, tower) in &self.towers {
-            outputs.insert(name.clone(), tower.forward(&shared)?);
+            outputs.insert_binary_logit(name.clone(), tower.forward(&shared)?);
         }
         for relation in &self.relations {
-            outputs.insert(relation.target.clone(), apply_relation(relation, &outputs)?);
+            outputs
+                .insert_probability(relation.target.clone(), apply_relation(relation, &outputs)?);
         }
         Ok(outputs)
     }

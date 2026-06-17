@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 import torch
 
+from ...core.model_output import ensure_model_output
 from ...core.preprocessor import TrainingPreprocessor
 from ..loss.multi_task import MultiTaskLoss as MultiTaskLoss
 from ..loss.multi_task import _pick_labels, _to_device
@@ -82,7 +83,9 @@ def compute_aucs(
     with torch.no_grad():
         for batch in batches:
             rows = [{k: v for k, v in r.items() if v is not None} for r in batch["features"]]
-            outputs = model(_to_device(preprocessor.preprocess_batch(rows), device))
+            outputs = ensure_model_output(
+                model(_to_device(preprocessor.preprocess_batch(rows), device))
+            )
             for task in task_names:
                 if task not in outputs:
                     continue
@@ -95,7 +98,7 @@ def compute_aucs(
                 mask = ~np.isnan(arr)
                 if not mask.any():
                     continue
-                logits_buf[task].append(outputs[task].cpu().numpy().flatten()[mask])
+                logits_buf[task].append(outputs.tensor(task).cpu().numpy().flatten()[mask])
                 labels_buf[task].append(arr[mask])
 
     if was_training:

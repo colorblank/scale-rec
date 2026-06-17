@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import torch
 import torch.nn as nn
 
 if TYPE_CHECKING:
     from ..core.config import PoolingMode
 
+from ..core.model_output import ModelOutput
 from ..layers.embedding import FeatureEmbeddings, FeatureTensorMap, FeatureTuple
 from ..layers.mlp import Mlp
 from ..layers.towers import Activation
@@ -28,6 +28,6 @@ class LogisticRegression(nn.Module):
         self.embeddings = FeatureEmbeddings(features, pooling_map, total_dim=total_dim)
         self.mlp = Mlp(self.embeddings.total_dim, [], 1, Activation.NONE)
 
-    def forward(self, x_inputs: FeatureTensorMap) -> dict[str, torch.Tensor]:
+    def forward(self, x_inputs: FeatureTensorMap) -> ModelOutput:
         """Forward: embed -> concat -> linear -> {"pred": logits}."""
-        return {"pred": self.mlp(self.embeddings(x_inputs))}
+        return ModelOutput.binary_logits({"pred": self.mlp(self.embeddings(x_inputs))})

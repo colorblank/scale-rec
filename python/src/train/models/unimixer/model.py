@@ -2,9 +2,9 @@ from __future__ import annotations
 
 """UniMixer：Full model。"""
 
-import torch
 import torch.nn as nn
 
+from ...core.model_output import ModelOutput
 from ...layers.embedding import FeatureTensorMap
 from ...layers.towers import MultiTaskConfig, MultiTaskTower
 from .block import UniMixerBlock
@@ -72,9 +72,7 @@ class UniMixerModel(nn.Module):
         self.task_towers = MultiTaskTower(task_config, self.embed_dim)
         self.final_norm = SiameseNorm(self.embed_dim) if use_siamese else None
 
-    def forward(
-        self, x_inputs: FeatureTensorMap, temperature: float | None = None
-    ) -> dict[str, torch.Tensor]:
+    def forward(self, x_inputs: FeatureTensorMap, temperature: float | None = None) -> ModelOutput:
         """Forward: tokenize -> M blocks (standard or siamese path) -> task towers."""
         t = temperature if temperature is not None else self.temperature
         if t <= 0:

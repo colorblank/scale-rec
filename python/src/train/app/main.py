@@ -24,6 +24,7 @@ from safetensors.torch import load_file
 from ..core.config import FlowConfig
 from ..core.dag import FeatureDag
 from ..core.feature_info import FeatureInfo
+from ..core.model_output import ensure_model_output
 from ..core.preprocessor import TrainingPreprocessor
 from ..training.trainer import (
     Trainer,
@@ -174,6 +175,7 @@ def _train_epoch_single(
     df: pd.DataFrame,
     batch_size: int,
     label_col_map: dict[str, str] | None = None,
+    output_kinds: dict[str, str] | None = None,
     prefetch_batches: int = 0,
     artifacts: TrainingArtifactManager | None = None,
     checkpoint_state: PeriodicCheckpointState | None = None,
@@ -188,6 +190,8 @@ def _train_epoch_single(
 ) -> tuple[float, int]:
     if label_col_map is None:
         label_col_map = {}
+    if output_kinds is None:
+        output_kinds = {}
     if checkpoint_state is None:
         checkpoint_state = PeriodicCheckpointState()
     model.train()
@@ -207,15 +211,17 @@ def _train_epoch_single(
         actual_bs = int(batch.get("_batch_size", 0))
         feature_tensors = batch["features"]
         batch_labels = batch["labels"]
-        outputs = model(feature_tensors)
+        outputs = ensure_model_output(model(feature_tensors), output_kinds)
         loss = None
-        for task_name, logits in outputs.items():
+        for task_name, output in outputs.items():
+            if output.kind == "probability":
+                continue
             label_col = label_col_map.get(task_name, task_name)
             if label_col in batch_labels:
                 labels = torch.tensor(batch_labels[label_col], dtype=torch.float32).view(
                     actual_bs, 1
                 )
-                task_loss = F.binary_cross_entropy_with_logits(logits, labels)
+                task_loss = _single_task_loss(output.tensor, labels, output.kind)
                 loss = task_loss if loss is None else loss + task_loss
         if loss is None:
             continue
@@ -256,10 +262,13 @@ def _evaluate_single(
     df: pd.DataFrame,
     batch_size: int,
     label_col_map: dict[str, str] | None = None,
+    output_kinds: dict[str, str] | None = None,
     prefetch_batches: int = 0,
 ) -> dict[str, dict[str, float]]:
     if label_col_map is None:
         label_col_map = {}
+    if output_kinds is None:
+        output_kinds = {}
     model.eval()
     all_outputs: dict[str, list[np.ndarray]] = {}
     all_labels: dict[str, list[np.ndarray]] = {}
@@ -273,12 +282,12 @@ def _evaluate_single(
             actual_bs = int(batch.get("_batch_size", 0))
             feature_tensors = batch["features"]
             batch_labels = batch["labels"]
-            outputs = model(feature_tensors)
-            for t, logits in outputs.items():
+            outputs = ensure_model_output(model(feature_tensors), output_kinds)
+            for t, output in outputs.items():
                 label_col = label_col_map.get(t, t)
                 if label_col not in batch_labels:
                     continue
-                all_outputs.setdefault(t, []).append(logits.cpu().numpy().flatten())
+                all_outputs.setdefault(t, []).append(output.tensor.cpu().numpy().flatten())
                 labels = np.asarray(batch_labels[label_col], dtype=np.float32)
                 if len(labels) < actual_bs:
                     labels = np.pad(labels, (0, actual_bs - len(labels)), constant_values=0)
@@ -291,16 +300,29 @@ def _evaluate_single(
             if all_labels.get(t)
             else np.zeros_like(logits_arr)
         )
-        probs = 1.0 / (1.0 + np.exp(-logits_arr))
-        # Keep the metrics minimal here; single mode is mostly for smoke training.
-        results[t] = {
-            "logloss": float(
-                torch.nn.functional.binary_cross_entropy(
-                    torch.tensor(probs, dtype=torch.float32),
-                    torch.tensor(labels_arr, dtype=torch.float32),
-                ).item()
-            ),
-        }
+        kind = output_kinds.get(t, "binary_logit")
+        if kind == "binary_logit":
+            probs = 1.0 / (1.0 + np.exp(-logits_arr))
+            results[t] = {
+                "logloss": float(
+                    torch.nn.functional.binary_cross_entropy(
+                        torch.tensor(probs, dtype=torch.float32),
+                        torch.tensor(labels_arr, dtype=torch.float32),
+                    ).item()
+                ),
+            }
+        elif kind == "probability":
+            results[t] = {
+                "logloss": float(
+                    torch.nn.functional.binary_cross_entropy(
+                        torch.tensor(logits_arr, dtype=torch.float32),
+                        torch.tensor(labels_arr, dtype=torch.float32),
+                    ).item()
+                ),
+            }
+        else:
+            err = logits_arr - labels_arr
+            results[t] = {"mse": float(np.mean(err * err)), "mae": float(np.mean(np.abs(err)))}
     if not results:
         raise ValueError(
             "No evaluation labels were available. Check the dataset and label_col_map. "
@@ -327,13 +349,23 @@ def _predict_all(
         )
         for batch in batches:
             feature_tensors = batch["features"]
-            outputs = model(feature_tensors)
+            outputs = ensure_model_output(model(feature_tensors))
             if all_keys is None:
-                all_keys = list(outputs.keys())
+                all_keys = outputs.names()
                 all_logits = {k: [] for k in all_keys}
             for k in all_keys:
-                all_logits[k].append(outputs[k].cpu().numpy().flatten())
+                all_logits[k].append(outputs.tensor(k).cpu().numpy().flatten())
     return {k: np.concatenate(v) for k, v in all_logits.items()}
+
+
+def _single_task_loss(
+    prediction: torch.Tensor, labels: torch.Tensor, output_kind: str
+) -> torch.Tensor:
+    if output_kind == "binary_logit":
+        return F.binary_cross_entropy_with_logits(prediction, labels)
+    if output_kind in {"regression", "score"}:
+        return F.mse_loss(prediction, labels)
+    raise ValueError(f"single-mode training does not support output kind: {output_kind}")
 
 
 def _maybe_save_periodic_checkpoint(
@@ -511,6 +543,7 @@ def _run_single(args: argparse.Namespace) -> None:
             train_df,
             args.batch_size,
             built.spec.get("label_col_map", {}),
+            built.spec.get("output_kinds", {}),
             cfg.prefetch_batches,
             artifacts,
             periodic_state,
@@ -529,6 +562,7 @@ def _run_single(args: argparse.Namespace) -> None:
             test_df,
             args.batch_size,
             built.spec.get("label_col_map", {}),
+            built.spec.get("output_kinds", {}),
             cfg.prefetch_batches,
         )
         score = min((v["logloss"] for v in metrics.values()), default=best_score)
@@ -669,6 +703,7 @@ def _run_discover(args: argparse.Namespace) -> None:
         fast_no_na=args.fast_no_na,
         memory_map=args.memory_map,
         task_specs=built.spec.get("tasks"),
+        output_kinds=built.spec.get("output_kinds", {}),
         artifact_manager=artifacts,
         repo_root=args.repo_root,
     )
@@ -788,6 +823,7 @@ def _run_all(args: argparse.Namespace) -> None:
                 train_df,
                 args.batch_size,
                 label_col_map,
+                spec.get("output_kinds", {}),
                 cfg.prefetch_batches,
                 artifacts,
                 periodic_state,
@@ -806,6 +842,7 @@ def _run_all(args: argparse.Namespace) -> None:
                 test_df,
                 args.batch_size,
                 label_col_map,
+                spec.get("output_kinds", {}),
                 cfg.prefetch_batches,
             )
             score = min(

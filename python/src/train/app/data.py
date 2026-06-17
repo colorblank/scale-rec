@@ -157,11 +157,6 @@ def build_item_index(
     return index
 
 
-# ═══════════════════════════════════════════════════════════════════
-# 训练文件流式读取
-# ═══════════════════════════════════════════════════════════════════
-
-
 def estimate_rows(path: str, has_header: bool = True) -> int:
     file_path = Path(path)
     if not file_path.exists():

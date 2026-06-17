@@ -8,6 +8,7 @@ from typing import Any
 import torch.nn as nn
 
 from ..core.task import label_map as task_label_map
+from ..core.task import output_kinds as task_output_kinds
 from ..core.task import parse_task_specs, task_names
 from ..layers.embedding import FeatureTuple
 from ..layers.towers import Activation, MultiTaskConfig, TaskRelation, TowerConfig
@@ -75,6 +76,7 @@ def _parse_task_config(raw: dict[str, Any] | None) -> MultiTaskConfig | None:
             t.get("hidden_dims", []),
             t.get("output_dim", 1),
             Activation.from_str(t.get("activation", "relu")),
+            t.get("output_kind", t.get("output", "binary_logit")),
         )
         for t in raw.get("towers", [])
     ]
@@ -98,6 +100,18 @@ def _parse_mmoe_task_configs(raw: dict[str, Any]) -> list[TaskConfigEntry]:
     ]
 
 
+def _output_kinds(
+    task_names: list[str],
+    relation_names: list[str] | None = None,
+    base_kinds: dict[str, str] | None = None,
+) -> dict[str, str]:
+    kinds = dict.fromkeys(task_names, "binary_logit")
+    kinds.update(base_kinds or {})
+    for name in relation_names or []:
+        kinds[name] = "probability"
+    return kinds
+
+
 # ── register built-in models ──
 
 
@@ -108,8 +122,13 @@ def _spec_pred(model: nn.Module | None = None, params: dict[str, Any] | None = N
             "tasks": specs,
             "task_names": task_names(specs),
             "label_col_map": task_label_map(specs),
+            "output_kinds": task_output_kinds(specs),
         }
-    return {"task_names": ["pred"], "label_col_map": {"pred": "is_click"}}
+    return {
+        "task_names": ["pred"],
+        "label_col_map": {"pred": "is_click"},
+        "output_kinds": {"pred": "binary_logit"},
+    }
 
 
 def _build_lr(
@@ -155,9 +174,14 @@ def _spec_mmoe(model: nn.Module | None = None, params: dict[str, Any] | None = N
             "tasks": specs,
             "task_names": task_names(specs),
             "label_col_map": task_label_map(specs),
+            "output_kinds": task_output_kinds(specs),
         }
     names = model.task_names if model else []
-    return {"task_names": names, "label_col_map": {n: n for n in names}}
+    return {
+        "task_names": names,
+        "label_col_map": {n: n for n in names},
+        "output_kinds": _output_kinds(names),
+    }
 
 
 def _build_esmm(
@@ -200,20 +224,26 @@ def _build_gdcn_esmm(
 
 def _spec_esmm(model: nn.Module | None = None, params: dict[str, Any] | None = None) -> OutputSpec:
     params = params or {}
+    task_config = _parse_task_config(params.get("task_config")) or _default_esmm_task_config(params)
+    relation_names = [relation.target for relation in task_config.relations]
     specs = parse_task_specs(params.get("tasks"))
     if specs:
+        names = task_names(specs)
         return {
             "tasks": specs,
-            "task_names": task_names(specs),
+            "task_names": names,
             "label_col_map": task_label_map(specs),
+            "output_kinds": _output_kinds(names, relation_names, task_output_kinds(specs)),
         }
     if model is not None:
         names = list(getattr(model, "task_names", []))
+        base_kinds = {
+            tower.name: tower.output_kind
+            for tower in getattr(model, "task_config", task_config).towers
+        }
     else:
-        task_config = _parse_task_config(params.get("task_config")) or _default_esmm_task_config(
-            params
-        )
         names = [tower.name for tower in task_config.towers]
+        base_kinds = {tower.name: tower.output_kind for tower in task_config.towers}
     label_col_map = params.get(
         "label_col_map",
         {
@@ -224,26 +254,49 @@ def _spec_esmm(model: nn.Module | None = None, params: dict[str, Any] | None = N
             "stay": "stay_time_label",
         },
     )
-    return {"task_names": names, "label_col_map": label_col_map}
+    return {
+        "task_names": names,
+        "label_col_map": label_col_map,
+        "output_kinds": _output_kinds(names, relation_names, base_kinds),
+    }
 
 
 def _spec_unimixer(
     model: nn.Module | None = None, params: dict[str, Any] | None = None
 ) -> OutputSpec:
     specs = parse_task_specs((params or {}).get("tasks"))
+    relation_names: list[str] = []
+    task_config = _parse_task_config((params or {}).get("task_config"))
+    if task_config is not None:
+        relation_names = [relation.target for relation in task_config.relations]
     if specs:
+        names = task_names(specs)
         return {
             "tasks": specs,
-            "task_names": task_names(specs),
+            "task_names": names,
             "label_col_map": task_label_map(specs),
+            "output_kinds": _output_kinds(names, relation_names, task_output_kinds(specs)),
         }
     if model is not None:
         tt = getattr(model, "task_towers", None) or model.unimixer.task_towers
         names = list(tt._tower_names) if hasattr(tt, "_tower_names") else []
+        relation_names = tt.relation_names if hasattr(tt, "relation_names") else relation_names
+        base_kinds = {
+            name: getattr(getattr(tt, name), "output_kind", "binary_logit") for name in names
+        }
     else:
         names = []
+        base_kinds = (
+            {tower.name: tower.output_kind for tower in task_config.towers}
+            if task_config is not None
+            else {}
+        )
     label_col_map = (params or {}).get("label_col_map", {n: n for n in names} if names else {})
-    return {"task_names": names, "label_col_map": label_col_map}
+    return {
+        "task_names": names,
+        "label_col_map": label_col_map,
+        "output_kinds": _output_kinds(names, relation_names, base_kinds),
+    }
 
 
 def _build_unimixer(

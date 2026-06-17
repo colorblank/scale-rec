@@ -10,6 +10,7 @@ import numpy as np
 import torch
 
 from ...core.config import EvalConfig
+from ...core.model_output import ensure_model_output
 from ...core.preprocessor import TrainingPreprocessor
 from ..loss.multi_task import _pick_labels, _to_device
 from ..metrics import compute_metrics, get_available_metrics
@@ -56,7 +57,9 @@ class Evaluator:
                     rows = features
                 else:
                     rows = [{k: v for k, v in r.items() if v is not None} for r in features]
-                outputs = model(_to_device(preprocessor.preprocess_batch(rows), device))
+                outputs = ensure_model_output(
+                    model(_to_device(preprocessor.preprocess_batch(rows), device))
+                )
 
                 # 提取分组特征
                 group_ids: np.ndarray | None = None
@@ -80,7 +83,7 @@ class Evaluator:
                     mask = ~np.isnan(arr)
                     if not mask.any():
                         continue
-                    logits_buf[t].append(outputs[t].cpu().numpy().flatten()[mask])
+                    logits_buf[t].append(outputs.tensor(t).cpu().numpy().flatten()[mask])
                     labels_buf[t].append(arr[mask])
                     if has_gauc and group_ids is not None:
                         groups_buf[t].append(group_ids[mask])

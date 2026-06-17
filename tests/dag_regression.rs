@@ -190,7 +190,7 @@ fn rust_embedding_accepts_sequence_pooling_inputs() {
         Tensor::from_slice(&[1u32, 2, 3, 4, 5, 6], (2, 3), &device).unwrap(),
     );
     let outputs = model.forward(&inputs).unwrap();
-    assert_eq!(outputs["pred"].shape().dims(), &[2, 1]);
+    assert_eq!(outputs.tensor("pred").unwrap().shape().dims(), &[2, 1]);
 }
 
 #[test]

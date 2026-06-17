@@ -1,8 +1,8 @@
 """RankMixer: FeatureTokenizer + dense RankMixer blocks + MultiTaskTower."""
 
-import torch
 import torch.nn as nn
 
+from ...core.model_output import ModelOutput
 from ...layers.embedding import FeatureTensorMap
 from ...layers.towers import MultiTaskConfig, MultiTaskTower
 from ..unimixer.tokenizer import FeatureTokenizer
@@ -42,7 +42,7 @@ class RankMixerModel(nn.Module):
         )
         self.task_towers = MultiTaskTower(task_config, token_dim)
 
-    def forward(self, x_inputs: FeatureTensorMap) -> dict[str, torch.Tensor]:
+    def forward(self, x_inputs: FeatureTensorMap) -> ModelOutput:
         x = self.tokenizer(x_inputs)
         for block in self.blocks:
             x = block(x)

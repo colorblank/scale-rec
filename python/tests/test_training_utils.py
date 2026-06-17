@@ -165,6 +165,79 @@ def test_multi_task_loss_rejects_unknown_model_outputs():
         loss_fn({"click": torch.zeros(1, 1), "extra": torch.zeros(1, 1)}, {"click": [1]})
 
 
+def test_multi_task_loss_allows_untrained_probability_relation_outputs():
+    loss_fn = MultiTaskLoss(
+        ["click"],
+        {"click": "click"},
+        output_kinds={"click": "binary_logit", "ctcvr": "probability"},
+    )
+
+    loss = loss_fn({"click": torch.zeros(1, 1), "ctcvr": torch.ones(1, 1)}, {"click": [1]})
+
+    assert loss is not None
+    assert torch.isclose(loss, torch.tensor(0.6931472))
+
+
+def test_multi_task_loss_rejects_probability_relation_as_training_task():
+    specs = parse_task_specs(
+        [
+            {
+                "name": "ctcvr",
+                "label": "is_cvr",
+                "loss": "bce",
+                "output_kind": "probability",
+            }
+        ]
+    )
+    loss_fn = MultiTaskLoss(["ctcvr"], {"ctcvr": "is_cvr"}, task_specs=specs)
+
+    with pytest.raises(ValueError, match="requires binary_logit"):
+        loss_fn({"ctcvr": torch.ones(1, 1)}, {"is_cvr": [1]})
+
+
+def test_multi_task_loss_supports_regression_outputs():
+    specs = parse_task_specs(
+        [
+            {
+                "name": "watch_time",
+                "label": "watch_time",
+                "loss": "mse",
+                "metrics": ["mae", "mse"],
+            }
+        ]
+    )
+    loss_fn = MultiTaskLoss(
+        ["watch_time"],
+        {"watch_time": "watch_time"},
+        task_specs=specs,
+    )
+
+    loss = loss_fn(
+        {"watch_time": torch.tensor([[1.0], [3.0]])},
+        {"watch_time": [2.0, 1.0]},
+    )
+
+    assert loss is not None
+    assert torch.isclose(loss, torch.tensor(2.5))
+
+
+def test_multi_task_loss_rejects_bce_on_regression_output():
+    specs = parse_task_specs(
+        [
+            {
+                "name": "click",
+                "label": "click",
+                "loss": "bce",
+                "output_kind": "regression",
+            }
+        ]
+    )
+    loss_fn = MultiTaskLoss(["click"], {"click": "click"}, task_specs=specs)
+
+    with pytest.raises(ValueError, match="requires binary_logit"):
+        loss_fn({"click": torch.zeros(1, 1)}, {"click": [1]})
+
+
 def test_multi_task_loss_rejects_missing_model_outputs():
     loss_fn = MultiTaskLoss(["click", "cvr"], {"click": "click", "cvr": "cvr"})
 

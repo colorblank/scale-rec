@@ -1,5 +1,5 @@
 //! MMoE：多门控专家混合，每个任务独立门控组合专家输出。
-use super::Model;
+use super::{Model, ModelOutput};
 use crate::layers::embedding::{FeatureEmbeddings, FeatureSpec};
 use crate::layers::mlp::Mlp;
 use crate::layers::towers::Activation;
@@ -92,7 +92,7 @@ impl MMoE {
 }
 
 impl Model for MMoE {
-    fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<HashMap<String, Tensor>> {
+    fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<ModelOutput> {
         let concat = self.embeddings.forward(x_inputs)?;
         let shared_output = match &self.shared_bottom {
             Some(b) => b.forward(&concat)?,
@@ -103,12 +103,12 @@ impl Model for MMoE {
             expert_outs.push(expert.forward(&shared_output)?.unsqueeze(1)?);
         }
         let experts = Tensor::cat(&expert_outs, 1)?;
-        let mut outputs = HashMap::new();
+        let mut outputs = ModelOutput::new();
         for (t, gate_linear) in self.gate_linears.iter().enumerate() {
             let gate_weights = candle_nn::ops::softmax(&gate_linear.forward(&shared_output)?, 1)?;
             let gated_output = experts.broadcast_mul(&gate_weights.unsqueeze(2)?)?.sum(1)?;
             let logits = self.task_towers[t].forward(&gated_output)?;
-            outputs.insert(self.task_names[t].clone(), logits);
+            outputs.insert_binary_logit(self.task_names[t].clone(), logits);
         }
         Ok(outputs)
     }

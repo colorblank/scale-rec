@@ -4,9 +4,11 @@ use std::collections::HashMap;
 
 use scale_rec::layers::embedding::FeatureSpec;
 use scale_rec::layers::towers::{
-    Activation, MultiTaskConfig, RelationOp, TaskRelation, TowerConfig,
+    apply_relation, Activation, MultiTaskConfig, RelationOp, TaskRelation, TowerConfig,
 };
-use scale_rec::models::{deepfm, esmm, gdcn_esmm, lr, mmoe, Model, ModelConfig};
+use scale_rec::models::{
+    deepfm, esmm, gdcn_esmm, lr, mmoe, Model, ModelConfig, ModelOutput, OutputKind,
+};
 
 fn dummy_features() -> Vec<FeatureSpec> {
     vec![
@@ -41,14 +43,14 @@ fn test_lr_forward_shape() {
     let model = lr::LogisticRegression::new(vb(), &dummy_features()).unwrap();
     let out = model.forward(&dummy_inputs(3)).unwrap();
     let pred = out.get("pred").unwrap();
-    assert_eq!(pred.dims(), &[3, 1]);
+    assert_eq!(pred.tensor.dims(), &[3, 1]);
 }
 
 #[test]
 fn test_deepfm_forward_shape() {
     let model = deepfm::DeepFM::new(vb(), &dummy_features(), 8, &[4]).unwrap();
     let out = model.forward(&dummy_inputs(3)).unwrap();
-    assert_eq!(out["pred"].dims(), &[3, 1]);
+    assert_eq!(out.tensor("pred").unwrap().dims(), &[3, 1]);
 }
 
 #[test]
@@ -57,8 +59,8 @@ fn test_mmoe_forward_shape() {
     let model = mmoe::MMoE::new(vb(), &dummy_features(), &[8], 2, &[8], 4, &task_cfgs).unwrap();
     let out = model.forward(&dummy_inputs(3)).unwrap();
     assert_eq!(out.len(), 2);
-    assert_eq!(out["ctr"].dims(), &[3, 1]);
-    assert_eq!(out["cvr"].dims(), &[3, 1]);
+    assert_eq!(out.tensor("ctr").unwrap().dims(), &[3, 1]);
+    assert_eq!(out.tensor("cvr").unwrap().dims(), &[3, 1]);
 }
 
 #[test]
@@ -67,9 +69,9 @@ fn test_esmm_forward_shape() {
         esmm::ESMM::new(vb(), &dummy_features(), &[8], &[4], &[4], &[4], &[4], &[4]).unwrap();
     let out = model.forward(&dummy_inputs(3)).unwrap();
     assert_eq!(out.len(), 9);
-    assert_eq!(out["click"].dims(), &[3, 1]);
-    assert_eq!(out["cvr"].dims(), &[3, 1]);
-    assert_eq!(out["ctcvr"].dims(), &[3, 1]);
+    assert_eq!(out.tensor("click").unwrap().dims(), &[3, 1]);
+    assert_eq!(out.tensor("cvr").unwrap().dims(), &[3, 1]);
+    assert_eq!(out.tensor("ctcvr").unwrap().dims(), &[3, 1]);
 }
 
 #[test]
@@ -81,12 +83,14 @@ fn test_esmm_forward_with_configurable_tasks_and_relations() {
                 hidden_dims: vec![4],
                 output_dim: 1,
                 activation: Activation::Relu,
+                output_kind: OutputKind::BinaryLogit,
             },
             TowerConfig {
                 name: "buy".into(),
                 hidden_dims: vec![4],
                 output_dim: 1,
                 activation: Activation::Relu,
+                output_kind: OutputKind::BinaryLogit,
             },
         ],
         relations: vec![TaskRelation {
@@ -98,9 +102,41 @@ fn test_esmm_forward_with_configurable_tasks_and_relations() {
     let model = esmm::ESMM::with_task_config(vb(), &dummy_features(), &[8], &task_config).unwrap();
     let out = model.forward(&dummy_inputs(3)).unwrap();
     assert_eq!(out.len(), 3);
-    assert_eq!(out["view"].dims(), &[3, 1]);
-    assert_eq!(out["buy"].dims(), &[3, 1]);
-    assert_eq!(out["ctbuy"].dims(), &[3, 1]);
+    assert_eq!(out.tensor("view").unwrap().dims(), &[3, 1]);
+    assert_eq!(out.tensor("buy").unwrap().dims(), &[3, 1]);
+    assert_eq!(out.tensor("ctbuy").unwrap().dims(), &[3, 1]);
+    assert_eq!(out.get("view").unwrap().kind, OutputKind::BinaryLogit);
+    assert_eq!(out.get("ctbuy").unwrap().kind, OutputKind::Probability);
+}
+
+#[test]
+fn test_task_relation_uses_probabilities_not_logits() {
+    let relation = TaskRelation {
+        target: "ctbuy".into(),
+        sources: vec!["view".into(), "buy".into()],
+        op: RelationOp::Multiply,
+    };
+    let mut outputs = ModelOutput::new();
+    outputs.insert_binary_logit(
+        "view",
+        Tensor::from_slice(&[0.0f32, 2.0], (2, 1), &Device::Cpu).unwrap(),
+    );
+    outputs.insert_binary_logit(
+        "buy",
+        Tensor::from_slice(&[0.0f32, -2.0], (2, 1), &Device::Cpu).unwrap(),
+    );
+
+    let derived = apply_relation(&relation, &outputs).unwrap();
+    let values = derived.to_vec2::<f32>().unwrap();
+    let expected0 = 0.5 * 0.5;
+    let expected1 = sigmoid(2.0) * sigmoid(-2.0);
+
+    assert!((values[0][0] - expected0).abs() < 1e-6);
+    assert!((values[1][0] - expected1).abs() < 1e-6);
+}
+
+fn sigmoid(x: f32) -> f32 {
+    1.0 / (1.0 + (-x).exp())
 }
 
 #[test]
@@ -120,9 +156,9 @@ fn test_gdcn_esmm_forward_shape() {
     .unwrap();
     let out = model.forward(&dummy_inputs(3)).unwrap();
     assert_eq!(out.len(), 9);
-    assert_eq!(out["click"].dims(), &[3, 1]);
-    assert_eq!(out["cvr"].dims(), &[3, 1]);
-    assert_eq!(out["ctcvr"].dims(), &[3, 1]);
+    assert_eq!(out.tensor("click").unwrap().dims(), &[3, 1]);
+    assert_eq!(out.tensor("cvr").unwrap().dims(), &[3, 1]);
+    assert_eq!(out.tensor("ctcvr").unwrap().dims(), &[3, 1]);
 }
 
 #[test]
@@ -148,9 +184,9 @@ task_config:
     let model = cfg.build(vb(), &dummy_features(), None).unwrap();
     let out = model.forward(&dummy_inputs(2)).unwrap();
     assert_eq!(out.len(), 3);
-    assert_eq!(out["view"].dims(), &[2, 1]);
-    assert_eq!(out["buy"].dims(), &[2, 1]);
-    assert_eq!(out["ctbuy"].dims(), &[2, 1]);
+    assert_eq!(out.tensor("view").unwrap().dims(), &[2, 1]);
+    assert_eq!(out.tensor("buy").unwrap().dims(), &[2, 1]);
+    assert_eq!(out.tensor("ctbuy").unwrap().dims(), &[2, 1]);
 }
 
 #[test]
@@ -196,6 +232,7 @@ fn test_unimixer_forward_shape() {
             hidden_dims: vec![8],
             output_dim: 1,
             activation: Activation::Relu,
+            output_kind: OutputKind::BinaryLogit,
         }],
         relations: vec![],
     };
@@ -216,7 +253,7 @@ fn test_unimixer_forward_shape() {
     .unwrap();
     let out = model.forward(&dummy_inputs(3)).unwrap();
     assert!(out.contains_key("ctr"));
-    assert_eq!(out["ctr"].dims(), &[3, 1]);
+    assert_eq!(out.tensor("ctr").unwrap().dims(), &[3, 1]);
 }
 
 #[test]
@@ -236,6 +273,7 @@ fn test_rankmixer_forward_shape() {
             hidden_dims: vec![8],
             output_dim: 1,
             activation: Activation::Relu,
+            output_kind: OutputKind::BinaryLogit,
         }],
         relations: vec![],
     };
@@ -252,7 +290,7 @@ fn test_rankmixer_forward_shape() {
     .unwrap();
     let out = model.forward(&dummy_inputs(3)).unwrap();
     assert!(out.contains_key("ctr"));
-    assert_eq!(out["ctr"].dims(), &[3, 1]);
+    assert_eq!(out.tensor("ctr").unwrap().dims(), &[3, 1]);
 }
 
 #[test]
@@ -279,7 +317,7 @@ task_config:
     };
     let model = cfg.build(vb, &features, Some(tokenizer)).unwrap();
     let out = model.forward(&dummy_inputs(2)).unwrap();
-    assert_eq!(out["ctr"].dims(), &[2, 1]);
+    assert_eq!(out.tensor("ctr").unwrap().dims(), &[2, 1]);
 }
 
 #[test]
@@ -408,6 +446,7 @@ fn test_unimixer_rejects_invalid_temperature() {
             hidden_dims: vec![8],
             output_dim: 1,
             activation: Activation::Relu,
+            output_kind: OutputKind::BinaryLogit,
         }],
         relations: vec![],
     };

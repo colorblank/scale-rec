@@ -11,6 +11,7 @@ from train.models.esmm import ESMM
 from train.models.gdcn_esmm import GDCNESMM
 from train.models.lr import LogisticRegression
 from train.models.mmoe import MMoE
+from train.models.output import ModelOutput
 
 FEATURES = [("a", 10, 4), ("b", 5, 4)]
 
@@ -25,7 +26,7 @@ def _inputs(batch=3):
 def test_lr_forward():
     model = LogisticRegression(FEATURES)
     out = model(_inputs(3))
-    assert out["pred"].shape == (3, 1)
+    assert out.tensor("pred").shape == (3, 1)
 
 
 def test_output_spec_accepts_task_specs():
@@ -46,13 +47,34 @@ def test_output_spec_accepts_task_specs():
 
     assert spec["task_names"] == ["pred"]
     assert spec["label_col_map"] == {"pred": "clicked"}
+    assert spec["output_kinds"] == {"pred": "binary_logit"}
     assert spec["tasks"][0].weight == 0.5
+
+
+def test_output_spec_accepts_regression_task_specs():
+    spec = get_output_spec(
+        "lr",
+        params={
+            "tasks": [
+                {
+                    "name": "watch_time",
+                    "label": "watch_time",
+                    "loss": "huber",
+                    "metrics": ["mae", "mse"],
+                }
+            ]
+        },
+    )
+
+    assert spec["task_names"] == ["watch_time"]
+    assert spec["output_kinds"] == {"watch_time": "regression"}
+    assert spec["tasks"][0].output_kind == "regression"
 
 
 def test_deepfm_forward():
     model = DeepFM(FEATURES, fm_k=8, deep_hidden_dims=[4])
     out = model(_inputs(3))
-    assert out["pred"].shape == (3, 1)
+    assert out.tensor("pred").shape == (3, 1)
 
 
 def test_feature_embeddings_first_pooling_accepts_sequences():
@@ -74,16 +96,16 @@ def test_gated_cross_network_forward():
 def test_mmoe_forward():
     model = MMoE(FEATURES, [8], 2, [8], 4, [("ctr", [4]), ("cvr", [4])])
     out = model(_inputs(3))
-    assert out["ctr"].shape == (3, 1)
-    assert out["cvr"].shape == (3, 1)
+    assert out.tensor("ctr").shape == (3, 1)
+    assert out.tensor("cvr").shape == (3, 1)
 
 
 def test_esmm_forward():
     model = ESMM(FEATURES, [8], [4], [4], [4], [4], [4])
     out = model(_inputs(3))
-    assert out["click"].shape == (3, 1)
-    assert out["cvr"].shape == (3, 1)
-    assert out["ctcvr"].shape == (3, 1)
+    assert out.tensor("click").shape == (3, 1)
+    assert out.tensor("cvr").shape == (3, 1)
+    assert out.tensor("ctcvr").shape == (3, 1)
 
 
 def test_esmm_forward_with_configurable_tasks_and_relations():
@@ -98,8 +120,59 @@ def test_esmm_forward_with_configurable_tasks_and_relations():
     out = model(_inputs(3))
 
     assert model.task_names == ["view", "buy"]
-    assert set(out) == {"view", "buy", "ctbuy"}
-    assert out["ctbuy"].shape == (3, 1)
+    assert set(out.names()) == {"view", "buy", "ctbuy"}
+    assert out.tensor("ctbuy").shape == (3, 1)
+
+
+def test_esmm_output_spec_marks_relations_as_probabilities():
+    spec = get_output_spec(
+        "esmm",
+        params={
+            "task_config": {
+                "towers": [
+                    {"name": "view", "hidden_dims": [4]},
+                    {"name": "buy", "hidden_dims": [4]},
+                ],
+                "relations": [{"target": "ctbuy", "sources": ["view", "buy"], "op": "multiply"}],
+            }
+        },
+    )
+
+    assert spec["output_kinds"] == {
+        "view": "binary_logit",
+        "buy": "binary_logit",
+        "ctbuy": "probability",
+    }
+
+
+def test_esmm_relation_uses_probabilities_not_logits():
+    relation = TaskRelation("ctbuy", ["view", "buy"], "multiply")
+    outputs = ModelOutput.binary_logits(
+        {
+            "view": torch.tensor([[0.0], [2.0]]),
+            "buy": torch.tensor([[0.0], [-2.0]]),
+        }
+    )
+
+    derived = ESMM._apply_relation(relation, outputs)
+    expected = torch.sigmoid(outputs.tensor("view")) * torch.sigmoid(outputs.tensor("buy"))
+
+    assert torch.allclose(derived, expected)
+
+
+def test_gdcn_esmm_relation_uses_probabilities_not_logits():
+    relation = TaskRelation("ctbuy", ["view", "buy"], "multiply")
+    outputs = ModelOutput.binary_logits(
+        {
+            "view": torch.tensor([[0.0], [2.0]]),
+            "buy": torch.tensor([[0.0], [-2.0]]),
+        }
+    )
+
+    derived = GDCNESMM._apply_relation(relation, outputs)
+    expected = torch.sigmoid(outputs.tensor("view")) * torch.sigmoid(outputs.tensor("buy"))
+
+    assert torch.allclose(derived, expected)
 
 
 def test_gdcn_esmm_forward():
@@ -117,9 +190,9 @@ def test_gdcn_esmm_forward():
 
     out = model(_inputs(3))
 
-    assert out["click"].shape == (3, 1)
-    assert out["cvr"].shape == (3, 1)
-    assert out["ctcvr"].shape == (3, 1)
+    assert out.tensor("click").shape == (3, 1)
+    assert out.tensor("cvr").shape == (3, 1)
+    assert out.tensor("ctcvr").shape == (3, 1)
 
 
 def test_gdcn_esmm_builds_from_model_config():
@@ -143,7 +216,7 @@ def test_gdcn_esmm_builds_from_model_config():
     out = model(_inputs(3))
     spec = get_output_spec(config.type, model, config.params)
 
-    assert set(out) == {"view", "buy", "ctbuy"}
+    assert set(out.names()) == {"view", "buy", "ctbuy"}
     assert spec["task_names"] == ["view", "buy"]
 
 
@@ -175,8 +248,8 @@ def test_unimixer_forward():
         False,
     )
     out = model(_inputs(3))
-    assert out["ctr"].shape == (3, 1)
-    assert out["cvr"].shape == (3, 1)
+    assert out.tensor("ctr").shape == (3, 1)
+    assert out.tensor("cvr").shape == (3, 1)
 
 
 def test_rankmixer_forward():
@@ -197,8 +270,8 @@ def test_rankmixer_forward():
 
     out = model(_inputs(3))
 
-    assert out["ctr"].shape == (3, 1)
-    assert out["cvr"].shape == (3, 1)
+    assert out.tensor("ctr").shape == (3, 1)
+    assert out.tensor("cvr").shape == (3, 1)
 
 
 def test_rankmixer_builds_from_model_config():
@@ -218,7 +291,7 @@ def test_rankmixer_builds_from_model_config():
     model = config.build(FEATURES, tokenizer=tokenizer)
     out = model(_inputs(3))
 
-    assert out["ctr"].shape == (3, 1)
+    assert out.tensor("ctr").shape == (3, 1)
 
 
 def test_rankmixer_rejects_non_residual_token_mixing_shape():

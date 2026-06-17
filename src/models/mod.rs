@@ -30,11 +30,105 @@ pub mod unimixer;
 /// 模型推理 trait：所有模型实现该 trait 以统一前向接口。
 pub trait Model: Send + Sync {
     /// 模型前向推理，接收特征字典返回输出字典。
-    fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<HashMap<String, Tensor>>;
+    fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<ModelOutput>;
 
     /// 预热 Sinkhorn-Knopp 等缓存，可选实现。
     fn warmup(&self) -> Result<()> {
         Ok(())
+    }
+}
+
+/// 模型输出语义类型。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutputKind {
+    /// 二分类 logit，训练使用 BCEWithLogits，serving 可转换为概率。
+    BinaryLogit,
+    /// 已经是概率值，serving 不应再次 sigmoid。
+    Probability,
+    /// 回归输出，例如播放时长、金额、完成率等连续目标。
+    Regression,
+    /// 排序分数或 utility，通常只要求相对顺序，不要求概率校准。
+    Score,
+}
+
+/// 单个模型输出，包含 tensor 及其语义类型。
+#[derive(Debug)]
+pub struct OutputTensor {
+    /// 输出张量。
+    pub tensor: Tensor,
+    /// 输出语义类型。
+    pub kind: OutputKind,
+}
+
+/// 结构化模型输出，避免在裸字典中混合 logits 与 probabilities。
+#[derive(Debug, Default)]
+pub struct ModelOutput {
+    values: HashMap<String, OutputTensor>,
+}
+
+impl ModelOutput {
+    /// 创建空输出。
+    pub fn new() -> Self {
+        Self {
+            values: HashMap::new(),
+        }
+    }
+
+    /// 插入一个二分类 logit 输出。
+    pub fn insert_binary_logit(&mut self, name: impl Into<String>, tensor: Tensor) {
+        self.insert(name, tensor, OutputKind::BinaryLogit);
+    }
+
+    /// 插入一个 probability 输出。
+    pub fn insert_probability(&mut self, name: impl Into<String>, tensor: Tensor) {
+        self.insert(name, tensor, OutputKind::Probability);
+    }
+
+    /// 插入一个回归输出。
+    pub fn insert_regression(&mut self, name: impl Into<String>, tensor: Tensor) {
+        self.insert(name, tensor, OutputKind::Regression);
+    }
+
+    /// 插入一个排序分数输出。
+    pub fn insert_score(&mut self, name: impl Into<String>, tensor: Tensor) {
+        self.insert(name, tensor, OutputKind::Score);
+    }
+
+    /// 插入指定类型的输出。
+    pub fn insert(&mut self, name: impl Into<String>, tensor: Tensor, kind: OutputKind) {
+        self.values
+            .insert(name.into(), OutputTensor { tensor, kind });
+    }
+
+    /// 获取输出。
+    pub fn get(&self, name: &str) -> Option<&OutputTensor> {
+        self.values.get(name)
+    }
+
+    /// 获取输出 tensor。
+    pub fn tensor(&self, name: &str) -> Option<&Tensor> {
+        self.get(name).map(|output| &output.tensor)
+    }
+
+    /// 输出数量。
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    /// 是否没有输出。
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
+    /// 是否包含指定输出。
+    pub fn contains_key(&self, name: &str) -> bool {
+        self.values.contains_key(name)
+    }
+
+    /// 遍历输出。
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &OutputTensor)> {
+        self.values.iter()
     }
 }
 

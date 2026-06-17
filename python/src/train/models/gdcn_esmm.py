@@ -10,11 +10,12 @@ import torch.nn as nn
 if TYPE_CHECKING:
     from ..core.config import PoolingMode
 
+from ..core.model_output import ModelOutput
 from ..layers.embedding import FeatureEmbeddings, FeatureTensorMap, FeatureTuple
 from ..layers.gdcn import GatedCrossNetwork
 from ..layers.mlp import Mlp
 from ..layers.towers import Activation, MultiTaskConfig, TaskRelation, TaskTower
-from .esmm import default_task_config
+from .esmm import _probability_for_relation, default_task_config
 
 
 class GDCNESMM(nn.Module):
@@ -77,23 +78,28 @@ class GDCNESMM(nn.Module):
         for tower in self.task_config.towers:
             setattr(self, f"{tower.name}_tower", TaskTower(tower, tower_input_dim))
 
-    def forward(self, x_inputs: FeatureTensorMap) -> dict[str, torch.Tensor]:
+    def forward(self, x_inputs: FeatureTensorMap) -> ModelOutput:
         dense = self.embeddings(x_inputs)
         cross_out = self.cross(dense)
         shared = torch.cat([cross_out, self.deep(dense)], dim=1) if self.has_deep else cross_out
         if hasattr(self, "shared_bottom"):
             shared = self.shared_bottom(shared)
 
-        outputs = {name: getattr(self, f"{name}_tower")(shared) for name in self.task_names}
+        outputs = ModelOutput()
+        for name in self.task_names:
+            tower = getattr(self, f"{name}_tower")
+            outputs.insert(name, tower(shared), tower.output_kind)
         for relation in self.task_config.relations:
-            outputs[relation.target] = self._apply_relation(relation, outputs)
+            outputs.insert_probability(relation.target, self._apply_relation(relation, outputs))
         return outputs
 
     @staticmethod
-    def _apply_relation(relation: TaskRelation, outputs: dict[str, torch.Tensor]) -> torch.Tensor:
+    def _apply_relation(relation: TaskRelation, outputs: ModelOutput) -> torch.Tensor:
         if not relation.sources:
             raise ValueError(f"Relation '{relation.target}' has no sources")
-        probs = [torch.sigmoid(outputs[source]) for source in relation.sources]
+        probs = [
+            _probability_for_relation(relation, outputs, source) for source in relation.sources
+        ]
         if relation.op == "multiply":
             result = probs[0]
             for value in probs[1:]:

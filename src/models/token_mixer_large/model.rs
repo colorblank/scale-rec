@@ -2,7 +2,7 @@
 use super::block::TokenMixerLargeBlock;
 use crate::layers::towers::{MultiTaskConfig, MultiTaskTower};
 use crate::models::unimixer::tokenizer::FeatureTokenizer;
-use crate::models::Model;
+use crate::models::{Model, ModelOutput};
 use candle_core::{Result, Tensor};
 use candle_nn::VarBuilder;
 use std::collections::HashMap;
@@ -68,7 +68,7 @@ impl TokenMixerLargeModel {
 }
 
 impl Model for TokenMixerLargeModel {
-    fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<HashMap<String, Tensor>> {
+    fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<ModelOutput> {
         let tokens = self.tokenizer.forward(x_inputs)?;
         let (batch_size, _, _) = tokens.dims3()?;
         let mut x = tokens.reshape((batch_size, self.embed_dim))?;

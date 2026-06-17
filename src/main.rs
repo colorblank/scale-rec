@@ -9,6 +9,7 @@ use scale_rec::layers::embedding::FeatureSpec;
 use scale_rec::layers::towers::{Activation, MultiTaskConfig, TowerConfig};
 use scale_rec::models::unimixer::model::UniMixerModel;
 use scale_rec::models::unimixer::tokenizer::FeatureTokenizer;
+use scale_rec::models::OutputKind;
 use std::collections::HashMap;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -98,12 +99,14 @@ fn main() -> Result<()> {
                 hidden_dims: vec![128],
                 output_dim: 1,
                 activation: Activation::Relu,
+                output_kind: OutputKind::BinaryLogit,
             },
             TowerConfig {
                 name: "cvr".into(),
                 hidden_dims: vec![128],
                 output_dim: 1,
                 activation: Activation::Relu,
+                output_kind: OutputKind::BinaryLogit,
             },
         ],
         relations: vec![],
@@ -130,9 +133,9 @@ fn main() -> Result<()> {
 
     info!("running inference");
     let outputs = model.forward_with_temperature(&feature_tensors, 0.5)?;
-    for (name, logit) in &outputs {
-        let val = logit.to_vec2::<f32>()?[0][0];
-        info!(task = %name, logit = val, "prediction");
+    for (name, output) in outputs.iter() {
+        let val = output.tensor.to_vec2::<f32>()?[0][0];
+        info!(task = %name, kind = ?output.kind, value = val, "prediction");
     }
     Ok(())
 }

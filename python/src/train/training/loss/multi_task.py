@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from ...core.model_output import ModelOutput, ensure_model_output
 from ...core.task import TaskSpec, legacy_task_specs
 
 
@@ -45,11 +46,17 @@ class MultiTaskLoss(nn.Module):
         pos_weights: dict[str, float] | None = None,
         reg_weight: float = 0.1,
         task_specs: list[TaskSpec] | None = None,
+        output_kinds: dict[str, str] | None = None,
     ) -> None:
         super().__init__()
         if mode not in {"static", "equal", "uncertainty"}:
             raise ValueError(f"Unknown loss weighting mode: {mode}")
+        self.output_kinds = output_kinds or {}
         self.task_specs = task_specs or legacy_task_specs(task_names, label_map, task_weights)
+        self.output_kinds = {
+            **self.output_kinds,
+            **{spec.name: spec.output_kind for spec in self.task_specs},
+        }
         self.spec_by_name = {spec.name: spec for spec in self.task_specs}
         self.task_names = [spec.name for spec in self.task_specs]
         self.label_map = label_map
@@ -65,26 +72,33 @@ class MultiTaskLoss(nn.Module):
             self.log_vars = nn.ParameterDict()
 
     def forward(
-        self, outputs: dict[str, torch.Tensor], batch_labels: dict[str, list[Any]]
+        self, outputs: ModelOutput | dict[str, torch.Tensor], batch_labels: dict[str, list[Any]]
     ) -> torch.Tensor | None:
+        model_output = ensure_model_output(outputs, self.output_kinds)
         total: torch.Tensor | None = None
         self._last_raw_losses: dict[str, float] = {}
         self._last_pos_rates: dict[str, float] = {}
         unknown_outputs = sorted(
-            task for task in outputs if task not in self.spec_by_name and not task.startswith("ct")
+            task
+            for task in model_output.names()
+            if task not in self.spec_by_name and model_output.kind(task) != "probability"
         )
         if unknown_outputs:
             raise ValueError(
                 "Model produced outputs not covered by task specs: " + ", ".join(unknown_outputs)
             )
-        missing_outputs = sorted(task for task in self.task_names if task not in outputs)
+        missing_outputs = sorted(task for task in self.task_names if task not in model_output)
         if missing_outputs:
             raise ValueError(
                 "Task specs require model outputs that are missing: " + ", ".join(missing_outputs)
             )
         for spec in self.task_specs:
             task = spec.name
-            logits = outputs[task]
+            output = model_output.get(task)
+            if output is None:
+                continue
+            prediction = output.tensor
+            _validate_loss_output_kind(spec, output.kind)
             col = spec.label
             if col not in batch_labels and task not in batch_labels:
                 raise ValueError(f"Task '{task}' label column '{col}' is missing from batch labels")
@@ -99,17 +113,15 @@ class MultiTaskLoss(nn.Module):
                 continue
 
             if spec.loss == "weighted_bce_stay":
-                t = torch.tensor(arr[valid], dtype=torch.float32, device=logits.device).view(-1, 1)
-                raw_loss = _weighted_bce_stay(logits[valid], t)
+                t = torch.tensor(arr[valid], dtype=torch.float32, device=prediction.device).view(
+                    -1, 1
+                )
+                raw_loss = _weighted_bce_stay(prediction[valid], t)
             else:
-                y = torch.tensor(arr[valid], dtype=torch.float32, device=logits.device).view(-1, 1)
-                pw = spec.pos_weight if spec.pos_weight is not None else self.pos_weights.get(task)
-                if pw is not None:
-                    raw_loss = F.binary_cross_entropy_with_logits(
-                        logits[valid], y, pos_weight=torch.tensor(pw, device=logits.device)
-                    )
-                else:
-                    raw_loss = F.binary_cross_entropy_with_logits(logits[valid], y)
+                y = torch.tensor(arr[valid], dtype=torch.float32, device=prediction.device).view(
+                    -1, 1
+                )
+                raw_loss = _task_loss(spec, prediction[valid], y, self.pos_weights.get(task))
 
             self._last_raw_losses[task] = float(raw_loss.detach().item())
             self._last_pos_rates[task] = float(arr[valid].mean())
@@ -167,8 +179,48 @@ def _eval_mask(mask: str, batch_labels: dict[str, list[Any]], default_col: str) 
     raise ValueError(f"Unsupported task mask operator: {op}")
 
 
+def _validate_loss_output_kind(spec: TaskSpec, output_kind: str) -> None:
+    if spec.loss in {"bce", "weighted_bce_stay"}:
+        if output_kind != "binary_logit":
+            raise ValueError(
+                f"Task '{spec.name}' loss '{spec.loss}' requires binary_logit output, "
+                f"got {output_kind}"
+            )
+        return
+    if spec.loss in {"mse", "mae", "huber"}:
+        if output_kind not in {"regression", "score"}:
+            raise ValueError(
+                f"Task '{spec.name}' loss '{spec.loss}' requires regression/score output, "
+                f"got {output_kind}"
+            )
+        return
+    raise ValueError(f"Unsupported loss for task '{spec.name}': {spec.loss}")
+
+
+def _task_loss(
+    spec: TaskSpec,
+    prediction: torch.Tensor,
+    target: torch.Tensor,
+    configured_pos_weight: float | None,
+) -> torch.Tensor:
+    if spec.loss == "bce":
+        pw = spec.pos_weight if spec.pos_weight is not None else configured_pos_weight
+        if pw is not None:
+            return F.binary_cross_entropy_with_logits(
+                prediction, target, pos_weight=torch.tensor(pw, device=prediction.device)
+            )
+        return F.binary_cross_entropy_with_logits(prediction, target)
+    if spec.loss == "mse":
+        return F.mse_loss(prediction, target)
+    if spec.loss == "mae":
+        return F.l1_loss(prediction, target)
+    if spec.loss == "huber":
+        return F.smooth_l1_loss(prediction, target)
+    raise ValueError(f"Unsupported loss for task '{spec.name}': {spec.loss}")
+
+
 def compute_loss(
-    outputs: dict[str, torch.Tensor],
+    outputs: ModelOutput | dict[str, torch.Tensor],
     batch_labels: dict[str, list[Any]],
     label_map: dict[str, str],
 ) -> torch.Tensor | None:

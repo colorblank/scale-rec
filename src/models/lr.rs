@@ -1,5 +1,5 @@
 //! 逻辑回归基线：Embedding + Linear，无特征交互。
-use super::Model;
+use super::{Model, ModelOutput};
 use crate::layers::embedding::{FeatureEmbeddings, FeatureSpec};
 use crate::layers::mlp::Mlp;
 use crate::layers::towers::Activation;
@@ -32,11 +32,11 @@ impl LogisticRegression {
 }
 
 impl Model for LogisticRegression {
-    fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<HashMap<String, Tensor>> {
+    fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<ModelOutput> {
         let concat = self.embeddings.forward(x_inputs)?;
         let logits = self.mlp.forward(&concat)?;
-        let mut outputs = HashMap::new();
-        outputs.insert("pred".to_string(), logits);
+        let mut outputs = ModelOutput::new();
+        outputs.insert_binary_logit("pred", logits);
         Ok(outputs)
     }
 }
