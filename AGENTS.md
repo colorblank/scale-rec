@@ -36,24 +36,24 @@ uv add --dev <package>              # add dev dependency
 
 # ── 生成特征配置文件 ──
 PYTHONPATH=python/src:$PYTHONPATH uv run python examples/gen_discover_config.py
-# → 输出 examples/feature_config_discover.yaml
+# → 输出 examples/shared/feature_config_discover.yaml
 
 # ── 训练 (demo 单文件模式) ──
-PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.train_discover \
-  --data python/demo/temp/discover_train_data.txt \
-  --feature-config examples/feature_config_discover.yaml \
-  --model-config examples/model_gdcn_esmm.yaml \
-  --epochs 30 --batch-size 128 --lr 0.005
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.app.main discover \
+  --data python/artifacts/demo/discover_train_data.txt \
+  --feature-config examples/shared/feature_config_discover.yaml \
+  --model-config examples/models/gdcn_esmm.yaml \
+  --train-config examples/shared/train_defaults.yaml \
+  --epochs 10 --batch-size 128 --no-header --eval-samples 400
 
 # ── 训练 (生产流式模式) ──
-PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.train_discover \
-  --user-data data/user_20260331.txt \
-  --item-files data/items/20260325.txt,data/items/20260326.txt,...,data/items/20260331.txt \
-  --feature-config examples/feature_config_discover.yaml \
-  --model-config examples/model_gdcn_esmm.yaml \
-  --epochs 10 --batch-size 1024 \
-  --no-header --null-markers 'NULL' '\N' \
-  --skip-missing-item --eval-samples 2000
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.app.main discover \
+  --data-glob 'data/user_*.txt' \
+  --start-date 20260325 --end-date 20260331 \
+  --feature-config examples/shared/feature_config_discover.yaml \
+  --model-config examples/models/gdcn_esmm.yaml \
+  --train-config examples/shared/train_defaults.yaml \
+  --epochs 10 --batch-size 1024 --no-header
 
 # ── 生成合成数据 ──
 PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.generate_data
@@ -71,9 +71,9 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.verify_all
 | `--data` | str | — | 单文件路径（demo 模式，二选一） |
 | `--user-data` | str | — | 用户行为文件（生产模式，二选一） |
 | `--item-files` | str | — | 物品文件逗号列表（生产模式，必需） |
-| `--feature-config` | str | `examples/feature_config_discover.yaml` | 特征编排配置 |
-| `--model-config` | str | `python/demo/model_discover_esmm.yaml` | 模型配置 |
-| `--export-path` | str | `python/demo/temp/model.safetensors` | 权重导出路径 |
+| `--feature-config` | str | `examples/shared/feature_config_discover.yaml` | 特征编排配置 |
+| `--model-config` | str | — | 模型配置（必填） |
+| `--export-path` | str | run 目录 `serving/model.safetensors` | 权重导出路径 |
 | `--epochs` | int | 30 | 训练轮数 |
 | `--batch-size` | int | 64 | 批次大小 |
 | `--lr` | float | 0.005 | 学习率 |
@@ -99,7 +99,7 @@ Both sides parse the same `examples/feature_config_discover.yaml` which defines:
 - sources 不配 `embed`，全部 embedding 由 operator 输出 `embed` 字段声明
 - DAG 构建时自动校验 source 消费率 and 输出利用率
 
-`FlowConfig` (Rust: `src/feats/config.rs`, Python: `python/src/train/config.py`) deserializes the YAML. `FeatureDag` (Rust: `src/feats/dag.rs`, Python: `python/src/train/dag.py`) builds the DAG with topological sort and executes single samples via `execute(raw_inputs) -> FeatureResult`.
+`FlowConfig` (Rust: `src/feats/config.rs`, Python: `python/src/train/core/config.py`) deserializes the YAML. `FeatureDag` (Rust: `src/feats/dag.rs`, Python: `python/src/train/core/dag.py`) builds the DAG with topological sort and executes single samples via `execute(raw_inputs) -> FeatureResult`.
 
 ### Operator registration
 
@@ -160,4 +160,4 @@ When adding new layers or models, verify naming by checking `print_state_dict_ke
 
 - `preprocess_batch()` in `FeatureDag` handles the full pipeline: row-by-row DAG execution → tensor stacking → `{name: LongTensor [batch]}` dict
 - `main.py` `train_epoch()` loops over Polars DataFrame slices, calls `dag.preprocess_batch()` per slice
-- Model config YAML files live in `python/config/` and are minimal (e.g., `type: lr` with no features section)
+- Model config YAML files live in `examples/models/` and are minimal (e.g., `type: lr` with no features section)

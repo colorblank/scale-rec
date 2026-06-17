@@ -322,6 +322,7 @@ for name, tensor in tensors.items():
 | `feature_quality.source.<name>.missing_rate` | 原始 source 缺失率，`None` 和空字符串算缺失 |
 | `feature_quality.source.<name>.default_rate` | 原始 source 命中默认值的比例 |
 | `feature_quality.emb.<name>.empty_sequence_rate` | 序列 embeddable 有效长度为 0 的比例 |
+| `feature_quality.emb.<name>.truncation_rate` | 序列因超长被截断的比例 |
 | `feature_quality.emb.<name>.mean_length` | 序列 embeddable 的平均有效长度 |
 | `feature_quality.emb.<name>.padding_rate` | 序列 embeddable 中 padding 项占比 |
 | `feature_quality.emb.<name>.bucket_utilization` | 当前样本中使用过的 hash/bucket 数占 vocab_size 的比例 |

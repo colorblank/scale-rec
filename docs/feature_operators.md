@@ -47,7 +47,7 @@ data_sources:
     description: user profile and behavior features
 sources:
   - name: user_id
-    source: User          # 来源分组: User | Item | Context | ItemStats
+    source: User          # 来源分组: User | Item | Context
     data_source: user_profile_hbase # 在线取数来源，引用 data_sources[].name
     dtype: int            # 数据类型
     default_val: "0"      # 缺失默认值（字符串形式）
@@ -113,7 +113,6 @@ dtype:
 | `User` | user | 用户画像特征，一次请求内不变 |
 | `Context` | user | 请求上下文特征，一次请求内不变 |
 | `Item` | item | 候选物品特征，每个候选不同 |
-| `ItemStats` | item | 物品离线统计特征，每个候选不同 |
 
 ### 2.4 OperatorDef — 算子节点
 
@@ -840,6 +839,9 @@ max_len=5, pad_val=0
 | `vocab_size` | int | 1000 | 哈希空间大小 [0, vocab_size) |
 | `num_hashes` | int | 1 | 独立哈希函数数量（>1 降低碰撞率） |
 | `separator` | string | `"\|"` | 输入拼接分隔符 |
+| `namespace` | string | `""` | 命名空间前缀，用于区分同一字段的不同 hash 空间 |
+| `salt` | string | `""` | 盐值前缀，进一步离散化 hash 结果 |
+| `version` | string | `""` | 版本前缀，用于 hash 空间版本迁移 |
 
 **输入**：任意数量和类型
 **输出**：`Int`（标量输入且 `num_hashes=1`）或 `IntList`（标量输入且 `num_hashes>1`，或列表输入）
@@ -1042,7 +1044,7 @@ let context: Vec<Vec<Fv>> = dag.plan.execute_plan(&columns, &skip_op_idx, &preco
 
 **特征来源传播规则**：
 - `User` / `Context` 源的直接特征 → `"user"`
-- `Item` / `ItemStats` 源 → `"item"`
+- `Item` 源 → `"item"`
 - 算子输入同时包含 user 和 item → `"cross"`
 - 仅 user 输入 → `"user"`；仅 item 输入 → `"item"`
 
