@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 /// TokenMixer-Large model: FeatureTokenizer + M blocks + task towers.
 pub struct TokenMixerLargeModel {
+    /// token 序列展平后的总维度。
     pub embed_dim: usize,
     tokenizer: FeatureTokenizer,
     blocks: Vec<TokenMixerLargeBlock>,

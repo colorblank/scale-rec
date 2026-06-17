@@ -8,11 +8,17 @@ use crate::feats::config::{PoolingStrategy, TruncationSide};
 /// 单个特征的嵌入配置：词表大小、嵌入维度、池化策略等。
 #[derive(Debug, Clone)]
 pub struct FeatureSpec {
+    /// 特征名称。
     pub name: String,
+    /// embedding 词表大小。
     pub vocab_size: usize,
+    /// embedding 向量维度。
     pub embed_dim: usize,
+    /// 序列特征池化策略。
     pub pooling: PoolingStrategy,
+    /// 序列长度；标量特征为 `None`。
     pub seq_len: Option<usize>,
+    /// 序列截断方向。
     pub truncation: TruncationSide,
 }
 
@@ -55,7 +61,9 @@ pub struct FeatureEmbeddings {
     ordered_names: Vec<String>,
     pooling: HashMap<String, PoolingStrategy>,
     embeddings: Vec<Embedding>,
+    /// 特征数量。
     pub num_features: usize,
+    /// 拼接后总输出维度。
     pub total_dim: usize,
 }
 

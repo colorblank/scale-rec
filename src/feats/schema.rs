@@ -10,18 +10,29 @@ use crate::feats::config::{
 /// 特征数据类型枚举：推断出的具体类型及约束。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FeatureDType {
+    /// 整数类型。
     Int,
+    /// 浮点类型。
     Float,
+    /// 字符串类型。
     String,
+    /// 有限枚举类型。
     Enum {
+        /// 合法枚举值集合。
         values: Vec<String>,
+        /// 默认枚举值。
         default: Option<String>,
+        /// 未知值映射目标。
         oov: Option<String>,
     },
+    /// 列表类型。
     List {
+        /// 列表元素类型。
         dtype: Box<FeatureDType>,
+        /// 静态推断出的列表长度。
         length: Option<usize>,
     },
+    /// 无法静态确定的类型。
     Unknown,
 }
 
@@ -57,13 +68,21 @@ impl FeatureDType {
 /// 特征 Schema：名称、数据类型、维度、基数等完整描述。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureSchema {
+    /// 特征名称。
     pub name: String,
+    /// 特征数据类型。
     pub dtype: FeatureDType,
+    /// 张量秩。
     pub rank: usize,
+    /// 单样本维度。
     pub dimension: usize,
+    /// 是否允许缺失值。
     pub nullable: bool,
+    /// 缺省值字符串。
     pub default_val: Option<String>,
+    /// 可选基数信息。
     pub cardinality: Option<usize>,
+    /// 可选池化策略。
     pub pooling: Option<PoolingStrategy>,
 }
 

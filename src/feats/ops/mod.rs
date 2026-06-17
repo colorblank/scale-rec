@@ -71,11 +71,17 @@ pub use string_parser::StringParser;
 /// 强类型特征值，替代 `Arc<dyn Any>`，消除 vtable/downcast 开销。
 #[derive(Debug, Clone, PartialEq)]
 pub enum Fv {
+    /// 标量整数值。
     Int(i32),
+    /// 标量浮点值。
     Float(f32),
+    /// 标量字符串值。
     Str(String),
+    /// 整数列表值。
     IntList(Vec<i32>),
+    /// 浮点列表值。
     FloatList(Vec<f32>),
+    /// 字符串列表值。
     StrList(Vec<String>),
 }
 

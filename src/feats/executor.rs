@@ -5,14 +5,19 @@ use std::collections::{HashMap, HashSet};
 
 /// 预编译执行步骤：算子索引 + 输入/输出列索引。
 pub struct ExecStep {
+    /// `ExecutionPlan.ops` 中的算子索引。
     pub op_idx: usize,
+    /// 输入列在运行时列数组中的索引。
     pub input_cols: Vec<usize>,
+    /// 输出列在运行时列数组中的索引。
     pub output_cols: Vec<usize>,
 }
 
 /// 预编译执行计划：运算符 + 整数索引列，运行时零 HashMap 查找。
 pub struct ExecutionPlan {
+    /// 按拓扑顺序排列的执行步骤。
     pub steps: Vec<ExecStep>,
+    /// 已构造好的算子实例。
     pub ops: Vec<Box<dyn CustomOp>>,
     source_cols: Vec<usize>,
     source_names: Vec<String>,

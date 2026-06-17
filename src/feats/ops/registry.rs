@@ -2,7 +2,7 @@
 use super::CustomOp;
 use crate::feats::config::OpType;
 
-/// 算子工厂函数签名：接收 YAML params，返回 Box<dyn CustomOp>
+/// 算子工厂函数签名：接收 YAML params，返回 `Box<dyn CustomOp>`。
 pub type OpFactory = fn(&serde_yaml::Value) -> Result<Box<dyn CustomOp>, String>;
 
 use std::collections::HashMap;

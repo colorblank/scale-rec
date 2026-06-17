@@ -10,7 +10,9 @@ use candle_nn::{linear, Linear, Module, VarBuilder};
 pub struct Mlp {
     layers: Vec<Linear>,
     activation: Activation,
+    /// 输入维度。
     pub input_dim: usize,
+    /// 输出维度。
     pub output_dim: usize,
 }
 

@@ -15,7 +15,9 @@ pub struct FeatureTokenizer {
     embeddings: Vec<Embedding>,
     token_projection_linears: Vec<Linear>,
     token_input_dim: usize,
+    /// 输出 token 数量。
     pub num_tokens: usize,
+    /// 每个 token 的维度。
     pub token_dim: usize,
 }
 

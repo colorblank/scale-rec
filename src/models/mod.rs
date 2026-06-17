@@ -135,7 +135,9 @@ impl ModelOutput {
 /// 任务配置项：名称 + 塔隐藏层维度。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskConfigEntry {
+    /// 任务名称。
     pub name: String,
+    /// 任务塔隐藏层维度。
     pub tower_dims: Vec<usize>,
 }
 
@@ -143,8 +145,10 @@ pub struct TaskConfigEntry {
 /// 每个模型自行解析 params，不再集中在中央枚举。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelConfig {
+    /// 模型类型标签，对应模型 registry key。
     #[serde(rename = "type")]
     pub model_type: String,
+    /// 模型私有 YAML 参数。
     #[serde(default, flatten)]
     pub params: serde_yaml::Value,
 }
@@ -152,6 +156,7 @@ pub struct ModelConfig {
 /// 模型构建选项。
 #[derive(Debug, Clone)]
 pub struct ModelBuildOptions {
+    /// UniMixer 子模块权重前缀。
     pub unimixer_prefix: String,
 }
 

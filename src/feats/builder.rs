@@ -14,18 +14,26 @@ use crate::feats::schema::{infer_feature_schemas, FeatureSchema};
 /// DAG 校验问题：包含严重级别、错误码和描述。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationIssue {
+    /// 严重级别，例如 `warning` 或 `error`。
     pub severity: &'static str,
+    /// 稳定错误码，便于测试和调用方分类。
     pub code: &'static str,
+    /// 面向用户的诊断信息。
     pub message: String,
+    /// 相关特征或字段名称。
     pub feature: Option<String>,
 }
 
 /// DAG 校验报告：汇总 source 消费率、embed 利用率和中间结果。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationReport {
+    /// 构建阶段发现的全部问题。
     pub issues: Vec<ValidationIssue>,
+    /// 参与 DAG 的 source 数量。
     pub source_count: usize,
+    /// 可 embedding 输出数量。
     pub embeddable_count: usize,
+    /// 中间结果数量。
     pub intermediate_count: usize,
 }
 
@@ -168,12 +176,19 @@ fn expect_optional_mapping(
 
 /// DAG 构建产物：供 DagExecutor 和 FeatureInfo 消费。
 pub struct DagArtifact {
+    /// 过滤 label/discard 后的 source 定义。
     pub sources: HashMap<String, SourceDef>,
+    /// 算子节点定义，按节点名索引。
     pub node_defs: HashMap<String, OperatorDef>,
+    /// 拓扑排序后的算子执行顺序。
     pub execution_order: Vec<String>,
+    /// 预编译执行计划。
     pub plan: ExecutionPlan,
+    /// source 和算子输出的静态 schema。
     pub feature_schemas: HashMap<String, FeatureSchema>,
+    /// 配置中的外部数据源定义。
     pub data_sources: Vec<crate::feats::config::DataSourceDef>,
+    /// DAG 构建校验报告。
     pub validation_report: ValidationReport,
 }
 

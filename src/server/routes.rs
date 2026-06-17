@@ -26,41 +26,62 @@ pub type FeatureRow = HashMap<String, Value>;
 /// 预测请求体。
 #[derive(Debug, Deserialize)]
 pub struct PredictRequest {
+    /// 逻辑模型名称。
     pub model: String,
+    /// 指定模型版本。
     pub version: Option<String>,
+    /// 指定模型别名。
     pub alias: Option<String>,
+    /// 版本/别名不可用时的回退版本。
     pub fallback_version: Option<String>,
+    /// 加权路由使用的稳定 key。
     pub routing_key: Option<String>,
+    /// 待预测样本列表。
     pub features: Vec<FeatureRow>,
 }
 
 /// 广播预测请求体。
 #[derive(Debug, Deserialize)]
 pub struct BroadcastRequest {
+    /// 逻辑模型名称。
     pub model: String,
+    /// 指定模型版本。
     pub version: Option<String>,
+    /// 指定模型别名。
     pub alias: Option<String>,
+    /// 版本/别名不可用时的回退版本。
     pub fallback_version: Option<String>,
+    /// 加权路由使用的稳定 key。
     pub routing_key: Option<String>,
+    /// 用户和上下文特征。
     pub user: FeatureRow,
+    /// 物品特征列表。
     pub items: Vec<FeatureRow>,
 }
 
 /// 预测响应体。
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PredictResponse {
+    /// 逻辑模型名称。
     pub model: String,
+    /// 实际使用的模型版本。
     pub version: String,
+    /// 每个样本的预测输出。
     pub predictions: Vec<HashMap<String, f32>>,
 }
 
 /// API 错误响应体。
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ApiError {
+    /// 稳定错误码。
     pub code: String,
+    /// 错误消息。
     pub message: String,
+    /// 可选请求 ID。
     pub request_id: Option<String>,
+    /// 相关模型 ID。
     pub model_id: Option<String>,
+    /// 可选错误详情。
     pub details: Option<Value>,
 }
 
@@ -102,25 +123,30 @@ fn map_predict_error(err: InferenceError, model_id: String) -> ApiError {
 /// 模型列表响应。
 #[derive(Debug, Serialize)]
 pub struct ModelListResponse {
+    /// 已加载模型列表。
     pub models: Vec<ModelServingInfo>,
 }
 
 /// 别名更新请求体。
 #[derive(Debug, Deserialize)]
 pub struct AliasUpdateRequest {
+    /// 别名应指向的版本。
     pub version: String,
 }
 
 /// 别名列表响应。
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AliasListResponse {
+    /// 逻辑模型名称。
     pub model: String,
+    /// 模型别名列表。
     pub aliases: Vec<ModelAliasInfo>,
 }
 
 /// 路由策略更新请求体。
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RoutingUpdateRequest {
+    /// 新的路由策略。
     #[serde(flatten)]
     pub policy: RoutingPolicy,
 }

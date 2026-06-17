@@ -13,8 +13,10 @@ use std::collections::HashMap;
 pub struct MMoE {
     embeddings: FeatureEmbeddings,
     shared_bottom: Option<Mlp>,
+    /// 专家数量。
     pub num_experts: usize,
     experts: Vec<Mlp>,
+    /// 每个专家的输出维度。
     pub expert_output_dim: usize,
     gate_linears: Vec<Linear>,
     task_towers: Vec<Mlp>,

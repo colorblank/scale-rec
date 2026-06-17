@@ -7,25 +7,38 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
+    /// 普通特征列，会进入 DAG 执行和推理输入契约。
     #[default]
     Feature,
+    /// 训练标签列，只在训练侧读取，推理侧不会作为输入暴露。
     Label,
+    /// 读入后丢弃的列，用于保留文件兼容但不进入 DAG。
     Discard,
 }
 
 /// 数据类型：整数、浮点、字符串、列表。
 #[derive(Debug, Clone, PartialEq)]
 pub enum DType {
+    /// 32 位整数特征。
     Int,
+    /// 32 位浮点特征。
     Float,
+    /// 字符串特征。
     String,
+    /// 有限枚举特征。
     Enum {
+        /// 合法枚举值集合。
         values: Vec<String>,
+        /// 缺省枚举值。
         default: Option<String>,
+        /// 未知枚举值映射目标。
         oov: Option<String>,
     },
+    /// 定长列表特征。
     List {
+        /// 列表元素类型。
         dtype: Box<DType>,
+        /// 列表最大长度或定长长度。
         length: usize,
     },
 }
@@ -198,11 +211,16 @@ fn yaml_scalar_to_string(value: &serde_yaml::Value) -> String {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum PoolingStrategy {
+    /// 仅使用第一个元素。
     #[default]
     First,
+    /// 将定长序列展平成一个向量。
     Flatten,
+    /// 对序列 embedding 求平均。
     Mean,
+    /// 对序列 embedding 求和。
     Sum,
+    /// 对序列 embedding 取逐维最大值。
     Max,
 }
 
@@ -221,12 +239,17 @@ pub enum TruncationSide {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EmbedConfig {
+    /// embedding 词表大小。
     pub vocab_size: usize,
+    /// embedding 向量维度。
     pub embed_dim: usize,
+    /// 序列特征的池化策略。
     #[serde(default)]
     pub pooling: PoolingStrategy,
+    /// 序列长度；列表特征可从 schema 推断。
     #[serde(default)]
     pub seq_len: Option<usize>,
+    /// 超长序列截断方向。
     #[serde(default)]
     pub truncation: TruncationSide,
 }
@@ -234,9 +257,13 @@ pub struct EmbedConfig {
 /// 推荐排序特征的原始来源：用户、物品、上下文或标签。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SourceKind {
+    /// 用户侧输入字段。
     User,
+    /// 物品侧输入字段。
     Item,
+    /// 请求上下文字段。
     Context,
+    /// 训练标签字段。
     Label,
 }
 
@@ -244,17 +271,25 @@ pub enum SourceKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SourceDef {
+    /// 原始字段名称。
     pub name: String,
+    /// 字段业务归属。
     #[serde(default)]
     pub source: Option<SourceKind>,
+    /// 字段来自的数据源名称。
     #[serde(default)]
     pub data_source: Option<String>,
+    /// 原始字段数据类型。
     pub dtype: DType,
+    /// 缺省值的字符串表示。
     pub default_val: String,
+    /// 已弃用的 source 级 embedding 配置。
     #[serde(default)]
     pub embed: Option<EmbedConfig>, // 已弃用：保留字段兼容旧配置
+    /// 字段在训练/推理中的角色。
     #[serde(default)]
     pub role: Role,
+    /// 无 header 文件中的列索引。
     #[serde(default)]
     pub column_index: Option<usize>,
 }
@@ -262,21 +297,37 @@ pub struct SourceDef {
 /// 算子类型枚举。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum OpType {
+    /// 数值分桶算子。
     Bucketing,
+    /// 字符串拼接后哈希算子。
     ConcatHash,
+    /// 交叉特征算子。
     CrossFeature,
+    /// 字典映射算子。
     DictMapper,
+    /// 表达式计算算子。
     ExpressionOp,
+    /// 特征哈希算子。
     FeatureHash,
+    /// 扁平化 split 算子。
     FlatSplit,
+    /// JSON 列表抽取算子。
     JsonExtractList,
+    /// 列表重叠度算子。
     ListOverlap,
+    /// 列表字符串解析算子。
     ListStringParser,
+    /// 解析与哈希融合算子。
     ParsedFeatureHash,
+    /// 动态插件算子。
     PluginOp,
+    /// 序列截断/补齐算子。
     SequenceOp,
+    /// 字符串 split 算子。
     Split,
+    /// 字符串拼接算子。
     StringConcat,
+    /// 字符串解析算子。
     StringParser,
 }
 
@@ -284,12 +335,18 @@ pub enum OpType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OperatorDef {
+    /// 算子节点名称。
     pub name: String,
+    /// 算子类型。
     pub op_type: OpType,
+    /// 输入特征名称列表。
     pub inputs: Vec<String>,
+    /// 输出特征名称列表。
     pub outputs: Vec<String>,
+    /// 算子参数。
     #[serde(default)]
     pub params: serde_yaml::Value,
+    /// 输出 embedding 配置。
     #[serde(default)]
     pub embed: Option<EmbedConfig>,
 }
@@ -298,10 +355,14 @@ pub struct OperatorDef {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DataSourceDef {
+    /// 数据源名称。
     pub name: String,
+    /// 数据源类型。
     pub kind: String,
+    /// 数据源说明。
     #[serde(default)]
     pub description: Option<String>,
+    /// 数据源连接或读取参数。
     #[serde(default)]
     pub params: serde_yaml::Value,
 }
@@ -310,10 +371,14 @@ pub struct DataSourceDef {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FlowConfig {
+    /// 配置 schema 版本。
     pub version: String,
+    /// 外部数据源列表。
     #[serde(default)]
     pub data_sources: Vec<DataSourceDef>,
+    /// 原始输入字段列表。
     pub sources: Vec<SourceDef>,
+    /// DAG 算子列表。
     pub operators: Vec<OperatorDef>,
 }
 

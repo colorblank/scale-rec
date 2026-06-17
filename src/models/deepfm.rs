@@ -15,8 +15,10 @@ use std::collections::HashMap;
 pub struct DeepFM {
     fm_first_embeddings: FeatureEmbeddings,
     fm_second_embeddings: FeatureEmbeddings,
+    /// FM 二阶隐向量维度。
     pub fm_k: usize,
     deep_embeddings: FeatureEmbeddings,
+    /// Deep 分支输入总维度。
     pub deep_total_dim: usize,
     deep_mlp: Mlp,
     global_bias: Tensor,

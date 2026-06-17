@@ -9,20 +9,27 @@ use candle_nn::VarBuilder;
 
 /// 交互层变体：标准版或轻量版。
 pub enum UniMixingLayer {
+    /// 标准 UniMixing 层。
     Standard(UniMixing),
+    /// 轻量 UniMixing-Lite 层。
     Lite(UniMixingLite),
 }
 
 /// 块输出变体：标准流或 Siamese 双流。
 pub enum BlockOutput {
+    /// Siamese 双流输出。
     Siamese(Tensor, Tensor),
+    /// 标准单流输出。
     Standard(Tensor),
 }
 
 /// 单层交互块：UniMixing + SwiGLU + SiameseNorm。
 pub struct UniMixerBlock {
+    /// token 序列展平后的总维度。
     pub embed_dim: usize,
+    /// 单个 token 的维度。
     pub token_dim: usize,
+    /// token 数量。
     pub num_tokens: usize,
     unimixing: UniMixingLayer,
     pswiglu: PerTokenSwiGlu,

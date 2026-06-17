@@ -17,8 +17,11 @@ pub type FeatureValue = Fv;
 
 /// 特征处理结果：包含所有特征值并区分来源。
 pub struct FeatureResult {
+    /// 所有 source 与计算结果的特征值。
     pub features: HashMap<String, FeatureValue>,
+    /// 原始 source 名称集合。
     pub source_names: HashSet<String>,
+    /// DAG 计算产生的特征名称集合。
     pub computed_names: HashSet<String>,
 }
 
@@ -27,13 +30,19 @@ pub struct FeatureResult {
 /// 根据 FlowConfig 构建算子图，拓扑排序后按序执行单样本处理。
 pub struct FeatureDag {
     sources: HashMap<String, SourceDef>,
+    /// 配置中的外部数据源定义。
     pub data_sources: Vec<DataSourceDef>,
     node_defs: HashMap<String, OperatorDef>,
+    /// 拓扑排序后的算子执行顺序。
     pub execution_order: Vec<String>,
     debug_mode: bool,
+    /// 可选调试 tracer，用于记录执行过程。
     pub tracer: Option<DebugTracer>,
+    /// 预编译执行计划。
     pub plan: ExecutionPlan,
+    /// source 和算子输出的静态 schema。
     pub feature_schemas: HashMap<String, FeatureSchema>,
+    /// DAG 构建校验报告。
     pub validation_report: ValidationReport,
 }
 

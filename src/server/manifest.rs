@@ -8,18 +8,25 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 /// 权重绑定配置：格式、schema、路径前缀。
 pub struct WeightBinding {
+    /// 权重文件格式。
     #[serde(default = "default_weight_format")]
     pub format: String,
+    /// 权重命名 schema。
     #[serde(default = "default_weight_schema")]
     pub schema: String,
+    /// 模型权重根前缀。
     #[serde(default)]
     pub root_prefix: String,
+    /// tokenizer 权重前缀。
     #[serde(default = "default_tokenizer_prefix")]
     pub tokenizer_prefix: String,
+    /// UniMixer 主体权重前缀。
     #[serde(default = "default_unimixer_prefix")]
     pub unimixer_prefix: String,
+    /// 是否严格要求 manifest 与权重 key 对齐。
     #[serde(default = "default_strict")]
     pub strict: bool,
+    /// 是否允许 safetensors 中存在额外 tensor。
     #[serde(default = "default_allow_extra_tensors")]
     pub allow_extra_tensors: bool,
 }
@@ -66,18 +73,26 @@ fn default_allow_extra_tensors() -> bool {
 #[serde(deny_unknown_fields)]
 /// 训练任务契约：任务名、标签、损失、权重、指标和输出语义。
 pub struct TaskSpecManifest {
+    /// 任务名称。
     pub name: String,
+    /// 标签列名。
     pub label: String,
+    /// 损失函数名称。
     #[serde(default = "default_task_loss")]
     pub loss: String,
+    /// 任务损失权重。
     #[serde(default = "default_task_weight")]
     pub weight: f64,
+    /// 可选 mask 列名。
     #[serde(default)]
     pub mask: Option<String>,
+    /// 可选正样本权重。
     #[serde(default)]
     pub pos_weight: Option<f64>,
+    /// 任务评估指标列表。
     #[serde(default)]
     pub metrics: Vec<String>,
+    /// 模型输出语义类型。
     #[serde(default = "default_task_output_kind")]
     pub output_kind: String,
 }
@@ -98,59 +113,88 @@ fn default_task_output_kind() -> String {
 #[serde(deny_unknown_fields)]
 /// 模型发布 Manifest：关联特征配置、模型配置和权重文件的元数据。
 pub struct ModelManifest {
+    /// manifest schema 版本。
     pub schema_version: u32,
+    /// 逻辑模型 ID。
     pub model_id: String,
+    /// 模型版本。
     pub model_version: String,
+    /// 训练 run 版本。
     #[serde(default)]
     pub run_version: Option<String>,
+    /// 发布版本。
     #[serde(default)]
     pub published_version: Option<String>,
+    /// 模型结构类型。
     pub model_type: String,
+    /// 产物对应的代码提交。
     pub code_commit: Option<String>,
+    /// 权重文件路径，相对 manifest 所在目录或绝对路径。
     pub weights_file: String,
+    /// 权重文件 sha256。
     pub weights_sha256: Option<String>,
+    /// 权重命名绑定配置。
     #[serde(default)]
     pub weight_binding: WeightBinding,
+    /// 特征配置文件路径。
     pub feature_config_file: String,
+    /// 特征配置 sha256。
     pub feature_config_sha256: String,
+    /// 模型配置文件路径。
     pub model_config_file: String,
+    /// 模型配置 sha256。
     pub model_config_sha256: String,
+    /// 参与训练和 serving 的基础任务名称。
     #[serde(default)]
     pub tasks: Vec<String>,
+    /// 完整任务契约。
     #[serde(default)]
     pub task_specs: Vec<TaskSpecManifest>,
+    /// 任务名到标签列的映射。
     #[serde(default)]
     pub label_col_map: HashMap<String, String>,
+    /// 发布时记录的指标。
     #[serde(default)]
     pub metrics: HashMap<String, f64>,
+    /// 最优 checkpoint 版本。
     #[serde(default)]
     pub best_version: Option<String>,
+    /// 最优 checkpoint epoch。
     #[serde(default)]
     pub best_epoch: Option<u32>,
+    /// 最优 checkpoint step。
     #[serde(default)]
     pub best_step: Option<u64>,
+    /// 最优监控分数。
     #[serde(default)]
     pub best_score: Option<f64>,
+    /// 最新 checkpoint 版本。
     #[serde(default)]
     pub latest_version: Option<String>,
+    /// 最新 checkpoint epoch。
     #[serde(default)]
     pub latest_epoch: Option<u32>,
+    /// 最新 checkpoint step。
     #[serde(default)]
     pub latest_step: Option<u64>,
+    /// checkpoint 目录。
     #[serde(default)]
     pub checkpoint_dir: Option<String>,
+    /// run manifest 文件路径。
     #[serde(default)]
     pub run_manifest_file: Option<String>,
+    /// 发布权重文件路径。
     #[serde(default)]
     pub published_weights_file: Option<String>,
+    /// best alias 权重文件路径。
     #[serde(default)]
     pub best_weights_file: Option<String>,
+    /// latest alias 权重文件路径。
     #[serde(default)]
     pub latest_weights_file: Option<String>,
 }
 
 impl ModelManifest {
-    /// 从 YAML 文件路径解析 Manifest。
     /// 从 YAML 文件路径解析 Manifest。
     pub fn from_path(path: &Path) -> Result<Self, String> {
         let yaml = std::fs::read_to_string(path)

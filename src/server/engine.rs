@@ -16,19 +16,28 @@ use crate::models::OutputKind;
 /// 推理各阶段耗时指标（微秒）。
 #[derive(Debug, Clone, Default)]
 pub struct InferenceMetrics {
+    /// 请求 JSON 到内部特征值的解析耗时。
     pub parse_us: u64,
+    /// DAG 特征计算耗时。
     pub dag_us: u64,
+    /// 特征值到 Candle tensor 的构造耗时。
     pub tensor_us: u64,
+    /// 模型 forward 耗时。
     pub forward_us: u64,
+    /// 输出转换为响应结构的耗时。
     pub response_us: u64,
 }
 
 /// 推理错误类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InferenceErrorKind {
+    /// 请求格式或参数错误。
     BadRequest,
+    /// 特征预处理错误。
     Feature,
+    /// 模型 forward 或输出错误。
     Model,
+    /// 服务内部错误。
     Internal,
 }
 
@@ -94,10 +103,15 @@ impl std::error::Error for InferenceError {}
 /// 推理结果类型别名。
 pub type InferenceResult<T> = Result<T, InferenceError>;
 
+/// 单模型推理引擎：DAG 执行器、模型实例和 tensor 构造元数据。
 pub struct InferenceEngine {
+    /// 预编译 DAG 执行器。
     pub executor: DagExecutor,
+    /// 已加载的模型实例。
     pub model: Box<dyn Model>,
+    /// 模型需要的 embedding 特征规格。
     pub embed_features: Vec<FeatureSpec>,
+    /// Candle 执行设备。
     pub device: Device,
     embed_ids: Vec<usize>,
     user_op_indices: HashSet<usize>,

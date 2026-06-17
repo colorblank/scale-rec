@@ -11,9 +11,13 @@ use std::collections::HashMap;
 
 /// 完整的 UniMixer 模型：特征分词 → Token 交互 → 多任务塔。
 pub struct UniMixerModel {
+    /// token 序列展平后的总维度。
     pub embed_dim: usize,
+    /// UniMixing 分块大小。
     pub block_size: usize,
+    /// 是否使用 SiameseNorm 双流结构。
     pub use_siamese: bool,
+    /// Sinkhorn/归一化温度。
     pub temperature: f64,
     tokenizer: FeatureTokenizer,
     blocks: Vec<UniMixerBlock>,

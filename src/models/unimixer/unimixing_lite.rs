@@ -9,10 +9,15 @@ use std::sync::Mutex;
 /// 对于局部混合使用基组合 (basis composition)，
 /// 对于全局混合使用低秩近似 (low-rank approximation)。
 pub struct UniMixingLite {
+    /// token 序列展平后的总维度。
     pub embed_dim: usize,
+    /// 块内 token 数量。
     pub block_size: usize,
+    /// 局部混合基矩阵数量。
     pub num_basis: usize,
+    /// 全局混合低秩近似秩。
     pub rank: usize,
+    /// 块数量。
     pub num_blocks: usize,
 
     /// 全局混合参数 A_G (N, r)

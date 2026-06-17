@@ -5,9 +5,13 @@ use candle_nn::VarBuilder;
 
 /// TokenMixer-Large block with Mixing & Reverting paradigm.
 pub struct TokenMixerLargeBlock {
+    /// 总 embedding 维度。
     pub embed_dim: usize,
+    /// token 数量。
     pub num_tokens: usize,
+    /// 单个 token 的维度。
     pub token_dim: usize,
+    /// mixing head 数量。
     pub num_heads: usize,
     head_pswiglu: PerTokenSwiGlu,
     token_pswiglu: PerTokenSwiGlu,

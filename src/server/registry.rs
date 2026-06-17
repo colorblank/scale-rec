@@ -22,41 +22,62 @@ use crate::models::{ModelBuildOptions, ModelConfig};
 /// 模型摘要信息。
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelInfo {
+    /// 逻辑模型名称。
     pub name: String,
+    /// 加载时间戳。
     pub loaded_at: String,
+    /// 已加载模型版本。
     pub model_version: Option<String>,
+    /// manifest 文件路径。
     pub manifest_path: Option<String>,
 }
 
 /// 模型版本详细信息。
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelVersionInfo {
+    /// 版本号。
     pub version: String,
+    /// 加载时间戳。
     pub loaded_at: String,
+    /// 模型结构类型。
     pub model_type: String,
+    /// manifest 文件路径。
     pub manifest_path: Option<String>,
+    /// 是否为默认版本。
     pub is_default: bool,
+    /// schema hash，当前使用 feature config sha256。
     pub schema_hash: Option<String>,
+    /// 特征配置 sha256。
     pub feature_config_sha256: Option<String>,
+    /// 模型配置 sha256。
     pub model_config_sha256: Option<String>,
+    /// 基础任务名称列表。
     pub tasks: Vec<String>,
+    /// 完整任务契约。
     pub task_specs: Vec<TaskSpecManifest>,
+    /// 任务名到标签列映射。
     pub label_col_map: HashMap<String, String>,
+    /// 发布指标。
     pub metrics: HashMap<String, f64>,
+    /// 权重绑定配置。
     pub weight_binding: WeightBinding,
 }
 
 /// 模型别名映射。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelAliasInfo {
+    /// 别名名称。
     pub alias: String,
+    /// 别名指向的版本。
     pub version: String,
 }
 
 /// 加权流量路由版本。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WeightedVersion {
+    /// 参与加权路由的版本。
     pub version: String,
+    /// 路由权重。
     pub weight: u32,
 }
 
@@ -64,14 +85,20 @@ pub struct WeightedVersion {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RoutingPolicy {
+    /// 固定路由到一个版本。
     Fixed {
+        /// 固定版本号。
         version: String,
     },
+    /// 按权重在多个版本间路由。
     Weighted {
+        /// 用于稳定哈希的请求字段。
         #[serde(default)]
         key_field: Option<String>,
+        /// 稳定哈希盐值。
         #[serde(default)]
         salt: Option<String>,
+        /// 加权版本列表。
         versions: Vec<WeightedVersion>,
     },
 }
@@ -79,36 +106,57 @@ pub enum RoutingPolicy {
 /// 模型 serving 完整信息。
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelServingInfo {
+    /// 逻辑模型名称。
     pub name: String,
+    /// 默认版本加载时间。
     pub loaded_at: Option<String>,
+    /// 默认版本 schema hash。
     pub schema_hash: Option<String>,
+    /// 默认版本基础任务列表。
     pub tasks: Vec<String>,
+    /// 默认版本完整任务契约。
     pub task_specs: Vec<TaskSpecManifest>,
+    /// 默认版本任务名到标签列映射。
     pub label_col_map: HashMap<String, String>,
+    /// 默认版本发布指标。
     pub metrics: HashMap<String, f64>,
+    /// 默认版本权重绑定配置。
     pub weight_binding: Option<WeightBinding>,
+    /// 默认版本号。
     pub default_version: Option<String>,
+    /// 模型别名列表。
     pub aliases: Vec<ModelAliasInfo>,
+    /// 当前路由策略。
     pub routing: Option<RoutingPolicy>,
+    /// 已加载版本列表。
     pub versions: Vec<ModelVersionInfo>,
 }
 
 /// 特征输入描述。
 #[derive(Debug, Clone, Serialize)]
 pub struct FeatureInputInfo {
+    /// 输入字段名称。
     pub name: String,
+    /// 输入字段业务来源。
     pub source: Option<SourceKind>,
+    /// 输入字段的数据源名称。
     pub data_source: Option<String>,
+    /// 输入字段类型。
     pub dtype: DType,
+    /// 输入字段缺省值。
     pub default_val: String,
 }
 
 /// 特征契约：模型声明的输入特征和 data sources。
 #[derive(Debug, Clone, Serialize)]
 pub struct FeatureContract {
+    /// 逻辑模型名称。
     pub model: String,
+    /// 模型版本。
     pub version: String,
+    /// 模型使用的数据源列表。
     pub data_sources: Vec<DataSourceDef>,
+    /// 推理请求需要提供的输入字段。
     pub required_inputs: Vec<FeatureInputInfo>,
 }
 
@@ -129,8 +177,11 @@ struct ModelEntry {
 /// 解析后的模型引用：包含引擎及版本信息。
 #[derive(Clone)]
 pub struct ResolvedModel {
+    /// 已解析出的推理引擎。
     pub engine: Arc<InferenceEngine>,
+    /// 逻辑模型名称。
     pub model_name: String,
+    /// 实际选中的版本。
     pub version: String,
 }
 

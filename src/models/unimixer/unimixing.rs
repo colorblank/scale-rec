@@ -10,8 +10,11 @@ use std::sync::Mutex;
 /// 核心思想是将混合过程解耦为局部的块内交互 (Local Interaction) 和全局的块间交互 (Global Interaction)，
 /// 以大幅降低注意力机制的时间和空间复杂度。
 pub struct UniMixing {
+    /// token 序列展平后的总维度。
     pub embed_dim: usize,
+    /// 块内 token 数量。
     pub block_size: usize,
+    /// 块数量。
     pub num_blocks: usize,
     /// 全局交互权重 `W_G` (形状: `[num_blocks, num_blocks]`)
     global_weights_logits: Tensor,

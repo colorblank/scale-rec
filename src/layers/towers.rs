@@ -10,10 +10,15 @@ use crate::models::{ModelOutput, OutputKind};
 #[serde(rename_all = "lowercase")]
 /// 激活函数类型。
 pub enum Activation {
+    /// ReLU 激活。
     Relu,
+    /// Sigmoid 激活。
     Sigmoid,
+    /// Swish 激活。
     Swish,
+    /// GELU 激活。
     Gelu,
+    /// 不使用激活函数。
     #[serde(rename = "none")]
     None_,
 }
@@ -26,12 +31,17 @@ impl Default for Activation {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// 单任务塔配置：名称、隐藏层维度、输出维度、激活函数。
 pub struct TowerConfig {
+    /// 任务塔名称，也是输出名称。
     pub name: String,
+    /// 隐藏层维度列表。
     #[serde(default)]
     pub hidden_dims: Vec<usize>,
+    /// 输出维度。
     pub output_dim: usize,
+    /// 隐藏层激活函数。
     #[serde(default)]
     pub activation: Activation,
+    /// 输出语义类型。
     #[serde(default = "default_output_kind")]
     pub output_kind: OutputKind,
 }
@@ -44,24 +54,33 @@ fn default_output_kind() -> OutputKind {
 #[serde(rename_all = "lowercase")]
 /// 任务间概率关系运算类型。
 pub enum RelationOp {
+    /// 源概率相乘。
     Multiply,
+    /// 源概率相加。
     Add,
+    /// 两个源概率相减。
     Subtract,
+    /// 两个源概率相除。
     Divide,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// 任务关系定义：目标任务由源任务经运算推导。
 pub struct TaskRelation {
+    /// 派生输出名称。
     pub target: String,
+    /// 参与关系计算的源输出名称。
     pub sources: Vec<String>,
+    /// 概率关系运算。
     pub op: RelationOp,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// 多任务塔完整配置：塔列表 + 关系推导列表。
 pub struct MultiTaskConfig {
+    /// 独立任务塔配置列表。
     pub towers: Vec<TowerConfig>,
+    /// 派生概率关系配置列表。
     #[serde(default)]
     pub relations: Vec<TaskRelation>,
 }

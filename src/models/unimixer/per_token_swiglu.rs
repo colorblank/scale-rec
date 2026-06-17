@@ -13,6 +13,7 @@ struct CachedWeights {
     down_linears: Vec<Linear>,
 }
 
+/// 每个 token 独立参数的 SwiGLU 前馈模块。
 pub struct PerTokenSwiGlu {
     w_up: Tensor,
     b_up: Tensor,
