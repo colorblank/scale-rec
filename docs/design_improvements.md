@@ -21,6 +21,38 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 
 这套设计的核心优势是：特征契约有单一来源，训练与推理模型结构可对齐，线上服务不携带 Python 运行时，同时已经具备多模型注册、发布 manifest、Golden consistency、模型 smoke test、算子级测试、周期 checkpoint、resume、压测工具和任务级配置。
 
+### 1.1 通用模型结构与业务特定模型的关系
+
+模型系统应按三层理解，而不是把每个 `type` 都视为同一层级的业务模型：
+
+- **通用模型结构层**：提供可复用的表示学习和输出结构，例如 `FeatureEmbeddings`、`FeatureTokenizer`、`Mlp`、`GatedCrossNetwork`、UniMixer/RankMixer block、`TaskTower`、`MultiTaskTower`、`TaskRelation` 和 `ModelOutput`。这一层关心张量形状、权重命名、输出语义和双端一致性，不应携带 discover 业务字段名或标签策略。
+- **任务契约层**：用 `tasks`、`label_col_map`、`metrics`、`output_kind` 和 `task_config` 描述“模型输出如何参与训练和评估”。`tasks` 是监督契约，负责 label、loss、weight、mask、metrics；`task_config` 是 forward 契约，负责 tower、activation、relation 和派生概率。两者可以引用相同任务名，但职责不能互相替代。
+- **业务特定模型层**：把通用结构和任务契约组合成某个业务场景可用的模板，例如 discover 场景的 `gdcn_esmm.yaml`、`rankmixer.yaml` 中的 click/cvr/detail/stock/stay tower、ctcvr/ctdetail/ctstock/ctstay relation、标签列名和指标。业务层应该主要体现在 YAML 配置、label policy、artifact manifest 和发布策略中，而不是散落到模型基础实现里。
+
+因此，`gdcn_esmm`、`rankmixer`、`token_mixer_large` 这类模型 `type` 更准确地说是“结构模板”：它们决定 shared representation 如何产生、是否使用 token mixer、是否使用 cross/deep/fusion，但不应该固定某个业务的任务集合。click/cvr/detail/stock/stay 是 discover 业务的一组任务契约；当新业务接入时，理想路径应是复用同一个结构模板，替换 `tasks` 和 `task_config`，而不是复制一个新模型文件并把业务名写进代码。
+
+重新梳理后的架构边界如下：
+
+```text
+raw sample / request
+  -> FlowConfig + DagBuilder + DagExecutor
+  -> FeatureInfo.embeddable_features()
+  -> generic structure template: lr/deepfm/gdcn_esmm/unimixer/rankmixer/...
+  -> task contract: tasks + task_config + output_kind + label_col_map
+  -> ModelOutput: typed logits/probabilities/regression/score
+  -> training loss/metrics or serving score selection
+```
+
+这个边界带来的判断规则：
+
+- 如果变化是“特征如何从原始字段生成”，放在 feature config/operator/DAG。
+- 如果变化是“张量结构如何表达特征交互”，放在通用模型结构或新增结构模板。
+- 如果变化是“业务要预测什么、用哪个 label、怎么计算 loss/metric”，放在 `tasks` 和训练配置。
+- 如果变化是“哪些 tower 存在、tower 之间如何派生概率”，放在 `task_config`。
+- 如果变化是“线上用哪个输出排序、版本如何切流”，放在 serving manifest、alias/routing 或业务排序策略，不放进基础模型实现。
+
+当前代码已经向这个方向演进：`TaskTower`/`MultiTaskTower`、`TaskRelation`、`ModelOutput`、`OutputKind`、`tasks` 和 `task_config` 都在把业务任务从模型结构里拆出来。但仍有历史残留，例如 ESMM/GDCN-ESMM 默认 click/cvr/detail/stock/stay hidden dims 参数、Python/Rust 构建函数里的 legacy fallback，以及示例配置中的 discover 标签列名容易被误读为框架内置语义。后续重构应优先把这些内容收敛为“示例业务配置”，让模型代码只保留通用结构模板。
+
 ## 2. 已完成的关键治理项
 
 相比上一版分析，以下问题已经明显改善，后续文档和计划不应再把它们作为未完成 P0：
@@ -100,6 +132,8 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 - Rust 和 Python 模型仍是双份实现，新增 layer、task tower 或 naming prefix 时必须人工保持 `state_dict` key 对齐。
 - Rust/Python 已对模型 params 做 allowlist、required 和基础类型校验，但模型参数仍不是独立 typed config，错误信息和默认值语义还可以继续集中化。
 - legacy hidden dims 路径与 `task_config` 路径仍并存，长期会增加多任务模型的配置心智负担。
+- ESMM/GDCN-ESMM 的构造函数仍保留 click/cvr/detail/stock/stay 默认任务参数，容易让业务任务集合看起来像结构模板的一部分。
+- `tasks`、`task_config`、`label_col_map` 和 `output_kind` 已经形成任务契约，但还没有一个显式的 typed `TaskContract` seam 来统一训练、导出、manifest 和 serving 查询。
 - `/models` 返回的 `ModelServingInfo` 仍偏 serving 状态，缺少 schema hash、tasks、metrics、label map、weight binding 等关键元数据。
 
 改进方向：
@@ -107,6 +141,8 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 - 为每个模型补充自动化 state_dict key 对齐测试或导出检查脚本。
 - 为 Rust/Python 模型参数建立更细的 typed config，减少通用 YAML 参数读取和默认值分散。
 - 逐步收敛 legacy hidden dims 参数，以 `task_config` / `tasks` 作为多任务配置主入口。
+- 把 discover 的 click/cvr/detail/stock/stay 默认任务配置下沉到示例 YAML 或业务 preset，模型代码只保留通用结构模板和显式 `task_config` 路径。
+- 抽象任务契约读取/校验 seam，让训练 loss、metrics、manifest、Rust serving metadata 使用同一份任务语义，而不是各自解析 YAML 片段。
 - 扩展 `/models` 和 manifest 加载后的内存元数据，返回 schema hash、tasks、metrics、labels、loaded_at 和 weight binding。
 
 ### 3.3 训练产物与发布
