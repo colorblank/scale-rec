@@ -51,7 +51,7 @@ raw sample / request
 - 如果变化是“哪些 tower 存在、tower 之间如何派生概率”，放在 `task_config`。
 - 如果变化是“线上用哪个输出排序、版本如何切流”，放在 serving manifest、alias/routing 或业务排序策略，不放进基础模型实现。
 
-当前代码已经向这个方向演进：`TaskTower`/`MultiTaskTower`、`TaskRelation`、`ModelOutput`、`OutputKind`、`tasks` 和 `task_config` 都在把业务任务从模型结构里拆出来。但仍有历史残留，例如 ESMM/GDCN-ESMM 默认 click/cvr/detail/stock/stay hidden dims 参数、Python/Rust 构建函数里的 legacy fallback，以及示例配置中的 discover 标签列名容易被误读为框架内置语义。后续重构应优先把这些内容收敛为“示例业务配置”，让模型代码只保留通用结构模板。
+当前代码已经向这个方向演进：`TaskTower`/`MultiTaskTower`、`TaskRelation`、`ModelOutput`、`OutputKind`、`TaskContract`、`tasks` 和 `task_config` 都在把业务任务从模型结构里拆出来。ESMM/GDCN-ESMM 的 YAML / `ModelConfig` 构建路径已经要求显式 `task_config`，但直接类构造中仍保留 click/cvr/detail/stock/stay 默认任务参数，示例配置中的 discover 标签列名也容易被误读为框架内置语义。后续重构应优先把这些内容收敛为“示例业务配置”，让模型代码只保留通用结构模板。
 
 ## 2. 已完成的关键治理项
 
@@ -74,6 +74,10 @@ raw sample / request
 - **FeatureDag 深化拆分**：Rust/Python 均已拆出 `DagBuilder`、`DagExecutor`、`FeatureInfo`，Python 额外拆出 `DagPreprocessor` / `TrainingPreprocessor`；训练、评估、metrics、quality 和 Rust serving/demo 调用方已迁移到新 seam，`FeatureDag` 仅作为兼容 facade。
 - **operator type 枚举化**：Rust `OperatorDef.op_type` 已从 `String` 改为 `OpType` enum，Python 已从 `str` 改为 `OpType(str, Enum)`；schema 推导、quality padding 识别和 Rust registry 不再用字符串判断 operator 类型。
 - **apply_relation 去重**：ESMM/GDCN-ESMM 的 relation 应用逻辑已收敛到 `layers::towers::apply_relation()`，避免多任务概率关系重复实现。
+- **任务契约 seam**：Python 已新增 `TaskContract` / `TaskSpec`，集中生成 `task_names`、`label_col_map`、`output_kinds` 和 manifest `task_specs`，训练、导出和 serving 查询不再各自解析任务语义。
+- **模型 serving 元数据扩展**：manifest 与 `/models` / version serving info 已暴露 `loaded_at`、schema/config hash、tasks、task_specs、label map、metrics 和 weight binding 等关键元数据。
+- **模型权重绑定检查**：已新增 Python `check_weight_bindings.py` 和 Rust `validate_manifest` 二进制，用于从示例模型导出 safetensors/manifest 并触发 Rust key/shape 校验。
+- **Rust public API 文档与 warning 清零**：Rust public API 已补齐 rustdoc，`#![warn(missing_docs)]` 已启用；`cargo check` 和 `cargo doc --no-deps` 当前无 warning。
 
 ## 3. 架构分析
 
@@ -131,19 +135,16 @@ raw sample / request
 
 - Rust 和 Python 模型仍是双份实现，新增 layer、task tower 或 naming prefix 时必须人工保持 `state_dict` key 对齐。
 - Rust/Python 已对模型 params 做 allowlist、required 和基础类型校验，但模型参数仍不是独立 typed config，错误信息和默认值语义还可以继续集中化。
-- legacy hidden dims 路径与 `task_config` 路径仍并存，长期会增加多任务模型的配置心智负担。
-- ESMM/GDCN-ESMM 的构造函数仍保留 click/cvr/detail/stock/stay 默认任务参数，容易让业务任务集合看起来像结构模板的一部分。
-- `tasks`、`task_config`、`label_col_map` 和 `output_kind` 已经形成任务契约，但还没有一个显式的 typed `TaskContract` seam 来统一训练、导出、manifest 和 serving 查询。
-- `/models` 返回的 `ModelServingInfo` 仍偏 serving 状态，缺少 schema hash、tasks、metrics、label map、weight binding 等关键元数据。
+- ESMM/GDCN-ESMM 的 YAML / `ModelConfig` 构建路径已要求显式 `task_config`，但直接类构造仍保留 legacy click/cvr/detail/stock/stay 默认参数，长期仍会增加多任务模型的配置心智负担。
+- `TaskContract` 已统一 Python 训练、导出和 manifest 任务语义，但 Rust 侧仍主要消费 manifest 结果，还没有完整的 typed task contract 构建/校验 seam。
 
 改进方向：
 
-- 为每个模型补充自动化 state_dict key 对齐测试或导出检查脚本。
+- 将 `check_weight_bindings.py` / `validate_manifest` 纳入 CI，覆盖所有示例模型的 state_dict key 和 shape 对齐。
 - 为 Rust/Python 模型参数建立更细的 typed config，减少通用 YAML 参数读取和默认值分散。
-- 逐步收敛 legacy hidden dims 参数，以 `task_config` / `tasks` 作为多任务配置主入口。
+- 继续收敛直接类构造中的 legacy hidden dims 参数，以 `task_config` / `tasks` 作为多任务配置主入口。
 - 把 discover 的 click/cvr/detail/stock/stay 默认任务配置下沉到示例 YAML 或业务 preset，模型代码只保留通用结构模板和显式 `task_config` 路径。
-- 抽象任务契约读取/校验 seam，让训练 loss、metrics、manifest、Rust serving metadata 使用同一份任务语义，而不是各自解析 YAML 片段。
-- 扩展 `/models` 和 manifest 加载后的内存元数据，返回 schema hash、tasks、metrics、labels、loaded_at 和 weight binding。
+- 在 Rust 侧补充 typed task contract 校验，确保 manifest `task_specs`、model output 和 serving metadata 一致。
 
 ### 3.3 训练产物与发布
 
@@ -255,12 +256,13 @@ raw sample / request
 - 共享 YAML 特征编排，覆盖 Bucketing、DictMapper、StringParser、JsonExtractList、ListStringParser、Split、FlatSplit、ExpressionOp、CrossFeature、ListOverlap、SequenceOp、StringConcat、FeatureHash、PluginOp、ParsedFeatureHash、ConcatHash 等算子。
 - Python 单文件训练、discover 训练、多模型训练入口，共享列式 batch 预处理和可选 prefetch。
 - 多任务 loss、评估、early stopping、EMA、周期 checkpoint、epoch-end checkpoint、resume 和 manifest。
-- 任务级配置落到模型 YAML，训练和评估直接读取 `tasks`、`label_col_map`、`metrics`。
+- 任务级配置落到模型 YAML，训练和评估通过 `TaskContract` 读取 `tasks`、`label_col_map`、`metrics`、`output_kind` 和 manifest `task_specs`。
 - Rust HTTP 推理支持 pointwise `/predict` 和 broadcast `/predict/broadcast`。
 - Rust 推理支持 plan DAG、broadcast user 子图预计算、多模型热加载、多版本、alias 和 routing。
-- Feature contract 查询接口可暴露每个模型/版本需要的输入字段、dtype、default 和 data source。
+- Feature contract 查询接口可暴露每个模型/版本需要的输入字段、dtype、default 和 data source；模型查询接口可暴露 schema hash、tasks、metrics、label map、加载时间和 weight binding。
 - Golden consistency 测试覆盖 Python/Rust 特征处理一致性。
 - safetensors 权重 key 与 shape 校验。
+- 示例模型权重绑定检查脚本覆盖 Python 导出到 Rust manifest 加载路径。
 - benchmark 工具支持 synthetic 和真实 discover 输入压测。
 - `docs/http_benchmark_report.md` 已记录 GDCN+ESMM 和 UniMixer 在 broadcast 场景下的端到端压测结果。
 
@@ -273,7 +275,7 @@ raw sample / request
 - 认证和权限：预测端点、模型查询端点、alias/routing 管理端点目前都无认证。
 - 限流和过载保护：全局 rate limit、并发限制和请求超时已具备，但仍缺少按 IP、租户或 API key 的额度隔离和更细粒度 backpressure。
 - 发布控制面持久化：alias、routing、default version 目前是内存状态，缺少可审计、可回滚的持久化发布索引。
-- 模型级 schema 元数据：`/models` 还应返回 schema hash、embeddable schema、tasks、metrics、label map、weight binding 和加载时间。
+- 模型级 schema 元数据：`/models` 已返回 schema hash、tasks、metrics、label map、weight binding 和加载时间，但 embeddable schema、feature quality summary 和更细的兼容状态仍未暴露。
 - 配置兼容策略：feature config、model config、manifest schema 的版本兼容规则尚未系统化。
 - 模型/operator 参数严格校验：Rust/Python 对未知字段、错误类型、缺失必填参数的处理仍不一致。
 - 线上可观测性：已有 parse/dag/tensor/forward/response 耗时，但缺少 default hit rate、空序列比例、截断次数、FeatureHash cache、broadcast 子图 skip 数等指标。
@@ -354,13 +356,14 @@ raw sample / request
 5. **Docker 非 root 运行**：`docker/Dockerfile` 和 `docker/Dockerfile.mkl` 添加非 root `USER`，并确认模型目录权限。
 6. **API error 脱敏**：对外只返回稳定 code 和必要 message，内部路径和详细错误写入日志。
 7. **细粒度限流**：在现有全局 rate limit/concurrency/timeout 基础上，增加按 IP、租户或 API key 的额度隔离。
+8. **CI 纳入权重绑定检查**：将 `scale_rec_demo.check_weight_bindings` 和 Rust `validate_manifest` 纳入质量闸门，防止 Python/Rust 模型命名漂移。
 
 ### P1：可观测性与发布治理
 
-1. 扩展 `/models` 返回 schema hash、tasks、metrics、label map、loaded_at、weight binding。
-2. 增加模型发布索引文件，记录 default/canary/rollback/alias/routing 变更。
-3. 增加 Prometheus/OpenTelemetry 指标导出，至少覆盖请求量、错误量、延迟分段、batch size、broadcast item count。
-4. 增加 feature 质量和默认值命中指标：default hit rate、empty sequence、truncation、FeatureHash cache hit/miss/size。
+1. 增加模型发布索引文件，记录 default/canary/rollback/alias/routing 变更。
+2. 增加 Prometheus/OpenTelemetry 指标导出，至少覆盖请求量、错误量、延迟分段、batch size、broadcast item count。
+3. 增加 feature 质量和默认值命中指标：default hit rate、empty sequence、truncation、FeatureHash cache hit/miss/size。
+4. 将训练侧 feature quality summary 写入 manifest，并在 `/models` 或 feature contract 查询中暴露。
 5. 插件机制增加 allowlist、禁用开关和路径 canonicalize 校验；生产默认禁用动态插件。
 6. 增加 `cargo-audit` / `cargo-deny`、Dependabot/Renovate 和 `.pre-commit-config.yaml`。
 7. 渐进启用 ruff `I`、`B`、`UP`、`SIM`，逐步移除 mypy `ignore_errors`。
@@ -380,19 +383,19 @@ raw sample / request
 2. 拆分 `Trainer`：`CheckpointManager` + `ResumeState` + `TrainingLoop` + `EvaluatorAdapter`。
 3. ~~为所有公共 API 补充 rustdoc/docstring，并在 CI 中逐步启用 missing docs 检查。~~ ✅ 已完成，`#![warn(missing_docs)]` 已启用。
 4. ~~标准化 operator 注册和 operator type 分发，降低新增算子的 Rust/Python 双端维护成本。~~ ✅ 已完成，双端均使用 registry 模式和 `OpType` 枚举。
-5. 为模型 state_dict key 对齐建立自动化测试或导出检查脚本。
+5. ~~为模型 state_dict key 对齐建立自动化测试或导出检查脚本。~~ ✅ 已新增 `check_weight_bindings.py` 和 `validate_manifest`，后续需纳入 CI。
 6. 建立模型发布、回滚、灰度和兼容检查流程，把 runtime alias/routing 接入持久化控制面。
 7. 将训练侧 feature quality 写入 manifest，并在服务端加载后可查询。
 
 ## 7. 推荐执行路线
 
-**第 1 阶段（1-2 周）**：认证、CI、Docker 非 root、API error 脱敏、细粒度限流。目标是补齐生产安全底线和质量闸门。
+**第 1 阶段（1-2 周）**：认证、CI、Docker 非 root、API error 脱敏、细粒度限流，并把权重绑定检查纳入 CI。目标是补齐生产安全底线和质量闸门。
 
-**第 2 阶段（2-4 周）**：alias/routing 持久化、`/models` 元数据扩展、配置 strict validation、插件 allowlist。目标是让发布控制和配置错误可审计、可回滚、可诊断。
+**第 2 阶段（2-4 周）**：alias/routing 持久化、feature quality manifest/查询、配置 strict validation、插件 allowlist。目标是让发布控制、数据质量和配置错误可审计、可回滚、可诊断。
 
 **第 3 阶段（1-2 月）**：固定压测矩阵、FeatureHash cache 治理、tensor 构造优化、Python Arrow/Polars pipeline 试点。目标是在可复现基线上提升吞吐。
 
-**第 4 阶段（2-4 月）**：继续收敛 `FeatureDag` facade、拆分 `Trainer`、标准化 operator params，建立模型 key 对齐测试和发布兼容检查。目标是提升长期演进的 Locality 和 Leverage。
+**第 4 阶段（2-4 月）**：继续收敛 `FeatureDag` facade、拆分 `Trainer`、标准化 operator params，建立发布兼容检查流程。目标是提升长期演进的 Locality 和 Leverage。
 
 ## 8. 验收建议
 
