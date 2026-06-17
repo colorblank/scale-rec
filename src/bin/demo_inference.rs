@@ -45,7 +45,6 @@ fn main() -> Result<()> {
     let feat_info = FeatureInfo::new(
         artifact.sources.clone(),
         artifact.node_defs.clone(),
-        artifact.feature_schemas.clone(),
         artifact.execution_order.clone(),
     );
 

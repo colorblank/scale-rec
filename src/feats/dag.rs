@@ -104,7 +104,6 @@ impl FeatureDag {
         FeatureInfo::new(
             self.sources.clone(),
             self.node_defs.clone(),
-            self.feature_schemas.clone(),
             self.execution_order.clone(),
         )
         .op_source_kind()

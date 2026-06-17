@@ -1,6 +1,5 @@
 //! 特征信息视图：从 DAG 构建结果投影，提供模型构建和广播策略所需的元数据查询。
 use crate::feats::config::{EmbedConfig, OperatorDef, SourceDef, SourceKind};
-use crate::feats::schema::FeatureSchema;
 use std::collections::HashMap;
 
 /// 特征作用域：原始来源或多个来源组合后的派生作用域。
@@ -81,7 +80,6 @@ impl FeatureScope {
 pub struct FeatureInfo {
     sources: HashMap<String, SourceDef>,
     node_defs: HashMap<String, OperatorDef>,
-    feature_schemas: HashMap<String, FeatureSchema>,
     execution_order: Vec<String>,
 }
 
@@ -90,13 +88,11 @@ impl FeatureInfo {
     pub fn new(
         sources: HashMap<String, SourceDef>,
         node_defs: HashMap<String, OperatorDef>,
-        feature_schemas: HashMap<String, FeatureSchema>,
         execution_order: Vec<String>,
     ) -> Self {
         Self {
             sources,
             node_defs,
-            feature_schemas,
             execution_order,
         }
     }
