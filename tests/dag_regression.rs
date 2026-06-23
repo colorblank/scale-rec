@@ -115,6 +115,37 @@ operators:
 }
 
 #[test]
+fn dag_executes_log1p_operator() {
+    let yaml = r#"
+version: 1.0.0
+sources:
+  - name: raw_score
+    dtype: float
+    default_val: "0"
+operators:
+  - name: score_log1p
+    op_type: Log1p
+    inputs: [raw_score]
+    outputs: [score_log]
+    params: {}
+"#;
+    let config = FlowConfig::from_yaml(yaml).unwrap();
+    let dag = FeatureDag::from_config(config, false, None).unwrap();
+    let mut raw = HashMap::new();
+    raw.insert("raw_score".to_string(), FeatureValue::Float(5999.0));
+    let out = dag.execute(&raw).unwrap();
+
+    match out.features.get("score_log") {
+        Some(Fv::Float(value)) => assert!((*value - 8.699_515).abs() < 1e-6),
+        other => panic!("expected log1p float output, got {:?}", other),
+    }
+    assert_eq!(
+        dag.feature_schemas.get("score_log").unwrap().dtype,
+        FeatureDType::Float
+    );
+}
+
+#[test]
 fn dag_rejects_non_integer_embeddable_feature() {
     let yaml = r#"
 version: 1.0.0

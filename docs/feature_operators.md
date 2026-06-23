@@ -234,7 +234,7 @@ DAG 在初始化阶段根据 SourceDef.dtype 生成默认值及类型映射：
 
 ---
 
-## 4. 全部 16 个算子
+## 4. 全部 17 个算子
 
 ### 4.1 Bucketing — 数值分桶
 
@@ -661,7 +661,39 @@ mapping = {phone:1, pad:2, pc:3}, default_idx=0
 
 ---
 
-### 4.9 CrossFeature — 特征交叉
+### 4.9 Log1p — 对数平滑变换
+
+计算单个数值输入的 `ln(1 + x)`，用于曝光、点击、成交额等非负计数或金额特征的平滑压缩。
+
+**参数**：无
+
+**输入**：`Int` 或 `Float`
+**输出**：`Float`
+
+**处理流程**：
+
+1. 取第一个输入值，转为浮点数
+2. 若输入值 `<= -1`，返回错误，避免 Rust/Python 在 `-inf`/异常行为上不一致
+3. 返回 `ln(1 + x)`
+
+**示例**：
+
+```yaml
+- name: expo_log
+  op_type: Log1p
+  inputs: [expo_cnt]
+  outputs: [expo_log]
+  params: {}
+```
+
+```
+输入 5999 → ln(6000) → 8.699515...
+输入 0    → ln(1)    → 0
+```
+
+---
+
+### 4.10 CrossFeature — 特征交叉
 
 对两个列表特征进行组合操作，支持笛卡尔积和内积。
 
@@ -714,7 +746,7 @@ mapping = {phone:1, pad:2, pc:3}, default_idx=0
 
 ---
 
-### 4.10 ListOverlap — 列表交集检测
+### 4.11 ListOverlap — 列表交集检测
 
 判断两个字符串列表是否有交集，用于用户-物品交互信号提取。
 
@@ -751,7 +783,7 @@ mapping = {phone:1, pad:2, pc:3}, default_idx=0
 
 ---
 
-### 4.11 SequenceOp — 序列截断填充
+### 4.12 SequenceOp — 序列截断填充
 
 将整数序列裁剪或填充至固定长度，确保下游模型接收统一长度的序列输入。
 
@@ -791,7 +823,7 @@ max_len=5, pad_val=0
 
 ---
 
-### 4.12 StringConcat — 字符串拼接
+### 4.13 StringConcat — 字符串拼接
 
 将多路输入拼接到单个字符串，类型不限。作为特征交叉前的桥接算子，与 `FeatureHash` 配合完成特征哈希。
 
@@ -828,7 +860,7 @@ max_len=5, pad_val=0
 
 ---
 
-### 4.13 FeatureHash — 特征哈希
+### 4.14 FeatureHash — 特征哈希
 
 无状态 DJB2 多种子哈希。将输入拼接后用 k 个独立种子分别哈希，输出一个或一组索引。此外，原生支持对列表输入进行逐元素哈希。Python 与 Rust 实现逐位一致。
 
@@ -926,7 +958,7 @@ max_len=5, pad_val=0
 
 ---
 
-### 4.14 融合预处理算子
+### 4.15 融合预处理算子
 
 融合预处理算子把“先解析，再逐元素哈希”的链路合并成一个节点，用来减少 DAG 深度、降低运行时中间值分配，并简化配置。
 
@@ -966,7 +998,7 @@ max_len=5, pad_val=0
 
 ---
 
-### 4.15 PluginOp — 外部插件
+### 4.16 PluginOp — 外部插件
 
 通过 `cdylib` 动态加载外部算子，用于实验性特征快速验证。
 
@@ -1192,6 +1224,7 @@ RQ-VAE 语义 ID 序列的完整处理链路：两级解析 → 打平 → 映�
 | FlatSplit | StrList | StrList | sep, max_len | 序列化向量打平 |
 | ListStringParser | StrList | StrList | sep, key_index | 列表元素字段提取 |
 | ExpressionOp | Numeric | Float | script | 数学变换 |
+| Log1p | Int/Float | Float | — | 对数平滑变换 |
 | CrossFeature | StrList×2 / IntList×2 | StrList / Float | cross_type | 特征交叉 |
 | ListOverlap | StrList×2 | Int | — | 列表交集检测 |
 | SequenceOp | IntList | IntList | max_len, pad_val | 序列定长对齐 |
@@ -1215,7 +1248,7 @@ RQ-VAE 语义 ID 序列的完整处理链路：两级解析 → 打平 → 映�
    - 添加 `@register_op("<OpType>")` 装饰器 + `@classmethod from_config(params) -> Self`
 
 3. **验证**：
-   - Rust：`cargo test`（`all_16_ops_are_registered` 测试自动验证注册完整性）
+   - Rust：`cargo test`（`all_17_ops_are_registered` 测试自动验证注册完整性）
    - Python：`PYTHONPATH=python/src uv run --directory python pytest tests/ -v`
    - 双端一致性：`PYTHONPATH=python/src uv run --project python python -m scale_rec_demo.verify_all`
 

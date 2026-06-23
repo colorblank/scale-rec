@@ -90,9 +90,9 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.verify_all
 
 Both sides parse the same `examples/feature_config_discover.yaml` which defines:
 - **sources**: raw input features (NO embed — all embedding through operators)
-- **operators**: a DAG of 16 operator types
+- **operators**: a DAG of 17 operator types
 
-全部 16 个算子：`Bucketing`, `DictMapper`, `StringParser`, `JsonExtractList`, `ListStringParser`, `Split`, `FlatSplit`, `ExpressionOp`, `CrossFeature`, `ListOverlap`, `SequenceOp`, `StringConcat`, `FeatureHash`, `PluginOp`, `ParsedFeatureHash`, `ConcatHash`。
+全部 17 个算子：`Bucketing`, `DictMapper`, `StringParser`, `JsonExtractList`, `ListStringParser`, `Split`, `FlatSplit`, `ExpressionOp`, `Log1p`, `CrossFeature`, `ListOverlap`, `SequenceOp`, `StringConcat`, `FeatureHash`, `PluginOp`, `ParsedFeatureHash`, `ConcatHash`。
 
 **配置原则**：
 - 默认使用 FeatureHash（无状态哈希），DictMapper 仅用于低基数枚举

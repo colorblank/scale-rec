@@ -162,6 +162,7 @@ class OpType(str, Enum):
     JSON_EXTRACT_LIST = "JsonExtractList"
     LIST_OVERLAP = "ListOverlap"
     LIST_STRING_PARSER = "ListStringParser"
+    LOG1P = "Log1p"
     PARSED_FEATURE_HASH = "ParsedFeatureHash"
     PLUGIN_OP = "PluginOp"
     SEQUENCE_OP = "SequenceOp"
@@ -215,6 +216,7 @@ _OP_PARAM_SPECS: dict[OpType, tuple[set[str], set[str], dict[str, type | tuple[t
     ),
     OpType.LIST_OVERLAP: (set(), set(), {}),
     OpType.LIST_STRING_PARSER: ({"sep", "key_index"}, set(), {"sep": str, "key_index": int}),
+    OpType.LOG1P: (set(), set(), {}),
     OpType.PARSED_FEATURE_HASH: (
         {
             "vocab_size",

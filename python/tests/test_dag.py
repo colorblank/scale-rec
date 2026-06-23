@@ -110,6 +110,27 @@ def test_dag_execute():
     assert result.features["category_idx"] == 1
 
 
+def test_dag_executes_log1p_operator():
+    raw = {
+        "version": "1.0.0",
+        "sources": [{"name": "raw_score", "dtype": "float", "default_val": "0"}],
+        "operators": [
+            {
+                "name": "score_log1p",
+                "op_type": "Log1p",
+                "inputs": ["raw_score"],
+                "outputs": ["score_log"],
+                "params": {},
+            }
+        ],
+    }
+    dag = FeatureDag(FlowConfig.from_dict(raw))
+    result = dag.execute({"raw_score": 5999.0})
+
+    assert abs(result.features["score_log"] - 8.699515) < 1e-6
+    assert dag.feature_schemas["score_log"].dtype.tag == "float"
+
+
 def test_preprocess_batch():
     config = FlowConfig.from_yaml(str(FIXTURE_DIR / "golden_feature_config.yaml"))
     dag = FeatureDag(config)

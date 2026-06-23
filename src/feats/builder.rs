@@ -406,6 +406,7 @@ impl DagBuilder {
             OpType::JsonExtractList => (&["key", "pad_len", "pad_val"], &[]),
             OpType::ListOverlap => (&[], &[]),
             OpType::ListStringParser => (&["sep", "key_index"], &[]),
+            OpType::Log1p => (&[], &[]),
             OpType::ParsedFeatureHash => (
                 &[
                     "vocab_size",
@@ -466,6 +467,7 @@ impl DagBuilder {
                 expect_optional_str(&def.name, &def.params, "sep")?;
                 expect_optional_usize(&def.name, &def.params, "key_index")
             }
+            OpType::Log1p => Ok(()),
             OpType::ParsedFeatureHash => {
                 expect_usize(&def.name, &def.params, "vocab_size")?;
                 for key in [

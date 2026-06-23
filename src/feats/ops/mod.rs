@@ -20,6 +20,8 @@ pub mod json_extract_list;
 pub mod list_overlap;
 /// 字符串列表切分提取算子。
 pub mod list_string_parser;
+/// log1p 数值算子。
+pub mod log1p;
 /// 融合预处理哈希算子。
 pub mod parsed_feature_hash;
 /// 动态加载插件算子。
@@ -55,6 +57,8 @@ pub use json_extract_list::JsonExtractList;
 pub use list_overlap::ListOverlap;
 /// ListStringParser 算子重新导出。
 pub use list_string_parser::ListStringParser;
+/// Log1p 算子重新导出。
+pub use log1p::Log1p;
 /// ParsedFeatureHash 算子重新导出。
 pub use parsed_feature_hash::ParsedFeatureHash;
 /// PluginOp 算子重新导出。

@@ -1,3 +1,5 @@
+import pytest
+
 from train.ops.bucketing import Bucketing
 from train.ops.cross_feature import CrossFeature
 from train.ops.dict_mapper import DictMapper
@@ -5,6 +7,7 @@ from train.ops.expression import ExpressionOp
 from train.ops.flat_split import FlatSplit
 from train.ops.json_extract_list import JsonExtractList
 from train.ops.list_string_parser import ListStringParser
+from train.ops.log1p import Log1p
 from train.ops.sequence import SequenceOp
 from train.ops.split import Split
 from train.ops.string_parser import StringParser
@@ -53,6 +56,19 @@ def test_expression():
     op = ExpressionOp("log(v0 + 1.0)")
     result = op.process([5999.0])
     assert abs(result - 8.6995) < 0.01
+
+
+def test_log1p():
+    op = Log1p()
+    result = op.process([5999.0])
+    assert abs(result - 8.699515) < 1e-6
+    assert op.process([0]) == 0.0
+
+
+def test_log1p_rejects_domain_error():
+    op = Log1p()
+    with pytest.raises(ValueError, match="greater than -1"):
+        op.process([-1.0])
 
 
 def test_sequence():

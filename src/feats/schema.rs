@@ -245,6 +245,10 @@ fn infer_operator_output(
             }
         }
         OpType::ExpressionOp => FeatureDType::Float,
+        OpType::Log1p => {
+            require_scalar_number(op, first)?;
+            FeatureDType::Float
+        }
         OpType::SequenceOp => FeatureDType::List {
             dtype: Box::new(FeatureDType::Int),
             length: Some(yaml_usize(&op.params, "max_len").unwrap_or(10)),

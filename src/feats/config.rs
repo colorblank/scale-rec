@@ -317,6 +317,8 @@ pub enum OpType {
     ListOverlap,
     /// 列表字符串解析算子。
     ListStringParser,
+    /// log1p 数值算子。
+    Log1p,
     /// 解析与哈希融合算子。
     ParsedFeatureHash,
     /// 动态插件算子。

@@ -52,6 +52,7 @@ from .flat_split import FlatSplit as FlatSplit
 from .json_extract_list import JsonExtractList as JsonExtractList
 from .list_overlap import ListOverlap as ListOverlap
 from .list_string_parser import ListStringParser as ListStringParser
+from .log1p import Log1p as Log1p
 from .parsed_feature_hash import ParsedFeatureHash as ParsedFeatureHash
 from .sequence import SequenceOp as SequenceOp
 from .split import Split as Split
@@ -71,6 +72,7 @@ __all__ = [
     "JsonExtractList",
     "ListOverlap",
     "ListStringParser",
+    "Log1p",
     "ParsedFeatureHash",
     "SequenceOp",
     "Split",

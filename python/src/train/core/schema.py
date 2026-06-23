@@ -209,6 +209,9 @@ def _infer_operator_output(op: OperatorDef, input_schemas: list[FeatureSchema]) 
         return _schema(op, FeatureDType(DTypeTag.LIST, FeatureDType(DTypeTag.STRING), length))
     if op_type is OpType.EXPRESSION_OP:
         return _schema(op, FeatureDType(DTypeTag.FLOAT))
+    if op_type is OpType.LOG1P:
+        _require_scalar_number(op, first)
+        return _schema(op, FeatureDType(DTypeTag.FLOAT))
     if op_type is OpType.SEQUENCE_OP:
         return _schema(
             op,

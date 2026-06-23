@@ -20,6 +20,7 @@ static OP_REGISTRY: LazyLock<HashMap<OpType, OpFactory>> = LazyLock::new(|| {
     m.insert(OpType::JsonExtractList, super::json_extract_list::create);
     m.insert(OpType::ListOverlap, super::list_overlap::create);
     m.insert(OpType::ListStringParser, super::list_string_parser::create);
+    m.insert(OpType::Log1p, super::log1p::create);
     m.insert(
         OpType::ParsedFeatureHash,
         super::parsed_feature_hash::create,
@@ -45,7 +46,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn all_16_ops_are_registered() {
+    fn all_17_ops_are_registered() {
         let expected = [
             OpType::Bucketing,
             OpType::ConcatHash,
@@ -57,6 +58,7 @@ mod tests {
             OpType::JsonExtractList,
             OpType::ListOverlap,
             OpType::ListStringParser,
+            OpType::Log1p,
             OpType::ParsedFeatureHash,
             OpType::PluginOp,
             OpType::SequenceOp,
