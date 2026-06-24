@@ -1,5 +1,7 @@
 # 使用显式输出契约统一多任务模型语义
 
+状态：已接受，阶段 1-3 已落地。
+
 ## 背景
 
 旧模型把任务塔、ESMM 概率关系、公开输出和损失规则分散在模型实现、训练代码及
@@ -27,7 +29,8 @@ serving 适配逻辑中。相同任务名在不同模型里可能代表 logit �
 - `binary_cross_entropy` 接受 `probability`，并使用显式 epsilon 截断。
 - `mse`、`mae`、`huber` 接受 `regression` 或 `score`。
 
-指标不执行隐式数值转换。`auc` 接受 logit 或概率，`logloss` 只接受概率，
+指标按节点类型处理分类值。`auc` 接受 logit 或概率；logit 会在指标入口转换为概率，
+概率不会重复执行 sigmoid。`logloss` 只接受概率，
 `mae/mse` 只接受回归值或排序分数。serving 只序列化 `outputs` 指定的节点，不再自动
 执行 sigmoid 或任务名映射。
 
@@ -36,7 +39,9 @@ serving 适配逻辑中。相同任务名在不同模型里可能代表 logit �
 Rust 和 Python 各自解析并校验同一 schema，共享接受/拒绝 fixtures。规范化过程展开
 默认值、稳定排序节点，并以统一浮点表示生成 canonical JSON，供后续 manifest 保存
 完整契约及摘要。标签和 mask 最终必须与特征配置联合校验；原生契约引用的 label 不
-允许配置默认值。
+允许引用 feature/discard source。当前 `Trainer` 已校验 label 必须是 `role: label`，
+mask source 必须存在；“label 不配置默认值”仍受现有 `FlowConfig` 兼容格式限制，尚未
+在实际训练配置中强制。
 
 ## 兼容与迁移
 
@@ -49,3 +54,12 @@ Rust 和 Python 各自解析并校验同一 schema，共享接受/拒绝 fixture
 4. 增加 MMoE 多命名表示支持。
 5. 将规范化契约写入 manifest，并切换 serving 输出投影。
 6. 提供旧配置机械适配器，完成配置迁移后删除旧执行路径。
+
+当前进度：
+
+- 阶段 1、2 已完成。
+- 标准 `esmm` 已完成阶段 3，示例见 `examples/models/esmm_output_contract.yaml`。
+- `gdcn_esmm`、UniMixer、TokenMixer-Large、RankMixer 和 MMoE 仍使用
+  `tasks + task_config` 兼容路径。
+- contract ESMM 的 `forward()` 已只返回公开输出，`forward_execution()` 同时保留内部
+  节点供训练和评估使用；manifest 仍未保存规范化契约。

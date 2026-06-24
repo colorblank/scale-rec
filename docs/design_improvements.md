@@ -11,12 +11,15 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 - 双端共享同一份 YAML 特征配置。Rust 通过 `src/feats/config.rs`、`DagBuilder`、`DagExecutor`、`FeatureInfo` 解析、校验、执行和暴露特征元数据；Python 通过 `python/src/train/core/config.py`、`DagBuilder`、`DagExecutor`、`FeatureInfo`、`DagPreprocessor` 镜像实现，`FeatureDag` 仅保留为兼容 facade。
 - 特征 source 已支持 `role = feature | label | discard`，训练侧按 role 分离 feature/label/discard，推理侧只暴露 feature 输入契约。
 - 模型特征规格统一来自 `FeatureInfo.embeddable_features()`，模型配置不重复声明特征清单。
-- 模型任务语义通过模型 YAML 中的 `tasks`、`label_col_map`、`metrics` 和 `task_config` 表达；`tasks` 负责监督、损失和评估，`task_config` 负责 tower/relation/forward 结构。
+- 模型任务语义有 legacy 与原生两条路径：多数模型仍使用
+  `tasks + task_config`；标准 ESMM 已使用 `output_contract.version: 1` 统一描述 tower、
+  relation、objective、metric 和公开输出。
 - Python 训练后导出 safetensors，Rust 通过 Candle `VarMap` 加载。权重 key 必须与 Rust `VarBuilder::pp()` 路径严格对齐。
 - Rust serving 以 manifest 为主路径加载模型，支持同一 `model_id` 多版本、alias、固定/加权 routing、按版本查询 feature contract。
 - HTTP 服务提供 `/health`、`/models`、`/models/{model}`、`/models/{model}/features`、`/models/{model}/versions/{version}/features`、alias/routing 管理、`/predict`、`/predict/broadcast`。
 - Python 训练入口已经统一到列式 batch 预处理路径，`stream_file_batches()` 直接产出 `dict[str, list]`，训练/评估/metrics 使用 `TrainingPreprocessor`，底层通过 `DagPreprocessor` 完成 tensor 构造。
-- `examples/` 已按 `examples/shared/` 和 `examples/models/` 拆分，目前模型示例包括 `lr.yaml`、`gdcn_esmm.yaml`、`unimixer.yaml`、`token_mixer_large.yaml`、`rankmixer.yaml`。
+- `examples/` 已按 `examples/shared/` 和 `examples/models/` 拆分，目前还包含
+  `esmm_output_contract.yaml` 原生契约示例。
 - 训练和推理一致性验证集中在 `python/src/scale_rec_demo/verify_all.py`，覆盖 discover LR、GDCN+ESMM、UniMixer、TokenMixer-Large 和 RankMixer 主线。
 
 这套设计的核心优势是：特征契约有单一来源，训练与推理模型结构可对齐，线上服务不携带 Python 运行时，同时已经具备多模型注册、发布 manifest、Golden consistency、模型 smoke test、算子级测试、周期 checkpoint、resume、压测工具和任务级配置。
@@ -26,7 +29,9 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 模型系统应按三层理解，而不是把每个 `type` 都视为同一层级的业务模型：
 
 - **通用模型结构层**：提供可复用的表示学习和输出结构，例如 `FeatureEmbeddings`、`FeatureTokenizer`、`Mlp`、`GatedCrossNetwork`、UniMixer/RankMixer block、`TaskTower`、`MultiTaskTower`、`TaskRelation` 和 `ModelOutput`。这一层关心张量形状、权重命名、输出语义和双端一致性，不应携带 discover 业务字段名或标签策略。
-- **任务契约层**：用 `tasks`、`label_col_map`、`metrics`、`output_kind` 和 `task_config` 描述“模型输出如何参与训练和评估”。`tasks` 是监督契约，负责 label、loss、weight、mask、metrics；`task_config` 是 forward 契约，负责 tower、activation、relation 和派生概率。两者可以引用相同任务名，但职责不能互相替代。
+- **任务契约层**：legacy 路径用 `tasks + task_config` 分别描述监督与 forward；
+  原生路径用 `output_contract` 统一描述 typed graph、objective、metric 和 public output。
+  两条路径禁止在同一个模型配置中混用。
 - **业务特定模型层**：把通用结构和任务契约组合成某个业务场景可用的模板，例如 discover 场景的 `gdcn_esmm.yaml`、`rankmixer.yaml` 中的 click/cvr/detail/stock/stay tower、ctcvr/ctdetail/ctstock/ctstay relation、标签列名和指标。业务层应该主要体现在 YAML 配置、label policy、artifact manifest 和发布策略中，而不是散落到模型基础实现里。
 
 因此，`gdcn_esmm`、`rankmixer`、`token_mixer_large` 这类模型 `type` 更准确地说是“结构模板”：它们决定 shared representation 如何产生、是否使用 token mixer、是否使用 cross/deep/fusion，但不应该固定某个业务的任务集合。click/cvr/detail/stock/stay 是 discover 业务的一组任务契约；当新业务接入时，理想路径应是复用同一个结构模板，替换 `tasks` 和 `task_config`，而不是复制一个新模型文件并把业务名写进代码。
@@ -38,8 +43,8 @@ raw sample / request
   -> FlowConfig + DagBuilder + DagExecutor
   -> FeatureInfo.embeddable_features()
   -> generic structure template: lr/deepfm/gdcn_esmm/unimixer/rankmixer/...
-  -> task contract: tasks + task_config + output_kind + label_col_map
-  -> ModelOutput: typed logits/probabilities/regression/score
+  -> legacy tasks/task_config or output_contract v1
+  -> ModelExecution: internal typed nodes + public ModelOutput
   -> training loss/metrics or serving score selection
 ```
 
@@ -47,11 +52,14 @@ raw sample / request
 
 - 如果变化是“特征如何从原始字段生成”，放在 feature config/operator/DAG。
 - 如果变化是“张量结构如何表达特征交互”，放在通用模型结构或新增结构模板。
-- 如果变化是“业务要预测什么、用哪个 label、怎么计算 loss/metric”，放在 `tasks` 和训练配置。
-- 如果变化是“哪些 tower 存在、tower 之间如何派生概率”，放在 `task_config`。
+- legacy 模型继续把监督放在 `tasks`、forward 放在 `task_config`。
+- 新迁移模型把 tower、概率关系、loss、metric 和公开输出放在 `output_contract`。
 - 如果变化是“线上用哪个输出排序、版本如何切流”，放在 serving manifest、alias/routing 或业务排序策略，不放进基础模型实现。
 
-当前代码已经向这个方向演进：`TaskTower`/`MultiTaskTower`、`TaskRelation`、`ModelOutput`、`OutputKind`、`TaskContract`、`tasks` 和 `task_config` 都在把业务任务从模型结构里拆出来。ESMM/GDCN-ESMM 的 YAML / `ModelConfig` 构建路径已经要求显式 `task_config`，但直接类构造中仍保留 click/cvr/detail/stock/stay 默认任务参数，示例配置中的 discover 标签列名也容易被误读为框架内置语义。后续重构应优先把这些内容收敛为“示例业务配置”，让模型代码只保留通用结构模板。
+当前代码已经新增双端 `OutputContract` 校验、`OutputHead`、`ModelExecution` 和 Python
+`ObjectiveEngine`，并完成标准 ESMM 迁移。GDCN-ESMM、MMoE 和 mixer 系列仍在 legacy
+路径；manifest 也还没有保存规范化契约。因此当前重点是继续迁移其它 backbone，而不是
+删除 legacy 路径。
 
 ## 2. 已完成的关键治理项
 
@@ -77,6 +85,9 @@ raw sample / request
 - **任务契约 seam**：Python 已新增 `TaskContract` / `TaskSpec`，集中生成 `task_names`、`label_col_map`、`output_kinds` 和 manifest `task_specs`，训练、导出和 serving 查询不再各自解析任务语义。
 - **模型 serving 元数据扩展**：manifest 与 `/models` / version serving info 已暴露 `loaded_at`、schema/config hash、tasks、task_specs、label map、metrics 和 weight binding 等关键元数据。
 - **模型权重绑定检查**：已新增 Python `check_weight_bindings.py` 和 Rust `validate_manifest` 二进制，用于从示例模型导出 safetensors/manifest 并触发 Rust key/shape 校验。
+- **原生多任务输出契约阶段 1-3**：Rust/Python 已共享 `output_contract.version: 1`
+  schema 与 fixtures；双端 `OutputHead` 执行 typed relation DAG；Python
+  `ObjectiveEngine` 计算契约损失；标准 ESMM 已输出公开 projection，并保留内部训练节点。
 - **Rust public API 文档与 warning 清零**：Rust public API 已补齐 rustdoc，`#![warn(missing_docs)]` 已启用；`cargo check` 和 `cargo doc --no-deps` 当前无 warning。
 
 ## 3. 架构分析
@@ -129,22 +140,26 @@ raw sample / request
 - 新增模型不需要修改中央 enum，但仍需要双端注册和双端实现。
 - 模型配置不重复声明特征，减少配置耦合。
 - safetensors key/shape 校验能提前暴露权重不兼容。
-- `task_config` 与 `tasks` 的职责已经拆开，避免把训练监督语义耦合进模型 forward 结构。
+- legacy `task_config` 与 `tasks` 的职责已经拆开；原生 ESMM 进一步统一为显式
+  `output_contract`，同时保持 graph/objective/metric/output 四部分边界。
 
 剩余风险：
 
 - Rust 和 Python 模型仍是双份实现，新增 layer、task tower 或 naming prefix 时必须人工保持 `state_dict` key 对齐。
 - Rust/Python 已对模型 params 做 allowlist、required 和基础类型校验，但模型参数仍不是独立 typed config，错误信息和默认值语义还可以继续集中化。
-- ESMM/GDCN-ESMM 的 YAML / `ModelConfig` 构建路径已要求显式 `task_config`，但直接类构造仍保留 legacy click/cvr/detail/stock/stay 默认参数，长期仍会增加多任务模型的配置心智负担。
-- `TaskContract` 已统一 Python 训练、导出和 manifest 任务语义，但 Rust 侧仍主要消费 manifest 结果，还没有完整的 typed task contract 构建/校验 seam。
+- GDCN-ESMM、MMoE 和 mixer 系列尚未接入 `OutputHead`，仍需维护 legacy
+  `tasks/task_config` 语义。
+- serving manifest 尚未保存规范化 `output_contract` 或摘要，服务端元数据仍主要暴露
+  legacy tasks/label map/metrics。
 
 改进方向：
 
 - 将 `check_weight_bindings.py` / `validate_manifest` 纳入 CI，覆盖所有示例模型的 state_dict key 和 shape 对齐。
 - 为 Rust/Python 模型参数建立更细的 typed config，减少通用 YAML 参数读取和默认值分散。
-- 继续收敛直接类构造中的 legacy hidden dims 参数，以 `task_config` / `tasks` 作为多任务配置主入口。
-- 把 discover 的 click/cvr/detail/stock/stay 默认任务配置下沉到示例 YAML 或业务 preset，模型代码只保留通用结构模板和显式 `task_config` 路径。
-- 在 Rust 侧补充 typed task contract 校验，确保 manifest `task_specs`、model output 和 serving metadata 一致。
+- 依次迁移其它 shared-backbone 模型和 MMoE 到 `OutputHead`，每次保持 Python/Rust
+  state_dict 路径一致。
+- 将规范化 `output_contract` 及摘要写入 manifest，并让 serving 元数据明确公开输出。
+- 完成配置迁移后再提供 legacy 机械适配器和删除旧执行路径。
 
 ### 3.3 训练产物与发布
 
@@ -253,10 +268,13 @@ raw sample / request
 
 当前项目已经具备以下核心能力：
 
-- 共享 YAML 特征编排，覆盖 Bucketing、DictMapper、StringParser、JsonExtractList、ListStringParser、Split、FlatSplit、ExpressionOp、CrossFeature、ListOverlap、SequenceOp、StringConcat、FeatureHash、PluginOp、ParsedFeatureHash、ConcatHash 等算子。
+- 共享 YAML 特征编排，覆盖 Bucketing、DictMapper、StringParser、JsonExtractList、
+  ListStringParser、Split、FlatSplit、ExpressionOp、CrossFeature、ListOverlap、SequenceOp、
+  StringConcat、FeatureHash、Log1p、PluginOp、ParsedFeatureHash、ConcatHash 等 17 个算子。
 - Python 单文件训练、discover 训练、多模型训练入口，共享列式 batch 预处理和可选 prefetch。
 - 多任务 loss、评估、early stopping、EMA、周期 checkpoint、epoch-end checkpoint、resume 和 manifest。
-- 任务级配置落到模型 YAML，训练和评估通过 `TaskContract` 读取 `tasks`、`label_col_map`、`metrics`、`output_kind` 和 manifest `task_specs`。
+- 任务级配置落到模型 YAML；legacy 模型由 `TaskContract/MultiTaskLoss` 执行，原生
+  ESMM 由 `OutputContract/ObjectiveEngine` 执行。
 - Rust HTTP 推理支持 pointwise `/predict` 和 broadcast `/predict/broadcast`。
 - Rust 推理支持 plan DAG、broadcast user 子图预计算、多模型热加载、多版本、alias 和 routing。
 - Feature contract 查询接口可暴露每个模型/版本需要的输入字段、dtype、default 和 data source；模型查询接口可暴露 schema hash、tasks、metrics、label map、加载时间和 weight binding。

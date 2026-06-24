@@ -112,7 +112,7 @@ for name, tensor in tensors.items():
 
 - feature config 改了，但服务没同步发布。
 - `embed_dim` 改了，但旧权重还在用。
-- `tasks` 变了，但模型和 loss 没同步。
+- `tasks/task_config` 或 `output_contract` 变了，但模型、loss 或公开输出没同步。
 - `flatten` / `mean` 的 pooling 语义在两端不一致。
 - label 列被误当 feature 使用。
 
@@ -120,7 +120,7 @@ for name, tensor in tensors.items():
 
 按这个顺序最省时间：
 
-1. 先看 `docs/tutorial/02_samples_labels_tasks.md`，确认标签和 task。
+1. 先看 `docs/tutorial/02_samples_labels_tasks.md`，确认标签和任务契约。
 2. 再看 `docs/tutorial/03_feature_contract.md`，确认 DAG 和 embedding。
 3. 然后跑单样本 trace。
 4. 再跑 batch tensor。

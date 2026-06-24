@@ -53,6 +53,10 @@ python/artifacts/demo/
 
 Rust 服务加载模型时，优先看这份 manifest，而不是裸权重文件。
 
+当前原生 ESMM 的完整 `output_contract` 仍保存在归档的 `model_config_file` 中。serving
+manifest 继续记录由训练构建阶段派生出的 `tasks/label_col_map/metrics` 元数据，尚未
+单独保存规范化 contract 或 contract 摘要。
+
 ## 为什么要算 sha256
 
 `python/src/train/app/manifest.py` 在写 manifest 时会同时写入：
@@ -108,7 +112,8 @@ Rust 服务加载模型时，优先看这份 manifest，而不是裸权重文件
 
 1. `weights_sha256` 存在且能对上。
 2. `feature_config_sha256` 和 `model_config_sha256` 匹配。
-3. `tasks` 与训练时一致。
+3. legacy 模型的 `tasks` 与训练时一致；原生模型的归档 `model_config_file` 包含正确
+   的 `output_contract`。
 4. `label_col_map` 没写错。
 5. `model_version` 和发布目录版本一致。
 

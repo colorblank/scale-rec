@@ -152,13 +152,14 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 3. `examples/shared/train_defaults.yaml`
    定义训练默认值，包括 batch size、optimizer、eval 样本数、warmup、early stopping、EMA、TensorBoard 等。CLI 可以覆盖其中任意项。
 4. `examples/models/<model>.yaml`
-   定义模型结构和任务语义。`tasks:` 是训练和评估的单一事实来源，决定每个任务用哪个 label、什么 loss、统计哪些 metrics。
+   定义模型结构和任务语义。legacy 模型使用 `tasks + task_config`；原生 ESMM 使用
+   `output_contract` 同时定义任务塔、关系、训练目标、评估指标和公开输出。
 
 典型执行顺序如下：
 
 1. 先生成 demo 数据，写出 TSV 和标签列。
 2. 再加载 feature config，把原始列编排成模型输入。
-3. 再读取 model config，解析 `tasks:` 和 `task_config:`。
+3. 再读取 model config，解析 `tasks + task_config` 或 `output_contract`。
 4. 再读取 train config，合并 CLI 覆盖项。
 5. 训练时按 task 计算 loss，评估时按 task 计算 metrics。
 6. 最终导出 safetensors 权重和 manifest。
@@ -205,7 +206,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 - **data_sources**：在线取数来源目录，例如 request、HBase、ES、Flink、Milvus 等
 - **sources**（45 列）：列名、类型、默认值、角色，以及可选的 `data_source`
-- **operators**（70 个）：16 种算子组成的 DAG
+- **operators**（70 个）：17 种算子组成的 DAG
 - **role 标记**：`feature`（入模型）、`label`（入 loss，标签列不依赖 `source`）、`discard`（读后丢弃）
 
 其中 `operators` 里已经使用了一部分融合节点，比如 `ParsedFeatureHash` 和 `ConcatHash`。它们把“解析 + hash”这类常见链路合并成单个算子，减少 DAG 深度和中间值开销；如果某个中间结果还要被 `ListOverlap` 或其它下游算子复用，就保留拆分节点，不要强行融合。
@@ -356,7 +357,9 @@ tasks:
     metrics: [auc, logloss]
 ```
 
-这是一个最小的单目标二分类配置，适合做 baseline 或快速验证数据和特征是否能闭环。它和其它模型一样遵循 `tasks:` 作为训练与评估的单一事实来源；区别只在于 `type: lr` 不包含额外的交叉、塔或多任务关系结构。
+这是一个最小的单目标二分类配置，适合做 baseline 或快速验证数据和特征是否能闭环。
+它遵循 legacy `tasks:` 训练路径；区别只在于 `type: lr` 不包含额外的交叉、塔或多任务
+关系结构。
 
 ### GDCN+ESMM 门控交叉网络配置
 
@@ -421,6 +424,49 @@ RankMixer 当前要求 `num_heads == num_tokens`，以保持 token mixing 后的
 - 如果某个任务没有可用标签，就不要放进 `tasks:`，不要依赖代码里的默认兜底
 
 模型配置是训练流程里的第一手任务定义。后续的 trainer、evaluator、manifest 都只读这里，不再根据模型类型猜测任务。
+
+### 原生 ESMM 输出契约
+
+`examples/models/esmm_output_contract.yaml` 展示了当前已经迁移的原生路径：
+
+```yaml
+type: esmm
+shared_bottom_dims: [32, 16]
+output_contract:
+  version: 1
+  graph:
+    towers:
+      - {name: click_logit, kind: binary_logit, hidden_dims: [16, 8]}
+      - {name: cvr_logit, kind: binary_logit, hidden_dims: [16, 8]}
+    relations:
+      - {name: click_prob, op: sigmoid, inputs: [click_logit]}
+      - {name: cvr_prob, op: sigmoid, inputs: [cvr_logit]}
+      - {name: ctcvr_prob, op: multiply, inputs: [click_prob, cvr_prob]}
+  objectives:
+    - name: click_loss
+      source: click_logit
+      label: is_click
+      loss: {type: binary_cross_entropy_with_logits}
+    - name: cvr_loss
+      source: ctcvr_prob
+      label: is_cvr
+      loss: {type: binary_cross_entropy}
+  metrics:
+    - {name: cvr_auc, source: ctcvr_prob, label: is_cvr, type: auc}
+  outputs:
+    - {name: ctr, source: click_prob}
+    - {name: ctcvr, source: ctcvr_prob}
+```
+
+关键约束：
+
+- probability 不能由 tower 直接输出，必须经过显式 `sigmoid` relation。
+- `multiply` 只接受 probability；ESMM 概率关系因此一定发生在 sigmoid 之后。
+- logits 使用 `binary_cross_entropy_with_logits`，probability 使用
+  `binary_cross_entropy`，两者不能互换。
+- `objectives`、`metrics`、`outputs` 可以引用不同节点。训练内部节点不必公开。
+- 原生契约与 `tasks/task_config/label_col_map/metrics` 禁止混用。
+- 当前只有标准 `esmm` 接入原生执行路径；其它示例仍走 legacy 配置。
 
 
 ## 训练参数
@@ -514,7 +560,8 @@ eval:
 - `grad_max_norm`：梯度裁剪阈值
 - `early_stopping_patience`：验证指标连续多少次不提升后停止
 - `ema_decay`：EMA 影子权重的更新衰减率
-- `loss_weighting`：多任务 loss 的加权策略，当前支持 `equal`、`static`、`uncertainty`
+- `loss_weighting`：legacy 多任务 loss 支持 `equal`、`static`、`uncertainty`；原生
+  `output_contract` 当前只支持 `static`，权重来自各 `objectives[].weight`
 - `tb_dir`：TensorBoard 输出目录，空字符串表示不写
 - `eval.metrics`：默认验证指标列表。对于已经在 `tasks:` 里声明 metrics 的模型，这里主要作为兜底和兼容配置
 - `eval.monitor_task`：early stopping 和 best checkpoint 监控的任务名；为空时使用 `tasks:` 中的第一个任务
@@ -623,7 +670,10 @@ L = Σ exp(-log_var_i) × L_i + 0.5 × log_var_i
 
 ### 监控指标与 checkpoint 选择
 
-`Trainer` 使用 `eval.monitor_task + eval.monitor_metric` 作为唯一监控目标，用于 early stopping 和 `best.safetensors` 选择。`monitor_task` 为空时默认使用模型 `tasks:` 中的第一个任务。
+`Trainer` 使用 `eval.monitor_task + eval.monitor_metric` 作为唯一监控目标，用于 early
+stopping 和 `best.safetensors` 选择。legacy 模型为空时默认使用 `tasks:` 中的第一个
+任务；原生契约使用 `metrics[].source` 作为 task key，例如 `click_logit` 或
+`ctcvr_prob`。
 
 监控指标必须出现在对应任务的 `metrics` 中，否则训练启动阶段直接报错。例如：
 
@@ -652,7 +702,7 @@ eval:
 如果训练直接报出 `No supervised batches were processed`，通常是以下原因之一：
 
 - 数据文件里没有模型任务所需的 label 列
-- `examples/models/<model>.yaml` 里的 `tasks[].label` 和真实列名不一致
+- `tasks[].label` 或 `output_contract.objectives/metrics[].label` 和真实列名不一致
 - 训练文件被切分后，训练部分没有任何监督列
 
 这时先检查训练开始时打印的 `labels={...}` 和 `rows(total/train/eval)` 摘要，再对照 `examples/shared/feature_config_discover.yaml` 与 `examples/models/<model>.yaml` 的任务定义。

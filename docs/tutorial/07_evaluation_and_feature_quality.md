@@ -14,7 +14,8 @@
 
 `python/src/train/training/eval/evaluator.py` 会按 `task × metric` 计算评估结果。
 
-默认指标来自 `TrainConfig.eval.metrics`，也可以在 `tasks[].metrics` 里逐 task 覆盖。
+legacy 模型的默认指标来自 `TrainConfig.eval.metrics`，也可以在 `tasks[].metrics` 里逐
+task 覆盖。原生模型只计算 `output_contract.metrics` 显式声明的指标。
 
 常见指标包括：
 
@@ -25,6 +26,8 @@
 - `gauc`
 
 `monitor_task` 和 `monitor_metric` 决定 early stopping 和 best checkpoint 看哪一个值。
+原生契约中，`monitor_task` 使用 metric 的 `source` 节点名，例如
+`ctcvr_prob`，不是公开输出名 `ctcvr`。
 
 ## 训练 loss 是怎么合成的
 
@@ -37,6 +40,17 @@
 其中 `static` 是最常用的默认值：每个 task 按配置里的 weight 累加。
 
 对 `stay_time_label` 这种特殊标签，会走 `weighted_bce_stay`，不是普通 BCE。
+
+原生契约使用 `ObjectiveEngine`，当前要求 `loss_weighting: static`。每个 objective
+通过自身的 `weight` 加权，支持：
+
+- `binary_cross_entropy_with_logits`：只接受 `binary_logit`
+- `binary_cross_entropy`：只接受 `probability`，计算前按 epsilon 截断
+- `mse`、`mae`、`huber`：接受 `regression` 或 `score`
+- `weighted_bce_stay`：接受 `binary_logit`
+
+`auc` 可读取 logit 或 probability；logit 会转换为概率。`logloss` 要求 probability，
+已经是 probability 的节点不会再次 sigmoid。
 
 ## feature quality 在看什么
 
@@ -100,7 +114,7 @@
 
 ## 建议的排查顺序
 
-1. 先看 `tasks` 和 label 列。
+1. 先看 `tasks`，或原生契约的 `objectives/metrics` 和 label 列。
 2. 再看 `feature quality`。
 3. 再看每个 task 的 metric。
 4. 最后再调 loss weighting、early stopping 或学习率。

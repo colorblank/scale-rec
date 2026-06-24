@@ -66,7 +66,9 @@ feature config 里通过 `role` 区分字段用途：
 | `label` | 监督标签列，被训练 loss/metric 使用，不作为模型输入 |
 | `discard` | 读取后丢弃，用于兼容数据格式或保留非建模字段 |
 
-一个字段是不是训练标签，首先由 `role: label` 标出来；标签列不应依赖 `source`。这个标签是否真的参与 loss，还要看 model config 里的 `tasks`。
+一个字段是不是训练标签，首先由 `role: label` 标出来；标签列不应依赖 `source`。这个
+标签是否真的参与 loss，还要看 model config：legacy 路径读取 `tasks`，原生路径读取
+`output_contract.objectives`。
 
 ## 当前 discover 标签
 
@@ -84,7 +86,17 @@ feature config 里通过 `role` 区分字段用途：
 
 注意：`ctr` 和 `cvr` 虽然在 feature config 里是 label，但当前 `examples/models/gdcn_esmm.yaml` 的 `tasks` 没有引用它们，因此不会进入当前模型的 loss。是否参与训练，以 model config 的 `tasks` 为准。
 
-## 任务定义
+## 两种任务定义路径
+
+当前仓库处于迁移期：
+
+- `gdcn_esmm`、UniMixer、TokenMixer-Large、RankMixer 等示例继续使用
+  `tasks + task_config`。
+- `examples/models/esmm_output_contract.yaml` 使用原生 `output_contract`。
+- 同一个模型配置不能同时声明 `output_contract` 和
+  `tasks/task_config/label_col_map/metrics`。
+
+### Legacy tasks
 
 `examples/models/gdcn_esmm.yaml` 把模型输出、标签列、loss 和 metric 绑定在一起：
 
@@ -106,7 +118,42 @@ tasks:
 | `loss` | 该任务使用的损失函数 |
 | `metrics` | 评估时记录的指标 |
 
-训练时 `MultiTaskLoss` 以 `tasks:` 为唯一监督合约，按配置任务逐个读取模型输出和 label 列并计算 loss。模型可以额外输出 `ct*` 这类关系概率；除此之外，未知输出、配置任务缺少模型输出、或任务 label 列缺失都会直接报错。
+训练时 `MultiTaskLoss` 以 `tasks:` 为监督合约，按配置任务逐个读取模型输出和 label
+列并计算 loss。`task_config` 独立定义 tower 和关系结构。
+
+### 原生 output contract
+
+原生配置把 forward、训练、评估和 serving 投影放在一个版本化契约中：
+
+```yaml
+output_contract:
+  version: 1
+  graph:
+    towers:
+      - {name: click_logit, kind: binary_logit, hidden_dims: [16, 8]}
+      - {name: cvr_logit, kind: binary_logit, hidden_dims: [16, 8]}
+    relations:
+      - {name: click_prob, op: sigmoid, inputs: [click_logit]}
+      - {name: cvr_prob, op: sigmoid, inputs: [cvr_logit]}
+      - {name: ctcvr_prob, op: multiply, inputs: [click_prob, cvr_prob]}
+  objectives:
+    - name: click_loss
+      source: click_logit
+      label: is_click
+      loss: {type: binary_cross_entropy_with_logits}
+    - name: cvr_loss
+      source: ctcvr_prob
+      label: is_cvr
+      loss: {type: binary_cross_entropy}
+  metrics:
+    - {name: cvr_auc, source: ctcvr_prob, label: is_cvr, type: auc}
+  outputs:
+    - {name: ctr, source: click_prob}
+    - {name: ctcvr, source: ctcvr_prob}
+```
+
+`graph` 定义完整节点；`objectives` 决定哪些节点参与 loss；`metrics` 独立决定评估节点；
+`outputs` 只决定公开推理结果。内部节点不需要全部暴露给 serving。
 
 ## ESMM 关系任务
 
@@ -130,7 +177,18 @@ P(ctstock)  = P(click)  * P(stock | click)
 P(ctstay)   = P(detail) * P(stay | detail)
 ```
 
-训练 loss 默认只对基础任务 `click/cvr/detail/stock/stay` 计算；`ctcvr/ctdetail/ctstock/ctstay` 是模型前向输出中的派生概率，用于评估或业务排序时选择合适的分数。
+legacy `task_config` 当前仍由基础任务 `click/cvr/detail/stock/stay` 参与
+`MultiTaskLoss`，关系输出主要用于评估或排序。
+
+原生 ESMM 不使用这个隐式约定。它先显式执行 sigmoid，再计算概率乘积：
+
+```text
+ctcvr_prob = sigmoid(click_logit) * sigmoid(cvr_logit)
+```
+
+随后 `cvr_loss/detail_loss/stock_loss` 直接在这些联合概率节点上计算
+`binary_cross_entropy`。因为输入已经是概率，不能再使用
+`binary_cross_entropy_with_logits`，也不能在指标计算时重复 sigmoid。
 
 ## demo 标签生成与真实业务标签
 
@@ -148,7 +206,9 @@ cvr:
 
 生成脚本 `python/src/scale_rec_demo/generate_discover_data.py` 会根据这些规则写出 `python/artifacts/demo/discover_train_data.txt`。
 
-真实业务接入时，不应该复用 demo label policy 来定义线上标签。生产标签通常来自曝光日志、点击日志、转化日志、停留时长日志和归因规则。你需要保证最终训练文件里有 model config `tasks` 引用的 label 列即可。
+真实业务接入时，不应该复用 demo label policy 来定义线上标签。生产标签通常来自曝光
+日志、点击日志、转化日志、停留时长日志和归因规则。最终训练文件必须包含 `tasks`
+或 `output_contract.objectives/metrics` 引用的 label 列。
 
 ## 训练文件与 header
 
@@ -164,7 +224,7 @@ discover demo 默认输出 TSV，无 header。训练命令因此需要加：
 
 - label 列缺失：训练会报任务 label 列缺失，或在没有任何有效监督样本时报告 `No supervised batches were processed`。
 - 列顺序错位：某些 source 的 `missing_rate/default_rate` 异常升高。
-- label 名称不一致：model config 的 `tasks[].label` 找不到对应列。
+- label 名称不一致：`tasks[].label` 或 contract objective/metric 的 `label` 找不到对应列。
 - 模型输出和 `tasks:` 不一致：配置里有任务但模型没有对应输出，或模型输出了未配置的非 `ct*` 任务。
 - 把 label 当 feature 使用：在线推理时没有该字段，导致训练和推理分布不一致。
 
@@ -174,7 +234,7 @@ discover demo 默认输出 TSV，无 header。训练命令因此需要加：
 
 ```text
 batch["features"] -> dag.preprocess_batch(...) -> model inputs
-batch["labels"]   -> MultiTaskLoss 按 tasks[].label 读取
+batch["labels"]   -> MultiTaskLoss 或 ObjectiveEngine
 ```
 
 模型只看到 `features` 预处理后的 LongTensor；loss 函数看到 `labels`。这条边界很重要：label 列可以存在于原始 TSV 中，但不能被 feature operators 作为输入消费。
@@ -188,7 +248,7 @@ batch["labels"]   -> MultiTaskLoss 按 tasks[].label 读取
 1. 一行样本是否代表一个 user-item-context 打分样本。
 2. Item/User/Context 字段是否能满足在线推理请求构造。
 3. label 列是否全部在 feature config 中标为 `role: label`，且没有被 operators 当作 feature 输入。
-4. model config 的 `tasks[].label` 是否都能在训练文件中找到。
+4. model config 的 `tasks[].label` 或 contract label 是否都能在训练文件中找到。
 5. 无 header 文件的列顺序是否严格等于 feature config 的 source 顺序。
 6. 训练用 label 没有被 operators 当作 feature 输入。
 7. 多日训练时，最后日期文件的 label 分布适合作为验证集。

@@ -30,7 +30,7 @@
 - 传统打分模型：`lr`、`deepfm`、`mmoe`。
 - 多任务排序模型：`esmm`、`gdcn_esmm`、`unimixer`、`token_mixer_large`、`rankmixer`。
 
-## 任务定义是模型和 loss 的共同契约
+## Legacy 任务契约
 
 `examples/models/*.yaml` 里最重要的是 `tasks:`：
 
@@ -53,9 +53,31 @@ tasks:
 - 模型是否多输出了配置里没定义的非 `ct*` task。
 - batch 里是否存在对应 label 列。
 
+## 原生输出契约
+
+`examples/models/esmm_output_contract.yaml` 不再拆分 `tasks` 和 `task_config`，而是使用
+`output_contract.version: 1`：
+
+- `graph.towers` 构建标量任务塔，塔输出只允许 `binary_logit`、`regression`、`score`。
+- `graph.relations` 执行 `sigmoid/multiply/add/identity` 类型化 DAG。
+- `objectives` 由 `ObjectiveEngine` 读取内部节点计算 loss。
+- `metrics` 独立声明评估节点和标签。
+- `outputs` 将内部节点映射为稳定的公开输出。
+
+Python 和 Rust 都使用 `OutputHead` 执行相同的塔和关系图。完整前向结果是
+`ModelExecution`：
+
+```text
+ModelExecution.nodes   = 所有 tower/relation 内部节点
+ModelExecution.outputs = output_contract.outputs 指定的公开输出
+```
+
+普通 `forward()` 只返回公开输出；训练和评估通过 `forward_execution()` 使用内部节点。
+legacy 模型的默认实现会把同一份 `ModelOutput` 同时作为 nodes 和 outputs。
+
 ## ESMM / GDCN+ESMM 的关系输出
 
-`gdcn_esmm.yaml` 和 `esmm.yaml` 使用 `task_config.relations` 描述派生任务：
+`gdcn_esmm.yaml` 等 legacy 多任务配置使用 `task_config.relations` 描述派生任务：
 
 ```yaml
 relations:
@@ -65,7 +87,11 @@ relations:
   - {target: ctstay, sources: [detail, stay], op: multiply}
 ```
 
-这类输出不是额外监督目标，而是关系概率。训练 loss 主要还是落在基础 task 上。
+legacy GDCN+ESMM 中，这类输出是派生概率，loss 仍按 `tasks` 落在基础 task 上。
+
+原生 ESMM 则可以在 `objectives` 中直接引用联合概率。例如 `ctcvr_prob` 在两个 logit
+分别 sigmoid 后相乘，并用概率版 BCE 参与训练。概率关系的计算顺序和 loss 类型都由
+契约校验，不再依赖任务名约定。
 
 ## UniMixer / TokenMixer / RankMixer 的特殊点
 
@@ -92,6 +118,7 @@ Python 训练侧导出的 `state_dict` key，必须和 Rust 端 `VarBuilder::pp(
 | `self.output = nn.Linear(...)` | `vb.pp("output")` | `output.weight` |
 | `self.output = nn.ModuleDict({str(n): Linear})` | `vb.pp(format!("output.{}", n))` | `output.1.weight` |
 | `nn.Parameter(torch.zeros(1))` | `vb.get_with_hints(..., Const(0.0))` | `global_bias` |
+| `self.output_head.towers[name]` | `vb.pp("output_head").pp("towers").pp(name)` | `output_head.towers.click_logit.output.2.weight` |
 
 `python/src/train/app/export.py` 里提供了 `print_state_dict_keys(model)`，就是给你排查这类问题用的。
 

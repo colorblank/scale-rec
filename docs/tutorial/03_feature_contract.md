@@ -123,7 +123,7 @@ operator 定义一个 DAG 节点：
 
 如果你要继续查具体算子语义，建议按这几个入口看：
 
-- [特征算子总览](../feature_operators.md#4-全部-16-个算子)
+- [特征算子总览](../feature_operators.md#4-全部-17-个算子)
 - [算子速查表](../feature_operators.md#7-算子速查表)
 - [扩展新算子](../feature_operators.md#8-扩展新算子)
 

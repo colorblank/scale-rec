@@ -52,7 +52,8 @@ train_defaults.yaml < model YAML < CLI 参数
 这意味着：
 
 - 想改训练步数、评估间隔、EMA、early stopping，优先改 `examples/shared/train_defaults.yaml`。
-- 想改模型结构和任务定义，改 `examples/models/*.yaml`。
+- 想改模型结构和任务定义，改 `examples/models/*.yaml` 中的
+  `tasks/task_config` 或 `output_contract`。
 - 想临时跑一个实验，直接在 CLI 上覆盖即可。
 
 ## batch 是怎么进模型的
@@ -120,11 +121,12 @@ prepared["features"] = preprocessor.preprocess_batch(batch["features"])
 
 1. `FeatureDag` 能成功构建。
 2. `ModelConfig` 能 build 出模型。
-3. `tasks` 与训练文件里的 label 列一致。
+3. `tasks` 或 `output_contract.objectives/metrics` 与训练文件里的 label 列一致。
 4. `batch_size` 与数据规模匹配。
 5. 验证集里确实有监督标签。
 
-如果出现 `No supervised batches were processed`，通常是 label 列名和 `tasks[].label` 没对上，或者数据里压根没有有效标签。
+如果出现 `No supervised batches were processed`，通常是 label 列名和
+`tasks[].label` 或 contract objective label 没对上，或者数据里没有有效标签。
 
 ## 推荐理解路径
 

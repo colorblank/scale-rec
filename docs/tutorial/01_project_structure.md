@@ -49,6 +49,7 @@ examples/
 ├── models/                          # 按模型拆分的配置目录
 │   ├── lr.yaml                      # LR 单目标基线配置
 │   ├── gdcn_esmm.yaml               # GDCN+ESMM 模型配置
+│   ├── esmm_output_contract.yaml     # 原生输出契约 ESMM 示例
 │   ├── unimixer.yaml                # UniMixer 模型配置
 │   ├── token_mixer_large.yaml       # TokenMixer-Large 模型配置
 │   └── rankmixer.yaml               # RankMixer 模型配置
@@ -62,7 +63,9 @@ examples/
 配置职责需要分清：
 
 - `shared/feature_config_discover.yaml` 是训练和推理共享的特征协议。它决定原始字段如何变成模型输入 tensor。
-- `models/*.yaml` 是模型语义协议。它决定模型类型、任务列表、label 映射、loss 和 metric。`lr.yaml` 提供了一个最小的单目标二分类基线，其它模型则在此基础上扩展多任务或更复杂的结构。
+- `models/*.yaml` 是模型语义协议。当前存在两条配置路径：多数模型使用
+  `tasks + task_config`；`esmm_output_contract.yaml` 使用原生 `output_contract`，
+  在同一份契约中声明任务塔、关系 DAG、loss、metric 和公开输出。两种路径禁止混用。
 - `shared/train_defaults.yaml` 是训练运行策略。它不应该影响在线推理结果。
 - `shared/discover_label_policy.yaml` 只用于 demo 数据生成，不是线上协议。
 
@@ -98,7 +101,8 @@ train.app.main
 
 - 数据读不到：看 `app/data.py` 和 CLI 参数。
 - 特征不对：看 `core/dag.py`、`ops/` 和 feature config。
-- loss/metric 不对：看 model config 的 tasks 和 `training/metrics`。
+- loss/metric 不对：legacy 模型看 `tasks/task_config`，原生契约模型看
+  `output_contract.objectives/metrics`。
 - 权重不能被 Rust 加载：看 `app/export.py` 和 Rust `VarBuilder::pp()` 路径。
 
 ## Rust 推理侧分层
