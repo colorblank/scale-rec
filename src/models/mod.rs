@@ -20,6 +20,8 @@ pub mod gdcn_esmm;
 pub mod lr;
 /// MMoE 多门控专家混合模型。
 pub mod mmoe;
+/// Versioned output-contract schema and validation.
+pub mod output_contract;
 /// RankMixer：Token Mixing + Per-token FFN 排序模型。
 pub mod rankmixer;
 /// TokenMixer-Large：Mixing & Reverting 大规模排序模型。
@@ -528,7 +530,35 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
         ),
         _ => return Ok(()),
     };
-    validate_model_param_keys(model_type, params, allowed, required)?;
+    let has_output_contract = params.get("output_contract").is_some();
+    if has_output_contract {
+        for legacy in ["tasks", "task_config", "label_col_map", "metrics"] {
+            if params.get(legacy).is_some() {
+                candle_core::bail!(
+                    "output_contract cannot be combined with legacy model field '{}'",
+                    legacy
+                );
+            }
+        }
+    }
+    let allowed: Vec<&str> = allowed
+        .iter()
+        .copied()
+        .chain(std::iter::once("output_contract"))
+        .collect();
+    let required: Vec<&str> = required
+        .iter()
+        .copied()
+        .filter(|key| !(has_output_contract && *key == "task_config"))
+        .collect();
+    validate_model_param_keys(model_type, params, &allowed, &[])?;
+    if let Some(raw) = params.get("output_contract") {
+        let contract: output_contract::OutputContract = serde_yaml::from_value(raw.clone())
+            .map_err(|error| candle_core::Error::Msg(format!("parse output_contract: {error}")))?;
+        contract.validate(None).map_err(|error| {
+            candle_core::Error::Msg(format!("validate output_contract: {error}"))
+        })?;
+    }
     for key in [
         "tasks",
         "deep_hidden_dims",
@@ -543,7 +573,7 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
     ] {
         expect_optional_seq(model_type, params, key)?;
     }
-    for key in ["label_col_map", "metrics", "task_config"] {
+    for key in ["label_col_map", "metrics", "task_config", "output_contract"] {
         expect_optional_mapping(model_type, params, key)?;
     }
     for key in [
@@ -565,6 +595,7 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
         expect_optional_bool(model_type, params, key)?;
     }
     expect_optional_f64(model_type, params, "hidden_factor")?;
+    validate_model_param_keys(model_type, params, &allowed, &required)?;
     Ok(())
 }
 

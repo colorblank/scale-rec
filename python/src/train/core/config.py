@@ -274,9 +274,13 @@ _OP_PARAM_SPECS: dict[OpType, tuple[set[str], set[str], dict[str, type | tuple[t
 }
 
 
-_COMMON_MODEL_KEYS = {"tasks", "label_col_map", "metrics"}
+_COMMON_MODEL_KEYS = {"tasks", "label_col_map", "metrics", "output_contract"}
 _MODEL_PARAM_SPECS: dict[str, tuple[set[str], set[str], dict[str, type | tuple[type, ...]]]] = {
-    "lr": (_COMMON_MODEL_KEYS, set(), {"tasks": list, "label_col_map": dict, "metrics": dict}),
+    "lr": (
+        _COMMON_MODEL_KEYS,
+        set(),
+        {"tasks": list, "label_col_map": dict, "metrics": dict, "output_contract": dict},
+    ),
     "deepfm": (
         _COMMON_MODEL_KEYS | {"fm_k", "deep_hidden_dims"},
         set(),
@@ -286,6 +290,7 @@ _MODEL_PARAM_SPECS: dict[str, tuple[set[str], set[str], dict[str, type | tuple[t
             "tasks": list,
             "label_col_map": dict,
             "metrics": dict,
+            "output_contract": dict,
         },
     ),
     "mmoe": (
@@ -307,6 +312,7 @@ _MODEL_PARAM_SPECS: dict[str, tuple[set[str], set[str], dict[str, type | tuple[t
             "tasks": list,
             "label_col_map": dict,
             "metrics": dict,
+            "output_contract": dict,
         },
     ),
     "esmm": (
@@ -318,6 +324,7 @@ _MODEL_PARAM_SPECS: dict[str, tuple[set[str], set[str], dict[str, type | tuple[t
             "tasks": list,
             "label_col_map": dict,
             "metrics": dict,
+            "output_contract": dict,
         },
     ),
     "gdcn_esmm": (
@@ -337,6 +344,7 @@ _MODEL_PARAM_SPECS: dict[str, tuple[set[str], set[str], dict[str, type | tuple[t
             "tasks": list,
             "label_col_map": dict,
             "metrics": dict,
+            "output_contract": dict,
         },
     ),
     "unimixer": (
@@ -368,6 +376,7 @@ _MODEL_PARAM_SPECS: dict[str, tuple[set[str], set[str], dict[str, type | tuple[t
             "tasks": list,
             "label_col_map": dict,
             "metrics": dict,
+            "output_contract": dict,
         },
     ),
     "token_mixer_large": (
@@ -393,6 +402,7 @@ _MODEL_PARAM_SPECS: dict[str, tuple[set[str], set[str], dict[str, type | tuple[t
             "tasks": list,
             "label_col_map": dict,
             "metrics": dict,
+            "output_contract": dict,
         },
     ),
     "rankmixer": (
@@ -416,6 +426,7 @@ _MODEL_PARAM_SPECS: dict[str, tuple[set[str], set[str], dict[str, type | tuple[t
             "tasks": list,
             "label_col_map": dict,
             "metrics": dict,
+            "output_contract": dict,
         },
     ),
 }
@@ -439,7 +450,7 @@ def _validate_typed_params(
     required: set[str],
     types: dict[str, type | tuple[type, ...]],
 ) -> None:
-    _validate_mapping_keys(context, params, allowed, required)
+    _validate_mapping_keys(context, params, allowed, set())
     for key, expected in types.items():
         if key not in params or params[key] is None:
             continue
@@ -456,6 +467,7 @@ def _validate_typed_params(
                 else expected.__name__
             )
             raise TypeError(f"{context}.{key} must be {names}, got {type(value).__name__}")
+    _validate_mapping_keys(context, params, allowed, required)
 
 
 @dataclass
@@ -735,7 +747,18 @@ class ModelConfig:
                 f"Unknown model type: {mtype}. Registered: {sorted(_MODEL_PARAM_SPECS)}"
             )
         allowed, required, types = _MODEL_PARAM_SPECS[mtype]
+        if "output_contract" in params:
+            legacy = sorted({"tasks", "task_config", "label_col_map", "metrics"} & set(params))
+            if legacy:
+                raise ValueError(
+                    f"output_contract cannot be combined with legacy model fields: {legacy}"
+                )
+            required = required - {"task_config"}
         _validate_typed_params(f"model '{mtype}' params", params, allowed, required, types)
+        if "output_contract" in params:
+            from .output_contract import parse_output_contract
+
+            parse_output_contract(params["output_contract"])
         return cls(type=mtype, params=params)
 
     def build(

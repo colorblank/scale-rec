@@ -1,0 +1,135 @@
+cases:
+  - name: valid_esmm
+    valid: true
+    sources:
+      - {name: is_click, role: label, has_default: false}
+      - {name: is_conversion, role: label, has_default: false}
+    contract:
+      version: 1
+      graph:
+        towers:
+          - {name: click_logit, kind: binary_logit, hidden_dims: [16, 8], activation: relu}
+          - {name: cvr_logit, kind: binary_logit, hidden_dims: [16, 8], activation: relu}
+        relations:
+          - {name: click_prob, op: sigmoid, inputs: [click_logit]}
+          - {name: cvr_prob, op: sigmoid, inputs: [cvr_logit]}
+          - {name: ctcvr_prob, op: multiply, inputs: [click_prob, cvr_prob]}
+      objectives:
+        - name: click_loss
+          source: click_logit
+          label: is_click
+          loss: {type: binary_cross_entropy_with_logits, reduction: mean}
+        - name: conversion_loss
+          source: ctcvr_prob
+          label: is_conversion
+          loss: {type: binary_cross_entropy, reduction: mean, epsilon: 1.0e-7}
+      metrics:
+        - {name: click_auc, source: click_logit, label: is_click, type: auc}
+        - {name: conversion_logloss, source: ctcvr_prob, label: is_conversion, type: logloss}
+      outputs:
+        - {name: ctr, source: click_prob}
+        - {name: ctcvr, source: ctcvr_prob}
+
+  - name: probability_tower_is_forbidden
+    valid: false
+    error: probability
+    sources: []
+    contract:
+      version: 1
+      graph:
+        towers:
+          - {name: click_prob, kind: probability}
+        relations: []
+      objectives: []
+      metrics: []
+      outputs: [{name: ctr, source: click_prob}]
+
+  - name: probability_requires_probability_bce
+    valid: false
+    error: binary_cross_entropy_with_logits
+    sources:
+      - {name: is_conversion, role: label, has_default: false}
+    contract:
+      version: 1
+      graph:
+        towers:
+          - {name: click_logit, kind: binary_logit}
+        relations:
+          - {name: click_prob, op: sigmoid, inputs: [click_logit]}
+      objectives:
+        - name: click_loss
+          source: click_prob
+          label: is_conversion
+          loss: {type: binary_cross_entropy_with_logits}
+      metrics: []
+      outputs: [{name: ctr, source: click_prob}]
+
+  - name: relation_cycle_is_forbidden
+    valid: false
+    error: cycle
+    sources: []
+    contract:
+      version: 1
+      graph:
+        towers:
+          - {name: base, kind: regression}
+        relations:
+          - {name: a, op: identity, inputs: [b]}
+          - {name: b, op: identity, inputs: [a]}
+      objectives: []
+      metrics: []
+      outputs: [{name: value, source: a}]
+
+  - name: unused_node_is_forbidden
+    valid: false
+    error: unused
+    sources: []
+    contract:
+      version: 1
+      graph:
+        towers:
+          - {name: used, kind: score}
+          - {name: orphan, kind: score}
+        relations: []
+      objectives: []
+      metrics: []
+      outputs: [{name: score, source: used}]
+
+  - name: label_default_is_forbidden
+    valid: false
+    error: default
+    sources:
+      - {name: is_click, role: label, has_default: true}
+    contract:
+      version: 1
+      graph:
+        towers:
+          - {name: click_logit, kind: binary_logit}
+        relations: []
+      objectives:
+        - name: click_loss
+          source: click_logit
+          label: is_click
+          loss: {type: binary_cross_entropy_with_logits}
+      metrics: []
+      outputs: [{name: click_logit, source: click_logit}]
+
+  - name: non_finite_objective_weight_is_forbidden
+    valid: false
+    error: finite
+    sources:
+      - {name: is_click, role: label, has_default: false}
+    contract:
+      version: 1
+      graph:
+        towers:
+          - {name: click_logit, kind: binary_logit}
+        relations: []
+      objectives:
+        - name: click_loss
+          source: click_logit
+          label: is_click
+          weight: .nan
+          loss: {type: binary_cross_entropy_with_logits}
+      metrics: []
+      outputs: [{name: click_logit, source: click_logit}]
