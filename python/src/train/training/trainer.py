@@ -27,10 +27,12 @@ from ..app.data import (
 )
 from ..app.export import export_to_safetensors
 from ..core.config import FlowConfig, TrainConfig
+from ..core.output_contract import NormalizedOutputContract
 from ..core.preprocessor import TrainingPreprocessor
 from ..core.task import TaskSpec, legacy_task_specs
 from .eval.evaluator import Evaluator
 from .loss.multi_task import MultiTaskLoss, _to_device
+from .loss.objective import ObjectiveEngine
 from .optim.scheduler import LRScheduler, build_optimizer
 from .quality import FeatureQualityReport, summarize_feature_quality
 
@@ -132,8 +134,19 @@ def _collect_batches(batches: Iterator[Batch], max_samples: int) -> list[Batch]:
 
 def _prepare_batch(preprocessor: TrainingPreprocessor, batch: Batch) -> Batch:
     prepared = dict(batch)
+    prepared["_batch_values"] = _raw_batch_values(batch["features"], batch["labels"])
     prepared["features"] = preprocessor.preprocess_batch(batch["features"])
     return prepared
+
+
+def _raw_batch_values(features: Any, labels: dict[str, list[Any]]) -> dict[str, Any]:
+    if isinstance(features, dict):
+        values = dict(features)
+    else:
+        names = {name for row in features for name in row}
+        values = {name: [row.get(name) for row in features] for name in names}
+    values.update(labels)
+    return values
 
 
 def iter_preprocessed_batches(
@@ -226,31 +239,58 @@ class Trainer:
         memory_map: bool = False,
         task_specs: list[TaskSpec] | None = None,
         output_kinds: dict[str, str] | None = None,
+        output_contract: NormalizedOutputContract | None = None,
+        task_metrics: dict[str, list[str]] | None = None,
         artifact_manager: TrainingArtifactManager | None = None,
         repo_root: str | Path | None = None,
     ) -> None:
         self.model = model
         self._preprocessor = preprocessor
         self.cfg = config
+        self.output_contract = output_contract
+        if output_contract is not None and config.loss_weighting != "static":
+            raise ValueError("output_contract requires static loss weighting")
+        if output_contract is not None:
+            self._validate_output_contract_sources(output_contract, flow_config)
         self.task_specs = (
-            task_specs
-            or config.tasks
-            or legacy_task_specs(
-                task_names,
-                label_map,
-                config.task_weights,
-                default_metrics=list(config.eval.metrics),
+            []
+            if output_contract is not None
+            else (
+                task_specs
+                or config.tasks
+                or legacy_task_specs(
+                    task_names,
+                    label_map,
+                    config.task_weights,
+                    default_metrics=list(config.eval.metrics),
+                )
             )
         )
-        self.task_names = [spec.name for spec in self.task_specs]
-        self.label_map = {spec.name: spec.label for spec in self.task_specs}
-        self._validate_task_contract(flow_config)
-        missing_metrics = [spec.name for spec in self.task_specs if not spec.metrics]
+        self.task_names = (
+            list(task_names)
+            if output_contract is not None
+            else [spec.name for spec in self.task_specs]
+        )
+        if output_contract is not None and not self.task_names:
+            raise ValueError("output_contract training requires at least one metric")
+        self.label_map = (
+            dict(label_map)
+            if output_contract is not None
+            else {spec.name: spec.label for spec in self.task_specs}
+        )
+        if output_contract is None:
+            self._validate_task_contract(flow_config)
+        self.task_metrics = (
+            dict(task_metrics or {})
+            if output_contract is not None
+            else {spec.name: list(spec.metrics) for spec in self.task_specs}
+        )
+        missing_metrics = [name for name in self.task_names if not self.task_metrics.get(name)]
         if missing_metrics:
             raise ValueError(
                 "Task specs must define metrics in configuration: " + ", ".join(missing_metrics)
             )
-        self.task_metrics = {spec.name: list(spec.metrics) for spec in self.task_specs}
+        self.output_kinds = output_kinds or {}
         self._monitor_task, self._monitor_metric, self._monitor_mode = self._resolve_monitor()
         self.device = device
         self.model_type = model_type
@@ -275,13 +315,17 @@ class Trainer:
         self.eval_batches: list[Batch] = []
         self._n_eval_batches = 0
         self.feature_quality: FeatureQualityReport | None = None
-        self.loss_fn = MultiTaskLoss(
-            self.task_names,
-            self.label_map,
-            mode=config.loss_weighting,
-            task_weights=config.task_weights,
-            task_specs=self.task_specs,
-            output_kinds=output_kinds,
+        self.loss_fn = (
+            ObjectiveEngine(output_contract)
+            if output_contract is not None
+            else MultiTaskLoss(
+                self.task_names,
+                self.label_map,
+                mode=config.loss_weighting,
+                task_weights=config.task_weights,
+                task_specs=self.task_specs,
+                output_kinds=output_kinds,
+            )
         )
         self.lr_scheduler: LRScheduler | None = None
         self.optimizer: torch.optim.Optimizer | None = None
@@ -304,6 +348,21 @@ class Trainer:
         from ..models.params import format_parameter_summary
 
         logger.info("Model parameters: %s", format_parameter_summary(model))
+
+    @staticmethod
+    def _validate_output_contract_sources(
+        contract: NormalizedOutputContract,
+        flow_config: FlowConfig,
+    ) -> None:
+        sources = {source.name: source for source in flow_config.sources}
+        label_names = {source.name for source in flow_config.label_sources}
+        for item in (*contract.objectives, *contract.metrics):
+            if item.label not in label_names:
+                raise ValueError(
+                    f"output_contract label '{item.label}' must reference a label source"
+                )
+            if item.mask is not None and item.mask.source not in sources:
+                raise ValueError(f"output_contract mask source '{item.mask.source}' does not exist")
 
     def resume_from_checkpoint(self, checkpoint_path: str | Path) -> None:
         from safetensors.torch import load_file
@@ -431,6 +490,8 @@ class Trainer:
                 self.label_map,
                 self.device,
                 task_metrics=self.task_metrics,
+                output_kinds=self.output_kinds,
+                output_contract=self.output_contract,
             )
             if not eval_results:
                 raise ValueError(
@@ -635,11 +696,15 @@ class Trainer:
             feat = _to_device(batch["features"], self.device)
 
             t0 = time.perf_counter()
-            outputs = self.model(feat)
+            outputs = self._forward_outputs(feat)
             t_forward += time.perf_counter() - t0
 
             t0 = time.perf_counter()
-            loss = self.loss_fn(outputs, batch["labels"])
+            batch_values = batch.get(
+                "_batch_values",
+                {**batch["features"], **batch["labels"]},
+            )
+            loss = self._compute_loss(outputs, batch_values)
             t_loss += time.perf_counter() - t0
 
             if loss is None:
@@ -694,6 +759,27 @@ class Trainer:
             t_backward,
         )
         return avg_loss
+
+    def _forward_loss(
+        self,
+        features: dict[str, torch.Tensor],
+        labels: dict[str, list[Any]],
+    ) -> tuple[Any, torch.Tensor | None]:
+        outputs = self._forward_outputs(features)
+        return outputs, self._compute_loss(outputs, {**features, **labels})
+
+    def _forward_outputs(self, features: dict[str, torch.Tensor]) -> Any:
+        if self.output_contract is not None:
+            return self.model.forward_execution(features)
+        return self.model(features)
+
+    def _compute_loss(
+        self,
+        outputs: Any,
+        labels: dict[str, list[Any]],
+    ) -> torch.Tensor | None:
+        result = self.loss_fn(outputs, labels)
+        return result.total if self.output_contract is not None else result
 
     def _iter_batches(self) -> Iterator[Batch]:
         if len(self._data_paths) > 1:
@@ -753,6 +839,8 @@ class Trainer:
             self.label_map,
             self.device,
             task_metrics=self.task_metrics,
+            output_kinds=self.output_kinds,
+            output_contract=self.output_contract,
         )
         self.model.train()
         t_eval = (time.perf_counter() - t0) * 1000

@@ -36,6 +36,12 @@ pub trait Model: Send + Sync {
     /// 模型前向推理，接收特征字典返回输出字典。
     fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<ModelOutput>;
 
+    /// Execute the complete output graph. Legacy models expose the same values as nodes and outputs.
+    fn forward_execution(&self, x_inputs: &HashMap<String, Tensor>) -> Result<ModelExecution> {
+        let outputs = self.forward(x_inputs)?;
+        Ok(ModelExecution::new(outputs.clone(), outputs))
+    }
+
     /// 预热 Sinkhorn-Knopp 等缓存，可选实现。
     fn warmup(&self) -> Result<()> {
         Ok(())
@@ -57,7 +63,7 @@ pub enum OutputKind {
 }
 
 /// 单个模型输出，包含 tensor 及其语义类型。
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OutputTensor {
     /// 输出张量。
     pub tensor: Tensor,
@@ -66,7 +72,7 @@ pub struct OutputTensor {
 }
 
 /// 结构化模型输出，避免在裸字典中混合 logits 与 probabilities。
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ModelOutput {
     values: HashMap<String, OutputTensor>,
 }
@@ -310,6 +316,18 @@ fn build_esmm(
     _options: &ModelBuildOptions,
 ) -> Result<Box<dyn Model>> {
     let shared_bottom_dims: Vec<usize> = yaml_usize_seq(params, "shared_bottom_dims");
+    if let Some(raw) = params.get("output_contract") {
+        let contract: output_contract::OutputContract = serde_yaml::from_value(raw.clone())
+            .map_err(|error| {
+                candle_core::Error::Msg(format!("parse esmm output_contract: {error}"))
+            })?;
+        return Ok(Box::new(esmm::ContractEsmm::new(
+            vb,
+            features,
+            &shared_bottom_dims,
+            &contract,
+        )?));
+    }
     let task_config = params
         .get("task_config")
         .ok_or_else(|| candle_core::Error::Msg("ESMM requires task_config".into()))?;

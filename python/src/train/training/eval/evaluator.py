@@ -11,8 +11,10 @@ import torch
 
 from ...core.config import EvalConfig
 from ...core.model_output import ensure_model_output
+from ...core.output_contract import NormalizedOutputContract
 from ...core.preprocessor import TrainingPreprocessor
 from ..loss.multi_task import _pick_labels, _to_device
+from ..loss.objective import evaluate_mask
 from ..metrics import compute_metrics, get_available_metrics
 
 logger = logging.getLogger(__name__)
@@ -34,6 +36,8 @@ class Evaluator:
         label_map: dict[str, str],
         device: torch.device | None = None,
         task_metrics: dict[str, list[str]] | None = None,
+        output_kinds: dict[str, str] | None = None,
+        output_contract: NormalizedOutputContract | None = None,
     ) -> dict[str, dict[str, float]]:
         """评估所有 task × metric。
 
@@ -44,6 +48,20 @@ class Evaluator:
 
         was_training = model.training
         model.eval()
+
+        if output_contract is not None:
+            results = self._evaluate_contract(
+                model,
+                preprocessor,
+                batches,
+                output_contract,
+                device,
+            )
+            if was_training:
+                model.train()
+            if self.cfg.log_path:
+                self._write_log(results, task_names)
+            return results
 
         # 收集预测
         logits_buf: dict[str, list[np.ndarray]] = {t: [] for t in task_names}
@@ -57,9 +75,11 @@ class Evaluator:
                     rows = features
                 else:
                     rows = [{k: v for k, v in r.items() if v is not None} for r in features]
-                outputs = ensure_model_output(
-                    model(_to_device(preprocessor.preprocess_batch(rows), device))
-                )
+                features_on_device = _to_device(preprocessor.preprocess_batch(rows), device)
+                if hasattr(model, "forward_execution"):
+                    outputs = model.forward_execution(features_on_device).nodes
+                else:
+                    outputs = ensure_model_output(model(features_on_device))
 
                 # 提取分组特征
                 group_ids: np.ndarray | None = None
@@ -104,12 +124,82 @@ class Evaluator:
             metrics = (task_metrics or {}).get(t, self.cfg.metrics)
             if not metrics:
                 continue
-            results[t] = compute_metrics(y, p, metrics, group_ids=g)
+            results[t] = compute_metrics(
+                y,
+                p,
+                metrics,
+                group_ids=g,
+                output_kind=(output_kinds or {}).get(t, "binary_logit"),
+            )
 
         # 日志文件
         if self.cfg.log_path:
             self._write_log(results, task_names)
 
+        return results
+
+    def _evaluate_contract(
+        self,
+        model: torch.nn.Module,
+        preprocessor: TrainingPreprocessor,
+        batches: list[dict[str, Any]],
+        contract: NormalizedOutputContract,
+        device: torch.device,
+    ) -> dict[str, dict[str, float]]:
+        prediction_buf: dict[str, list[np.ndarray]] = {
+            metric.name: [] for metric in contract.metrics
+        }
+        label_buf: dict[str, list[np.ndarray]] = {metric.name: [] for metric in contract.metrics}
+        with torch.no_grad():
+            for batch in batches:
+                features = batch["features"]
+                rows = (
+                    features
+                    if isinstance(features, dict)
+                    else [
+                        {key: value for key, value in row.items() if value is not None}
+                        for row in features
+                    ]
+                )
+                tensors = _to_device(preprocessor.preprocess_batch(rows), device)
+                nodes = model.forward_execution(tensors).nodes
+                batch_values = _raw_batch_values(features, batch["labels"])
+                for metric in contract.metrics:
+                    output = nodes.get(metric.source)
+                    if output is None:
+                        raise ValueError(
+                            f"metric '{metric.name}' source '{metric.source}' is missing"
+                        )
+                    raw = _pick_labels(batch["labels"], metric.label)
+                    labels = np.array(
+                        [float(value) if value is not None else np.nan for value in raw],
+                        dtype=np.float32,
+                    )
+                    valid = ~np.isnan(labels)
+                    if metric.mask is not None:
+                        valid &= evaluate_mask(
+                            metric.mask,
+                            batch_values,
+                            len(labels),
+                        )
+                    if not valid.any():
+                        continue
+                    prediction_buf[metric.name].append(output.tensor.cpu().numpy().flatten()[valid])
+                    label_buf[metric.name].append(labels[valid])
+
+        results: dict[str, dict[str, float]] = {}
+        for metric in contract.metrics:
+            if not prediction_buf[metric.name]:
+                continue
+            predictions = np.concatenate(prediction_buf[metric.name])
+            labels = np.concatenate(label_buf[metric.name])
+            value = compute_metrics(
+                labels,
+                predictions,
+                [metric.type],
+                output_kind=contract.node_kinds[metric.source],
+            )[metric.type]
+            results.setdefault(metric.source, {})[metric.type] = value
         return results
 
     def _write_log(self, results: dict[str, dict[str, float]], task_names: list[str]) -> None:
@@ -123,3 +213,13 @@ class Evaluator:
                     f.write(f" {t}_{m}={v:.6f}")
             f.write("\n")
         logger.info("eval log saved to %s", path)
+
+
+def _raw_batch_values(features: Any, labels: dict[str, list[Any]]) -> dict[str, Any]:
+    if isinstance(features, dict):
+        values = dict(features)
+    else:
+        names = {name for row in features for name in row}
+        values = {name: [row.get(name) for row in features] for name in names}
+    values.update(labels)
+    return values

@@ -38,6 +38,7 @@ def compute_metrics(
     y_pred: np.ndarray,
     metric_names: list[str],
     group_ids: np.ndarray | None = None,
+    output_kind: str = "binary_logit",
 ) -> dict[str, float]:
     """批量计算多个指标。
 
@@ -50,15 +51,20 @@ def compute_metrics(
     Returns:
         {metric_name: value}。
     """
+    classification_values = _sigmoid(y_pred) if output_kind == "binary_logit" else y_pred
     result: dict[str, float] = {}
     for m in metric_names:
         if m not in _ALL_METRICS:
             raise ValueError(f"Unknown metric: {m}")
         if m == "gauc":
             if group_ids is not None and len(group_ids) > 0:
-                result[m] = gauc(y_true, _sigmoid(y_pred), group_ids)
+                result[m] = gauc(y_true, classification_values, group_ids)
             else:
                 result[m] = 0.5
+        elif m == "auc":
+            result[m] = _auc(y_true, classification_values)
+        elif m == "logloss":
+            result[m] = logloss(y_true, classification_values)
         else:
             fn = _ALL_METRICS[m][1]
             result[m] = float(fn(y_true, y_pred))

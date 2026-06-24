@@ -5,6 +5,7 @@ from pathlib import Path
 import yaml
 
 from scale_rec_demo.paths import MODEL_CONFIGS
+from scale_rec_demo.verify_all import compare_outputs, read_serving_dataframe
 from train.core.config import FlowConfig
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -30,6 +31,7 @@ def test_demo_model_configs_exist_and_are_current():
     expected_files = {
         "models/lr.yaml",
         "models/gdcn_esmm.yaml",
+        "models/esmm_output_contract.yaml",
         "models/unimixer.yaml",
         "models/token_mixer_large.yaml",
         "models/rankmixer.yaml",
@@ -82,6 +84,20 @@ def test_demo_model_configs_exist_and_are_current():
     }
     assert gdcn["label_col_map"]["stay"] == "stay_time_label"
 
+    native_esmm = yaml.safe_load(
+        (EXAMPLES_DIR / "models" / "esmm_output_contract.yaml").read_text(encoding="utf-8")
+    )
+    assert native_esmm["type"] == "esmm"
+    assert "task_config" not in native_esmm
+    assert native_esmm["output_contract"]["version"] == 1
+    assert {output["name"] for output in native_esmm["output_contract"]["outputs"]} == {
+        "ctr",
+        "ctcvr",
+        "ctdetail",
+        "ctstock",
+        "ctstay",
+    }
+
     lr = yaml.safe_load(model_configs["discover_lr"].read_text(encoding="utf-8"))
     assert lr["type"] == "lr"
     assert lr["tasks"] == [
@@ -108,6 +124,27 @@ def test_demo_model_configs_exist_and_are_current():
 
 def test_lr_ctr_duplicate_config_was_removed():
     assert not (REPO_ROOT / "python" / "demo" / "model_lr_ctr.yaml").exists()
+
+
+def test_serving_verification_rereads_serialized_values_as_strings(tmp_path):
+    path = tmp_path / "rows.csv"
+    path.write_text("id,score\n001,1.5\n", encoding="utf-8")
+
+    frame = read_serving_dataframe(path)
+
+    assert frame.to_dict("records") == [{"id": "001", "score": "1.5"}]
+
+
+def test_output_comparison_rejects_missing_prediction_columns(tmp_path):
+    python_path = tmp_path / "python.csv"
+    rust_path = tmp_path / "rust.csv"
+    python_path.write_text("probability_ctr\n0.5\n", encoding="utf-8")
+    rust_path.write_text("logit_ctr\n0.5\n", encoding="utf-8")
+
+    success, metrics = compare_outputs(python_path, rust_path, 1e-5)
+
+    assert success is False
+    assert metrics == {}
 
 
 def test_demo_model_path_index_covers_all_example_models():

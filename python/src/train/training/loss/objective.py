@@ -41,6 +41,7 @@ class ObjectiveEngine(nn.Module):
         total: torch.Tensor | None = None
         losses: dict[str, torch.Tensor] = {}
         sample_counts: dict[str, int] = {}
+        label_means: dict[str, float] = {}
 
         for objective in self.objectives:
             output = nodes.get(objective.source)
@@ -62,7 +63,7 @@ class ObjectiveEngine(nn.Module):
                 )
             valid = np.array([not _is_null(value) for value in raw_labels], dtype=bool)
             if objective.mask is not None:
-                valid &= _evaluate_mask(objective.mask, batch_values, len(raw_labels))
+                valid &= evaluate_mask(objective.mask, batch_values, len(raw_labels))
             count = int(valid.sum())
             if count == 0:
                 continue
@@ -76,10 +77,23 @@ class ObjectiveEngine(nn.Module):
             raw_loss = _objective_loss(objective, prediction, target)
             losses[objective.name] = raw_loss
             sample_counts[objective.name] = count
+            label_means[objective.name] = float(target.detach().mean().item())
             weighted = raw_loss * objective.weight
             total = weighted if total is None else total + weighted
 
+        self._last_losses = {name: float(value.detach().item()) for name, value in losses.items()}
+        self._last_sample_counts = sample_counts
+        self._last_label_means = label_means
         return ObjectiveResult(total=total, losses=losses, sample_counts=sample_counts)
+
+    def last_losses(self) -> dict[str, float]:
+        return getattr(self, "_last_losses", {})
+
+    def last_pos_rates(self) -> dict[str, float]:
+        return getattr(self, "_last_label_means", {})
+
+    def task_weights_info(self) -> dict[str, float]:
+        return {objective.name: objective.weight for objective in self.objectives}
 
 
 def _objective_loss(
@@ -140,7 +154,7 @@ def _column(
     return list(values)
 
 
-def _evaluate_mask(
+def evaluate_mask(
     mask: MaskSpec,
     batch_values: Mapping[str, Sequence[Any] | torch.Tensor | np.ndarray],
     batch_size: int,

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 import torch
 
@@ -14,6 +16,7 @@ from train.models.mmoe import MMoE
 from train.models.output import ModelOutput
 
 FEATURES = [("a", 10, 4), ("b", 5, 4)]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _inputs(batch=3):
@@ -69,6 +72,24 @@ def test_output_spec_accepts_regression_task_specs():
     assert spec["task_names"] == ["watch_time"]
     assert spec["output_kinds"] == {"watch_time": "regression"}
     assert spec["tasks"][0].output_kind == "regression"
+
+
+def test_native_output_contract_esmm_exposes_public_and_internal_outputs():
+    config = ModelConfig.from_yaml(REPO_ROOT / "examples/models/esmm_output_contract.yaml")
+    model = config.build(FEATURES)
+    spec = get_output_spec(config.type, model, config.params)
+
+    public = model(_inputs(2))
+    execution = model.forward_execution(_inputs(2))
+
+    assert public.names() == ["ctr", "ctcvr", "ctdetail", "ctstock", "ctstay"]
+    assert "click_logit" not in public
+    assert execution.nodes.kind("click_logit") == "binary_logit"
+    assert execution.nodes.kind("ctcvr_prob") == "probability"
+    assert spec["label_col_map"]["ctcvr_prob"] == "is_cvr"
+    assert spec["label_col_map"]["stay_logit"] == "stay_time_label"
+    assert spec["task_metrics"]["ctcvr_prob"] == ["auc", "logloss"]
+    assert "output_head.towers.click_logit.hidden.0.weight" in model.state_dict()
 
 
 def test_deepfm_forward():

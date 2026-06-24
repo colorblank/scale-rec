@@ -1,10 +1,12 @@
 //! Configurable ESMM: shared bottom + task towers + probability relations.
-use super::{Model, ModelOutput, OutputKind};
+use super::{Model, ModelExecution, ModelOutput, OutputKind};
 use crate::layers::embedding::{FeatureEmbeddings, FeatureSpec};
 use crate::layers::mlp::Mlp;
 use crate::layers::towers::{
     apply_relation, Activation, MultiTaskConfig, RelationOp, TaskRelation, TaskTower, TowerConfig,
 };
+use crate::models::output_contract::OutputContract;
+use crate::models::output_head::OutputHead;
 use candle_core::{Result, Tensor};
 use candle_nn::VarBuilder;
 use std::collections::HashMap;
@@ -168,5 +170,68 @@ impl Model for ESMM {
                 .insert_probability(relation.target.clone(), apply_relation(relation, &outputs)?);
         }
         Ok(outputs)
+    }
+}
+
+/// Standard ESMM backbone using the generic output contract execution path.
+pub struct ContractEsmm {
+    embeddings: FeatureEmbeddings,
+    shared_bottom: Option<Mlp>,
+    output_head: OutputHead,
+}
+
+impl ContractEsmm {
+    /// Build a shared-bottom ESMM with contract-defined towers and relations.
+    pub fn new(
+        vb: VarBuilder,
+        features: &[FeatureSpec],
+        shared_bottom_dims: &[usize],
+        contract: &OutputContract,
+    ) -> Result<Self> {
+        let embeddings = FeatureEmbeddings::new(vb.pp("embeddings"), features)?;
+        let (shared_bottom, shared_output_dim) = if shared_bottom_dims.is_empty() {
+            (None, embeddings.total_dim)
+        } else {
+            let output_dim = *shared_bottom_dims.last().ok_or_else(|| {
+                candle_core::Error::Msg("shared_bottom_dims must not be empty".into())
+            })?;
+            let mlp = Mlp::new(
+                vb.pp("shared_bottom"),
+                embeddings.total_dim,
+                &shared_bottom_dims[..shared_bottom_dims.len() - 1],
+                output_dim,
+                Activation::Relu,
+            )?;
+            (Some(mlp), output_dim)
+        };
+        let representation_dims = HashMap::from([("shared".to_string(), shared_output_dim)]);
+        let output_head = OutputHead::new(contract, &representation_dims, vb.pp("output_head"))?;
+        Ok(Self {
+            embeddings,
+            shared_bottom,
+            output_head,
+        })
+    }
+
+    fn representations(
+        &self,
+        x_inputs: &HashMap<String, Tensor>,
+    ) -> Result<HashMap<String, Tensor>> {
+        let concat = self.embeddings.forward(x_inputs)?;
+        let shared = match &self.shared_bottom {
+            Some(bottom) => bottom.forward(&concat)?,
+            None => concat,
+        };
+        Ok(HashMap::from([("shared".to_string(), shared)]))
+    }
+}
+
+impl Model for ContractEsmm {
+    fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<ModelOutput> {
+        Ok(self.forward_execution(x_inputs)?.outputs)
+    }
+
+    fn forward_execution(&self, x_inputs: &HashMap<String, Tensor>) -> Result<ModelExecution> {
+        self.output_head.forward(&self.representations(x_inputs)?)
     }
 }

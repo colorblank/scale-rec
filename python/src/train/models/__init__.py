@@ -185,8 +185,13 @@ def _spec_mmoe(model: nn.Module | None = None, params: dict[str, Any] | None = N
 def _build_esmm(
     features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
 ) -> ESMM:
+    output_contract = None
+    if params.get("output_contract") is not None:
+        from ..core.output_contract import parse_output_contract
+
+        output_contract = parse_output_contract(params["output_contract"])
     task_config = _parse_task_config(params.get("task_config"))
-    if task_config is None:
+    if task_config is None and output_contract is None:
         raise ValueError("ESMM requires task_config")
     return ESMM(
         features,
@@ -199,6 +204,7 @@ def _build_esmm(
         task_config=task_config,
         pooling_map=params.get("_pooling_map"),
         total_dim=params.get("_total_dim"),
+        output_contract=output_contract,
     )
 
 
@@ -226,6 +232,30 @@ def _build_gdcn_esmm(
 
 def _spec_esmm(model: nn.Module | None = None, params: dict[str, Any] | None = None) -> OutputSpec:
     params = params or {}
+    if params.get("output_contract") is not None:
+        from ..core.output_contract import parse_output_contract
+
+        contract = parse_output_contract(params["output_contract"])
+        task_names = list(dict.fromkeys(metric.source for metric in contract.metrics))
+        label_col_map: dict[str, str] = {}
+        for item in (*contract.objectives, *contract.metrics):
+            previous = label_col_map.get(item.source)
+            if previous is not None and previous != item.label:
+                raise ValueError(
+                    f"output node '{item.source}' references conflicting labels "
+                    f"'{previous}' and '{item.label}'"
+                )
+            label_col_map[item.source] = item.label
+        task_metrics: dict[str, list[str]] = {}
+        for metric in contract.metrics:
+            task_metrics.setdefault(metric.source, []).append(metric.type)
+        return {
+            "task_names": task_names,
+            "label_col_map": label_col_map,
+            "output_kinds": contract.node_kinds,
+            "task_metrics": task_metrics,
+            "output_contract": contract,
+        }
     task_config = _parse_task_config(params.get("task_config")) or _default_esmm_task_config(params)
     relation_names = [relation.target for relation in task_config.relations]
     specs = parse_task_specs(params.get("tasks"))

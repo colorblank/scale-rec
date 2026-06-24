@@ -25,7 +25,10 @@ from ..core.config import FlowConfig
 from ..core.dag import FeatureDag
 from ..core.feature_info import FeatureInfo
 from ..core.model_output import ensure_model_output
+from ..core.output_contract import NormalizedOutputContract
 from ..core.preprocessor import TrainingPreprocessor
+from ..training.loss.objective import ObjectiveEngine, evaluate_mask
+from ..training.metrics import compute_metrics
 from ..training.trainer import (
     Trainer,
     build_resume_state,
@@ -187,6 +190,7 @@ def _train_epoch_single(
     checkpoint_interval_steps: int = 0,
     checkpoint_interval_seconds: float = 0.0,
     epoch: int = 0,
+    output_contract: NormalizedOutputContract | None = None,
 ) -> tuple[float, int]:
     if label_col_map is None:
         label_col_map = {}
@@ -195,6 +199,7 @@ def _train_epoch_single(
     if checkpoint_state is None:
         checkpoint_state = PeriodicCheckpointState()
     model.train()
+    objective_engine = ObjectiveEngine(output_contract) if output_contract is not None else None
     total_loss = 0.0
     n_batches = 0
     batches = iter_preprocessed_batches(
@@ -211,18 +216,26 @@ def _train_epoch_single(
         actual_bs = int(batch.get("_batch_size", 0))
         feature_tensors = batch["features"]
         batch_labels = batch["labels"]
-        outputs = ensure_model_output(model(feature_tensors), output_kinds)
-        loss = None
-        for task_name, output in outputs.items():
-            if output.kind == "probability":
-                continue
-            label_col = label_col_map.get(task_name, task_name)
-            if label_col in batch_labels:
-                labels = torch.tensor(batch_labels[label_col], dtype=torch.float32).view(
-                    actual_bs, 1
-                )
-                task_loss = _single_task_loss(output.tensor, labels, output.kind)
-                loss = task_loss if loss is None else loss + task_loss
+        batch_values = batch.get(
+            "_batch_values",
+            {**feature_tensors, **batch_labels},
+        )
+        if objective_engine is not None:
+            execution = model.forward_execution(feature_tensors)
+            loss = objective_engine(execution, batch_values).total
+        else:
+            outputs = ensure_model_output(model(feature_tensors), output_kinds)
+            loss = None
+            for task_name, output in outputs.items():
+                if output.kind == "probability":
+                    continue
+                label_col = label_col_map.get(task_name, task_name)
+                if label_col in batch_labels:
+                    labels = torch.tensor(batch_labels[label_col], dtype=torch.float32).view(
+                        actual_bs, 1
+                    )
+                    task_loss = _single_task_loss(output.tensor, labels, output.kind)
+                    loss = task_loss if loss is None else loss + task_loss
         if loss is None:
             continue
         optimizer.zero_grad()
@@ -264,6 +277,7 @@ def _evaluate_single(
     label_col_map: dict[str, str] | None = None,
     output_kinds: dict[str, str] | None = None,
     prefetch_batches: int = 0,
+    output_contract: NormalizedOutputContract | None = None,
 ) -> dict[str, dict[str, float]]:
     if label_col_map is None:
         label_col_map = {}
@@ -272,6 +286,8 @@ def _evaluate_single(
     model.eval()
     all_outputs: dict[str, list[np.ndarray]] = {}
     all_labels: dict[str, list[np.ndarray]] = {}
+    metric_outputs: dict[str, list[np.ndarray]] = {}
+    metric_labels: dict[str, list[np.ndarray]] = {}
     with torch.no_grad():
         batches = iter_preprocessed_batches(
             dag,
@@ -282,7 +298,40 @@ def _evaluate_single(
             actual_bs = int(batch.get("_batch_size", 0))
             feature_tensors = batch["features"]
             batch_labels = batch["labels"]
-            outputs = ensure_model_output(model(feature_tensors), output_kinds)
+            batch_values = batch.get(
+                "_batch_values",
+                {**feature_tensors, **batch_labels},
+            )
+            outputs = (
+                model.forward_execution(feature_tensors).nodes
+                if output_contract is not None
+                else ensure_model_output(model(feature_tensors), output_kinds)
+            )
+            if output_contract is not None:
+                for metric in output_contract.metrics:
+                    output = outputs.get(metric.source)
+                    if output is None:
+                        raise ValueError(
+                            f"metric '{metric.name}' source '{metric.source}' is missing"
+                        )
+                    raw = batch_labels.get(metric.label, [])
+                    labels = np.array(
+                        [float(value) if value is not None else np.nan for value in raw],
+                        dtype=np.float32,
+                    )
+                    valid = ~np.isnan(labels)
+                    if metric.mask is not None:
+                        valid &= evaluate_mask(
+                            metric.mask,
+                            batch_values,
+                            len(labels),
+                        )
+                    if valid.any():
+                        metric_outputs.setdefault(metric.name, []).append(
+                            output.tensor.cpu().numpy().flatten()[valid]
+                        )
+                        metric_labels.setdefault(metric.name, []).append(labels[valid])
+                continue
             for t, output in outputs.items():
                 label_col = label_col_map.get(t, t)
                 if label_col not in batch_labels:
@@ -293,6 +342,22 @@ def _evaluate_single(
                     labels = np.pad(labels, (0, actual_bs - len(labels)), constant_values=0)
                 all_labels.setdefault(t, []).append(labels)
     results: dict[str, dict[str, float]] = {}
+    if output_contract is not None:
+        for metric in output_contract.metrics:
+            if not metric_outputs.get(metric.name):
+                continue
+            predictions = np.concatenate(metric_outputs[metric.name])
+            labels = np.concatenate(metric_labels[metric.name])
+            value = compute_metrics(
+                labels,
+                predictions,
+                [metric.type],
+                output_kind=output_contract.node_kinds[metric.source],
+            )[metric.type]
+            results.setdefault(metric.source, {})[metric.type] = value
+        if not results:
+            raise ValueError("No evaluation labels were available for output_contract metrics")
+        return results
     for t, logits_list in all_outputs.items():
         logits_arr = np.concatenate(logits_list)
         labels_arr = (
@@ -455,6 +520,10 @@ def _run_single(args: argparse.Namespace) -> None:
     )
 
     built = build_model_for_dag(model_config, feat_info, device)
+    label_col_map = dict(built.spec.get("label_col_map", {}))
+    if built.spec.get("output_contract") is not None:
+        for source in flow_config.label_sources:
+            label_col_map.setdefault(source.name, source.name)
     from ..models.params import format_parameter_summary
 
     logger.info(
@@ -525,7 +594,7 @@ def _run_single(args: argparse.Namespace) -> None:
         args.batch_size,
         max(1, (len(train_df) + args.batch_size - 1) // max(args.batch_size, 1)),
         max(1, (len(test_df) + args.batch_size - 1) // max(args.batch_size, 1)),
-        built.spec.get("label_col_map", {}),
+        label_col_map,
     )
 
     model = built.model
@@ -542,7 +611,7 @@ def _run_single(args: argparse.Namespace) -> None:
             dag,
             train_df,
             args.batch_size,
-            built.spec.get("label_col_map", {}),
+            label_col_map,
             built.spec.get("output_kinds", {}),
             cfg.prefetch_batches,
             artifacts,
@@ -555,15 +624,17 @@ def _run_single(args: argparse.Namespace) -> None:
             checkpoint_interval_steps=cfg.checkpoint_interval_steps,
             checkpoint_interval_seconds=cfg.checkpoint_interval_seconds,
             epoch=epoch,
+            output_contract=built.spec.get("output_contract"),
         )
         metrics = _evaluate_single(
             model,
             dag,
             test_df,
             args.batch_size,
-            built.spec.get("label_col_map", {}),
+            label_col_map,
             built.spec.get("output_kinds", {}),
             cfg.prefetch_batches,
+            output_contract=built.spec.get("output_contract"),
         )
         score = min((v["logloss"] for v in metrics.values()), default=best_score)
         is_best = score < best_score
@@ -705,6 +776,8 @@ def _run_discover(args: argparse.Namespace) -> None:
         memory_map=args.memory_map,
         task_specs=built.spec.get("tasks"),
         output_kinds=built.spec.get("output_kinds", {}),
+        output_contract=built.spec.get("output_contract"),
+        task_metrics=built.spec.get("task_metrics"),
         artifact_manager=artifacts,
         repo_root=args.repo_root,
     )

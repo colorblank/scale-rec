@@ -190,6 +190,27 @@ task_config:
 }
 
 #[test]
+fn test_modelconfig_build_native_output_contract_esmm() {
+    let config: ModelConfig =
+        serde_yaml::from_str(include_str!("../examples/models/esmm_output_contract.yaml")).unwrap();
+    let model = config.build(vb(), &dummy_features(), None).unwrap();
+
+    let public = model.forward(&dummy_inputs(2)).unwrap();
+    let execution = model.forward_execution(&dummy_inputs(2)).unwrap();
+
+    assert_eq!(public.len(), 5);
+    assert!(public.contains_key("ctr"));
+    assert!(public.contains_key("ctcvr"));
+    assert!(!public.contains_key("click_logit"));
+    assert!(execution.nodes.contains_key("click_logit"));
+    assert!(execution.nodes.contains_key("ctcvr_prob"));
+    assert_eq!(
+        execution.outputs.get("ctcvr").unwrap().kind,
+        OutputKind::Probability
+    );
+}
+
+#[test]
 fn test_modelconfig_build_lr() {
     let cfg = ModelConfig {
         model_type: "lr".into(),

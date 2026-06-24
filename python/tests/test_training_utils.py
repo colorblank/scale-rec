@@ -2,19 +2,36 @@ from __future__ import annotations
 
 import threading
 import time
+from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import pytest
 import torch
 
-from train.core.config import EvalConfig, FlowConfig, LRScheduleConfig, OptimConfig, TrainConfig
+from train.app.main import _evaluate_single, _train_epoch_single
+from train.core.config import (
+    EvalConfig,
+    FlowConfig,
+    LRScheduleConfig,
+    ModelConfig,
+    OptimConfig,
+    TrainConfig,
+)
 from train.core.dag import FeatureDag
+from train.core.model_output import ModelExecution, ModelOutput
+from train.core.output_contract import parse_output_contract
 from train.core.preprocessor import TrainingPreprocessor
 from train.core.task import TaskSpec, parse_task_specs
+from train.models import get_output_spec
 from train.training.eval.evaluator import Evaluator
 from train.training.loss.multi_task import MultiTaskLoss
+from train.training.metrics import compute_metrics
 from train.training.optim.scheduler import LRScheduler
 from train.training.quality import summarize_feature_quality
 from train.training.trainer import Trainer, iter_preprocessed_batches
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _single_label_flow(label: str = "click") -> FlowConfig:
@@ -32,6 +49,38 @@ def _single_label_flow(label: str = "click") -> FlowConfig:
 
 def _dummy_preprocessor(flow_config: FlowConfig) -> TrainingPreprocessor:
     return TrainingPreprocessor(FeatureDag(flow_config))
+
+
+def _native_esmm_flow() -> FlowConfig:
+    return FlowConfig.from_dict(
+        {
+            "version": "1.0.0",
+            "sources": [
+                {
+                    "name": "user_id",
+                    "dtype": "string",
+                    "default_val": "",
+                    "role": "feature",
+                },
+                *[
+                    {
+                        "name": name,
+                        "dtype": "float",
+                        "default_val": "0",
+                        "role": "label",
+                    }
+                    for name in (
+                        "is_click",
+                        "is_cvr",
+                        "is_click_detail",
+                        "is_click_stock",
+                        "stay_time_label",
+                    )
+                ],
+            ],
+            "operators": [],
+        }
+    )
 
 
 def test_train_config_uses_structured_subconfigs():
@@ -107,6 +156,85 @@ def test_evaluator_masks_logits_when_labels_are_missing():
     assert result["click"]["gauc"] == 0.5
 
 
+def test_probability_logloss_does_not_apply_sigmoid_again():
+    result = compute_metrics(
+        np.array([1.0], dtype=np.float32),
+        np.array([0.25], dtype=np.float32),
+        ["logloss"],
+        output_kind="probability",
+    )
+
+    assert result["logloss"] == pytest.approx(-np.log(0.25))
+
+
+def test_contract_metric_applies_structured_mask():
+    class DummyPreprocessor:
+        @staticmethod
+        def preprocess_batch(rows):
+            return {
+                "x": torch.zeros(len(rows), 1),
+                "eligible": torch.tensor(
+                    [row["eligible"] for row in rows],
+                    dtype=torch.long,
+                ),
+            }
+
+    class DummyModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.bias = torch.nn.Parameter(torch.zeros(1))
+
+        def forward_execution(self, inputs):
+            nodes = ModelOutput()
+            nodes.insert_probability(
+                "probability",
+                torch.tensor([[0.25], [0.75]], device=self.bias.device),
+            )
+            return ModelExecution(nodes=nodes, outputs=ModelOutput())
+
+    contract = parse_output_contract(
+        {
+            "version": 1,
+            "graph": {
+                "towers": [{"name": "logit", "kind": "binary_logit"}],
+                "relations": [{"name": "probability", "op": "sigmoid", "inputs": ["logit"]}],
+            },
+            "objectives": [],
+            "metrics": [
+                {
+                    "name": "masked_logloss",
+                    "source": "probability",
+                    "label": "label",
+                    "type": "logloss",
+                    "mask": {"source": "eligible", "op": "eq", "value": 1},
+                }
+            ],
+            "outputs": [{"name": "prediction", "source": "probability"}],
+        }
+    )
+    batches = [
+        {
+            "features": [{"x": 0, "eligible": 1}, {"x": 0, "eligible": 0}],
+            "labels": {"label": [1, 0]},
+        }
+    ]
+
+    model = DummyModel()
+    model.train()
+    result = Evaluator(EvalConfig(metrics=["logloss"])).evaluate(
+        model,
+        DummyPreprocessor(),
+        batches,
+        ["probability"],
+        {"probability": "label"},
+        torch.device("cpu"),
+        output_contract=contract,
+    )
+
+    assert result["probability"]["logloss"] == pytest.approx(-np.log(0.25))
+    assert model.training
+
+
 def test_eval_config_accepts_comma_separated_metrics():
     cfg = EvalConfig(metrics="auc,gauc")
 
@@ -133,6 +261,115 @@ def test_equal_loss_ignores_static_task_weights():
     assert loss is not None
     assert torch.isclose(loss, torch.tensor(0.6931472))
     assert loss_fn.task_weights_info() == {"click": 1.0}
+
+
+def test_trainer_uses_objective_engine_for_native_esmm_contract():
+    model_config = ModelConfig.from_yaml(REPO_ROOT / "examples/models/esmm_output_contract.yaml")
+    model = model_config.build([("user_id", 8, 4)])
+    spec = get_output_spec(model_config.type, model, model_config.params)
+    flow_config = _native_esmm_flow()
+    trainer = Trainer(
+        model,
+        _dummy_preprocessor(flow_config),
+        task_names=spec["task_names"],
+        label_map=spec["label_col_map"],
+        device=torch.device("cpu"),
+        config=TrainConfig(
+            loss_weighting="static",
+            eval={"metrics": ["auc"], "monitor_task": "click_logit"},
+        ),
+        data_path="unused",
+        flow_config=flow_config,
+        output_kinds=spec["output_kinds"],
+        output_contract=spec["output_contract"],
+        task_metrics=spec["task_metrics"],
+    )
+
+    execution, loss = trainer._forward_loss(
+        {"user_id": torch.tensor([1, 2])},
+        {
+            "is_click": [0, 1],
+            "is_cvr": [0, 1],
+            "is_click_detail": [0, 1],
+            "is_click_stock": [0, 1],
+            "stay_time_label": [0.0, 10.0],
+        },
+    )
+
+    assert loss is not None
+    assert loss.requires_grad
+    assert execution.nodes.kind("ctcvr_prob") == "probability"
+
+
+def test_trainer_rejects_native_contract_label_missing_from_feature_config():
+    model_config = ModelConfig.from_yaml(REPO_ROOT / "examples/models/esmm_output_contract.yaml")
+    model = model_config.build([("user_id", 8, 4)])
+    spec = get_output_spec(model_config.type, model, model_config.params)
+
+    with pytest.raises(ValueError, match=r"is_cvr.*label source"):
+        Trainer(
+            model,
+            _dummy_preprocessor(_single_label_flow("is_click")),
+            task_names=spec["task_names"],
+            label_map=spec["label_col_map"],
+            device=torch.device("cpu"),
+            config=TrainConfig(
+                loss_weighting="static",
+                eval={"metrics": ["auc"], "monitor_task": "click_logit"},
+            ),
+            data_path="unused",
+            flow_config=_single_label_flow("is_click"),
+            output_kinds=spec["output_kinds"],
+            output_contract=spec["output_contract"],
+            task_metrics=spec["task_metrics"],
+        )
+
+
+def test_single_file_training_uses_native_objectives_and_internal_metrics():
+    class DummyDag:
+        @staticmethod
+        def preprocess_batch(rows):
+            values = rows["user_id"] if isinstance(rows, dict) else [row["user_id"] for row in rows]
+            return {"user_id": torch.tensor(values, dtype=torch.long)}
+
+    model_config = ModelConfig.from_yaml(REPO_ROOT / "examples/models/esmm_output_contract.yaml")
+    model = model_config.build([("user_id", 8, 4)])
+    spec = get_output_spec(model_config.type, model, model_config.params)
+    frame = pd.DataFrame(
+        {
+            "user_id": [1, 2],
+            "is_click": [0, 1],
+            "is_cvr": [0, 1],
+            "is_click_detail": [0, 1],
+            "is_click_stock": [0, 1],
+            "stay_time_label": [0.0, 10.0],
+        }
+    )
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+
+    loss, step = _train_epoch_single(
+        model,
+        optimizer,
+        DummyDag(),
+        frame,
+        2,
+        spec["label_col_map"],
+        spec["output_kinds"],
+        output_contract=spec["output_contract"],
+    )
+    metrics = _evaluate_single(
+        model,
+        DummyDag(),
+        frame,
+        2,
+        spec["label_col_map"],
+        spec["output_kinds"],
+        output_contract=spec["output_contract"],
+    )
+
+    assert loss > 0
+    assert step == 1
+    assert set(metrics["ctcvr_prob"]) == {"auc", "logloss"}
 
 
 def test_task_spec_drives_loss_label_weight_and_mask():

@@ -53,6 +53,11 @@ def read_configured_dataframe(data_path: Path, flow_config: FlowConfig) -> pd.Da
     return df
 
 
+def read_serving_dataframe(data_path: Path) -> pd.DataFrame:
+    """Read serialized CSV values exactly as Rust serving receives them."""
+    return pd.read_csv(data_path, dtype=str, keep_default_na=False)
+
+
 def run_training_process(model_type: str, data_path: Path, weights_path: Path) -> None:
     """Train the model for 1 epoch to save safetensors weights."""
     print(f"[Train] Training {model_type} for 1 epoch...")
@@ -107,10 +112,13 @@ def save_test_and_pytorch_preds(
     dag, model = _load_pytorch_model(model_config, fc, weights_path)
     df = read_configured_dataframe(data_path, fc).head(100)
     df.to_csv(test_csv, index=False)
+    serving_df = read_serving_dataframe(test_csv)
     with torch.no_grad():
-        features = dag.preprocess_batch(df.to_dict("records"))
+        features = dag.preprocess_batch(serving_df.to_dict("records"))
         outputs = ensure_model_output(model(features))
-    preds = {f"{outputs.kind(k)}_{k}": v.cpu().numpy().flatten() for k, v in outputs.tensor_items()}
+    preds = {
+        f"logit_{name}": tensor.cpu().numpy().flatten() for name, tensor in outputs.tensor_items()
+    }
     pd.DataFrame(preds).to_csv(py_preds_csv, index=False)
 
 
@@ -153,6 +161,9 @@ def compare_outputs(
     """Compare PyTorch vs Rust prediction logits and return validation results."""
     py_df, rust_df = pd.read_csv(py_preds_csv), pd.read_csv(rust_preds_csv)
     py_cols = [c for c in py_df.columns if c.startswith("logit_")]
+    if not py_cols:
+        print("  FAIL: Python predictions contain no comparable output columns")
+        return False, {}
     all_pass, metrics_summary = True, {}
     for col in py_cols:
         if col not in rust_df.columns:

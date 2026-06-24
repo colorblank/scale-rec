@@ -10,10 +10,12 @@ import torch.nn as nn
 if TYPE_CHECKING:
     from ..core.config import PoolingMode
 
-from ..core.model_output import ModelOutput
+from ..core.model_output import ModelExecution, ModelOutput
+from ..core.output_contract import NormalizedOutputContract
 from ..layers.embedding import FeatureEmbeddings, FeatureTensorMap, FeatureTuple
 from ..layers.mlp import Mlp
 from ..layers.towers import Activation, MultiTaskConfig, TaskRelation, TaskTower, TowerConfig
+from .output_head import OutputHead
 
 
 def default_task_config(
@@ -55,6 +57,7 @@ class ESMM(nn.Module):
         task_config: MultiTaskConfig | None = None,
         pooling_map: dict[str, PoolingMode] | None = None,
         total_dim: int | None = None,
+        output_contract: NormalizedOutputContract | None = None,
     ) -> None:
         super().__init__()
         self.embeddings = FeatureEmbeddings(features, pooling_map, total_dim=total_dim)
@@ -69,6 +72,13 @@ class ESMM(nn.Module):
         else:
             sd = self.embeddings.total_dim
 
+        if output_contract is not None:
+            self.output_contract = output_contract
+            self.output_head = OutputHead(output_contract, {"shared": sd})
+            self.task_names = [tower.name for tower in output_contract.towers]
+            self.relation_names = list(output_contract.relation_order)
+            return
+
         self.task_config = task_config or default_task_config(
             click_hidden_dims,
             cvr_hidden_dims,
@@ -82,9 +92,24 @@ class ESMM(nn.Module):
             setattr(self, f"{tower.name}_tower", TaskTower(tower, sd))
 
     def forward(self, x_inputs: FeatureTensorMap) -> ModelOutput:
+        if hasattr(self, "output_head"):
+            return self.forward_execution(x_inputs).outputs
+        return self._forward_legacy(x_inputs)
+
+    def forward_execution(self, x_inputs: FeatureTensorMap) -> ModelExecution:
         concat = self.embeddings(x_inputs)
         shared = self.shared_bottom(concat) if hasattr(self, "shared_bottom") else concat
+        if hasattr(self, "output_head"):
+            return self.output_head({"shared": shared})
+        outputs = self._forward_legacy_from_shared(shared)
+        return ModelExecution(nodes=outputs, outputs=outputs)
 
+    def _forward_legacy(self, x_inputs: FeatureTensorMap) -> ModelOutput:
+        concat = self.embeddings(x_inputs)
+        shared = self.shared_bottom(concat) if hasattr(self, "shared_bottom") else concat
+        return self._forward_legacy_from_shared(shared)
+
+    def _forward_legacy_from_shared(self, shared: torch.Tensor) -> ModelOutput:
         outputs = ModelOutput()
         for name in self.task_names:
             tower = getattr(self, f"{name}_tower")
