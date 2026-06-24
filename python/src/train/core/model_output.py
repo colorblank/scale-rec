@@ -92,6 +92,14 @@ class ModelOutput:
         return len(self._values)
 
 
+@dataclass(frozen=True)
+class ModelExecution:
+    """Complete output graph execution and its public projection."""
+
+    nodes: ModelOutput
+    outputs: ModelOutput
+
+
 def ensure_model_output(
     outputs: ModelOutput | Mapping[str, torch.Tensor],
     output_kinds: Mapping[str, OutputKind] | None = None,

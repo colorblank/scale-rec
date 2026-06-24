@@ -7,6 +7,7 @@ from ..core.model_output import (  # noqa: F401
     PROBABILITY,
     REGRESSION,
     SCORE,
+    ModelExecution,
     ModelOutput,
     OutputKind,
     OutputTensor,

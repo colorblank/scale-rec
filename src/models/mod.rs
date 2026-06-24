@@ -22,6 +22,8 @@ pub mod lr;
 pub mod mmoe;
 /// Versioned output-contract schema and validation.
 pub mod output_contract;
+/// Contract-driven task towers, relation graph and public output projection.
+pub mod output_head;
 /// RankMixer：Token Mixing + Per-token FFN 排序模型。
 pub mod rankmixer;
 /// TokenMixer-Large：Mixing & Reverting 大规模排序模型。
@@ -67,6 +69,22 @@ pub struct OutputTensor {
 #[derive(Debug, Default)]
 pub struct ModelOutput {
     values: HashMap<String, OutputTensor>,
+}
+
+/// Complete contract execution containing internal graph nodes and public outputs.
+#[derive(Debug)]
+pub struct ModelExecution {
+    /// Every tower and relation node, including training-only values.
+    pub nodes: ModelOutput,
+    /// Stable public output projection.
+    pub outputs: ModelOutput,
+}
+
+impl ModelExecution {
+    /// Create a complete model execution.
+    pub fn new(nodes: ModelOutput, outputs: ModelOutput) -> Self {
+        Self { nodes, outputs }
+    }
 }
 
 impl ModelOutput {
