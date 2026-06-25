@@ -152,14 +152,14 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 3. `examples/shared/train_defaults.yaml`
    定义训练默认值，包括 batch size、optimizer、eval 样本数、warmup、early stopping、EMA、TensorBoard 等。CLI 可以覆盖其中任意项。
 4. `examples/models/<model>.yaml`
-   定义模型结构和任务语义。legacy 模型使用 `tasks + task_config`；原生 ESMM 使用
-   `output_contract` 同时定义任务塔、关系、训练目标、评估指标和公开输出。
+   定义模型结构和任务语义。当前 8 个示例模型统一使用 `output_contract` 定义任务塔、
+   关系、训练目标、评估指标和公开输出。legacy 字段仅保留兼容性。
 
 典型执行顺序如下：
 
 1. 先生成 demo 数据，写出 TSV 和标签列。
 2. 再加载 feature config，把原始列编排成模型输入。
-3. 再读取 model config，解析 `tasks + task_config` 或 `output_contract`。
+3. 再读取 model config，解析 `output_contract`；旧配置仍可解析 legacy 字段。
 4. 再读取 train config，合并 CLI 覆盖项。
 5. 训练时按 task 计算 loss，评估时按 task 计算 metrics。
 6. 最终导出 safetensors 权重和 manifest。
@@ -352,7 +352,8 @@ for name, tensor in tensors.items():
 - `bucket_utilization` 极低：检查 hash 输入是否大面积为空、`vocab_size` 是否过大、算子是否只看到了 padding token。
 - tensor shape 不符合预期：检查 `embed.pooling`、`embed.seq_len`、上游 schema 的 `pad_len/max_len`。
 - Python/Rust 不一致：先用 `dag.execute(row)` 看 Python 单样本输出，再跑 golden consistency 或 `scale_rec_demo.verify_all` 对比 Rust 推理。
-- 如果要验证“训练 -> 导出 -> 推理”整条链路，优先跑 `scale_rec_demo.verify_all --models discover_lr,discover_gdcn_esmm,discover_unimixer,discover_token_mixer_large,discover_rankmixer --force-train`；这会先训练模型、再导出 safetensors、最后调用 Rust `demo_inference` 做逐模型比对。
+- 如果要验证“训练 -> 导出 -> 推理”整条链路，优先跑
+  `scale_rec_demo.verify_all --models all --force-train`；这会依次验证全部 8 个模型。
 
 ## 模型配置
 
@@ -364,16 +365,24 @@ for name, tensor in tensors.items():
 
 ```yaml
 type: lr
-tasks:
-  - name: pred
-    label: is_click
-    loss: bce
-    metrics: [auc, logloss]
+output_contract:
+  version: 1
+  graph:
+    towers:
+      - {name: pred_logit, input: shared, kind: binary_logit, hidden_dims: []}
+    relations:
+      - {name: pred_prob, op: sigmoid, inputs: [pred_logit]}
+  objectives:
+    - {name: pred_loss, source: pred_logit, label: is_click,
+       loss: {type: binary_cross_entropy_with_logits}}
+  metrics:
+    - {name: pred_auc, source: pred_prob, label: is_click, type: auc}
+  outputs:
+    - {name: pred, source: pred_prob}
 ```
 
 这是一个最小的单目标二分类配置，适合做 baseline 或快速验证数据和特征是否能闭环。
-它遵循 legacy `tasks:` 训练路径；区别只在于 `type: lr` 不包含额外的交叉、塔或多任务
-关系结构。
+LR 先产生标量 `shared` score，再由通用 `OutputHead` 完成显式输出投影。
 
 ### GDCN+ESMM 门控交叉网络配置
 
@@ -384,42 +393,34 @@ type: gdcn_esmm
 cross_layers: 3
 deep_hidden_dims: [64, 32]
 shared_bottom_dims: [32, 16]
-label_col_map:
-  click: is_click
-  cvr: is_cvr
-  detail: is_click_detail
-  stock: is_click_stock
-  stay: stay_time_label
-task_config:
-  towers:
-    - {name: click, hidden_dims: [16, 8], output_dim: 1, activation: relu}
-    - {name: cvr, hidden_dims: [16, 8], output_dim: 1, activation: relu}
-    - {name: detail, hidden_dims: [8], output_dim: 1, activation: relu}
-    - {name: stock, hidden_dims: [8], output_dim: 1, activation: relu}
-    - {name: stay, hidden_dims: [8], output_dim: 1, activation: relu}
-  relations:
-    - {target: ctcvr, sources: [click, cvr], op: multiply}
-    - {target: ctdetail, sources: [click, detail], op: multiply}
-    - {target: ctstock, sources: [click, stock], op: multiply}
-    - {target: ctstay, sources: [detail, stay], op: multiply}
+output_contract:
+  version: 1
+  graph:
+    towers:
+      - {name: click_logit, input: shared, kind: binary_logit, hidden_dims: [16, 8]}
+      - {name: cvr_logit, input: shared, kind: binary_logit, hidden_dims: [16, 8]}
+    relations:
+      - {name: click_prob, op: sigmoid, inputs: [click_logit]}
+      - {name: cvr_prob, op: sigmoid, inputs: [cvr_logit]}
+      - {name: ctcvr_prob, op: multiply, inputs: [click_prob, cvr_prob]}
+  objectives:
+    - {name: click_loss, source: click_logit, label: is_click,
+       loss: {type: binary_cross_entropy_with_logits}}
+    - {name: cvr_loss, source: ctcvr_prob, label: is_cvr,
+       loss: {type: binary_cross_entropy}}
+  metrics:
+    - {name: cvr_auc, source: ctcvr_prob, label: is_cvr, type: auc}
+  outputs:
+    - {name: ctr, source: click_prob}
+    - {name: ctcvr, source: ctcvr_prob}
 ```
-
-`tasks:` 是训练配置的核心，字段含义如下：
-
-| 字段 | 说明 |
-|---|---|
-| `name` | 任务名，同时也是日志、metric、tower 的主键 |
-| `label` | 该任务对应的标签列 |
-| `loss` | 该任务使用的 loss 名称，必须由训练代码注册 |
-| `metrics` | 该任务评估时统计的指标列表 |
-
-`label_col_map` 负责把任务名映射到真实列名，训练、导出和 manifest 都会使用它。`task_config` 负责定义 tower 和关系结构，属于模型前向的一部分。两者职责不同，不要混用。
 
 GDCN+ESMM 将门控交叉网络与 ESMM 多任务预测塔相结合。底层利用 3 层门控交叉层捕捉高阶显式特征交叉，并行使用两层全连接深层网络提取隐式非线性特征；最终通过 5 个独立的预测塔输出任务 logits，并通过乘积关系计算联合概率。
 
 ### UniMixer 配置
 
-`examples/models/unimixer.yaml` 复用同一套 `tasks:` 约定，区别在于 `type: unimixer`，以及 UniMixer 自身的 token、block、rank 等结构参数。训练、评估和导出层面对它的处理方式与 GDCN+ESMM 一致。
+`examples/models/unimixer.yaml` 复用同一套 `output_contract`，区别在于 `type: unimixer`
+以及 UniMixer 自身的 token、block、rank 等结构参数。
 
 ### TokenMixer-Large 配置
 
@@ -433,15 +434,16 @@ RankMixer 当前要求 `num_heads == num_tokens`，以保持 token mixing 后的
 
 ### 任务定义建议
 
-- 分类任务常用 `loss: bce`，`metrics: [auc, logloss]`
-- 回归任务常用 `loss: mse` 或业务自定义回归 loss，`metrics: [mae, mse]`
-- 如果某个任务没有可用标签，就不要放进 `tasks:`，不要依赖代码里的默认兜底
+- 分类 logit 常用 `binary_cross_entropy_with_logits`，概率节点使用
+  `binary_cross_entropy`。
+- 回归节点常用 `mse`、`mae` 或 `huber`，指标使用 `mae/mse`。
+- 如果某个目标没有可用标签，就不要放进 `objectives` 或 `metrics`。
 
 模型配置是训练流程里的第一手任务定义。后续的 trainer、evaluator、manifest 都只读这里，不再根据模型类型猜测任务。
 
-### 原生 ESMM 输出契约
+### 原生输出契约
 
-`examples/models/esmm_output_contract.yaml` 展示了当前已经迁移的原生路径：
+`examples/models/esmm_output_contract.yaml` 展示完整写法；其余 7 个示例遵守同一规则：
 
 ```yaml
 type: esmm
@@ -480,7 +482,7 @@ output_contract:
   `binary_cross_entropy`，两者不能互换。
 - `objectives`、`metrics`、`outputs` 可以引用不同节点。训练内部节点不必公开。
 - 原生契约与 `tasks/task_config/label_col_map/metrics` 禁止混用。
-- 当前只有标准 `esmm` 接入原生执行路径；其它示例仍走 legacy 配置。
+- 8 个注册模型都接入原生执行路径。legacy 字段仍可加载，但新配置不应继续使用。
 
 
 ## 训练参数
@@ -1040,7 +1042,7 @@ python/src/train/
 ├── core/        — FlowConfig、FeatureDag、TaskSpec、schema
 ├── app/         — CLI、入口、artifact/manifest 管理
 ├── training/    — trainer、loss、metrics、eval、optim、quality
-├── models/      — discover 主线模型 (GDCN+ESMM / UniMixer / TokenMixer-Large / RankMixer)
+├── models/      — 8 个双端对齐的推荐模型与通用 OutputHead
 ├── layers/      — MLP、Embedding、Tokenizer、Towers
 └── ops/         — 特征算子
 python/src/scale_rec_demo/

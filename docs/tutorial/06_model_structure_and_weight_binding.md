@@ -30,33 +30,9 @@
 - 传统打分模型：`lr`、`deepfm`、`mmoe`。
 - 多任务排序模型：`esmm`、`gdcn_esmm`、`unimixer`、`token_mixer_large`、`rankmixer`。
 
-## Legacy 任务契约
+## 输出契约
 
-`examples/models/*.yaml` 里最重要的是 `tasks:`：
-
-```yaml
-tasks:
-  - {name: click, label: is_click, loss: bce, metrics: [auc, logloss]}
-  - {name: stay, label: stay_time_label, loss: weighted_bce_stay, metrics: [mae, mse]}
-```
-
-含义是：
-
-- `name` 是模型输出名。
-- `label` 是 batch 里的监督列。
-- `loss` 是这个任务的损失函数。
-- `metrics` 是评估时要记录的指标。
-
-`MultiTaskLoss` 会强制检查：
-
-- 模型是否少输出了某个 task。
-- 模型是否多输出了配置里没定义的非 `ct*` task。
-- batch 里是否存在对应 label 列。
-
-## 原生输出契约
-
-`examples/models/esmm_output_contract.yaml` 不再拆分 `tasks` 和 `task_config`，而是使用
-`output_contract.version: 1`：
+全部 8 个示例模型使用 `output_contract.version: 1`：
 
 - `graph.towers` 构建标量任务塔，塔输出只允许 `binary_logit`、`regression`、`score`。
 - `graph.relations` 执行 `sigmoid/multiply/add/identity` 类型化 DAG。
@@ -74,24 +50,25 @@ ModelExecution.outputs = output_contract.outputs 指定的公开输出
 
 普通 `forward()` 只返回公开输出；训练和评估通过 `forward_execution()` 使用内部节点。
 legacy 模型的默认实现会把同一份 `ModelOutput` 同时作为 nodes 和 outputs。
+legacy 配置仍可加载，但不能与 `output_contract` 混用。
 
 ## ESMM / GDCN+ESMM 的关系输出
 
-`gdcn_esmm.yaml` 等 legacy 多任务配置使用 `task_config.relations` 描述派生任务：
+`gdcn_esmm.yaml` 等多任务配置使用 `graph.relations` 描述派生任务：
 
 ```yaml
 relations:
-  - {target: ctcvr, sources: [click, cvr], op: multiply}
-  - {target: ctdetail, sources: [click, detail], op: multiply}
-  - {target: ctstock, sources: [click, stock], op: multiply}
-  - {target: ctstay, sources: [detail, stay], op: multiply}
+  - {name: click_prob, op: sigmoid, inputs: [click_logit]}
+  - {name: cvr_prob, op: sigmoid, inputs: [cvr_logit]}
+  - {name: ctcvr_prob, op: multiply, inputs: [click_prob, cvr_prob]}
 ```
 
-legacy GDCN+ESMM 中，这类输出是派生概率，loss 仍按 `tasks` 落在基础 task 上。
-
-原生 ESMM 则可以在 `objectives` 中直接引用联合概率。例如 `ctcvr_prob` 在两个 logit
+`objectives` 可以直接引用联合概率。例如 `ctcvr_prob` 在两个 logit
 分别 sigmoid 后相乘，并用概率版 BCE 参与训练。概率关系的计算顺序和 loss 类型都由
 契约校验，不再依赖任务名约定。
+
+LR、DeepFM、ESMM、GDCN-ESMM 和三类 mixer 向 `OutputHead` 提供 `shared` 表示。MMoE
+按 `graph.towers[].input` 声明构建 gate，并将 `click_rep` 等命名表示交给对应塔。
 
 ## UniMixer / TokenMixer / RankMixer 的特殊点
 

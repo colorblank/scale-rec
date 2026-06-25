@@ -38,7 +38,7 @@ scale-rec/
 │   └── pyproject.toml              # Python 项目配置
 ├── examples/                       # discover 示例共享配置和模型配置
 │   ├── gen_discover_config.py      # 生成 discover 特征配置的脚本
-│   ├── models/                     # 按模型拆分的 model config（lr/gdcn_esmm/unimixer/token_mixer_large/rankmixer）
+│   ├── models/                     # 8 个模型的原生 output_contract 配置
 │   └── shared/                     # 共享的 feature / train / label 配置
 ├── docs/                           # 文档
 ├── docker/                         # Docker 打包入口
@@ -86,11 +86,14 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --epochs 3 --batch-size 1024 --no-header
 ```
 
-`train_defaults.yaml` 负责训练默认值，`model_gdcn_esmm.yaml` 负责任务定义，`discover_label_policy.yaml` 只负责 demo 数据标签生成。三者职责分离，训练流程和评估指标都从配置读取，不再在代码里写死。`best.safetensors` 由 `eval.monitor_task`、`eval.monitor_metric` 和 `eval.monitor_mode` 明确决定；未指定 `monitor_task` 时使用模型 `tasks` 中的第一个任务。
+`train_defaults.yaml` 负责训练默认值，`gdcn_esmm.yaml` 的 `output_contract` 负责任务图、训练目标、评估指标和公开输出，`discover_label_policy.yaml` 只负责 demo 数据标签生成。三者职责分离，训练流程和评估指标都从配置读取，不再在代码里写死。`best.safetensors` 由 `eval.monitor_task`、`eval.monitor_metric` 和 `eval.monitor_mode` 明确决定。
 
 `single`、`discover`、`all` 三个训练入口现在共享同一套特征预处理与可选预取逻辑；`examples/shared/train_defaults.yaml` 里的 `prefetch_batches` 可以用来控制后台提前准备多少个 batch，`checkpoint_interval_steps` / `checkpoint_interval_seconds` 可以控制训练中途的周期 checkpoint，`0` 表示关闭；`--resume-from` 可以从已有 checkpoint 恢复 model、optimizer、EMA、scheduler、step 和 epoch 状态。
 
-当前 discover 示例模型配置包括：`examples/models/lr.yaml`、`gdcn_esmm.yaml`、`unimixer.yaml`、`token_mixer_large.yaml` 和 `rankmixer.yaml`。其中 UniMixer、TokenMixer-Large 和 RankMixer 都使用共享 `FeatureTokenizer` 把 DAG 输出特征投影为 token 序列。
+当前 discover 示例覆盖 `lr`、`deepfm`、`mmoe`、`esmm`、`gdcn_esmm`、`unimixer`、
+`token_mixer_large` 和 `rankmixer`，全部使用 `output_contract.version: 1`。其中 UniMixer、
+TokenMixer-Large 和 RankMixer 使用共享 `FeatureTokenizer` 把 DAG 输出特征投影为 token
+序列。legacy 任务字段仅保留兼容性，不能与 `output_contract` 混用。
 
 训练启动后，日志会先打印一条数据摘要，包括总行数、训练/验证切分、batch_size、估算 batch 数、任务名和 label 映射。若出现 `No supervised batches were processed`，优先检查这条摘要里的 `labels` 和 `train/eval` 切分是否合理。
 

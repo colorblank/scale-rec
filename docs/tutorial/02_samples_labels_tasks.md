@@ -84,42 +84,22 @@ feature config 里通过 `role` 区分字段用途：
 | `ctr` | int | `0` | 兼容/派生标签，当前 GDCN+ESMM tasks 未直接使用 |
 | `cvr` | int | `0` | 兼容/派生标签，当前 GDCN+ESMM tasks 未直接使用 |
 
-注意：`ctr` 和 `cvr` 虽然在 feature config 里是 label，但当前 `examples/models/gdcn_esmm.yaml` 的 `tasks` 没有引用它们，因此不会进入当前模型的 loss。是否参与训练，以 model config 的 `tasks` 为准。
+注意：`ctr` 和 `cvr` 虽然在 feature config 里是 label，但当前
+`examples/models/gdcn_esmm.yaml` 的 `output_contract.objectives` 没有引用它们，因此
+不会进入 loss。是否参与训练，以 `objectives` 为准。
 
-## 两种任务定义路径
+## 任务定义路径
 
-当前仓库处于迁移期：
+当前仓库的全部模型示例使用原生 `output_contract`：
 
-- `gdcn_esmm`、UniMixer、TokenMixer-Large、RankMixer 等示例继续使用
-  `tasks + task_config`。
-- `examples/models/esmm_output_contract.yaml` 使用原生 `output_contract`。
+- `graph` 定义 backbone 表示之上的塔和关系。
+- `objectives` 定义训练目标。
+- `metrics` 定义评估口径。
+- `outputs` 定义公开推理字段。
 - 同一个模型配置不能同时声明 `output_contract` 和
   `tasks/task_config/label_col_map/metrics`。
 
-### Legacy tasks
-
-`examples/models/gdcn_esmm.yaml` 把模型输出、标签列、loss 和 metric 绑定在一起：
-
-```yaml
-tasks:
-  - {name: click, label: is_click, loss: bce, metrics: [auc, logloss]}
-  - {name: cvr, label: is_cvr, loss: bce, metrics: [auc, logloss]}
-  - {name: detail, label: is_click_detail, loss: bce, metrics: [auc, logloss]}
-  - {name: stock, label: is_click_stock, loss: bce, metrics: [auc, logloss]}
-  - {name: stay, label: stay_time_label, loss: weighted_bce_stay, metrics: [mae, mse]}
-```
-
-这里有四层含义：
-
-| 字段 | 含义 |
-|---|---|
-| `name` | 模型输出任务名，也是 loss 查找输出的 key |
-| `label` | batch 里的标签列名 |
-| `loss` | 该任务使用的损失函数 |
-| `metrics` | 评估时记录的指标 |
-
-训练时 `MultiTaskLoss` 以 `tasks:` 为监督合约，按配置任务逐个读取模型输出和 label
-列并计算 loss。`task_config` 独立定义 tower 和关系结构。
+legacy `tasks + task_config` 仍可用于加载旧配置，但不再作为示例或新接入方式。
 
 ### 原生 output contract
 
@@ -157,15 +137,14 @@ output_contract:
 
 ## ESMM 关系任务
 
-GDCN+ESMM / ESMM 不只输出基础任务，还会定义关系输出：
+GDCN+ESMM / ESMM 不只输出基础任务，还会定义显式概率关系：
 
 ```yaml
-task_config:
+graph:
   relations:
-    - {target: ctcvr, sources: [click, cvr], op: multiply}
-    - {target: ctdetail, sources: [click, detail], op: multiply}
-    - {target: ctstock, sources: [click, stock], op: multiply}
-    - {target: ctstay, sources: [detail, stay], op: multiply}
+    - {name: click_prob, op: sigmoid, inputs: [click_logit]}
+    - {name: cvr_prob, op: sigmoid, inputs: [cvr_logit]}
+    - {name: ctcvr_prob, op: multiply, inputs: [click_prob, cvr_prob]}
 ```
 
 这些关系输出用于表达条件概率链路：
@@ -177,10 +156,7 @@ P(ctstock)  = P(click)  * P(stock | click)
 P(ctstay)   = P(detail) * P(stay | detail)
 ```
 
-legacy `task_config` 当前仍由基础任务 `click/cvr/detail/stock/stay` 参与
-`MultiTaskLoss`，关系输出主要用于评估或排序。
-
-原生 ESMM 不使用这个隐式约定。它先显式执行 sigmoid，再计算概率乘积：
+原生契约先显式执行 sigmoid，再计算概率乘积：
 
 ```text
 ctcvr_prob = sigmoid(click_logit) * sigmoid(cvr_logit)

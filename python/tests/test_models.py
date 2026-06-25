@@ -92,6 +92,43 @@ def test_native_output_contract_esmm_exposes_public_and_internal_outputs():
     assert "output_head.towers.click_logit.hidden.0.weight" in model.state_dict()
 
 
+@pytest.mark.parametrize(
+    "config_name",
+    [
+        "lr.yaml",
+        "deepfm.yaml",
+        "mmoe.yaml",
+        "esmm_output_contract.yaml",
+        "gdcn_esmm.yaml",
+        "unimixer.yaml",
+        "token_mixer_large.yaml",
+        "rankmixer.yaml",
+    ],
+)
+def test_all_example_models_use_native_output_contract(config_name):
+    from train.models.unimixer.tokenizer import FeatureTokenizer
+
+    config = ModelConfig.from_yaml(REPO_ROOT / "examples/models" / config_name)
+    tokenizer = None
+    if config.type in {"unimixer", "token_mixer_large", "rankmixer"}:
+        tokenizer = FeatureTokenizer(
+            FEATURES,
+            token_dim=config.params["token_dim"],
+            num_tokens=config.params["num_tokens"],
+        )
+
+    model = config.build(FEATURES, tokenizer=tokenizer)
+    spec = get_output_spec(config.type, model, config.params)
+    execution = model.forward_execution(_inputs(2))
+
+    assert spec["output_contract"].version == 1
+    assert execution.outputs.names()
+    assert set(execution.outputs.names()) == {
+        output.name for output in spec["output_contract"].outputs
+    }
+    assert set(execution.nodes.names()) == set(spec["output_contract"].node_kinds)
+
+
 def test_deepfm_forward():
     model = DeepFM(FEATURES, fm_k=8, deep_hidden_dims=[4])
     out = model(_inputs(3))

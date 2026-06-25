@@ -386,16 +386,19 @@ def wrap_unimixer_for_rust_names(model: torch.nn.Module) -> torch.nn.Module:
     wrapper.add_module("tokenizer", model.tokenizer)
     inner = nn.Module()
     inner.add_module("blocks", model.blocks)
-    inner.add_module("task_towers", model.task_towers)
+    if model.task_towers is not None:
+        inner.add_module("task_towers", model.task_towers)
+    if hasattr(model, "output_head"):
+        inner.add_module("output_head", model.output_head)
     if model.final_norm is not None:
         inner.add_module("final_norm", model.final_norm)
     wrapper.add_module("unimixer", inner)
 
-    def _forward(
+    def _shared(
         self: torch.nn.Module,
         x_inputs: dict[str, torch.Tensor],
         temperature: float | None = None,
-    ) -> dict[str, torch.Tensor]:
+    ) -> torch.Tensor:
         t = temperature if temperature is not None else self.temperature
         if t <= 0:
             raise ValueError("temperature must be > 0")
@@ -412,7 +415,29 @@ def wrap_unimixer_for_rust_names(model: torch.nn.Module) -> torch.nn.Module:
             for block in self.unimixer.blocks:
                 x = block(x, t)
             output = x
-        return self.unimixer.task_towers(output)
+        return output
 
+    def _forward_execution(
+        self: torch.nn.Module,
+        x_inputs: dict[str, torch.Tensor],
+        temperature: float | None = None,
+    ):
+        from ..core.model_output import ModelExecution
+
+        shared = self._shared(x_inputs, temperature)
+        if hasattr(self.unimixer, "output_head"):
+            return self.unimixer.output_head({"shared": shared})
+        outputs = self.unimixer.task_towers(shared)
+        return ModelExecution(nodes=outputs, outputs=outputs)
+
+    def _forward(
+        self: torch.nn.Module,
+        x_inputs: dict[str, torch.Tensor],
+        temperature: float | None = None,
+    ):
+        return self.forward_execution(x_inputs, temperature).outputs
+
+    wrapper._shared = types.MethodType(_shared, wrapper)
+    wrapper.forward_execution = types.MethodType(_forward_execution, wrapper)
     wrapper.forward = types.MethodType(_forward, wrapper)
     return wrapper

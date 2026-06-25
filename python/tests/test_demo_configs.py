@@ -3,11 +3,17 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 import yaml
 
 from scale_rec_demo.paths import MODEL_CONFIGS
-from scale_rec_demo.verify_all import compare_outputs, read_serving_dataframe, serving_array
+from scale_rec_demo.verify_all import (
+    compare_outputs,
+    read_serving_dataframe,
+    selected_model_names,
+    serving_array,
+)
 from train.core.config import FlowConfig
 from train.core.model_output import OutputTensor
 
@@ -18,6 +24,9 @@ EXAMPLES_DIR = REPO_ROOT / "examples"
 def test_demo_model_configs_exist_and_are_current():
     model_configs = {
         "discover_lr": EXAMPLES_DIR / "models" / "lr.yaml",
+        "discover_deepfm": EXAMPLES_DIR / "models" / "deepfm.yaml",
+        "discover_mmoe": EXAMPLES_DIR / "models" / "mmoe.yaml",
+        "discover_esmm": EXAMPLES_DIR / "models" / "esmm_output_contract.yaml",
         "discover_gdcn_esmm": EXAMPLES_DIR / "models" / "gdcn_esmm.yaml",
         "discover_unimixer": EXAMPLES_DIR / "models" / "unimixer.yaml",
         "discover_token_mixer_large": EXAMPLES_DIR / "models" / "token_mixer_large.yaml",
@@ -33,6 +42,8 @@ def test_demo_model_configs_exist_and_are_current():
     }
     expected_files = {
         "models/lr.yaml",
+        "models/deepfm.yaml",
+        "models/mmoe.yaml",
         "models/gdcn_esmm.yaml",
         "models/esmm_output_contract.yaml",
         "models/unimixer.yaml",
@@ -63,30 +74,8 @@ def test_demo_model_configs_exist_and_are_current():
 
     gdcn = yaml.safe_load(model_configs["discover_gdcn_esmm"].read_text(encoding="utf-8"))
     assert gdcn["type"] == "gdcn_esmm"
-    assert [task["name"] for task in gdcn["tasks"]] == [
-        "click",
-        "cvr",
-        "detail",
-        "stock",
-        "stay",
-    ]
-    assert gdcn["tasks"][-1]["metrics"] == ["mae", "mse"]
-    assert gdcn["tasks"][1]["loss"] == "focal"
-    task_config = gdcn["task_config"]
-    assert [tower["name"] for tower in task_config["towers"]] == [
-        "click",
-        "cvr",
-        "detail",
-        "stock",
-        "stay",
-    ]
-    assert {relation["target"] for relation in task_config["relations"]} == {
-        "ctcvr",
-        "ctdetail",
-        "ctstock",
-        "ctstay",
-    }
-    assert gdcn["label_col_map"]["stay"] == "stay_time_label"
+    assert "task_config" not in gdcn
+    assert gdcn["output_contract"]["version"] == 1
 
     native_esmm = yaml.safe_load(
         (EXAMPLES_DIR / "models" / "esmm_output_contract.yaml").read_text(encoding="utf-8")
@@ -107,21 +96,13 @@ def test_demo_model_configs_exist_and_are_current():
 
     lr = yaml.safe_load(model_configs["discover_lr"].read_text(encoding="utf-8"))
     assert lr["type"] == "lr"
-    assert lr["tasks"] == [
-        {
-            "name": "pred",
-            "label": "is_click",
-            "loss": "bce",
-            "metrics": ["auc", "logloss"],
-        }
-    ]
+    assert lr["output_contract"]["outputs"] == [{"name": "pred", "source": "pred_prob"}]
 
     unimixer = yaml.safe_load(model_configs["discover_unimixer"].read_text(encoding="utf-8"))
     assert unimixer["type"] == "unimixer"
     assert unimixer["use_siamese"] is False
-    assert unimixer["tasks"][1]["loss"] == "focal"
-    assert unimixer["tasks"][0]["metrics"] == ["auc", "logloss"]
-    assert unimixer["label_col_map"]["stay"] == "stay_time_label"
+    assert "task_config" not in unimixer
+    assert unimixer["output_contract"]["version"] == 1
 
     label_policy = yaml.safe_load(
         (EXAMPLES_DIR / "shared" / "discover_label_policy.yaml").read_text(encoding="utf-8")
@@ -169,8 +150,21 @@ def test_serving_array_applies_output_kind_semantics():
 def test_demo_model_path_index_covers_all_example_models():
     assert MODEL_CONFIGS == {
         "discover_lr": EXAMPLES_DIR / "models" / "lr.yaml",
+        "discover_deepfm": EXAMPLES_DIR / "models" / "deepfm.yaml",
+        "discover_mmoe": EXAMPLES_DIR / "models" / "mmoe.yaml",
+        "discover_esmm": EXAMPLES_DIR / "models" / "esmm_output_contract.yaml",
         "discover_gdcn_esmm": EXAMPLES_DIR / "models" / "gdcn_esmm.yaml",
         "discover_unimixer": EXAMPLES_DIR / "models" / "unimixer.yaml",
         "discover_token_mixer_large": EXAMPLES_DIR / "models" / "token_mixer_large.yaml",
         "discover_rankmixer": EXAMPLES_DIR / "models" / "rankmixer.yaml",
     }
+
+
+def test_verify_all_expands_and_validates_model_selection():
+    assert selected_model_names("all") == list(MODEL_CONFIGS)
+    assert selected_model_names("discover_lr, discover_esmm") == [
+        "discover_lr",
+        "discover_esmm",
+    ]
+    with pytest.raises(ValueError, match="unknown models: missing"):
+        selected_model_names("missing")

@@ -4,7 +4,9 @@ use super::siamese_norm::{SiameseNorm, SiameseNormOutput};
 use super::tokenizer::FeatureTokenizer;
 use super::unimixer_block::{BlockOutput, UniMixerBlock};
 use crate::layers::towers::{MultiTaskConfig, MultiTaskTower};
-use crate::models::{Model, ModelOutput};
+use crate::models::output_contract::OutputContract;
+use crate::models::output_head::OutputHead;
+use crate::models::{Model, ModelExecution, ModelOutput};
 use candle_core::{Result, Tensor};
 use candle_nn::VarBuilder;
 use std::collections::HashMap;
@@ -21,7 +23,8 @@ pub struct UniMixerModel {
     pub temperature: f64,
     tokenizer: FeatureTokenizer,
     blocks: Vec<UniMixerBlock>,
-    task_towers: MultiTaskTower,
+    task_towers: Option<MultiTaskTower>,
+    output_head: Option<OutputHead>,
     final_norm: Option<SiameseNorm>,
 }
 
@@ -100,9 +103,53 @@ impl UniMixerModel {
             temperature: 1.0,
             tokenizer,
             blocks,
-            task_towers,
+            task_towers: Some(task_towers),
+            output_head: None,
             final_norm,
         })
+    }
+
+    /// 构造使用原生输出契约的 UniMixer。
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_output_contract(
+        tokenizer: FeatureTokenizer,
+        token_dim: usize,
+        num_tokens: usize,
+        num_blocks: usize,
+        block_size_opt: Option<usize>,
+        use_lite: bool,
+        hidden_factor: f64,
+        num_basis: usize,
+        rank: usize,
+        contract: &OutputContract,
+        use_siamese: bool,
+        vb: VarBuilder,
+    ) -> Result<Self> {
+        let empty = MultiTaskConfig {
+            towers: vec![],
+            relations: vec![],
+        };
+        let mut model = Self::new(
+            tokenizer,
+            token_dim,
+            num_tokens,
+            num_blocks,
+            block_size_opt,
+            use_lite,
+            hidden_factor,
+            num_basis,
+            rank,
+            &empty,
+            use_siamese,
+            vb.clone(),
+        )?;
+        model.task_towers = None;
+        model.output_head = Some(OutputHead::new(
+            contract,
+            &HashMap::from([("shared".to_string(), model.embed_dim)]),
+            vb.pp("output_head"),
+        )?);
+        Ok(model)
     }
 
     /// 设置退火温度。
@@ -116,6 +163,22 @@ impl UniMixerModel {
         x_inputs: &HashMap<String, Tensor>,
         temperature: f64,
     ) -> Result<ModelOutput> {
+        if self.output_head.is_some() {
+            return Ok(self
+                .forward_execution_with_temperature(x_inputs, temperature)?
+                .outputs);
+        }
+        self.task_towers
+            .as_ref()
+            .unwrap()
+            .forward(&self.shared_with_temperature(x_inputs, temperature)?)
+    }
+
+    fn shared_with_temperature(
+        &self,
+        x_inputs: &HashMap<String, Tensor>,
+        temperature: f64,
+    ) -> Result<Tensor> {
         if temperature <= 0.0 {
             candle_core::bail!("temperature must be > 0");
         }
@@ -164,17 +227,33 @@ impl UniMixerModel {
             }
             x
         };
-        let towers_timer = profile::start();
-        let outputs = self.task_towers.forward(&output)?;
-        profile::log("model.task_towers", towers_timer);
         profile::log("model.total", total_timer);
-        Ok(outputs)
+        Ok(output)
+    }
+
+    fn forward_execution_with_temperature(
+        &self,
+        x_inputs: &HashMap<String, Tensor>,
+        temperature: f64,
+    ) -> Result<ModelExecution> {
+        let shared = self.shared_with_temperature(x_inputs, temperature)?;
+        if let Some(head) = &self.output_head {
+            return head.forward(&HashMap::from([("shared".to_string(), shared)]));
+        }
+        let towers_timer = profile::start();
+        let outputs = self.task_towers.as_ref().unwrap().forward(&shared)?;
+        profile::log("model.task_towers", towers_timer);
+        Ok(ModelExecution::new(outputs.clone(), outputs))
     }
 }
 
 impl Model for UniMixerModel {
     fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<ModelOutput> {
         self.forward_with_temperature(x_inputs, self.temperature)
+    }
+
+    fn forward_execution(&self, x_inputs: &HashMap<String, Tensor>) -> Result<ModelExecution> {
+        self.forward_execution_with_temperature(x_inputs, self.temperature)
     }
 
     fn warmup(&self) -> Result<()> {

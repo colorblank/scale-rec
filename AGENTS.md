@@ -126,7 +126,15 @@ pub trait Model: Send + Sync {
 }
 ```
 
-`ModelConfig` enum is YAML-deserializable with `#[serde(tag = "type")]`. Six variants: `LR`, `DeepFM`, `MMoE`, `ESMM`, `UniMixer`, `GDCNESMM`. `build(vb, features, tokenizer)` constructs any model from config. Features come from the DAG, not from ModelConfig itself.
+`ModelConfig` parses `type` plus flattened YAML params and dispatches through the model registry.
+Eight model types are registered: `lr`, `deepfm`, `mmoe`, `esmm`, `gdcn_esmm`, `unimixer`,
+`token_mixer_large`, `rankmixer`. `build(vb, features, tokenizer)` constructs any model from config.
+Features come from the DAG, not from ModelConfig itself.
+
+All registered models support `output_contract.version: 1`. Shared-backbone models expose a
+`shared` representation to `OutputHead`; MMoE exposes one named representation for each unique
+`graph.towers[].input`. Legacy `tasks/task_config/label_col_map/metrics` remain compatible but
+cannot be mixed with `output_contract`.
 
 ESMM/GDCNESMM 当前为 5 任务塔（click/cvr/detail/stock/stay），概率关系：
 - P(detail) = σ(click)·σ(detail), P(stock) = σ(click)·σ(stock)
@@ -169,4 +177,5 @@ When adding new layers or models, verify naming by checking `print_state_dict_ke
 
 - `preprocess_batch()` in `FeatureDag` handles the full pipeline: row-by-row DAG execution → tensor stacking → `{name: LongTensor [batch]}` dict
 - `main.py` `train_epoch()` loops over Polars DataFrame slices, calls `dag.preprocess_batch()` per slice
-- Model config YAML files live in `examples/models/` and are minimal (e.g., `type: lr` with no features section)
+- Model config YAML files live in `examples/models/`; all examples use native `output_contract`
+  and never duplicate feature definitions.

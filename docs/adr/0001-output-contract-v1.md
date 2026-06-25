@@ -1,6 +1,6 @@
 # 使用显式输出契约统一多任务模型语义
 
-状态：已接受，阶段 1-3 已落地。
+状态：已接受，阶段 1-4 已落地。
 
 ## 背景
 
@@ -57,9 +57,13 @@ mask source 必须存在；“label 不配置默认值”仍受现有 `FlowConfi
 
 当前进度：
 
-- 阶段 1、2 已完成。
-- 标准 `esmm` 已完成阶段 3，示例见 `examples/models/esmm_output_contract.yaml`。
-- `gdcn_esmm`、UniMixer、TokenMixer-Large、RankMixer 和 MMoE 仍使用
-  `tasks + task_config` 兼容路径。
-- contract ESMM 的 `forward()` 已只返回公开输出，`forward_execution()` 同时保留内部
-  节点供训练和评估使用；manifest 仍未保存规范化契约。
+- 阶段 1-4 已完成。8 个注册模型 `lr`、`deepfm`、`mmoe`、`esmm`、`gdcn_esmm`、
+  `unimixer`、`token_mixer_large`、`rankmixer` 均支持原生契约。
+- 仓库中的模型示例均使用原生 `output_contract`；旧字段继续作为兼容路径保留，但新配置
+  不应继续使用。
+- shared-backbone 模型向 `OutputHead` 暴露 `shared` 表示。MMoE 按
+  `graph.towers[].input` 的首次出现顺序构建 gate，并暴露同名表示。
+- contract 模型的 `forward()` 只返回公开输出，`forward_execution()` 同时保留内部节点
+  供训练和评估使用。
+- Python 导出与 Rust 加载已覆盖全部 8 个示例模型的 key/shape 绑定检查。manifest
+  保存规范化契约仍属于阶段 5。

@@ -20,6 +20,9 @@ DISCOVER_FEATURE_CONFIG = SHARED_EXAMPLES_DIR / "feature_config_discover.yaml"
 
 MODEL_CONFIGS = {
     "discover_lr": MODEL_EXAMPLES_DIR / "lr.yaml",
+    "discover_deepfm": MODEL_EXAMPLES_DIR / "deepfm.yaml",
+    "discover_mmoe": MODEL_EXAMPLES_DIR / "mmoe.yaml",
+    "discover_esmm": MODEL_EXAMPLES_DIR / "esmm_output_contract.yaml",
     "discover_gdcn_esmm": MODEL_EXAMPLES_DIR / "gdcn_esmm.yaml",
     "discover_unimixer": MODEL_EXAMPLES_DIR / "unimixer.yaml",
     "discover_token_mixer_large": MODEL_EXAMPLES_DIR / "token_mixer_large.yaml",

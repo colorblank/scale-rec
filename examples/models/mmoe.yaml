@@ -1,18 +1,17 @@
-type: rankmixer
-token_dim: 64
-num_tokens: 4
-num_blocks: 2
-num_heads: 4
-hidden_factor: 1.0
+type: mmoe
+shared_bottom_dims: [64]
+num_experts: 4
+expert_hidden_dims: [32]
+expert_output_dim: 16
 output_contract:
   version: 1
   graph:
     towers:
-      - {name: click_logit, kind: binary_logit, hidden_dims: [16, 8]}
-      - {name: cvr_logit, kind: binary_logit, hidden_dims: [16, 8]}
-      - {name: detail_logit, kind: binary_logit, hidden_dims: [8]}
-      - {name: stock_logit, kind: binary_logit, hidden_dims: [8]}
-      - {name: stay_logit, kind: binary_logit, hidden_dims: [8], activation: none}
+      - {name: click_logit, input: click_rep, kind: binary_logit, hidden_dims: [16, 8]}
+      - {name: cvr_logit, input: cvr_rep, kind: binary_logit, hidden_dims: [16, 8]}
+      - {name: detail_logit, input: detail_rep, kind: binary_logit, hidden_dims: [8]}
+      - {name: stock_logit, input: stock_rep, kind: binary_logit, hidden_dims: [8]}
+      - {name: stay_logit, input: stay_rep, kind: binary_logit, hidden_dims: [8]}
     relations:
       - {name: click_prob, op: sigmoid, inputs: [click_logit]}
       - {name: cvr_prob, op: sigmoid, inputs: [cvr_logit]}

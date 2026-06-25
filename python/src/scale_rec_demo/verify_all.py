@@ -28,6 +28,17 @@ from train.core.model_output import BINARY_LOGIT, OutputTensor, ensure_model_out
 from .paths import DEMO_ARTIFACT_DIR, DISCOVER_FEATURE_CONFIG, MODEL_CONFIGS, REPO_ROOT
 
 
+def selected_model_names(value: str) -> list[str]:
+    """Expand and validate requested model names."""
+    if value == "all":
+        return list(MODEL_CONFIGS)
+    names = [name.strip() for name in value.split(",") if name.strip()]
+    unknown = [name for name in names if name not in MODEL_CONFIGS]
+    if unknown:
+        raise ValueError(f"unknown models: {', '.join(unknown)}")
+    return names
+
+
 def add_header_to_tsv(input_path: Path, output_path: Path, columns: list[str]) -> None:
     """Prepend the columns header to a TSV dataset."""
     with input_path.open(encoding="utf-8") as f:
@@ -230,17 +241,20 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Verify Python vs Rust prediction consistency.")
     parser.add_argument(
         "--models",
-        default="discover_lr,discover_gdcn_esmm,discover_unimixer",
-        help="Comma-separated models.",
+        default="all",
+        help="Comma-separated MODEL_CONFIGS keys, or 'all'.",
     )
     parser.add_argument("--force-train", action="store_true", help="Force train models.")
     parser.add_argument("--threshold", type=float, default=1e-4, help="Similarity threshold.")
     args = parser.parse_args()
 
-    models = args.models.split(",")
+    try:
+        models = selected_model_names(args.models)
+    except ValueError as exc:
+        parser.error(str(exc))
     success = True
     for model in models:
-        if not verify_model_pipeline(model.strip(), args.force_train, args.threshold):
+        if not verify_model_pipeline(model, args.force_train, args.threshold):
             success = False
 
     print(f"\nOverall Consistency Status: {'PASS' if success else 'FAIL'}")

@@ -6,11 +6,13 @@ import torch
 import torch.nn as nn
 
 from ..core.config import PoolingMode
-from ..core.model_output import ModelOutput
+from ..core.model_output import ModelExecution, ModelOutput
+from ..core.output_contract import NormalizedOutputContract
 from ..layers.embedding import FeatureEmbeddings, FeatureTensorMap, FeatureTuple
 from ..layers.fm import fm_interaction
 from ..layers.mlp import Mlp
 from ..layers.towers import Activation
+from .output_head import OutputHead
 
 
 class DeepFM(nn.Module):
@@ -23,6 +25,7 @@ class DeepFM(nn.Module):
         deep_hidden_dims: list[int],
         pooling_map: dict[str, PoolingMode] | None = None,
         total_dim: int | None = None,
+        output_contract: NormalizedOutputContract | None = None,
     ) -> None:
         super().__init__()
         self.fm_first = FeatureEmbeddings([(n, v, 1) for n, v, _ in features], pooling_map)
@@ -32,11 +35,25 @@ class DeepFM(nn.Module):
         self.deep_total_dim = self.deep.total_dim
         self.deep_mlp = Mlp(self.deep_total_dim, deep_hidden_dims, 1, Activation.RELU)
         self.global_bias = nn.Parameter(torch.zeros(1))
+        self.output_head = (
+            OutputHead(output_contract, {"shared": 1}) if output_contract is not None else None
+        )
 
     def forward(self, x_inputs: FeatureTensorMap) -> ModelOutput:
         """Forward: FM first + FM second + Deep MLP + global_bias -> {"pred": logits}."""
+        if self.output_head is not None:
+            return self.forward_execution(x_inputs).outputs
+        return ModelOutput.binary_logits({"pred": self._shared(x_inputs)})
+
+    def forward_execution(self, x_inputs: FeatureTensorMap) -> ModelExecution:
+        if self.output_head is not None:
+            return self.output_head({"shared": self._shared(x_inputs)})
+        outputs = self.forward(x_inputs)
+        return ModelExecution(nodes=outputs, outputs=outputs)
+
+    def _shared(self, x_inputs: FeatureTensorMap) -> torch.Tensor:
         first = self.fm_first(x_inputs).sum(dim=1, keepdim=True)
         stacked = torch.cat(self.fm_second.forward_stacked(x_inputs), dim=1)
         second = fm_interaction(stacked)
         deep_out = self.deep_mlp(self.deep(x_inputs))
-        return ModelOutput.binary_logits({"pred": first + second + deep_out + self.global_bias})
+        return first + second + deep_out + self.global_bias

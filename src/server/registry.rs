@@ -369,7 +369,7 @@ impl ModelRegistry {
         let base_vb = VarBuilder::from_varmap(&varmap, CandleDType::F32, &device);
         let vb = scoped_vb(base_vb, &weight_binding.root_prefix);
 
-        let tokenizer: Option<FeatureTokenizer> = if model_type == "unimixer" {
+        let tokenizer: Option<FeatureTokenizer> = if model_requires_feature_tokenizer(&model_type) {
             let td = model_config
                 .params
                 .get("token_dim")
@@ -1048,6 +1048,10 @@ fn scoped_vb<'a>(vb: VarBuilder<'a>, prefix: &str) -> VarBuilder<'a> {
     }
 }
 
+fn model_requires_feature_tokenizer(model_type: &str) -> bool {
+    matches!(model_type, "unimixer" | "token_mixer_large" | "rankmixer")
+}
+
 fn validate_weight_binding(binding: &WeightBinding) -> Result<(), String> {
     if binding.format != "safetensors" {
         return Err(format!("unsupported weight format '{}'", binding.format));
@@ -1152,6 +1156,16 @@ mod tests {
             models: RwLock::new(HashMap::new()),
             feature_config_path: Some(feature_config_path),
             model_dir,
+        }
+    }
+
+    #[test]
+    fn identifies_models_requiring_feature_tokenizer() {
+        for model_type in ["unimixer", "token_mixer_large", "rankmixer"] {
+            assert!(model_requires_feature_tokenizer(model_type));
+        }
+        for model_type in ["lr", "deepfm", "mmoe", "esmm", "gdcn_esmm"] {
+            assert!(!model_requires_feature_tokenizer(model_type));
         }
     }
 

@@ -2,9 +2,11 @@
 
 import torch.nn as nn
 
-from ...core.model_output import ModelOutput
+from ...core.model_output import ModelExecution, ModelOutput
+from ...core.output_contract import NormalizedOutputContract
 from ...layers.embedding import FeatureTensorMap
 from ...layers.towers import MultiTaskConfig, MultiTaskTower
+from ..output_head import OutputHead
 from ..unimixer.tokenizer import FeatureTokenizer
 from .block import RankMixerBlock
 
@@ -20,7 +22,8 @@ class RankMixerModel(nn.Module):
         num_blocks: int,
         num_heads: int,
         hidden_factor: float,
-        task_config: MultiTaskConfig,
+        task_config: MultiTaskConfig | None,
+        output_contract: NormalizedOutputContract | None = None,
     ) -> None:
         super().__init__()
         if token_dim <= 0:
@@ -40,11 +43,29 @@ class RankMixerModel(nn.Module):
             RankMixerBlock(token_dim, num_tokens, num_heads, hidden_factor)
             for _ in range(num_blocks)
         )
-        self.task_towers = MultiTaskTower(task_config, token_dim)
+        if output_contract is not None:
+            self.output_head = OutputHead(output_contract, {"shared": token_dim})
+            self.task_towers = None
+        else:
+            if task_config is None:
+                raise ValueError("RankMixer requires task_config or output_contract")
+            self.task_towers = MultiTaskTower(task_config, token_dim)
 
     def forward(self, x_inputs: FeatureTensorMap) -> ModelOutput:
+        if hasattr(self, "output_head"):
+            return self.forward_execution(x_inputs).outputs
+        return self.task_towers(self._shared(x_inputs))
+
+    def forward_execution(self, x_inputs: FeatureTensorMap) -> ModelExecution:
+        shared = self._shared(x_inputs)
+        if hasattr(self, "output_head"):
+            return self.output_head({"shared": shared})
+        outputs = self.task_towers(shared)
+        return ModelExecution(nodes=outputs, outputs=outputs)
+
+    def _shared(self, x_inputs: FeatureTensorMap):
         x = self.tokenizer(x_inputs)
         for block in self.blocks:
             x = block(x)
         pooled = x.mean(dim=1)
-        return self.task_towers(pooled)
+        return pooled

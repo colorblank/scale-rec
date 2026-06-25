@@ -1,4 +1,6 @@
-type: lr
+type: deepfm
+fm_k: 16
+deep_hidden_dims: [64, 32]
 output_contract:
   version: 1
   graph:

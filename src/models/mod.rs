@@ -258,9 +258,14 @@ fn build_lr(
     vb: VarBuilder,
     features: &[FeatureSpec],
     _tokenizer: Option<FeatureTokenizer>,
-    _params: &serde_yaml::Value,
+    params: &serde_yaml::Value,
     _options: &ModelBuildOptions,
 ) -> Result<Box<dyn Model>> {
+    if let Some(contract) = parse_output_contract_param(params)? {
+        return Ok(Box::new(lr::LogisticRegression::with_output_contract(
+            vb, features, &contract,
+        )?));
+    }
     Ok(Box::new(lr::LogisticRegression::new(vb, features)?))
 }
 
@@ -273,6 +278,15 @@ fn build_deepfm(
 ) -> Result<Box<dyn Model>> {
     let fm_k = yaml_usize(params, "fm_k", 16);
     let deep_hidden_dims: Vec<usize> = yaml_usize_seq(params, "deep_hidden_dims");
+    if let Some(contract) = parse_output_contract_param(params)? {
+        return Ok(Box::new(deepfm::DeepFM::with_output_contract(
+            vb,
+            features,
+            fm_k,
+            &deep_hidden_dims,
+            &contract,
+        )?));
+    }
     Ok(Box::new(deepfm::DeepFM::new(
         vb,
         features,
@@ -292,6 +306,17 @@ fn build_mmoe(
     let num_experts = yaml_usize(params, "num_experts", 4);
     let expert_hidden_dims: Vec<usize> = yaml_usize_seq(params, "expert_hidden_dims");
     let expert_output_dim = yaml_usize(params, "expert_output_dim", 32);
+    if let Some(contract) = parse_output_contract_param(params)? {
+        return Ok(Box::new(mmoe::MMoE::with_output_contract(
+            vb,
+            features,
+            &shared_bottom_dims,
+            num_experts,
+            &expert_hidden_dims,
+            expert_output_dim,
+            &contract,
+        )?));
+    }
     let task_configs = parse_task_config_entries(params);
     let task_cfgs: Vec<(String, Vec<usize>)> = task_configs
         .iter()
@@ -316,11 +341,7 @@ fn build_esmm(
     _options: &ModelBuildOptions,
 ) -> Result<Box<dyn Model>> {
     let shared_bottom_dims: Vec<usize> = yaml_usize_seq(params, "shared_bottom_dims");
-    if let Some(raw) = params.get("output_contract") {
-        let contract: output_contract::OutputContract = serde_yaml::from_value(raw.clone())
-            .map_err(|error| {
-                candle_core::Error::Msg(format!("parse esmm output_contract: {error}"))
-            })?;
+    if let Some(contract) = parse_output_contract_param(params)? {
         return Ok(Box::new(esmm::ContractEsmm::new(
             vb,
             features,
@@ -351,6 +372,16 @@ fn build_gdcn_esmm(
     let cross_layers = yaml_usize(params, "cross_layers", 3);
     let deep_hidden_dims: Vec<usize> = yaml_usize_seq(params, "deep_hidden_dims");
     let shared_bottom_dims: Vec<usize> = yaml_usize_seq(params, "shared_bottom_dims");
+    if let Some(contract) = parse_output_contract_param(params)? {
+        return Ok(Box::new(gdcn_esmm::GDCNESMM::with_output_contract(
+            vb,
+            features,
+            cross_layers,
+            &deep_hidden_dims,
+            &shared_bottom_dims,
+            &contract,
+        )?));
+    }
     let task_config = params
         .get("task_config")
         .ok_or_else(|| candle_core::Error::Msg("GDCNESMM requires task_config".into()))?;
@@ -385,12 +416,30 @@ fn build_unimixer(
     let num_basis = yaml_usize(params, "num_basis", 4);
     let rank = yaml_usize(params, "rank", 16);
     let use_siamese = yaml_bool(params, "use_siamese");
-    let task_config = parse_multi_task_config(params)?;
     let unimixer_vb = if options.unimixer_prefix.is_empty() {
         vb
     } else {
         vb.pp(&options.unimixer_prefix)
     };
+    if let Some(contract) = parse_output_contract_param(params)? {
+        return Ok(Box::new(
+            unimixer::model::UniMixerModel::with_output_contract(
+                tokenizer,
+                token_dim,
+                num_tokens,
+                num_blocks,
+                block_size,
+                use_lite,
+                hidden_factor,
+                num_basis,
+                rank,
+                &contract,
+                use_siamese,
+                unimixer_vb,
+            )?,
+        ));
+    }
+    let task_config = parse_multi_task_config(params)?;
     Ok(Box::new(unimixer::model::UniMixerModel::new(
         tokenizer,
         token_dim,
@@ -423,6 +472,21 @@ fn build_token_mixer_large(
     let num_heads = yaml_usize(params, "num_heads", 8);
     let hidden_factor = yaml_f64(params, "hidden_factor", 1.0);
     let down_init_scale = yaml_f64(params, "down_init_scale", 0.01);
+    if let Some(contract) = parse_output_contract_param(params)? {
+        return Ok(Box::new(
+            token_mixer_large::model::TokenMixerLargeModel::with_output_contract(
+                tokenizer,
+                token_dim,
+                num_tokens,
+                num_blocks,
+                num_heads,
+                hidden_factor,
+                &contract,
+                vb,
+                down_init_scale,
+            )?,
+        ));
+    }
     let task_config = parse_multi_task_config(params)?;
     Ok(Box::new(
         token_mixer_large::model::TokenMixerLargeModel::new(
@@ -454,6 +518,20 @@ fn build_rankmixer(
     let num_blocks = yaml_usize(params, "num_blocks", 2);
     let num_heads = yaml_usize(params, "num_heads", num_tokens);
     let hidden_factor = yaml_f64(params, "hidden_factor", 1.0);
+    if let Some(contract) = parse_output_contract_param(params)? {
+        return Ok(Box::new(
+            rankmixer::model::RankMixerModel::with_output_contract(
+                tokenizer,
+                token_dim,
+                num_tokens,
+                num_blocks,
+                num_heads,
+                hidden_factor,
+                &contract,
+                vb,
+            )?,
+        ));
+    }
     let task_config = parse_multi_task_config(params)?;
     Ok(Box::new(rankmixer::model::RankMixerModel::new(
         tokenizer,
@@ -633,6 +711,18 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
     expect_optional_f64(model_type, params, "hidden_factor")?;
     validate_model_param_keys(model_type, params, &allowed, &required)?;
     Ok(())
+}
+
+fn parse_output_contract_param(
+    params: &serde_yaml::Value,
+) -> Result<Option<output_contract::OutputContract>> {
+    params
+        .get("output_contract")
+        .map(|raw| {
+            serde_yaml::from_value(raw.clone())
+                .map_err(|error| candle_core::Error::Msg(format!("parse output_contract: {error}")))
+        })
+        .transpose()
 }
 
 fn validate_model_param_keys(

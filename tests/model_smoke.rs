@@ -211,6 +211,56 @@ fn test_modelconfig_build_native_output_contract_esmm() {
 }
 
 #[test]
+fn test_all_example_models_build_with_native_output_contract() {
+    use scale_rec::models::unimixer::tokenizer::FeatureTokenizer;
+
+    let configs = [
+        "lr.yaml",
+        "deepfm.yaml",
+        "mmoe.yaml",
+        "esmm_output_contract.yaml",
+        "gdcn_esmm.yaml",
+        "unimixer.yaml",
+        "token_mixer_large.yaml",
+        "rankmixer.yaml",
+    ];
+    for name in configs {
+        let path = format!("{}/examples/models/{name}", env!("CARGO_MANIFEST_DIR"));
+        let yaml = std::fs::read_to_string(path).unwrap();
+        let config: ModelConfig = serde_yaml::from_str(&yaml).unwrap();
+        let builder = vb();
+        let tokenizer = if matches!(
+            config.model_type.as_str(),
+            "unimixer" | "token_mixer_large" | "rankmixer"
+        ) {
+            let token_dim = config.params["token_dim"].as_u64().unwrap() as usize;
+            let num_tokens = config.params["num_tokens"].as_u64().unwrap() as usize;
+            Some(
+                FeatureTokenizer::new(
+                    builder.pp("tokenizer"),
+                    &dummy_features(),
+                    token_dim,
+                    num_tokens,
+                )
+                .unwrap(),
+            )
+        } else {
+            None
+        };
+
+        let model = config
+            .build(builder, &dummy_features(), tokenizer)
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        let execution = model
+            .forward_execution(&dummy_inputs(2))
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+
+        assert!(!execution.nodes.is_empty(), "{name}");
+        assert!(!execution.outputs.is_empty(), "{name}");
+    }
+}
+
+#[test]
 fn test_modelconfig_build_lr() {
     let cfg = ModelConfig {
         model_type: "lr".into(),

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import torch.nn as nn
 
-from ...core.model_output import ModelOutput
+from ...core.model_output import ModelExecution, ModelOutput
+from ...core.output_contract import NormalizedOutputContract
 from ...layers.embedding import FeatureTensorMap
 from ...layers.towers import MultiTaskConfig, MultiTaskTower
+from ..output_head import OutputHead
 from .block import UniMixerBlock
 from .norm import SiameseNorm
 from .tokenizer import FeatureTokenizer
@@ -26,8 +28,9 @@ class UniMixerModel(nn.Module):
         hidden_factor: float,
         num_basis: int,
         rank: int,
-        task_config: MultiTaskConfig,
+        task_config: MultiTaskConfig | None,
         use_siamese: bool,
+        output_contract: NormalizedOutputContract | None = None,
     ) -> None:
         """Build UniMixer: tokenizer + num_blocks UniMixerBlocks + task towers + optional SiameseNorm."""
         super().__init__()
@@ -69,11 +72,31 @@ class UniMixerModel(nn.Module):
                     use_siamese,
                 )
             )
-        self.task_towers = MultiTaskTower(task_config, self.embed_dim)
+        if output_contract is not None:
+            self.output_head = OutputHead(output_contract, {"shared": self.embed_dim})
+            self.task_towers = None
+        else:
+            if task_config is None:
+                raise ValueError("UniMixer requires task_config or output_contract")
+            self.task_towers = MultiTaskTower(task_config, self.embed_dim)
         self.final_norm = SiameseNorm(self.embed_dim) if use_siamese else None
 
     def forward(self, x_inputs: FeatureTensorMap, temperature: float | None = None) -> ModelOutput:
         """Forward: tokenize -> M blocks (standard or siamese path) -> task towers."""
+        if hasattr(self, "output_head"):
+            return self.forward_execution(x_inputs, temperature).outputs
+        return self.task_towers(self._shared(x_inputs, temperature))
+
+    def forward_execution(
+        self, x_inputs: FeatureTensorMap, temperature: float | None = None
+    ) -> ModelExecution:
+        shared = self._shared(x_inputs, temperature)
+        if hasattr(self, "output_head"):
+            return self.output_head({"shared": shared})
+        outputs = self.task_towers(shared)
+        return ModelExecution(nodes=outputs, outputs=outputs)
+
+    def _shared(self, x_inputs: FeatureTensorMap, temperature: float | None = None):
         t = temperature if temperature is not None else self.temperature
         if t <= 0:
             raise ValueError("temperature must be > 0")
@@ -92,4 +115,4 @@ class UniMixerModel(nn.Module):
             for blk in self.blocks:
                 x = blk(x, t)
             output = x
-        return self.task_towers(output)
+        return output

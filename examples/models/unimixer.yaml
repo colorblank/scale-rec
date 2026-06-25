@@ -7,27 +7,41 @@ hidden_factor: 1.0
 num_basis: 4
 rank: 16
 use_siamese: false
-label_col_map:
-  click: is_click
-  cvr: is_cvr
-  detail: is_click_detail
-  stock: is_click_stock
-  stay: stay_time_label
-tasks:
-  - {name: click, label: is_click, loss: bce, metrics: [auc, logloss]}
-  - {name: cvr, label: is_cvr, loss: focal, metrics: [auc, logloss]}
-  - {name: detail, label: is_click_detail, loss: bce, metrics: [auc, logloss]}
-  - {name: stock, label: is_click_stock, loss: bce, metrics: [auc, logloss]}
-  - {name: stay, label: stay_time_label, loss: weighted_bce_stay, metrics: [mae, mse]}
-task_config:
-  towers:
-    - {name: click,  hidden_dims: [16, 8], output_dim: 1, activation: relu}
-    - {name: cvr,    hidden_dims: [16, 8], output_dim: 1, activation: relu}
-    - {name: detail, hidden_dims: [8],    output_dim: 1, activation: relu}
-    - {name: stock,  hidden_dims: [8],    output_dim: 1, activation: relu}
-    - {name: stay,   hidden_dims: [8],    output_dim: 1, activation: none}
-  relations:
-    - {target: ctcvr,    sources: [click, cvr],    op: multiply}
-    - {target: ctdetail, sources: [click, detail], op: multiply}
-    - {target: ctstock,  sources: [click, stock],  op: multiply}
-    - {target: ctstay,   sources: [detail, stay],  op: multiply}
+output_contract:
+  version: 1
+  graph:
+    towers:
+      - {name: click_logit, kind: binary_logit, hidden_dims: [16, 8]}
+      - {name: cvr_logit, kind: binary_logit, hidden_dims: [16, 8]}
+      - {name: detail_logit, kind: binary_logit, hidden_dims: [8]}
+      - {name: stock_logit, kind: binary_logit, hidden_dims: [8]}
+      - {name: stay_logit, kind: binary_logit, hidden_dims: [8], activation: none}
+    relations:
+      - {name: click_prob, op: sigmoid, inputs: [click_logit]}
+      - {name: cvr_prob, op: sigmoid, inputs: [cvr_logit]}
+      - {name: detail_prob, op: sigmoid, inputs: [detail_logit]}
+      - {name: stock_prob, op: sigmoid, inputs: [stock_logit]}
+      - {name: stay_prob, op: sigmoid, inputs: [stay_logit]}
+      - {name: ctcvr_prob, op: multiply, inputs: [click_prob, cvr_prob]}
+      - {name: ctdetail_prob, op: multiply, inputs: [click_prob, detail_prob]}
+      - {name: ctstock_prob, op: multiply, inputs: [click_prob, stock_prob]}
+      - {name: ctstay_prob, op: multiply, inputs: [detail_prob, stay_prob]}
+  objectives:
+    - {name: click_loss, source: click_logit, label: is_click, loss: {type: binary_cross_entropy_with_logits}}
+    - {name: cvr_loss, source: ctcvr_prob, label: is_cvr, loss: {type: focal_binary_cross_entropy, alpha: 0.25, gamma: 2.0}}
+    - {name: detail_loss, source: ctdetail_prob, label: is_click_detail, loss: {type: binary_cross_entropy}}
+    - {name: stock_loss, source: ctstock_prob, label: is_click_stock, loss: {type: binary_cross_entropy}}
+    - {name: stay_loss, source: stay_logit, label: stay_time_label, loss: {type: weighted_bce_stay}}
+  metrics:
+    - {name: click_auc, source: click_logit, label: is_click, type: auc}
+    - {name: click_logloss, source: click_prob, label: is_click, type: logloss}
+    - {name: cvr_auc, source: ctcvr_prob, label: is_cvr, type: auc}
+    - {name: cvr_logloss, source: ctcvr_prob, label: is_cvr, type: logloss}
+    - {name: detail_auc, source: ctdetail_prob, label: is_click_detail, type: auc}
+    - {name: stock_auc, source: ctstock_prob, label: is_click_stock, type: auc}
+  outputs:
+    - {name: ctr, source: click_prob}
+    - {name: ctcvr, source: ctcvr_prob}
+    - {name: ctdetail, source: ctdetail_prob}
+    - {name: ctstock, source: ctstock_prob}
+    - {name: ctstay, source: ctstay_prob}

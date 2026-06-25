@@ -1,5 +1,7 @@
 //! DeepFM：FM 一阶 + FM 二阶 + Deep MLP 的联合模型。
-use super::{Model, ModelOutput};
+use super::output_contract::OutputContract;
+use super::output_head::OutputHead;
+use super::{Model, ModelExecution, ModelOutput};
 use crate::layers::embedding::{FeatureEmbeddings, FeatureSpec};
 use crate::layers::fm::fm_interaction;
 use crate::layers::mlp::Mlp;
@@ -22,6 +24,7 @@ pub struct DeepFM {
     pub deep_total_dim: usize,
     deep_mlp: Mlp,
     global_bias: Tensor,
+    output_head: Option<OutputHead>,
 }
 
 impl DeepFM {
@@ -54,23 +57,60 @@ impl DeepFM {
             deep_total_dim,
             deep_mlp,
             global_bias,
+            output_head: None,
         })
     }
-}
 
-impl Model for DeepFM {
-    fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<ModelOutput> {
+    /// 构造使用原生输出契约的 DeepFM。
+    pub fn with_output_contract(
+        vb: VarBuilder,
+        features: &[FeatureSpec],
+        fm_k: usize,
+        deep_hidden_dims: &[usize],
+        contract: &OutputContract,
+    ) -> Result<Self> {
+        let mut model = Self::new(vb.clone(), features, fm_k, deep_hidden_dims)?;
+        let representation_dims = HashMap::from([("shared".to_string(), 1)]);
+        model.output_head = Some(OutputHead::new(
+            contract,
+            &representation_dims,
+            vb.pp("output_head"),
+        )?);
+        Ok(model)
+    }
+
+    fn shared(&self, x_inputs: &HashMap<String, Tensor>) -> Result<Tensor> {
         let first_order = self.fm_first_embeddings.forward(x_inputs)?.sum_keepdim(1)?;
         let fm_stacked = Tensor::cat(&self.fm_second_embeddings.forward_stacked(x_inputs)?, 1)?;
         let second_order = fm_interaction(&fm_stacked)?;
         let deep_input = self.deep_embeddings.forward(x_inputs)?;
         let deep_out = self.deep_mlp.forward(&deep_input)?;
-        let logits = first_order
+        first_order
             .broadcast_add(&second_order)?
             .broadcast_add(&deep_out)?
-            .broadcast_add(&self.global_bias)?;
+            .broadcast_add(&self.global_bias)
+    }
+}
+
+impl Model for DeepFM {
+    fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<ModelOutput> {
+        if self.output_head.is_some() {
+            return Ok(self.forward_execution(x_inputs)?.outputs);
+        }
+        let logits = self.shared(x_inputs)?;
         let mut outputs = ModelOutput::new();
         outputs.insert_binary_logit("pred", logits);
         Ok(outputs)
+    }
+
+    fn forward_execution(&self, x_inputs: &HashMap<String, Tensor>) -> Result<ModelExecution> {
+        if let Some(head) = &self.output_head {
+            return head.forward(&HashMap::from([(
+                "shared".to_string(),
+                self.shared(x_inputs)?,
+            )]));
+        }
+        let outputs = self.forward(x_inputs)?;
+        Ok(ModelExecution::new(outputs.clone(), outputs))
     }
 }

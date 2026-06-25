@@ -110,6 +110,41 @@ def _output_kinds(
     return kinds
 
 
+def _parse_output_contract(params: dict[str, Any]):
+    raw = params.get("output_contract")
+    if raw is None:
+        return None
+    from ..core.output_contract import parse_output_contract
+
+    return parse_output_contract(raw)
+
+
+def _native_contract_spec(params: dict[str, Any]) -> OutputSpec | None:
+    contract = _parse_output_contract(params)
+    if contract is None:
+        return None
+    task_names = list(dict.fromkeys(metric.source for metric in contract.metrics))
+    label_col_map: dict[str, str] = {}
+    for item in (*contract.objectives, *contract.metrics):
+        previous = label_col_map.get(item.source)
+        if previous is not None and previous != item.label:
+            raise ValueError(
+                f"output node '{item.source}' references conflicting labels "
+                f"'{previous}' and '{item.label}'"
+            )
+        label_col_map[item.source] = item.label
+    task_metrics: dict[str, list[str]] = {}
+    for metric in contract.metrics:
+        task_metrics.setdefault(metric.source, []).append(metric.type)
+    return {
+        "task_names": task_names,
+        "label_col_map": label_col_map,
+        "output_kinds": contract.node_kinds,
+        "task_metrics": task_metrics,
+        "output_contract": contract,
+    }
+
+
 def _contract_spec(specs: list[Any], relation_names: list[str] | None = None) -> OutputSpec:
     contract = TaskContract.from_specs(specs)
     return {
@@ -124,6 +159,9 @@ def _contract_spec(specs: list[Any], relation_names: list[str] | None = None) ->
 
 
 def _spec_pred(model: nn.Module | None = None, params: dict[str, Any] | None = None) -> OutputSpec:
+    native = _native_contract_spec(params or {})
+    if native is not None:
+        return native
     specs = parse_task_specs((params or {}).get("tasks"))
     if specs:
         return _contract_spec(specs)
@@ -138,7 +176,10 @@ def _build_lr(
     features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
 ) -> LogisticRegression:
     return LogisticRegression(
-        features, pooling_map=params.get("_pooling_map"), total_dim=params.get("_total_dim")
+        features,
+        pooling_map=params.get("_pooling_map"),
+        total_dim=params.get("_total_dim"),
+        output_contract=_parse_output_contract(params),
     )
 
 
@@ -151,12 +192,14 @@ def _build_deepfm(
         params.get("deep_hidden_dims", []),
         pooling_map=params.get("_pooling_map"),
         total_dim=params.get("_total_dim"),
+        output_contract=_parse_output_contract(params),
     )
 
 
 def _build_mmoe(
     features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
 ) -> MMoE:
+    output_contract = _parse_output_contract(params)
     tcs = [(t.name, t.tower_dims) for t in _parse_mmoe_task_configs(params)]
     return MMoE(
         features,
@@ -167,10 +210,14 @@ def _build_mmoe(
         tcs,
         pooling_map=params.get("_pooling_map"),
         total_dim=params.get("_total_dim"),
+        output_contract=output_contract,
     )
 
 
 def _spec_mmoe(model: nn.Module | None = None, params: dict[str, Any] | None = None) -> OutputSpec:
+    native = _native_contract_spec(params or {})
+    if native is not None:
+        return native
     specs = parse_task_specs((params or {}).get("tasks"))
     if specs:
         return _contract_spec(specs)
@@ -185,11 +232,7 @@ def _spec_mmoe(model: nn.Module | None = None, params: dict[str, Any] | None = N
 def _build_esmm(
     features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
 ) -> ESMM:
-    output_contract = None
-    if params.get("output_contract") is not None:
-        from ..core.output_contract import parse_output_contract
-
-        output_contract = parse_output_contract(params["output_contract"])
+    output_contract = _parse_output_contract(params)
     task_config = _parse_task_config(params.get("task_config"))
     if task_config is None and output_contract is None:
         raise ValueError("ESMM requires task_config")
@@ -211,9 +254,10 @@ def _build_esmm(
 def _build_gdcn_esmm(
     features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
 ) -> GDCNESMM:
+    output_contract = _parse_output_contract(params)
     task_config = _parse_task_config(params.get("task_config"))
-    if task_config is None:
-        raise ValueError("GDCNESMM requires task_config")
+    if task_config is None and output_contract is None:
+        raise ValueError("GDCNESMM requires task_config or output_contract")
     return GDCNESMM(
         features,
         cross_layers=params.get("cross_layers", 3),
@@ -227,35 +271,15 @@ def _build_gdcn_esmm(
         task_config=task_config,
         pooling_map=params.get("_pooling_map"),
         total_dim=params.get("_total_dim"),
+        output_contract=output_contract,
     )
 
 
 def _spec_esmm(model: nn.Module | None = None, params: dict[str, Any] | None = None) -> OutputSpec:
     params = params or {}
-    if params.get("output_contract") is not None:
-        from ..core.output_contract import parse_output_contract
-
-        contract = parse_output_contract(params["output_contract"])
-        task_names = list(dict.fromkeys(metric.source for metric in contract.metrics))
-        label_col_map: dict[str, str] = {}
-        for item in (*contract.objectives, *contract.metrics):
-            previous = label_col_map.get(item.source)
-            if previous is not None and previous != item.label:
-                raise ValueError(
-                    f"output node '{item.source}' references conflicting labels "
-                    f"'{previous}' and '{item.label}'"
-                )
-            label_col_map[item.source] = item.label
-        task_metrics: dict[str, list[str]] = {}
-        for metric in contract.metrics:
-            task_metrics.setdefault(metric.source, []).append(metric.type)
-        return {
-            "task_names": task_names,
-            "label_col_map": label_col_map,
-            "output_kinds": contract.node_kinds,
-            "task_metrics": task_metrics,
-            "output_contract": contract,
-        }
+    native = _native_contract_spec(params)
+    if native is not None:
+        return native
     task_config = _parse_task_config(params.get("task_config")) or _default_esmm_task_config(params)
     relation_names = [relation.target for relation in task_config.relations]
     specs = parse_task_specs(params.get("tasks"))
@@ -290,6 +314,9 @@ def _spec_esmm(model: nn.Module | None = None, params: dict[str, Any] | None = N
 def _spec_unimixer(
     model: nn.Module | None = None, params: dict[str, Any] | None = None
 ) -> OutputSpec:
+    native = _native_contract_spec(params or {})
+    if native is not None:
+        return native
     specs = parse_task_specs((params or {}).get("tasks"))
     relation_names: list[str] = []
     task_config = _parse_task_config((params or {}).get("task_config"))
@@ -324,9 +351,10 @@ def _build_unimixer(
 ) -> UniMixerModel:
     if tokenizer is None:
         raise ValueError("UniMixer requires external FeatureTokenizer")
+    output_contract = _parse_output_contract(params)
     tc = _parse_task_config(params.get("task_config"))
-    if tc is None:
-        raise ValueError("UniMixer requires task_config")
+    if tc is None and output_contract is None:
+        raise ValueError("UniMixer requires task_config or output_contract")
     return UniMixerModel(
         tokenizer=tokenizer,
         token_dim=params.get("token_dim", 64),
@@ -339,6 +367,7 @@ def _build_unimixer(
         rank=params.get("rank", 16),
         task_config=tc,
         use_siamese=params.get("use_siamese", False),
+        output_contract=output_contract,
     )
 
 
@@ -347,9 +376,10 @@ def _build_token_mixer_large(
 ) -> TokenMixerLargeModel:
     if tokenizer is None:
         raise ValueError("TokenMixerLarge requires external FeatureTokenizer")
+    output_contract = _parse_output_contract(params)
     tc = _parse_task_config(params.get("task_config"))
-    if tc is None:
-        raise ValueError("TokenMixerLarge requires task_config")
+    if tc is None and output_contract is None:
+        raise ValueError("TokenMixerLarge requires task_config or output_contract")
     return TokenMixerLargeModel(
         tokenizer=tokenizer,
         token_dim=params.get("token_dim", 64),
@@ -359,6 +389,7 @@ def _build_token_mixer_large(
         hidden_factor=params.get("hidden_factor", 1.0),
         task_config=tc,
         down_init_scale=params.get("down_init_scale", 0.01),
+        output_contract=output_contract,
     )
 
 
@@ -367,9 +398,10 @@ def _build_rankmixer(
 ) -> RankMixerModel:
     if tokenizer is None:
         raise ValueError("RankMixer requires external FeatureTokenizer")
+    output_contract = _parse_output_contract(params)
     tc = _parse_task_config(params.get("task_config"))
-    if tc is None:
-        raise ValueError("RankMixer requires task_config")
+    if tc is None and output_contract is None:
+        raise ValueError("RankMixer requires task_config or output_contract")
     num_tokens = params.get("num_tokens", 8)
     return RankMixerModel(
         tokenizer=tokenizer,
@@ -379,6 +411,7 @@ def _build_rankmixer(
         num_heads=params.get("num_heads", num_tokens),
         hidden_factor=params.get("hidden_factor", 1.0),
         task_config=tc,
+        output_contract=output_contract,
     )
 
 
