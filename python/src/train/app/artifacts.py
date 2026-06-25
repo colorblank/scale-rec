@@ -13,7 +13,8 @@ import yaml
 
 from ..core.config import ArtifactConfig
 from ..core.task import TaskSpec, task_specs_to_manifest
-from .export import export_to_safetensors
+from ..training.quality import write_embedding_bucket_report
+from .export import export_to_safetensors, replace_inactive_embedding_rows
 from .manifest import write_model_manifest
 
 
@@ -68,6 +69,10 @@ class TrainingArtifactPaths:
     @property
     def best_state_path(self) -> Path:
         return self.run_dir / "best.resume.pt"
+
+    @property
+    def embedding_bucket_report_path(self) -> Path:
+        return self.run_dir / "embedding_bucket_report.yaml"
 
     def checkpoint_path(self, version: str) -> Path:
         return self.checkpoints_dir / f"{version}.safetensors"
@@ -212,12 +217,18 @@ class TrainingArtifactManager:
         published_version: str | None = None,
         best_score: float | None = None,
         published_source: str | Path | None = None,
+        embedding_bucket_report: dict[str, Any] | None = None,
     ) -> None:
         self.paths.published_weights_path.parent.mkdir(parents=True, exist_ok=True)
         if published_source is not None:
             shutil.copy2(published_source, self.paths.published_weights_path)
         elif model is not None:
             export_to_safetensors(model, self.paths.published_weights_path)
+        if embedding_bucket_report is not None:
+            self.write_embedding_bucket_report(embedding_bucket_report)
+            replace_inactive_embedding_rows(
+                self.paths.published_weights_path, embedding_bucket_report
+            )
         self._write_run_manifest(
             model_type=model_type,
             best_score=best_score,
@@ -234,6 +245,9 @@ class TrainingArtifactManager:
             published_version=published_version,
             best_score=best_score,
         )
+
+    def write_embedding_bucket_report(self, report: dict[str, Any]) -> Path:
+        return write_embedding_bucket_report(report, self.paths.embedding_bucket_report_path)
 
     def _write_run_manifest(
         self,
@@ -275,6 +289,8 @@ class TrainingArtifactManager:
                 for record in self._history
             ],
         }
+        if self.paths.embedding_bucket_report_path.exists():
+            data["embedding_bucket_report_file"] = str(self.paths.embedding_bucket_report_path)
         self.paths.run_manifest_path.parent.mkdir(parents=True, exist_ok=True)
         with self.paths.run_manifest_path.open("w", encoding="utf-8") as f:
             yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
@@ -321,6 +337,11 @@ class TrainingArtifactManager:
             published_weights_file=str(self.paths.published_weights_path),
             best_weights_file=str(self.paths.best_alias_path),
             latest_weights_file=str(self.paths.latest_alias_path),
+            embedding_bucket_report_file=(
+                str(self.paths.embedding_bucket_report_path)
+                if self.paths.embedding_bucket_report_path.exists()
+                else None
+            ),
         )
 
     def _prune_history(self) -> None:

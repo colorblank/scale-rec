@@ -4,8 +4,10 @@ from pathlib import Path
 
 import torch
 import yaml
+from safetensors.torch import load_file, save_file
 
 from train.app.artifacts import TrainingArtifactManager, load_resume_state
+from train.app.export import replace_inactive_embedding_rows
 from train.core.config import ArtifactConfig
 
 
@@ -57,6 +59,23 @@ def test_training_artifacts_manage_run_best_and_published_versions(tmp_path):
             "last_periodic_checkpoint_step": 0,
         },
     )
+    manager.write_embedding_bucket_report(
+        {
+            "schema_version": 1,
+            "training_steps": 1,
+            "features": {
+                "user_id": {
+                    "vocab_size": 2,
+                    "total_hits": 2,
+                    "active_buckets": 1,
+                    "inactive_buckets": 1,
+                    "bucket_utilization": 0.5,
+                    "inactive_bucket_ids": [0],
+                    "bucket_hits": [0, 2],
+                }
+            },
+        }
+    )
     manager.finalize(
         model=None,
         model_type="lr",
@@ -78,6 +97,7 @@ def test_training_artifacts_manage_run_best_and_published_versions(tmp_path):
     assert manager.paths.latest_alias_path.exists()
     assert manager.paths.best_state_path.exists()
     assert manager.paths.latest_state_path.exists()
+    assert manager.paths.embedding_bucket_report_path.exists()
     assert load_resume_state(manager.paths.best_alias_path)["best_score"] == 0.7
 
     published_data = yaml.safe_load(published.read_text(encoding="utf-8"))
@@ -90,6 +110,9 @@ def test_training_artifacts_manage_run_best_and_published_versions(tmp_path):
     assert published_data["best_version"] == "epoch-0001-step-000001"
     assert published_data["weights_file"] == "published.safetensors"
     assert published_data["checkpoint_dir"].endswith("checkpoints")
+    assert published_data["embedding_bucket_report_file"].endswith(
+        "embedding_bucket_report.yaml"
+    )
 
     assert run_data["model_name"] == "demo_model"
     assert run_data["model_version"] == "run-001"
@@ -97,6 +120,9 @@ def test_training_artifacts_manage_run_best_and_published_versions(tmp_path):
     assert run_data["feature_config_file"] == str(manager.paths.feature_config_path)
     assert run_data["model_config_file"] == str(manager.paths.model_config_path)
     assert run_data["published_source_file"].endswith("best.safetensors")
+    assert run_data["embedding_bucket_report_file"] == str(
+        manager.paths.embedding_bucket_report_path
+    )
     assert run_data["checkpoints"][0]["state_path"].endswith("epoch-0001-step-000001.resume.pt")
 
 
@@ -160,3 +186,37 @@ def test_training_artifacts_publish_into_run_serving_dir_by_default(tmp_path):
     assert data["weights_file"] == "model.safetensors"
     assert Path(data["feature_config_file"]) == Path("configs") / "feature_config.yaml"
     assert Path(data["model_config_file"]) == Path("configs") / "model_config.yaml"
+
+
+def test_inactive_dict_mapper_default_bucket_uses_active_row_mean(tmp_path):
+    path = tmp_path / "model.safetensors"
+    weight = torch.tensor(
+        [
+            [100.0, 100.0],
+            [1.0, 3.0],
+            [5.0, 7.0],
+            [200.0, 200.0],
+        ]
+    )
+    save_file({"embeddings.emb_category.weight": weight}, path)
+
+    replace_inactive_embedding_rows(
+        path,
+        {
+            "features": {
+                "category": {
+                    "operator_type": "DictMapper",
+                    "default_idx": 0,
+                    "bucket_hits": [0, 4, 2, 0],
+                    "inactive_bucket_ids": [0, 3],
+                }
+            }
+        },
+    )
+
+    exported = load_file(path)["embeddings.emb_category.weight"]
+    expected_mean = torch.tensor([3.0, 5.0])
+    assert torch.equal(exported[0], expected_mean)
+    assert torch.equal(exported[3], expected_mean)
+    assert torch.equal(exported[1], weight[1])
+    assert torch.equal(exported[2], weight[2])

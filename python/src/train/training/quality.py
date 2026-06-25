@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
+
+import torch
+import yaml
 
 from ..core.config import OpType
 from ..core.executor import DagExecutor
@@ -91,6 +95,82 @@ class FeatureQualityReport:
             metrics[f"{prefix}.hash_cache.{name}.miss_rate"] = stat.miss_rate
             metrics[f"{prefix}.hash_cache.{name}.cache_size"] = float(stat.cache_size)
         return metrics
+
+
+class EmbeddingBucketTracker:
+    """Accumulate exact embedding lookups from supervised training batches."""
+
+    def __init__(self, feat_info: FeatureInfo) -> None:
+        self._vocab_sizes = {
+            name: embed.vocab_size for name, embed in feat_info.embeddable_features()
+        }
+        providers = _provider_map(feat_info)
+        self._feature_metadata = {}
+        for name in self._vocab_sizes:
+            op_def = feat_info.node_defs[providers[name]]
+            metadata: dict[str, Any] = {"operator_type": op_def.op_type.value}
+            if op_def.op_type is OpType.DICT_MAPPER:
+                metadata["default_idx"] = int(op_def.params.get("default_idx", 0))
+            self._feature_metadata[name] = metadata
+        self._counts = {
+            name: torch.zeros(vocab_size, dtype=torch.int64)
+            for name, vocab_size in self._vocab_sizes.items()
+        }
+        self.steps = 0
+
+    def update(self, features: dict[str, torch.Tensor]) -> None:
+        for name, counts in self._counts.items():
+            values = features[name].detach().reshape(-1).cpu()
+            counts.add_(torch.bincount(values, minlength=counts.numel())[: counts.numel()])
+        self.steps += 1
+
+    def state_dict(self) -> dict[str, Any]:
+        return {
+            "steps": self.steps,
+            "counts": {name: counts.clone() for name, counts in self._counts.items()},
+        }
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        saved_counts = state.get("counts", {})
+        for name, counts in self._counts.items():
+            saved = saved_counts.get(name)
+            if saved is not None:
+                if tuple(saved.shape) != tuple(counts.shape):
+                    raise ValueError(
+                        f"embedding bucket tracker shape mismatch for '{name}': "
+                        f"{tuple(saved.shape)} != {tuple(counts.shape)}"
+                    )
+                counts.copy_(saved)
+        self.steps = int(state.get("steps", 0))
+
+    def report(self) -> dict[str, Any]:
+        features: dict[str, Any] = {}
+        for name, counts in self._counts.items():
+            active = int(torch.count_nonzero(counts).item())
+            vocab_size = counts.numel()
+            features[name] = {
+                **self._feature_metadata[name],
+                "vocab_size": vocab_size,
+                "total_hits": int(counts.sum().item()),
+                "active_buckets": active,
+                "inactive_buckets": vocab_size - active,
+                "bucket_utilization": active / vocab_size if vocab_size else 0.0,
+                "inactive_bucket_ids": torch.nonzero(counts == 0).reshape(-1).tolist(),
+                "bucket_hits": counts.tolist(),
+            }
+        return {
+            "schema_version": 1,
+            "training_steps": self.steps,
+            "features": features,
+        }
+
+
+def write_embedding_bucket_report(report: dict[str, Any], path: str | Path) -> Path:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        yaml.safe_dump(report, f, sort_keys=False, allow_unicode=True)
+    return path
 
 
 def summarize_feature_quality(

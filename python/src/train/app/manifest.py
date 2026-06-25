@@ -63,6 +63,7 @@ def write_model_manifest(
     published_weights_file: str | Path | None = None,
     best_weights_file: str | Path | None = None,
     latest_weights_file: str | Path | None = None,
+    embedding_bucket_report_file: str | Path | None = None,
     weight_binding: dict[str, Any] | None = None,
 ) -> Path:
     manifest_path = Path(manifest_path)
@@ -117,6 +118,10 @@ def write_model_manifest(
         data["best_weights_file"] = _relative_to_manifest(Path(best_weights_file), manifest_dir)
     if latest_weights_file is not None:
         data["latest_weights_file"] = _relative_to_manifest(Path(latest_weights_file), manifest_dir)
+    if embedding_bucket_report_file is not None:
+        data["embedding_bucket_report_file"] = _relative_to_manifest(
+            Path(embedding_bucket_report_file), manifest_dir
+        )
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     with manifest_path.open("w", encoding="utf-8") as f:
         yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)

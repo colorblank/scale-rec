@@ -25,7 +25,7 @@ from ..app.data import (
     stream_file_batches,
     stream_files_batches,
 )
-from ..app.export import export_to_safetensors
+from ..app.export import export_to_safetensors, replace_inactive_embedding_rows
 from ..core.config import FlowConfig, TrainConfig
 from ..core.output_contract import NormalizedOutputContract
 from ..core.preprocessor import TrainingPreprocessor
@@ -34,7 +34,12 @@ from .eval.evaluator import Evaluator
 from .loss.multi_task import MultiTaskLoss, _to_device
 from .loss.objective import ObjectiveEngine
 from .optim.scheduler import LRScheduler, build_optimizer
-from .quality import FeatureQualityReport, summarize_feature_quality
+from .quality import (
+    EmbeddingBucketTracker,
+    FeatureQualityReport,
+    summarize_feature_quality,
+    write_embedding_bucket_report,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -315,6 +320,7 @@ class Trainer:
         self.eval_batches: list[Batch] = []
         self._n_eval_batches = 0
         self.feature_quality: FeatureQualityReport | None = None
+        self.embedding_bucket_tracker = EmbeddingBucketTracker(self._preprocessor.dag.feat_info)
         self.loss_fn = (
             ObjectiveEngine(output_contract)
             if output_contract is not None
@@ -551,6 +557,7 @@ class Trainer:
             published_version = self.artifacts.best.version
 
         if self.artifacts is not None:
+            bucket_report = self.embedding_bucket_tracker.report()
             published_source = (
                 None if self.ema is not None else self.artifacts.paths.best_alias_path
             )
@@ -565,7 +572,14 @@ class Trainer:
                 published_version=published_version,
                 best_score=self._best_score,
                 published_source=published_source,
+                embedding_bucket_report=bucket_report,
             )
+        elif self.cfg.export_path:
+            bucket_report = self.embedding_bucket_tracker.report()
+            replace_inactive_embedding_rows(self.cfg.export_path, bucket_report)
+            report_path = Path(self.cfg.export_path).with_suffix(".embedding_buckets.yaml")
+            write_embedding_bucket_report(bucket_report, report_path)
+            logger.info("Embedding bucket report exported to %s", report_path)
 
         return self._best_score
 
@@ -627,6 +641,9 @@ class Trainer:
         rng_state = state.get("rng_state")
         if isinstance(rng_state, dict):
             _restore_rng_state(rng_state)
+        bucket_state = state.get("embedding_bucket_tracker")
+        if isinstance(bucket_state, dict):
+            self.embedding_bucket_tracker.load_state_dict(bucket_state)
 
     def _checkpoint_state(
         self,
@@ -638,7 +655,7 @@ class Trainer:
         periodic_checkpoint_seq: int | None = None,
         last_periodic_checkpoint_step: int | None = None,
     ) -> dict[str, Any]:
-        return build_resume_state(
+        state = build_resume_state(
             checkpoint_kind=checkpoint_kind,
             epoch=epoch,
             batch_in_epoch=batch_in_epoch,
@@ -661,6 +678,8 @@ class Trainer:
             loss_fn=self.loss_fn,
             ema=self.ema,
         )
+        state["embedding_bucket_tracker"] = self.embedding_bucket_tracker.state_dict()
+        return state
 
     def _train_epoch(self, epoch: int) -> float:
         if self.optimizer is None or self.lr_scheduler is None:
@@ -710,6 +729,7 @@ class Trainer:
             if loss is None:
                 continue
 
+            self.embedding_bucket_tracker.update(batch["features"])
             t0 = time.perf_counter()
             self.optimizer.zero_grad()
             loss.backward()

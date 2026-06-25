@@ -28,7 +28,7 @@ from train.training.eval.evaluator import Evaluator
 from train.training.loss.multi_task import MultiTaskLoss
 from train.training.metrics import compute_metrics
 from train.training.optim.scheduler import LRScheduler
-from train.training.quality import summarize_feature_quality
+from train.training.quality import EmbeddingBucketTracker, summarize_feature_quality
 from train.training.trainer import Trainer, iter_preprocessed_batches
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -991,6 +991,47 @@ def test_feature_quality_counts_sequence_padding_as_empty():
     assert "kw_ids" in report.hash_cache
     assert report.hash_cache["kw_ids"].total == 6
     assert report.hash_cache["kw_ids"].cache_size > 0
+
+
+def test_embedding_bucket_tracker_counts_all_training_lookups_and_restores_state():
+    config = FlowConfig.from_dict(
+        {
+            "version": "1.0.0",
+            "sources": [{"name": "user_id", "dtype": "int", "default_val": "0"}],
+            "operators": [
+                {
+                    "name": "user_bucket",
+                    "op_type": "Bucketing",
+                    "inputs": ["user_id"],
+                    "outputs": ["user_idx"],
+                    "params": {"boundaries": [1, 2, 3]},
+                    "embed": {"vocab_size": 4, "embed_dim": 2},
+                }
+            ],
+        }
+    )
+    dag = FeatureDag(config)
+    tracker = EmbeddingBucketTracker(dag.feat_info)
+
+    tracker.update({"user_idx": torch.tensor([0, 1, 1, 3])})
+    tracker.update({"user_idx": torch.tensor([[1, 2], [3, 3]])})
+
+    report = tracker.report()
+    assert report["training_steps"] == 2
+    assert report["features"]["user_idx"] == {
+        "operator_type": "Bucketing",
+        "vocab_size": 4,
+        "total_hits": 8,
+        "active_buckets": 4,
+        "inactive_buckets": 0,
+        "bucket_utilization": 1.0,
+        "inactive_bucket_ids": [],
+        "bucket_hits": [1, 3, 1, 3],
+    }
+
+    restored = EmbeddingBucketTracker(dag.feat_info)
+    restored.load_state_dict(tracker.state_dict())
+    assert restored.report() == report
 
 
 def test_parameter_counting_utility():

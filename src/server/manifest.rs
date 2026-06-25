@@ -89,6 +89,12 @@ pub struct TaskSpecManifest {
     /// 可选正样本权重。
     #[serde(default)]
     pub pos_weight: Option<f64>,
+    /// Focal loss 的可选 alpha 参数。
+    #[serde(default)]
+    pub focal_alpha: Option<f64>,
+    /// Focal loss 的可选 gamma 参数。
+    #[serde(default)]
+    pub focal_gamma: Option<f64>,
     /// 任务评估指标列表。
     #[serde(default)]
     pub metrics: Vec<String>,
@@ -192,6 +198,9 @@ pub struct ModelManifest {
     /// latest alias 权重文件路径。
     #[serde(default)]
     pub latest_weights_file: Option<String>,
+    /// 训练 embedding bucket 命中报告路径。
+    #[serde(default)]
+    pub embedding_bucket_report_file: Option<String>,
 }
 
 impl ModelManifest {
@@ -303,6 +312,7 @@ mod tests {
             published_weights_file: None,
             best_weights_file: None,
             latest_weights_file: None,
+            embedding_bucket_report_file: None,
         };
 
         let path = manifest.resolve_from(Path::new("/tmp/model/m.manifest.yaml"), "m.safetensors");
@@ -365,6 +375,38 @@ model_config_sha256: def
         assert_eq!(manifest.weight_binding.unimixer_prefix, "scorer");
         assert!(!manifest.weight_binding.strict);
         assert!(manifest.weight_binding.allow_extra_tensors);
+    }
+
+    #[test]
+    fn parses_focal_task_spec_fields() {
+        let yaml = r#"
+schema_version: 1
+model_id: m
+model_version: v
+model_type: gdcn_esmm
+weights_file: m.safetensors
+feature_config_file: feature.yaml
+feature_config_sha256: abc
+model_config_file: model.yaml
+model_config_sha256: def
+task_specs:
+  - name: cvr
+    label: is_cvr
+    loss: focal
+    focal_alpha: 0.25
+    focal_gamma: 1.5
+embedding_bucket_report_file: embedding_bucket_report.yaml
+"#;
+
+        let manifest: ModelManifest = serde_yaml::from_str(yaml).unwrap();
+        let task = &manifest.task_specs[0];
+
+        assert_eq!(task.focal_alpha, Some(0.25));
+        assert_eq!(task.focal_gamma, Some(1.5));
+        assert_eq!(
+            manifest.embedding_bucket_report_file.as_deref(),
+            Some("embedding_bucket_report.yaml")
+        );
     }
 
     #[test]

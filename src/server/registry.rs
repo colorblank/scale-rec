@@ -1242,6 +1242,7 @@ mod tests {
             published_weights_file: None,
             best_weights_file: None,
             latest_weights_file: None,
+            embedding_bucket_report_file: None,
         };
 
         let err = registry

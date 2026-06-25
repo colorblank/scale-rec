@@ -23,7 +23,7 @@ from train.app.main import _run_discover as run_discover_in_process
 from train.app.main import build_parser as build_train_parser
 from train.core.config import FlowConfig
 from train.core.dag import FeatureDag
-from train.core.model_output import ensure_model_output
+from train.core.model_output import BINARY_LOGIT, OutputTensor, ensure_model_output
 
 from .paths import DEMO_ARTIFACT_DIR, DISCOVER_FEATURE_CONFIG, MODEL_CONFIGS, REPO_ROOT
 
@@ -117,9 +117,15 @@ def save_test_and_pytorch_preds(
         features = dag.preprocess_batch(serving_df.to_dict("records"))
         outputs = ensure_model_output(model(features))
     preds = {
-        f"logit_{name}": tensor.cpu().numpy().flatten() for name, tensor in outputs.tensor_items()
+        f"logit_{name}": serving_array(output) for name, output in outputs.items()
     }
     pd.DataFrame(preds).to_csv(py_preds_csv, index=False)
+
+
+def serving_array(output: OutputTensor) -> np.ndarray:
+    """Apply the same output-kind conversion as Rust InferenceEngine."""
+    tensor = torch.sigmoid(output.tensor) if output.kind == BINARY_LOGIT else output.tensor
+    return tensor.detach().cpu().numpy().flatten()
 
 
 def run_rust_inference(

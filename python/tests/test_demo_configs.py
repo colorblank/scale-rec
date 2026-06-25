@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
+import torch
 import yaml
 
 from scale_rec_demo.paths import MODEL_CONFIGS
-from scale_rec_demo.verify_all import compare_outputs, read_serving_dataframe
+from scale_rec_demo.verify_all import compare_outputs, read_serving_dataframe, serving_array
 from train.core.config import FlowConfig
+from train.core.model_output import OutputTensor
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "examples"
@@ -150,6 +153,17 @@ def test_output_comparison_rejects_missing_prediction_columns(tmp_path):
 
     assert success is False
     assert metrics == {}
+
+
+def test_serving_array_applies_output_kind_semantics():
+    logits = torch.tensor([-1.0, 0.0, 1.0])
+    probabilities = torch.tensor([0.2, 0.5, 0.8])
+
+    binary = serving_array(OutputTensor(logits, "binary_logit"))
+    probability = serving_array(OutputTensor(probabilities, "probability"))
+
+    assert np.allclose(binary, torch.sigmoid(logits).numpy())
+    assert np.array_equal(probability, probabilities.numpy())
 
 
 def test_demo_model_path_index_covers_all_example_models():
