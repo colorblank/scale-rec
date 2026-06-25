@@ -33,6 +33,23 @@ def _weighted_bce_stay(logits: torch.Tensor, stay_times: torch.Tensor) -> torch.
     return -(t / (1 + t) * (-F.softplus(-z)) + 1 / (1 + t) * (-F.softplus(z))).mean()
 
 
+def _focal_bce_with_logits(
+    logits: torch.Tensor,
+    target: torch.Tensor,
+    *,
+    alpha: float | None,
+    gamma: float,
+) -> torch.Tensor:
+    values = F.binary_cross_entropy_with_logits(logits, target, reduction="none")
+    probability = torch.sigmoid(logits)
+    pt = probability * target + (1.0 - probability) * (1.0 - target)
+    values = values * torch.pow(1.0 - pt, gamma)
+    if alpha is not None:
+        alpha_t = alpha * target + (1.0 - alpha) * (1.0 - target)
+        values = values * alpha_t
+    return values.mean()
+
+
 class MultiTaskLoss(nn.Module):
     """多任务损失：支持 static / equal / uncertainty 模式。"""
 
@@ -180,7 +197,7 @@ def _eval_mask(mask: str, batch_labels: dict[str, list[Any]], default_col: str) 
 
 
 def _validate_loss_output_kind(spec: TaskSpec, output_kind: str) -> None:
-    if spec.loss in {"bce", "weighted_bce_stay"}:
+    if spec.loss in {"bce", "focal", "weighted_bce_stay"}:
         if output_kind != "binary_logit":
             raise ValueError(
                 f"Task '{spec.name}' loss '{spec.loss}' requires binary_logit output, "
@@ -210,6 +227,18 @@ def _task_loss(
                 prediction, target, pos_weight=torch.tensor(pw, device=prediction.device)
             )
         return F.binary_cross_entropy_with_logits(prediction, target)
+    if spec.loss == "focal":
+        if spec.pos_weight is not None or configured_pos_weight is not None:
+            raise ValueError(
+                f"Task '{spec.name}' focal loss does not support pos_weight; use focal_alpha"
+            )
+        gamma = 2.0 if spec.focal_gamma is None else spec.focal_gamma
+        return _focal_bce_with_logits(
+            prediction,
+            target,
+            alpha=spec.focal_alpha,
+            gamma=gamma,
+        )
     if spec.loss == "mse":
         return F.mse_loss(prediction, target)
     if spec.loss == "mae":

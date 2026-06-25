@@ -14,6 +14,8 @@ class TaskSpec:
     weight: float = 1.0
     mask: str | None = None
     pos_weight: float | None = None
+    focal_alpha: float | None = None
+    focal_gamma: float | None = None
     metrics: tuple[str, ...] = field(default_factory=tuple)
     output_kind: str = "binary_logit"
 
@@ -61,7 +63,7 @@ def parse_task_specs(raw: list[dict[str, Any]] | None) -> list[TaskSpec]:
             raise ValueError(f"Duplicate task spec: {name}")
         seen.add(name)
         loss = str(item.get("loss", "bce"))
-        if loss not in {"bce", "weighted_bce_stay", "mse", "mae", "huber"}:
+        if loss not in {"bce", "focal", "weighted_bce_stay", "mse", "mae", "huber"}:
             raise ValueError(f"Unsupported loss for task '{name}': {loss}")
         output_kind = str(item.get("output_kind", item.get("output", _default_output_kind(loss))))
         if output_kind not in {"binary_logit", "probability", "regression", "score"}:
@@ -77,6 +79,12 @@ def parse_task_specs(raw: list[dict[str, Any]] | None) -> list[TaskSpec]:
                 weight=float(item.get("weight", 1.0)),
                 mask=item.get("mask"),
                 pos_weight=None if item.get("pos_weight") is None else float(item["pos_weight"]),
+                focal_alpha=(
+                    None if item.get("focal_alpha") is None else float(item["focal_alpha"])
+                ),
+                focal_gamma=(
+                    None if item.get("focal_gamma") is None else float(item["focal_gamma"])
+                ),
                 metrics=tuple(metrics),
                 output_kind=output_kind,
             )

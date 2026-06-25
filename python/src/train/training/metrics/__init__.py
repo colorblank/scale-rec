@@ -11,7 +11,7 @@ from ...core.preprocessor import TrainingPreprocessor
 from ..loss.multi_task import MultiTaskLoss as MultiTaskLoss
 from ..loss.multi_task import _pick_labels, _to_device
 from ..loss.multi_task import compute_loss as compute_loss
-from .auc import _auc, _sigmoid, gauc
+from .auc import _auc, _prauc, _sigmoid, gauc
 from .classification import accuracy, f1_score, logloss, recall
 from .regression import mae, mse
 
@@ -19,6 +19,7 @@ Batch = dict[str, Any]
 
 _ALL_METRICS = {
     "auc": ("AUC", lambda y, p: _auc(y, _sigmoid(p))),
+    "prauc": ("PR-AUC", lambda y, p: _prauc(y, _sigmoid(p))),
     "gauc": ("GAUC", None),  # 需要 group_ids，特殊处理
     "logloss": ("LogLoss", lambda y, p: logloss(y, _sigmoid(p))),
     "acc": ("Accuracy", lambda y, p: accuracy(y, _sigmoid(p))),
@@ -61,8 +62,9 @@ def compute_metrics(
                 result[m] = gauc(y_true, classification_values, group_ids)
             else:
                 result[m] = 0.5
-        elif m == "auc":
-            result[m] = _auc(y_true, classification_values)
+        elif m in {"auc", "prauc"}:
+            fn = _auc if m == "auc" else _prauc
+            result[m] = fn(y_true, classification_values)
         elif m == "logloss":
             result[m] = logloss(y_true, classification_values)
         else:

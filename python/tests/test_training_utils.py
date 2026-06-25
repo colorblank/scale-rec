@@ -167,6 +167,52 @@ def test_probability_logloss_does_not_apply_sigmoid_again():
     assert result["logloss"] == pytest.approx(-np.log(0.25))
 
 
+def test_prauc_uses_average_precision_and_groups_tied_scores():
+    result = compute_metrics(
+        np.array([1.0, 0.0, 1.0, 0.0], dtype=np.float32),
+        np.array([0.9, 0.8, 0.8, 0.1], dtype=np.float32),
+        ["prauc"],
+        output_kind="probability",
+    )
+
+    assert result["prauc"] == pytest.approx(5 / 6)
+
+
+def test_prauc_returns_zero_without_positive_labels():
+    result = compute_metrics(
+        np.zeros(3, dtype=np.float32),
+        np.array([0.9, 0.5, 0.1], dtype=np.float32),
+        ["prauc"],
+        output_kind="probability",
+    )
+
+    assert result["prauc"] == 0.0
+
+
+def test_output_contract_accepts_prauc_for_binary_outputs():
+    contract = parse_output_contract(
+        {
+            "version": 1,
+            "graph": {
+                "towers": [{"name": "click_logit", "kind": "binary_logit"}],
+                "relations": [],
+            },
+            "objectives": [],
+            "metrics": [
+                {
+                    "name": "click_prauc",
+                    "source": "click_logit",
+                    "label": "click",
+                    "type": "prauc",
+                }
+            ],
+            "outputs": [{"name": "click_score", "source": "click_logit"}],
+        }
+    )
+
+    assert contract.metrics[0].type == "prauc"
+
+
 def test_contract_metric_applies_structured_mask():
     class DummyPreprocessor:
         @staticmethod
@@ -393,6 +439,37 @@ def test_task_spec_drives_loss_label_weight_and_mask():
     assert loss is not None
     assert torch.isclose(loss, torch.tensor(1.3862944))
     assert loss_fn.task_weights_info() == {"click": 2.0}
+
+
+def test_parse_task_specs_accepts_focal_loss():
+    specs = parse_task_specs(
+        [
+            {
+                "name": "click",
+                "label": "is_click",
+                "loss": "focal",
+                "focal_alpha": 0.25,
+                "focal_gamma": 1.5,
+            }
+        ]
+    )
+
+    assert specs[0].loss == "focal"
+    assert specs[0].focal_alpha == pytest.approx(0.25)
+    assert specs[0].focal_gamma == pytest.approx(1.5)
+
+
+def test_multi_task_loss_supports_focal_loss():
+    loss_fn = MultiTaskLoss(
+        ["click"],
+        {"click": "click"},
+        task_specs=[TaskSpec(name="click", label="click", loss="focal")],
+    )
+
+    loss = loss_fn({"click": torch.zeros(1, 1)}, {"click": [1]})
+
+    assert loss is not None
+    assert torch.isclose(loss, torch.tensor(0.1732868), atol=1e-6)
 
 
 def test_multi_task_loss_rejects_unknown_model_outputs():

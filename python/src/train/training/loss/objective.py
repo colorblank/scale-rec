@@ -116,6 +116,23 @@ def _objective_loss(
             target,
             reduction=loss.reduction,
         )
+    if loss.type == "focal_binary_cross_entropy":
+        epsilon = loss.epsilon if loss.epsilon is not None else 1e-7
+        probability = prediction.clamp(epsilon, 1.0 - epsilon)
+        values = F.binary_cross_entropy(probability, target, reduction="none")
+        pt = probability * target + (1.0 - probability) * (1.0 - target)
+        gamma = 2.0 if loss.gamma is None else loss.gamma
+        values = values * torch.pow(1.0 - pt, gamma)
+        if loss.alpha is not None:
+            alpha_t = loss.alpha * target + (1.0 - loss.alpha) * (1.0 - target)
+            values = values * alpha_t
+        return values.mean() if loss.reduction == "mean" else values.sum()
+    if loss.type == "focal_binary_cross_entropy_with_logits":
+        return _focal_bce_with_logits(
+            prediction,
+            target,
+            loss,
+        )
     if loss.type == "mse":
         return F.mse_loss(prediction, target, reduction=loss.reduction)
     if loss.type == "mae":
@@ -138,6 +155,22 @@ def _weighted_bce_stay(
     positive = stay_times / (1.0 + stay_times)
     negative = 1.0 / (1.0 + stay_times)
     values = -(positive * -F.softplus(-logits) + negative * -F.softplus(logits))
+    return values.mean() if loss.reduction == "mean" else values.sum()
+
+
+def _focal_bce_with_logits(
+    logits: torch.Tensor,
+    target: torch.Tensor,
+    loss: LossSpec,
+) -> torch.Tensor:
+    values = F.binary_cross_entropy_with_logits(logits, target, reduction="none")
+    probability = torch.sigmoid(logits)
+    pt = probability * target + (1.0 - probability) * (1.0 - target)
+    gamma = 2.0 if loss.gamma is None else loss.gamma
+    values = values * torch.pow(1.0 - pt, gamma)
+    if loss.alpha is not None:
+        alpha_t = loss.alpha * target + (1.0 - loss.alpha) * (1.0 - target)
+        values = values * alpha_t
     return values.mean() if loss.reduction == "mean" else values.sum()
 
 

@@ -68,6 +68,7 @@ def test_demo_model_configs_exist_and_are_current():
         "stay",
     ]
     assert gdcn["tasks"][-1]["metrics"] == ["mae", "mse"]
+    assert gdcn["tasks"][1]["loss"] == "focal"
     task_config = gdcn["task_config"]
     assert [tower["name"] for tower in task_config["towers"]] == [
         "click",
@@ -90,6 +91,9 @@ def test_demo_model_configs_exist_and_are_current():
     assert native_esmm["type"] == "esmm"
     assert "task_config" not in native_esmm
     assert native_esmm["output_contract"]["version"] == 1
+    assert native_esmm["output_contract"]["objectives"][1]["loss"]["type"] == (
+        "focal_binary_cross_entropy"
+    )
     assert {output["name"] for output in native_esmm["output_contract"]["outputs"]} == {
         "ctr",
         "ctcvr",
@@ -112,6 +116,7 @@ def test_demo_model_configs_exist_and_are_current():
     unimixer = yaml.safe_load(model_configs["discover_unimixer"].read_text(encoding="utf-8"))
     assert unimixer["type"] == "unimixer"
     assert unimixer["use_siamese"] is False
+    assert unimixer["tasks"][1]["loss"] == "focal"
     assert unimixer["tasks"][0]["metrics"] == ["auc", "logloss"]
     assert unimixer["label_col_map"]["stay"] == "stay_time_label"
 

@@ -22,7 +22,8 @@ cases:
         - name: conversion_loss
           source: ctcvr_prob
           label: is_conversion
-          loss: {type: binary_cross_entropy, reduction: mean, epsilon: 1.0e-7}
+          loss:
+            {type: focal_binary_cross_entropy, reduction: mean, epsilon: 1.0e-7, alpha: 0.25, gamma: 2.0}
       metrics:
         - {name: click_auc, source: click_logit, label: is_click, type: auc}
         - {name: conversion_logloss, source: ctcvr_prob, label: is_conversion, type: logloss}
@@ -41,6 +42,26 @@ cases:
           - {name: click_prob, kind: probability}
         relations: []
       objectives: []
+      metrics: []
+      outputs: [{name: ctr, source: click_prob}]
+
+  - name: focal_bce_requires_binary_logit
+    valid: false
+    error: focal_binary_cross_entropy_with_logits
+    sources:
+      - {name: is_conversion, role: label, has_default: false}
+    contract:
+      version: 1
+      graph:
+        towers:
+          - {name: click_logit, kind: binary_logit}
+        relations:
+          - {name: click_prob, op: sigmoid, inputs: [click_logit]}
+      objectives:
+        - name: click_loss
+          source: click_prob
+          label: is_conversion
+          loss: {type: focal_binary_cross_entropy_with_logits}
       metrics: []
       outputs: [{name: ctr, source: click_prob}]
 

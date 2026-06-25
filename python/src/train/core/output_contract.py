@@ -52,6 +52,8 @@ class LossSpec:
     epsilon: float | None = None
     pos_weight: float | None = None
     delta: float | None = None
+    alpha: float | None = None
+    gamma: float | None = None
 
 
 @dataclass(frozen=True)
@@ -219,7 +221,12 @@ def _parse_mask(raw: Any, context: str) -> MaskSpec | None:
 
 def _parse_loss(raw: Any, context: str) -> LossSpec:
     value = _mapping(context, raw)
-    _keys(context, value, {"type", "reduction", "epsilon", "pos_weight", "delta"}, {"type"})
+    _keys(
+        context,
+        value,
+        {"type", "reduction", "epsilon", "pos_weight", "delta", "alpha", "gamma"},
+        {"type"},
+    )
     reduction = str(value.get("reduction", "mean"))
     if reduction not in REDUCTIONS:
         raise ValueError(f"{context}.reduction must be mean or sum")
@@ -227,6 +234,8 @@ def _parse_loss(raw: Any, context: str) -> LossSpec:
     allowed_params = {
         "binary_cross_entropy_with_logits": {"pos_weight"},
         "binary_cross_entropy": {"epsilon"},
+        "focal_binary_cross_entropy": {"epsilon", "alpha", "gamma"},
+        "focal_binary_cross_entropy_with_logits": {"alpha", "gamma"},
         "mse": set(),
         "mae": set(),
         "huber": {"delta"},
@@ -234,11 +243,16 @@ def _parse_loss(raw: Any, context: str) -> LossSpec:
     }
     if loss_type not in allowed_params:
         raise ValueError(f"{context}.type '{loss_type}' is unsupported")
-    supplied = {key for key in ("epsilon", "pos_weight", "delta") if key in value}
+    supplied = {key for key in ("epsilon", "pos_weight", "delta", "alpha", "gamma") if key in value}
     invalid = supplied - allowed_params[loss_type]
     if invalid:
         raise ValueError(f"{context} has parameters not valid for {loss_type}: {sorted(invalid)}")
-    epsilon = value.get("epsilon", 1e-7 if loss_type == "binary_cross_entropy" else None)
+    epsilon = value.get(
+        "epsilon",
+        1e-7
+        if loss_type in {"binary_cross_entropy", "focal_binary_cross_entropy"}
+        else None,
+    )
     if epsilon is not None and not (0.0 < float(epsilon) < 0.5):
         raise ValueError(f"{context}.epsilon must be between 0 and 0.5")
     weight = value.get("pos_weight")
@@ -247,12 +261,26 @@ def _parse_loss(raw: Any, context: str) -> LossSpec:
     delta = value.get("delta", 1.0 if loss_type == "huber" else None)
     if delta is not None and (not math.isfinite(float(delta)) or float(delta) <= 0):
         raise ValueError(f"{context}.delta must be > 0")
+    alpha = value.get("alpha")
+    if alpha is not None and (not math.isfinite(float(alpha)) or not (0.0 <= float(alpha) <= 1.0)):
+        raise ValueError(f"{context}.alpha must be between 0 and 1")
+    gamma = value.get(
+        "gamma",
+        2.0
+        if loss_type
+        in {"focal_binary_cross_entropy", "focal_binary_cross_entropy_with_logits"}
+        else None,
+    )
+    if gamma is not None and (not math.isfinite(float(gamma)) or float(gamma) < 0):
+        raise ValueError(f"{context}.gamma must be >= 0")
     return LossSpec(
         loss_type,
         reduction,
         None if epsilon is None else float(epsilon),
         None if weight is None else float(weight),
         None if delta is None else float(delta),
+        None if alpha is None else float(alpha),
+        None if gamma is None else float(gamma),
     )
 
 
@@ -288,7 +316,7 @@ def _parse_metric(index: int, raw: Any) -> MetricSpec:
         {"name", "source", "label", "type"},
     )
     metric_type = str(value["type"])
-    if metric_type not in {"auc", "logloss", "mae", "mse"}:
+    if metric_type not in {"auc", "prauc", "logloss", "mae", "mse"}:
         raise ValueError(f"{context}.type '{metric_type}' is unsupported")
     return MetricSpec(
         str(value["name"]),
@@ -383,6 +411,8 @@ def _validate_references(
 def _validate_objectives(kinds: dict[str, str], objectives: tuple[ObjectiveSpec, ...]) -> None:
     expected = {
         "binary_cross_entropy_with_logits": {"binary_logit"},
+        "focal_binary_cross_entropy": {"probability"},
+        "focal_binary_cross_entropy_with_logits": {"binary_logit"},
         "binary_cross_entropy": {"probability"},
         "mse": {"regression", "score"},
         "mae": {"regression", "score"},
@@ -399,6 +429,7 @@ def _validate_objectives(kinds: dict[str, str], objectives: tuple[ObjectiveSpec,
 def _validate_metrics(kinds: dict[str, str], metrics: tuple[MetricSpec, ...]) -> None:
     expected = {
         "auc": {"binary_logit", "probability"},
+        "prauc": {"binary_logit", "probability"},
         "logloss": {"probability"},
         "mae": {"regression", "score"},
         "mse": {"regression", "score"},
@@ -442,8 +473,10 @@ def _objective_data(objective: ObjectiveSpec) -> dict[str, Any]:
     return {
         "label": objective.label,
         "loss": {
+            "alpha": _canonical_float(objective.loss.alpha),
             "delta": _canonical_float(objective.loss.delta),
             "epsilon": _canonical_float(objective.loss.epsilon),
+            "gamma": _canonical_float(objective.loss.gamma),
             "pos_weight": _canonical_float(objective.loss.pos_weight),
             "reduction": objective.loss.reduction,
             "type": objective.loss.type,

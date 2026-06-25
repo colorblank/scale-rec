@@ -97,7 +97,7 @@ def test_output_head_executes_regression_add_and_identity():
     assert execution.outputs.kind("prediction") == "regression"
 
 
-def test_objective_engine_uses_probability_bce_after_esmm_relation():
+def test_objective_engine_uses_probability_focal_after_esmm_relation():
     execution = _zero_head()({"shared": torch.zeros(2, 4)})
 
     result = ObjectiveEngine(_esmm_contract())(
@@ -110,8 +110,8 @@ def test_objective_engine_uses_probability_bce_after_esmm_relation():
 
     assert result.total is not None
     assert torch.allclose(result.losses["click_loss"], torch.tensor(0.6931472))
-    assert torch.allclose(result.losses["conversion_loss"], torch.tensor(1.3862944))
-    assert torch.allclose(result.total, torch.tensor(2.0794415))
+    assert torch.allclose(result.losses["conversion_loss"], torch.tensor(0.1949476), atol=1e-6)
+    assert torch.allclose(result.total, torch.tensor(0.8880948), atol=1e-6)
 
 
 def test_objective_engine_rejects_runtime_kind_mismatch():
@@ -141,6 +141,20 @@ def test_objective_engine_supports_bce_pos_weight():
 
     assert result.total is not None
     assert torch.allclose(result.total, torch.tensor(1.3862944))
+
+
+def test_objective_engine_supports_focal_bce_with_logits():
+    contract = _single_objective_contract(
+        "binary_logit",
+        {"type": "focal_binary_cross_entropy_with_logits"},
+    )
+    nodes = ModelOutput()
+    nodes.insert_binary_logit("prediction", torch.zeros(1, 1))
+
+    result = ObjectiveEngine(contract)(nodes, {"label": [1]})
+
+    assert result.total is not None
+    assert torch.allclose(result.total, torch.tensor(0.1732868), atol=1e-6)
 
 
 def test_objective_engine_clamps_probability_bce():

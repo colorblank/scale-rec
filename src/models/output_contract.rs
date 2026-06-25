@@ -125,6 +125,12 @@ pub struct ContractLoss {
     /// Huber delta.
     #[serde(default)]
     pub delta: Option<f64>,
+    /// Focal loss alpha.
+    #[serde(default)]
+    pub alpha: Option<f64>,
+    /// Focal loss gamma.
+    #[serde(default)]
+    pub gamma: Option<f64>,
 }
 
 fn default_reduction() -> String {
@@ -385,10 +391,12 @@ impl OutputContract {
             validate_loss(&objective.loss)?;
             let kind = kinds[&objective.source];
             let allowed = match objective.loss.loss_type.as_str() {
-                "binary_cross_entropy_with_logits" | "weighted_bce_stay" => {
-                    kind == ContractNodeKind::BinaryLogit
+                "binary_cross_entropy_with_logits"
+                | "focal_binary_cross_entropy_with_logits"
+                | "weighted_bce_stay" => kind == ContractNodeKind::BinaryLogit,
+                "focal_binary_cross_entropy" | "binary_cross_entropy" => {
+                    kind == ContractNodeKind::Probability
                 }
-                "binary_cross_entropy" => kind == ContractNodeKind::Probability,
                 "mse" | "mae" | "huber" => {
                     matches!(kind, ContractNodeKind::Regression | ContractNodeKind::Score)
                 }
@@ -409,7 +417,7 @@ impl OutputContract {
             validate_mask(metric.mask.as_ref(), &format!("metric '{}'", metric.name))?;
             let kind = kinds[&metric.source];
             let allowed = match metric.metric_type.as_str() {
-                "auc" => matches!(
+                "auc" | "prauc" => matches!(
                     kind,
                     ContractNodeKind::BinaryLogit | ContractNodeKind::Probability
                 ),
@@ -520,19 +528,31 @@ fn infer_relation_kind(
 }
 
 fn canonical_objective(objective: &ContractObjective) -> serde_json::Value {
-    let epsilon = objective
-        .loss
-        .epsilon
-        .or_else(|| (objective.loss.loss_type == "binary_cross_entropy").then_some(1e-7));
+    let epsilon = objective.loss.epsilon.or_else(|| {
+        matches!(
+            objective.loss.loss_type.as_str(),
+            "binary_cross_entropy" | "focal_binary_cross_entropy"
+        )
+        .then_some(1e-7)
+    });
     let delta = objective
         .loss
         .delta
         .or_else(|| (objective.loss.loss_type == "huber").then_some(1.0));
+    let gamma = objective.loss.gamma.or_else(|| {
+        matches!(
+            objective.loss.loss_type.as_str(),
+            "focal_binary_cross_entropy" | "focal_binary_cross_entropy_with_logits"
+        )
+        .then_some(2.0)
+    });
     serde_json::json!({
         "label": objective.label,
         "loss": {
+            "alpha": objective.loss.alpha.map(canonical_float),
             "delta": delta.map(canonical_float),
             "epsilon": epsilon.map(canonical_float),
+            "gamma": gamma.map(canonical_float),
             "pos_weight": objective.loss.pos_weight.map(canonical_float),
             "reduction": objective.loss.reduction,
             "type": objective.loss.loss_type,
@@ -560,15 +580,19 @@ fn validate_loss(loss: &ContractLoss) -> Result<(), String> {
         return Err("loss reduction must be mean or sum".into());
     }
     let allowed = match loss.loss_type.as_str() {
-        "binary_cross_entropy_with_logits" => (false, true, false),
-        "binary_cross_entropy" => (true, false, false),
-        "mse" | "mae" | "weighted_bce_stay" => (false, false, false),
-        "huber" => (false, false, true),
+        "binary_cross_entropy_with_logits" => (false, true, false, false, false),
+        "focal_binary_cross_entropy_with_logits" => (false, false, false, true, true),
+        "binary_cross_entropy" => (true, false, false, false, false),
+        "focal_binary_cross_entropy" => (true, false, false, true, true),
+        "mse" | "mae" | "weighted_bce_stay" => (false, false, false, false, false),
+        "huber" => (false, false, true, false, false),
         _ => return Err(format!("loss type '{}' is unsupported", loss.loss_type)),
     };
     if loss.epsilon.is_some() && !allowed.0
         || loss.pos_weight.is_some() && !allowed.1
         || loss.delta.is_some() && !allowed.2
+        || loss.alpha.is_some() && !allowed.3
+        || loss.gamma.is_some() && !allowed.4
     {
         return Err(format!(
             "loss {} has parameters that are not valid",
@@ -576,7 +600,11 @@ fn validate_loss(loss: &ContractLoss) -> Result<(), String> {
         ));
     }
     let epsilon = loss.epsilon.unwrap_or(1e-7);
-    if loss.loss_type == "binary_cross_entropy" && !(0.0..0.5).contains(&epsilon) {
+    if matches!(
+        loss.loss_type.as_str(),
+        "binary_cross_entropy" | "focal_binary_cross_entropy"
+    ) && !(0.0..0.5).contains(&epsilon)
+    {
         return Err("binary_cross_entropy epsilon must be between 0 and 0.5".into());
     }
     if loss
@@ -590,6 +618,20 @@ fn validate_loss(loss: &ContractLoss) -> Result<(), String> {
         .is_some_and(|value| !value.is_finite() || value <= 0.0)
     {
         return Err("loss delta must be > 0".into());
+    }
+    if loss
+        .alpha
+        .is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
+    {
+        return Err("loss alpha must be between 0 and 1".into());
+    }
+    let gamma = loss.gamma.unwrap_or(2.0);
+    if matches!(
+        loss.loss_type.as_str(),
+        "focal_binary_cross_entropy" | "focal_binary_cross_entropy_with_logits"
+    ) && (!gamma.is_finite() || gamma < 0.0)
+    {
+        return Err("loss gamma must be >= 0".into());
     }
     Ok(())
 }
@@ -705,5 +747,22 @@ mod tests {
         let expected = CANONICAL.trim();
         assert_eq!(original.canonical_json().unwrap(), expected);
         assert_eq!(reordered.canonical_json().unwrap(), expected);
+    }
+
+    #[test]
+    fn prauc_accepts_binary_classification_outputs() {
+        let fixtures: Cases = serde_yaml::from_str(include_str!(
+            "../../tests/fixtures/output_contract_cases.yaml"
+        ))
+        .unwrap();
+        let mut contract = fixtures
+            .cases
+            .into_iter()
+            .find(|case| case.name == "valid_esmm")
+            .unwrap()
+            .contract;
+        contract.metrics[0].metric_type = "prauc".into();
+
+        contract.validate(None).unwrap();
     }
 }

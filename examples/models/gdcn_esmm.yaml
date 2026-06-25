@@ -10,7 +10,7 @@ label_col_map:
   stay: stay_time_label
 tasks:
   - {name: click, label: is_click, loss: bce, metrics: [auc, logloss]}
-  - {name: cvr, label: is_cvr, loss: bce, metrics: [auc, logloss]}
+  - {name: cvr, label: is_cvr, loss: focal, metrics: [auc, logloss]}
   - {name: detail, label: is_click_detail, loss: bce, metrics: [auc, logloss]}
   - {name: stock, label: is_click_stock, loss: bce, metrics: [auc, logloss]}
   - {name: stay, label: stay_time_label, loss: weighted_bce_stay, metrics: [mae, mse]}

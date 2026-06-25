@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""AUC / GAUC 计算。"""
+"""AUC / PR-AUC / GAUC 计算。"""
 import numpy as np
 
 
@@ -19,6 +19,24 @@ def _auc(labels: np.ndarray, probs: np.ndarray) -> float:
     cum_neg = np.cumsum(1 - y)
     pos_mask = y == 1
     return float(np.sum(n_neg - cum_neg[pos_mask]) / (n_pos * n_neg))
+
+
+def _prauc(labels: np.ndarray, probs: np.ndarray) -> float:
+    """PR-AUC as average precision, grouping samples with tied scores."""
+    n_pos = int(labels.sum())
+    if n_pos == 0:
+        return 0.0
+
+    order = np.argsort(probs, kind="stable")[::-1]
+    y = labels[order]
+    scores = probs[order]
+    threshold_ends = np.r_[np.flatnonzero(scores[1:] != scores[:-1]), len(scores) - 1]
+    true_positives = np.cumsum(y)[threshold_ends]
+    false_positives = 1 + threshold_ends - true_positives
+    precision = true_positives / (true_positives + false_positives)
+    recall = true_positives / n_pos
+    recall_delta = np.diff(np.r_[0.0, recall])
+    return float(np.sum(precision * recall_delta))
 
 
 def gauc(labels: np.ndarray, probs: np.ndarray, group_ids: np.ndarray) -> float:

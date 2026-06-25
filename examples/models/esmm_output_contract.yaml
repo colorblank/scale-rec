@@ -27,7 +27,7 @@ output_contract:
     - name: cvr_loss
       source: ctcvr_prob
       label: is_cvr
-      loss: {type: binary_cross_entropy}
+      loss: {type: focal_binary_cross_entropy, alpha: 0.25, gamma: 2.0}
     - name: detail_loss
       source: ctdetail_prob
       label: is_click_detail
