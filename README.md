@@ -99,7 +99,12 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 - `python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.safetensors`
 - `python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.manifest.yaml`
 - `python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/configs/` 下的特征配置和模型配置副本
-- `python/artifacts/demo/model_gdcn_esmm/20260526_120000/` 下的 run checkpoint 和 `run.manifest.yaml`
+- `python/artifacts/demo/model_gdcn_esmm/20260526_120000/` 下的 run checkpoint、`run.manifest.yaml` 和 `embedding_bucket_report.yaml`
+
+训练器会在所有实际执行反向传播的 batch 上累计每个 embedding bucket 的命中次数，
+并把统计状态写入 checkpoint，断点续训后继续累计。最终发布时，`DictMapper`、
+`FeatureHash`、`ParsedFeatureHash` 和 `ConcatHash` 的零命中 row 会在 serving 权重中
+替换为该表活跃 row 的均值；训练 checkpoint 保持原始权重不变。
 
 详细保存逻辑见 [训练手册 - 保存与推理导出](docs/TRAINING_GUIDE.md#保存与推理导出)。
 
@@ -166,6 +171,7 @@ serving manifest 记录：
 - `weights_file`、`feature_config_file`、`model_config_file`
 - 权重、特征配置、模型配置的 sha256
 - `weight_binding`
+- `embedding_bucket_report_file`
 - tasks、label mapping、metrics 等训练元数据
 
 服务启动时：

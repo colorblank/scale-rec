@@ -297,7 +297,7 @@ raw sample / request
 - 配置兼容策略：feature config、model config、manifest schema 的版本兼容规则尚未系统化。
 - 模型/operator 参数严格校验：Rust/Python 对未知字段、错误类型、缺失必填参数的处理仍不一致。
 - 线上可观测性：已有 parse/dag/tensor/forward/response 耗时，但缺少 default hit rate、空序列比例、截断次数、FeatureHash cache、broadcast 子图 skip 数等指标。
-- 数据质量闭环：训练侧有 feature quality summary，但还没有进入 manifest、服务端查询和线上日志链路。
+- 数据质量闭环：验证集 feature quality summary 已进入 manifest；完整训练流的 embedding bucket report 已生成并由 manifest 引用，但服务端查询和线上日志链路仍未暴露。
 - CI/CD 自动化：缺少自动化质量闸门。
 - 类型检查：mypy 对核心模块仍大面积 `ignore_errors = true`。
 
@@ -381,7 +381,7 @@ raw sample / request
 1. 增加模型发布索引文件，记录 default/canary/rollback/alias/routing 变更。
 2. 增加 Prometheus/OpenTelemetry 指标导出，至少覆盖请求量、错误量、延迟分段、batch size、broadcast item count。
 3. 增加 feature 质量和默认值命中指标：default hit rate、empty sequence、truncation、FeatureHash cache hit/miss/size。
-4. 将训练侧 feature quality summary 写入 manifest，并在 `/models` 或 feature contract 查询中暴露。
+4. ~~将完整训练流 embedding bucket report 写入发布产物并由 manifest 引用。~~ ✅ 已完成；下一步在 `/models` 或 feature contract 查询中暴露摘要。
 5. 插件机制增加 allowlist、禁用开关和路径 canonicalize 校验；生产默认禁用动态插件。
 6. 增加 `cargo-audit` / `cargo-deny`、Dependabot/Renovate 和 `.pre-commit-config.yaml`。
 7. 渐进启用 ruff `I`、`B`、`UP`、`SIM`，逐步移除 mypy `ignore_errors`。
@@ -403,7 +403,7 @@ raw sample / request
 4. ~~标准化 operator 注册和 operator type 分发，降低新增算子的 Rust/Python 双端维护成本。~~ ✅ 已完成，双端均使用 registry 模式和 `OpType` 枚举。
 5. ~~为模型 state_dict key 对齐建立自动化测试或导出检查脚本。~~ ✅ 已新增 `check_weight_bindings.py` 和 `validate_manifest`，后续需纳入 CI。
 6. 建立模型发布、回滚、灰度和兼容检查流程，把 runtime alias/routing 接入持久化控制面。
-7. 将训练侧 feature quality 写入 manifest，并在服务端加载后可查询。
+7. 将 manifest 已引用的 embedding bucket report 和 feature quality 摘要在服务端加载后可查询。
 
 ## 7. 推荐执行路线
 

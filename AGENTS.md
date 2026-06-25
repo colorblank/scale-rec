@@ -149,6 +149,15 @@ Python model `state_dict` keys MUST match Candle `VarBuilder::pp()` paths exactl
 
 When adding new layers or models, verify naming by checking `print_state_dict_keys(model)` (from `export.py`) against the corresponding Rust `VarBuilder::pp()` paths.
 
+### Embedding bucket tracking and serving export
+
+- `EmbeddingBucketTracker` 在所有实际执行反向传播的训练 batch 上累计完整 bucket hit count；没有 loss 的 batch 不计入。
+- tracker 状态保存在 `.resume.pt` 中，断点续训必须恢复并继续累计。
+- run 目录输出 `embedding_bucket_report.yaml`，serving manifest 通过 `embedding_bucket_report_file` 引用该报告。
+- `DictMapper`、`FeatureHash`、`ParsedFeatureHash`、`ConcatHash` 的零命中 row 只在最终 serving safetensors 中替换为活跃 row 均值；checkpoint 权重禁止修改。
+- `DictMapper.default_idx` 没有命中时同样使用活跃 row 均值。整张表没有任何活跃 bucket 时必须拒绝发布。
+- Python/Rust 推理一致性比较必须按 `OutputKind` 使用 serving 语义：`binary_logit` 先 sigmoid，`probability/regression/score` 保持原值。
+
 ### Rust-specific notes
 
 - `candle-core` 0.10 and `candle-nn` 0.10 — pre-1.0 APIs, some methods differ from latest

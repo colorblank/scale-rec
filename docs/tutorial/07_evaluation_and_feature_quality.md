@@ -82,6 +82,28 @@ task 覆盖。原生模型只计算 `output_contract.metrics` 显式声明的指
 
 这些指标最后会进入 run manifest，方便你回头判断是模型问题还是数据问题。
 
+## 完整训练流的 bucket 命中报告
+
+验证集抽样的 `bucket_utilization` 适合快速发现数据异常，但不能回答“整个训练过程中
+哪些 embedding row 从未被 lookup”。为此，`EmbeddingBucketTracker` 会在所有实际
+执行反向传播的 batch 上累计完整命中次数。
+
+结果写入 run 目录的 `embedding_bucket_report.yaml`。每个特征包含：
+
+- `operator_type`
+- `vocab_size`
+- `total_hits`
+- `active_buckets` / `inactive_buckets`
+- `bucket_utilization`
+- `inactive_bucket_ids`
+- `bucket_hits`
+
+tracker 状态随 checkpoint 保存和恢复，因此多 epoch、周期 checkpoint 和断点续训都
+使用同一份累计口径。没有产生监督 loss 的 batch 不计入。
+
+这里的“激活”定义是实际 embedding lookup，而不是检查梯度 hook。当前序列 pooling
+没有 padding mask，所以 padding bucket 如果参与 lookup，也会被统计为命中。
+
 ## 怎样解读常见异常
 
 几个经验判断：
@@ -91,6 +113,8 @@ task 覆盖。原生模型只计算 `output_contract.metrics` 显式声明的指
 - `empty_sequence_rate` 高，通常是序列解析或上游字段缺失。
 - `padding_rate` 高，通常是序列长度设太长或实际行为太稀疏。
 - `bucket_utilization` 过低，通常是 hash 空间过大或样本量太小。
+- `DictMapper` 的配置 bucket 零命中，通常说明枚举配置与训练数据不一致，应结合业务重要性告警或阻断发布。
+- hash 特征存在大量零命中 bucket 不代表这些 bucket 永远无效；线上新 key 仍可能映射到它们。
 
 ## 训练日志里重点看什么
 

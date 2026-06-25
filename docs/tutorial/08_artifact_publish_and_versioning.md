@@ -20,6 +20,7 @@ python/artifacts/demo/
     │   └── configs/
     │       ├── feature_config.yaml
     │       └── model_config.yaml
+    ├── embedding_bucket_report.yaml
     └── run.manifest.yaml
 ```
 
@@ -34,6 +35,7 @@ python/artifacts/demo/
 - 哪个是 latest。
 - 训练过程中保存过哪些 checkpoint。
 - 本次 run 的 published 权重路径是什么。
+- 完整训练流的 embedding bucket 报告路径是什么。
 
 ### model.manifest.yaml
 
@@ -50,6 +52,7 @@ python/artifacts/demo/
 - `tasks`
 - `label_col_map`
 - `metrics`
+- `embedding_bucket_report_file`
 
 Rust 服务加载模型时，优先看这份 manifest，而不是裸权重文件。
 
@@ -81,6 +84,28 @@ manifest 继续记录由训练构建阶段派生出的 `tasks/label_col_map/metr
 - `published`：最终给线上加载的文件。
 
 默认发布通常会选 `best`，但也可以显式发布 `latest` 或某个别名路径。
+
+## 发布权重为什么可能不同于 best checkpoint
+
+checkpoint 用于恢复训练，必须保留训练结束时的原始参数。serving 权重面向未来线上
+请求，还需要处理训练期间从未命中的 embedding bucket。
+
+发布流程会对以下算子的零命中 row 使用各自 embedding 表的活跃 row 均值：
+
+- `DictMapper`，包括零命中的 `default_idx`
+- `FeatureHash`
+- `ParsedFeatureHash`
+- `ConcatHash`
+
+这个处理不改变 `vocab_size`、bucket id 或 Python/Rust 哈希协议，只改变最终 serving
+safetensors 中的 row 内容。DeepFM 等模型如果为同一特征维护多张 embedding 表，会
+分别计算均值。整张表没有任何活跃 bucket 时发布失败。
+
+因此：
+
+- `best.safetensors` / `latest.safetensors` / `checkpoints/*` 是原始训练权重。
+- `serving/model.safetensors` 是经过零命中 row 规范化的发布权重。
+- `embedding_bucket_report.yaml` 提供该处理的审计依据。
 
 ## 发布路径如何决定
 
@@ -116,5 +141,7 @@ manifest 继续记录由训练构建阶段派生出的 `tasks/label_col_map/metr
    的 `output_contract`。
 4. `label_col_map` 没写错。
 5. `model_version` 和发布目录版本一致。
+6. `embedding_bucket_report_file` 存在，且没有整张表零激活。
+7. 用 `validate_manifest` 校验 Rust manifest schema 和权重绑定。
 
 下一章讲 Rust 在线推理服务。那部分会说明 registry 怎么加载 manifest、`/predict` 和 `/predict/broadcast` 怎么走，以及版本和别名如何路由。

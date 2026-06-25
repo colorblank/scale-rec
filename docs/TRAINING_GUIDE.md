@@ -330,6 +330,20 @@ for name, tensor in tensors.items():
 
 对于多日训练，验证集来自最后日期文件，因此 feature quality 也反映最后日期文件的分布。排查日切数据漂移时，优先看最后日期文件的这些指标。
 
+上述 `feature_quality.*` 是验证集抽样摘要，不等同于完整训练词表覆盖率。训练器还会在
+每个实际执行反向传播的 batch 上累计所有 embedding lookup，并输出
+`embedding_bucket_report.yaml`。报告按特征记录：
+
+- `operator_type`、`vocab_size`、`training_steps`
+- `total_hits`、`active_buckets`、`inactive_buckets`
+- `bucket_utilization`
+- `inactive_bucket_ids`
+- 与 bucket id 一一对应的完整 `bucket_hits`
+
+该统计跨 epoch 累计，并写入 `.resume.pt`；从 checkpoint 恢复时不会丢失前半段训练
+命中记录。当前 embedding pooling 没有 padding mask，因此 padding bucket 只要实际
+参与 lookup，也会按真实训练行为计数。
+
 ### 5. 常见问题定位
 
 - 某列 `missing_rate` 很高：检查 TSV header/no-header、列顺序、`--separator`、`--null-markers`、`usecols` 是否和 feature config 一致。
@@ -772,6 +786,7 @@ python/artifacts/demo/model_gdcn_esmm/20260526_120000/
 ├── best.resume.pt
 ├── latest.safetensors
 ├── latest.resume.pt
+├── embedding_bucket_report.yaml
 └── run.manifest.yaml
 ```
 
@@ -789,6 +804,7 @@ python/artifacts/demo/model_gdcn_esmm/20260526_120000/
 | `best.resume.pt` | `best.safetensors` 对应的训练状态别名，可直接用于 `--resume-from` |
 | `latest.safetensors` | 最新 checkpoint 的别名，由 `publish_latest` 控制，默认启用 |
 | `latest.resume.pt` | `latest.safetensors` 对应的训练状态别名，可直接用于 `--resume-from` |
+| `embedding_bucket_report.yaml` | 完整监督训练流的 embedding bucket 命中报告 |
 | `run.manifest.yaml` | 训练过程记录，包含 checkpoint 历史、best/latest、发布路径和配置路径 |
 
 `keep_checkpoints` 默认保留 3 个历史 checkpoint，超过后从最旧记录开始删除。`run.manifest.yaml` 是训练记录，不会被 Rust 服务当作 serving manifest 加载。对于超大数据集，建议把 `checkpoint_interval_steps` 或 `checkpoint_interval_seconds` 设为非 0，避免只在 epoch 结束时才落盘。周期 checkpoint 会使用 `periodic-epoch-...` 版本名，与 epoch 末尾保存的正式 checkpoint 区分开。需要恢复中断训练时，直接传入 `--resume-from <checkpoint.safetensors|resume.pt>`，训练器会恢复完整训练状态并从对应 epoch/batch 继续。
@@ -803,7 +819,15 @@ python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/
 └── model.manifest.yaml
 ```
 
-训练结束时，如果存在 best checkpoint，发布权重默认复制 `best.safetensors`；否则导出当前模型参数。serving manifest 由 `python/src/train/app/manifest.py` 写入，记录：
+训练结束时，如果存在 best checkpoint，发布权重默认复制 `best.safetensors`；否则导出当前模型参数。复制或导出完成后，发布流程会根据完整 bucket 报告规范化零命中 embedding row：
+
+- `DictMapper`：所有零命中 bucket，包括没有命中的 `default_idx`，替换为该表活跃 row 均值。
+- `FeatureHash`、`ParsedFeatureHash`、`ConcatHash`：零命中 bucket 未来仍可能被线上新 key 命中，因此保留词表和索引不变，只替换 row 内容为活跃 row 均值。
+- 同一特征在 DeepFM 等模型中对应多张 embedding 表时，每张表独立计算均值。
+- 整张表没有活跃 bucket 时拒绝发布，避免生成无法解释的 serving 权重。
+- 该处理只修改最终 serving safetensors，不修改 `best/latest/checkpoints`，因此不影响 resume。
+
+serving manifest 由 `python/src/train/app/manifest.py` 写入，记录：
 
 | 字段 | 说明 |
 |---|---|
@@ -816,6 +840,7 @@ python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/
 | `feature_config_file` / `feature_config_sha256` | 特征配置路径和 sha256 |
 | `model_config_file` / `model_config_sha256` | 模型配置路径和 sha256 |
 | `weight_binding` | safetensors 权重命名、prefix 和校验策略 |
+| `embedding_bucket_report_file` | 当前发布权重对应的完整 bucket 命中报告 |
 | `tasks` / `label_col_map` / `metrics` | 任务、标签映射和训练指标 |
 
 当前 CLI 没有暴露 `copy_configs` 参数，默认 `copy_configs=true`。因此每次训练都会把 feature/model config 复制到当前 run 的 `serving/configs/` 目录，并让 serving manifest 指向这份随发布权重归档的配置副本。
