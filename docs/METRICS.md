@@ -28,6 +28,7 @@ scrape_configs:
 | `scale_rec_inference_stage_duration_seconds` | Histogram | `route,model,stage` | `parse/dag/tensor/forward/response` 分阶段耗时 |
 | `scale_rec_feature_default_values_total` | Counter | `route,model` | 请求缺字段而使用默认值的次数 |
 | `scale_rec_feature_empty_sequences_total` | Counter | `route,model` | 空序列特征次数 |
+| `scale_rec_dict_mapper_default_hits_total` | Counter | `route,model,operator` | DictMapper 未命中并回退到 `default_idx` 的元素数 |
 | `scale_rec_model_loaded` | Gauge | `model,version,model_type,is_default` | 当前加载的模型版本 |
 | `scale_rec_process_start_time_seconds` | Gauge | — | 服务启动时间 |
 | `scale_rec_build_info` | Gauge | `version` | 构建版本信息 |
@@ -221,6 +222,45 @@ feature_empty_sequences_total[route, model] += empty_sequence_hits
 
 计数单位是“空序列字段值”。失败请求中已发现的空序列不会导出到 Counter。
 
+### `scale_rec_dict_mapper_default_hits_total`
+
+仅在成功推理后，按配置中的 DictMapper operator name 累加本次 DAG 执行期间的真实映射
+未命中次数：
+
+```text
+dict_mapper_default_hits_total[route, model, operator] += mapping_miss_count
+```
+
+计数发生在 `mapping.get(key)` 查询处，不通过“输出是否等于 `default_idx`”反推。因此：
+
+- 字符串标量 key 不在 mapping 中：增加 1。
+- 整数标量先转为十进制字符串再查询；不在 mapping 中增加 1。
+- 字符串列表逐元素查询，每个未知元素分别增加 1。
+- 不受支持的输入类型直接回退到 `default_idx`：该行增加 1。
+- 空列表没有待查询元素，因此增加 0。
+- 已知 key 即使配置值恰好等于 `default_idx`，也增加 0。
+
+`operator` label 使用 feature config 中有限集合的 operator `name`，不使用原始 key、
+mapping 内容或输入值。
+
+pointwise `/predict` 中，每个样本的 DictMapper 输入都会执行并统计。
+
+broadcast `/predict/broadcast` 中按实际 DAG 执行次数统计：
+
+- user-only DictMapper 在预计算阶段执行一次，因此 user key 未命中增加 1，而不是按 item
+  数量放大。
+- item/context DictMapper 在候选 batch 阶段逐 item 执行，未知元素按候选数量累加。
+- 被 broadcast 预计算跳过的算子不会重复计数。
+
+当多个执行阶段产生同名 operator 统计时，请求内先按 operator name 求和，再累加到
+Prometheus Counter。解析、DAG 或模型执行失败的请求不提交本次 operator 统计。
+
+它与 `scale_rec_feature_default_values_total` 的区别：
+
+- `feature_default_values_total`：请求根本没有提供 source 字段。
+- `dict_mapper_default_hits_total`：请求提供了值，但值不在 DictMapper mapping 中，或
+  输入类型无法映射。
+
 ### `scale_rec_model_loaded`
 
 该 Gauge 不保存在指标状态中，而是在每次 `/metrics` scrape 时读取
@@ -283,6 +323,7 @@ scale_rec_build_info{version="<Cargo package version>"} 1
 - `scale_rec_inference_in_flight` 持续接近 `max_concurrency`。
 - `FEATURE_ERROR`、`MODEL_ERROR` 或 `INTERNAL_ERROR` 在 5 分钟内出现。
 - 默认值或空序列速率相对过去一小时基线上升 3 倍。
+- DictMapper default hit 比例相对历史基线上升，或低基数枚举出现持续未知 key。
 - 预期模型版本的 `scale_rec_model_loaded` 缺失，或默认版本发生非计划变化。
 - `rate_limited` 路由的 HTTP 429 持续出现。
 

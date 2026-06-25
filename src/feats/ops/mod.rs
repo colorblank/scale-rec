@@ -132,4 +132,21 @@ pub trait CustomOp: Send + Sync {
         }
         Ok(results)
     }
+
+    /// Batch 处理并返回算子运行统计；默认算子不产生额外统计。
+    fn process_batch_with_stats(
+        &self,
+        inputs: &[&[Fv]],
+        n_rows: usize,
+    ) -> Result<(Vec<Fv>, OpExecutionStats), String> {
+        self.process_batch(inputs, n_rows)
+            .map(|output| (output, OpExecutionStats::default()))
+    }
+}
+
+/// 单次算子 batch 执行产生的通用统计。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OpExecutionStats {
+    /// 字典映射未命中并回退到 `default_idx` 的元素数量。
+    pub dict_mapper_default_hits: u64,
 }

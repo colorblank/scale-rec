@@ -1,5 +1,5 @@
 //! 字典映射算子：字符串/整数到索引的映射。
-use super::{CustomOp, Fv};
+use super::{CustomOp, Fv, OpExecutionStats};
 use std::collections::HashMap;
 
 /// 字典映射算子。
@@ -26,6 +26,13 @@ impl DictMapper {
 
     fn map_one(&self, key: &str) -> i32 {
         self.mapping.get(key).copied().unwrap_or(self.default_idx)
+    }
+
+    fn map_one_with_hit(&self, key: &str) -> (i32, bool) {
+        match self.mapping.get(key) {
+            Some(value) => (*value, false),
+            None => (self.default_idx, true),
+        }
     }
 }
 
@@ -62,18 +69,52 @@ impl CustomOp for DictMapper {
     }
 
     fn process_batch(&self, inputs: &[&[Fv]], n_rows: usize) -> Result<Vec<Fv>, String> {
+        self.process_batch_with_stats(inputs, n_rows)
+            .map(|(output, _)| output)
+    }
+
+    fn process_batch_with_stats(
+        &self,
+        inputs: &[&[Fv]],
+        n_rows: usize,
+    ) -> Result<(Vec<Fv>, OpExecutionStats), String> {
         let col = inputs[0];
         let mut results = Vec::with_capacity(n_rows);
+        let mut default_hits = 0u64;
         for i in 0..n_rows {
             let out = match &col[i] {
-                Fv::Str(s) => Fv::Int(self.map_one(s)),
-                Fv::Int(n) => Fv::Int(self.map_one(&n.to_string())),
-                Fv::StrList(list) => Fv::IntList(list.iter().map(|s| self.map_one(s)).collect()),
-                _ => Fv::Int(self.default_idx),
+                Fv::Str(s) => {
+                    let (value, missed) = self.map_one_with_hit(s);
+                    default_hits += u64::from(missed);
+                    Fv::Int(value)
+                }
+                Fv::Int(n) => {
+                    let (value, missed) = self.map_one_with_hit(&n.to_string());
+                    default_hits += u64::from(missed);
+                    Fv::Int(value)
+                }
+                Fv::StrList(list) => Fv::IntList(
+                    list.iter()
+                        .map(|key| {
+                            let (value, missed) = self.map_one_with_hit(key);
+                            default_hits += u64::from(missed);
+                            value
+                        })
+                        .collect(),
+                ),
+                _ => {
+                    default_hits += 1;
+                    Fv::Int(self.default_idx)
+                }
             };
             results.push(out);
         }
-        Ok(results)
+        Ok((
+            results,
+            OpExecutionStats {
+                dict_mapper_default_hits: default_hits,
+            },
+        ))
     }
 }
 
@@ -91,5 +132,24 @@ mod tests {
     fn test_unknown_default() {
         let op = DictMapper::new([("a".into(), 1)].into(), 99);
         assert_eq!(op.process(&[Fv::Str("x".into())]).unwrap(), Fv::Int(99));
+    }
+
+    #[test]
+    fn batch_stats_count_only_actual_mapping_misses() {
+        let op = DictMapper::new(
+            [("known".into(), 1), ("same_as_default".into(), 99)].into(),
+            99,
+        );
+        let input = vec![
+            Fv::Str("known".into()),
+            Fv::Str("missing".into()),
+            Fv::Str("same_as_default".into()),
+            Fv::StrList(vec!["known".into(), "missing2".into()]),
+            Fv::Float(1.0),
+        ];
+
+        let (_, stats) = op.process_batch_with_stats(&[&input], input.len()).unwrap();
+
+        assert_eq!(stats.dict_mapper_default_hits, 3);
     }
 }

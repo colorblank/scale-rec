@@ -196,6 +196,14 @@ impl PrometheusMetrics {
             Labels::new(&[("route", route), ("model", model)]),
             metrics.empty_sequence_hits,
         );
+        for (operator, hits) in &metrics.dict_mapper_default_hits {
+            increment_counter(
+                &mut state,
+                "scale_rec_dict_mapper_default_hits_total",
+                Labels::new(&[("route", route), ("model", model), ("operator", operator)]),
+                *hits,
+            );
+        }
     }
 
     /// 按 Prometheus text exposition format 导出当前指标。
@@ -249,6 +257,12 @@ impl PrometheusMetrics {
             &state,
             "scale_rec_feature_empty_sequences_total",
             "Total empty feature sequences observed in inference requests.",
+        );
+        render_counter(
+            &mut output,
+            &state,
+            "scale_rec_dict_mapper_default_hits_total",
+            "Total DictMapper elements missing from mapping and falling back to default_idx.",
         );
         render_counter(
             &mut output,
@@ -420,6 +434,7 @@ mod tests {
                 response_us: 500,
                 default_value_hits: 2,
                 empty_sequence_hits: 1,
+                dict_mapper_default_hits: HashMap::from([("scene_mapper".to_string(), 3)]),
             }),
         );
 
@@ -431,5 +446,8 @@ mod tests {
         assert!(output.contains("model=\"ranker\\\"blue\""));
         assert!(output.contains("stage=\"forward\""));
         assert!(output.contains("scale_rec_feature_default_values_total"));
+        assert!(output.contains(
+            "scale_rec_dict_mapper_default_hits_total{route=\"/predict\",model=\"ranker\\\"blue\",operator=\"scene_mapper\"} 3"
+        ));
     }
 }

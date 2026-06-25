@@ -1,5 +1,5 @@
 //! DAG 执行器：ExecutionPlan + DagExecutor，统一 plan-based 执行路径。
-use super::ops::{CustomOp, Fv};
+use super::ops::{CustomOp, Fv, OpExecutionStats};
 use crate::feats::config::SourceDef;
 use std::collections::{HashMap, HashSet};
 
@@ -25,6 +25,15 @@ pub struct ExecutionPlan {
     source_defaults: Vec<Fv>,
     col_count: usize,
     embed_ids: Vec<usize>,
+}
+
+/// 单个配置算子在一次计划执行中的运行统计。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperatorExecutionStats {
+    /// 配置中的 operator name。
+    pub operator: String,
+    /// 算子统计值。
+    pub stats: OpExecutionStats,
 }
 
 impl ExecutionPlan {
@@ -58,9 +67,20 @@ impl ExecutionPlan {
         skip_op_idx: &HashSet<usize>,
         precomputed: &HashMap<usize, Fv>,
     ) -> Result<Vec<Vec<Fv>>, String> {
+        self.execute_plan_with_stats(columns, skip_op_idx, precomputed)
+            .map(|(context, _)| context)
+    }
+
+    /// 执行预编译计划，同时返回有非零值的算子运行统计。
+    pub fn execute_plan_with_stats(
+        &self,
+        columns: &HashMap<String, Vec<Fv>>,
+        skip_op_idx: &HashSet<usize>,
+        precomputed: &HashMap<usize, Fv>,
+    ) -> Result<(Vec<Vec<Fv>>, Vec<(usize, OpExecutionStats)>), String> {
         let n_rows = columns.values().next().map(|v| v.len()).unwrap_or(0);
         if n_rows == 0 {
-            return Ok(Vec::new());
+            return Ok((Vec::new(), Vec::new()));
         }
 
         let mut context: Vec<Vec<Fv>> = vec![Vec::with_capacity(n_rows); self.col_count];
@@ -90,6 +110,7 @@ impl ExecutionPlan {
             }
         }
 
+        let mut op_stats = Vec::new();
         for step in &self.steps {
             if skip_op_idx.contains(&step.op_idx) {
                 continue;
@@ -109,14 +130,17 @@ impl ExecutionPlan {
                     })
                 })
                 .collect::<Result<_, String>>()?;
-            let result_vec = op
-                .process_batch(&input_slices, n_rows)
+            let (result_vec, stats) = op
+                .process_batch_with_stats(&input_slices, n_rows)
                 .map_err(|e| format!("step {}: {}", step.op_idx, e))?;
+            if stats != OpExecutionStats::default() {
+                op_stats.push((step.op_idx, stats));
+            }
             for &cid in &step.output_cols {
                 context[cid] = result_vec.clone();
             }
         }
-        Ok(context)
+        Ok((context, op_stats))
     }
 
     /// 返回可嵌入特征对应的列 id 列表。
@@ -166,6 +190,30 @@ impl DagExecutor {
         precomputed: &HashMap<usize, Fv>,
     ) -> Result<Vec<Vec<Fv>>, String> {
         self.plan.execute_plan(columns, skip_op_idx, precomputed)
+    }
+
+    /// 执行计划并将算子索引统计映射为配置 operator name。
+    pub fn execute_plan_with_stats(
+        &self,
+        columns: &HashMap<String, Vec<Fv>>,
+        skip_op_idx: &HashSet<usize>,
+        precomputed: &HashMap<usize, Fv>,
+    ) -> Result<(Vec<Vec<Fv>>, Vec<OperatorExecutionStats>), String> {
+        let (context, stats) =
+            self.plan
+                .execute_plan_with_stats(columns, skip_op_idx, precomputed)?;
+        let named_stats = stats
+            .into_iter()
+            .map(|(op_idx, stats)| OperatorExecutionStats {
+                operator: self
+                    .execution_order
+                    .get(op_idx)
+                    .cloned()
+                    .unwrap_or_else(|| format!("op_{op_idx}")),
+                stats,
+            })
+            .collect();
+        Ok((context, named_stats))
     }
 
     /// 返回内部预编译执行计划。

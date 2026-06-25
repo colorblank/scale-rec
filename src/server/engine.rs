@@ -8,6 +8,7 @@ use crate::feats::config::{DType, PoolingStrategy, TruncationSide};
 use crate::feats::dag::FeatureValue;
 use crate::feats::defaults::source_default;
 use crate::feats::executor::DagExecutor;
+use crate::feats::executor::OperatorExecutionStats;
 use crate::feats::ops::Fv;
 use crate::layers::embedding::FeatureSpec;
 use crate::models::Model;
@@ -30,6 +31,8 @@ pub struct InferenceMetrics {
     pub default_value_hits: u64,
     /// 请求中出现空序列的次数。
     pub empty_sequence_hits: u64,
+    /// 各 DictMapper 配置算子未命中并使用 `default_idx` 的元素数量。
+    pub dict_mapper_default_hits: HashMap<String, u64>,
 }
 
 /// 推理错误类型。
@@ -167,11 +170,12 @@ impl InferenceEngine {
 
         // Plan-based execution: zero HashMap during operator loop
         let start_dag = Instant::now();
-        let context = self
+        let (context, op_stats) = self
             .executor
-            .execute_plan(&columns, &HashSet::new(), &HashMap::new())
+            .execute_plan_with_stats(&columns, &HashSet::new(), &HashMap::new())
             .map_err(|e| InferenceError::feature(format!("DAG: {}", e)))?;
         metrics.dag_us = start_dag.elapsed().as_micros() as u64;
+        merge_dict_mapper_stats(&mut metrics.dict_mapper_default_hits, op_stats);
 
         let (predictions, tensor_us, forward_us, response_us) =
             self.extract_predictions_measured(&context, n)?;
@@ -273,14 +277,15 @@ impl InferenceEngine {
         metrics.parse_us = start_parse1.elapsed().as_micros() as u64;
 
         let start_dag1 = Instant::now();
-        let full_1 = self
+        let (full_1, precompute_stats) = self
             .executor
-            .execute_plan(
+            .execute_plan_with_stats(
                 &one,
                 &self.broadcast_precompute_skip_indices,
                 &HashMap::new(),
             )
             .map_err(|e| InferenceError::feature(format!("precompute: {}", e)))?;
+        merge_dict_mapper_stats(&mut metrics.dict_mapper_default_hits, precompute_stats);
 
         // Extract user-derived outputs (column IDs from user-only ops)
         let mut precomputed: HashMap<usize, Fv> = HashMap::new();
@@ -351,11 +356,12 @@ impl InferenceEngine {
         metrics.empty_sequence_hits = empty_sequences;
 
         let start_dag2 = Instant::now();
-        let context = self
+        let (context, batch_stats) = self
             .executor
-            .execute_plan(&columns, &self.user_op_indices, &precomputed)
+            .execute_plan_with_stats(&columns, &self.user_op_indices, &precomputed)
             .map_err(|e| InferenceError::feature(format!("DAG: {}", e)))?;
         metrics.dag_us = dag1_us + start_dag2.elapsed().as_micros() as u64;
+        merge_dict_mapper_stats(&mut metrics.dict_mapper_default_hits, batch_stats);
 
         let (predictions, tensor_us, forward_us, response_us) =
             self.extract_predictions_measured(&context, n)?;
@@ -413,6 +419,18 @@ impl InferenceEngine {
         let response_us = start_response.elapsed().as_micros() as u64;
 
         Ok((result, tensor_us, forward_us, response_us))
+    }
+}
+
+fn merge_dict_mapper_stats(
+    totals: &mut HashMap<String, u64>,
+    execution_stats: Vec<OperatorExecutionStats>,
+) {
+    for operator_stats in execution_stats {
+        let hits = operator_stats.stats.dict_mapper_default_hits;
+        if hits > 0 {
+            *totals.entry(operator_stats.operator).or_default() += hits;
+        }
     }
 }
 

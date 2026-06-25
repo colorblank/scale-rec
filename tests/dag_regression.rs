@@ -1,10 +1,11 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use candle_core::{DType, Device, Tensor};
 use candle_nn::{VarBuilder, VarMap};
 use scale_rec::feats::builder::DagBuilder;
 use scale_rec::feats::config::{FlowConfig, PoolingStrategy, Role, SourceKind};
 use scale_rec::feats::dag::{FeatureDag, FeatureValue};
+use scale_rec::feats::executor::DagExecutor;
 use scale_rec::feats::ops::Fv;
 use scale_rec::feats::schema::FeatureDType;
 use scale_rec::layers::embedding::FeatureSpec;
@@ -112,6 +113,51 @@ operators:
         FeatureDType::Int
     ));
     assert_eq!(dag.validation_report.errors().count(), 0);
+}
+
+#[test]
+fn dag_executor_reports_dict_mapper_default_hits_by_configured_operator_name() {
+    let yaml = r#"
+version: 1.0.0
+sources:
+  - name: scene
+    dtype: string
+    default_val: unknown
+operators:
+  - name: scene_mapper
+    op_type: DictMapper
+    inputs: [scene]
+    outputs: [scene_idx]
+    params:
+      mapping:
+        home: 1
+        same_as_default: 99
+      default_idx: 99
+"#;
+    let config = FlowConfig::from_yaml(yaml).unwrap();
+    let artifact = DagBuilder::build(config).unwrap();
+    let executor = DagExecutor::new(
+        artifact.plan,
+        artifact.sources,
+        artifact.execution_order,
+        artifact.data_sources,
+    );
+    let columns = HashMap::from([(
+        "scene".to_string(),
+        vec![
+            Fv::Str("home".into()),
+            Fv::Str("missing".into()),
+            Fv::Str("same_as_default".into()),
+        ],
+    )]);
+
+    let (_, stats) = executor
+        .execute_plan_with_stats(&columns, &HashSet::new(), &HashMap::new())
+        .unwrap();
+
+    assert_eq!(stats.len(), 1);
+    assert_eq!(stats[0].operator, "scene_mapper");
+    assert_eq!(stats[0].stats.dict_mapper_default_hits, 1);
 }
 
 #[test]
