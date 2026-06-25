@@ -26,6 +26,10 @@ pub struct InferenceMetrics {
     pub forward_us: u64,
     /// 输出转换为响应结构的耗时。
     pub response_us: u64,
+    /// 请求中缺失字段并使用配置默认值的次数。
+    pub default_value_hits: u64,
+    /// 请求中出现空序列的次数。
+    pub empty_sequence_hits: u64,
 }
 
 /// 推理错误类型。
@@ -156,8 +160,10 @@ impl InferenceEngine {
         let n = features.len();
 
         let start_parse = Instant::now();
-        let columns = self.rows_to_columns(features)?;
+        let (columns, default_value_hits, empty_sequence_hits) = self.rows_to_columns(features)?;
         metrics.parse_us = start_parse.elapsed().as_micros() as u64;
+        metrics.default_value_hits = default_value_hits;
+        metrics.empty_sequence_hits = empty_sequence_hits;
 
         // Plan-based execution: zero HashMap during operator loop
         let start_dag = Instant::now();
@@ -179,7 +185,7 @@ impl InferenceEngine {
     fn rows_to_columns(
         &self,
         rows: &[FeatureRow],
-    ) -> InferenceResult<HashMap<String, Vec<FeatureValue>>> {
+    ) -> InferenceResult<(HashMap<String, Vec<FeatureValue>>, u64, u64)> {
         let n = rows.len();
         let mut columns: HashMap<String, Vec<FeatureValue>> = self
             .executor
@@ -188,8 +194,8 @@ impl InferenceEngine {
             .map(|(name, source)| (name.clone(), vec![source_default(source); n]))
             .collect();
 
-        let mut default_hits = 0;
-        let mut empty_sequences = 0;
+        let mut default_hits = 0u64;
+        let mut empty_sequences = 0u64;
 
         for (row_idx, row) in rows.iter().enumerate() {
             for (key, _source) in self.executor.source_defs() {
@@ -211,20 +217,9 @@ impl InferenceEngine {
                         ))
                     })?;
 
-                    match &fv {
-                        Fv::IntList(v) if v.is_empty() => {
-                            empty_sequences += 1;
-                            tracing::warn!(key = %key, row = row_idx, "empty sequence detected");
-                        }
-                        Fv::FloatList(v) if v.is_empty() => {
-                            empty_sequences += 1;
-                            tracing::warn!(key = %key, row = row_idx, "empty sequence detected");
-                        }
-                        Fv::StrList(v) if v.is_empty() => {
-                            empty_sequences += 1;
-                            tracing::warn!(key = %key, row = row_idx, "empty sequence detected");
-                        }
-                        _ => {}
+                    if is_empty_sequence(&fv) {
+                        empty_sequences += 1;
+                        tracing::warn!(key = %key, row = row_idx, "empty sequence detected");
                     }
 
                     col[row_idx] = fv;
@@ -245,7 +240,7 @@ impl InferenceEngine {
             );
         }
 
-        Ok(columns)
+        Ok((columns, default_hits, empty_sequences))
     }
 
     /// 广播模式预测：用户特征一次计算 + 候选物品逐条预测。
@@ -263,11 +258,15 @@ impl InferenceEngine {
         // Item-side ops are skipped here and are recomputed per candidate later.
         let start_parse1 = Instant::now();
         let mut one: HashMap<String, Vec<FeatureValue>> = HashMap::new();
+        let mut empty_sequences = 0u64;
         for (k, v) in user {
             if let Some(source) = self.executor.source_defs().get(k) {
                 let fv = json_to_feature_typed(v, &source.dtype).map_err(|err| {
                     InferenceError::bad_request(format!("user field '{}': {}", k, err))
                 })?;
+                if is_empty_sequence(&fv) {
+                    empty_sequences += 1;
+                }
                 one.insert(k.clone(), vec![fv]);
             }
         }
@@ -302,6 +301,7 @@ impl InferenceEngine {
         // Step 2: Build batch columns without redundant cloning and parsing of user features
         let start_parse2 = Instant::now();
         let n = items.len();
+        let mut default_hits = 0u64;
         let mut columns: HashMap<String, Vec<FeatureValue>> = self
             .executor
             .source_defs()
@@ -322,6 +322,12 @@ impl InferenceEngine {
 
         // 2. Parse candidate item-side features for each row, overwriting defaults or broadcasted values
         for (row_idx, item) in items.iter().enumerate() {
+            default_hits += self
+                .executor
+                .source_defs()
+                .keys()
+                .filter(|key| !user.contains_key(*key) && !item.contains_key(*key))
+                .count() as u64;
             for (key, val) in item {
                 if let Some(col) = columns.get_mut(key) {
                     let source = self.executor.source_defs().get(key).ok_or_else(|| {
@@ -333,11 +339,16 @@ impl InferenceEngine {
                             key, row_idx, err
                         ))
                     })?;
+                    if is_empty_sequence(&fv) {
+                        empty_sequences += 1;
+                    }
                     col[row_idx] = fv;
                 }
             }
         }
         metrics.parse_us += start_parse2.elapsed().as_micros() as u64;
+        metrics.default_value_hits = default_hits;
+        metrics.empty_sequence_hits = empty_sequences;
 
         let start_dag2 = Instant::now();
         let context = self
@@ -403,6 +414,19 @@ impl InferenceEngine {
 
         Ok((result, tensor_us, forward_us, response_us))
     }
+}
+
+fn is_empty_sequence(value: &Fv) -> bool {
+    matches!(
+        value,
+        Fv::IntList(values) if values.is_empty()
+    ) || matches!(
+        value,
+        Fv::FloatList(values) if values.is_empty()
+    ) || matches!(
+        value,
+        Fv::StrList(values) if values.is_empty()
+    )
 }
 
 fn serving_value(kind: OutputKind, value: f32) -> f32 {

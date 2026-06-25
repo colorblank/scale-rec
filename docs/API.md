@@ -85,6 +85,7 @@ application/json
 | 端点 | 方法 | 说明 |
 |---|---|---|
 | `/health` | GET | 健康检查，返回服务状态和已加载模型 |
+| `/metrics` | GET | Prometheus text exposition format 指标 |
 | `/models` | GET | 查询全部已加载模型和版本 |
 | `/models/{model}` | GET | 查询单个模型的版本信息 |
 | `/models/{model}/features` | GET | 查询默认版本的请求特征契约 |
@@ -101,6 +102,17 @@ application/json
 ```bash
 curl http://127.0.0.1:8080/health
 ```
+
+## GET /metrics
+
+返回 Prometheus text exposition format，Content-Type 为
+`text/plain; version=0.0.4; charset=utf-8`：
+
+```bash
+curl http://127.0.0.1:8080/metrics
+```
+
+完整指标定义和告警建议见 [Prometheus 指标](METRICS.md)。
 
 响应：
 

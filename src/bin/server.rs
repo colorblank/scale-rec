@@ -13,6 +13,7 @@ use axum::{
     Router,
 };
 use scale_rec::server::manifest::find_manifests;
+use scale_rec::server::metrics::PrometheusMetrics;
 use scale_rec::server::registry::ModelRegistry;
 use scale_rec::server::routes;
 use tokio::sync::Mutex;
@@ -51,6 +52,7 @@ const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 30;
 struct GlobalRateLimiter {
     limit_per_second: u64,
     state: Arc<Mutex<RateLimitState>>,
+    metrics: Arc<PrometheusMetrics>,
 }
 
 struct RateLimitState {
@@ -59,13 +61,14 @@ struct RateLimitState {
 }
 
 impl GlobalRateLimiter {
-    fn new(limit_per_second: u64) -> Self {
+    fn new(limit_per_second: u64, metrics: Arc<PrometheusMetrics>) -> Self {
         Self {
             limit_per_second,
             state: Arc::new(Mutex::new(RateLimitState {
                 window_start: Instant::now(),
                 count: 0,
             })),
+            metrics,
         }
     }
 }
@@ -286,6 +289,7 @@ async fn run(args: ServerArgs) -> Result<()> {
     info!("max concurrency: {}", args.max_concurrency);
     info!("request timeout seconds: {}", args.request_timeout_secs);
 
+    let metrics = Arc::new(PrometheusMetrics::new());
     let registry = Arc::new(match &args.feature_config_path {
         Some(feature_config_path) => ModelRegistry::new(feature_config_path, &args.model_dir)
             .map_err(|e| anyhow!("failed to create model registry: {}", e))?,
@@ -335,7 +339,7 @@ async fn run(args: ServerArgs) -> Result<()> {
 
     info!("models: {:?}", registry.list());
 
-    let app: Router = routes::router(registry)
+    let app: Router = routes::router_with_metrics(registry, metrics.clone())
         .layer(DefaultBodyLimit::max(args.max_body_bytes))
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
@@ -343,7 +347,7 @@ async fn run(args: ServerArgs) -> Result<()> {
         ))
         .layer(ConcurrencyLimitLayer::new(args.max_concurrency))
         .layer(middleware::from_fn_with_state(
-            GlobalRateLimiter::new(args.rate_limit_per_second),
+            GlobalRateLimiter::new(args.rate_limit_per_second, metrics),
             global_rate_limit,
         ))
         .layer(build_cors_layer(&args.allowed_origins)?);
@@ -393,6 +397,12 @@ async fn global_rate_limit(
         state.count = 0;
     }
     if state.count >= limiter.limit_per_second {
+        limiter.metrics.observe_http(
+            "rate_limited",
+            req.method().as_str(),
+            StatusCode::TOO_MANY_REQUESTS.as_u16(),
+            0.0,
+        );
         return (
             StatusCode::TOO_MANY_REQUESTS,
             "rate limit exceeded; retry later",

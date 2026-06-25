@@ -3,6 +3,8 @@
 pub mod engine;
 /// 模型发布 manifest 解析。
 pub mod manifest;
+/// Prometheus 指标采集与文本导出。
+pub mod metrics;
 /// 模型注册表：多模型管理 + 热更新。
 pub mod registry;
 /// Axum HTTP 路由处理。

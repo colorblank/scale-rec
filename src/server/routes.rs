@@ -1,10 +1,16 @@
 //! Axum 路由：/health, /models, /predict, /predict/broadcast。
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::sync::Arc;
+use std::time::Instant;
 
 use axum::{
+    body::Body,
+    extract::MatchedPath,
     extract::{Path, State},
-    http::StatusCode,
+    http::{header, Request, StatusCode},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
     routing::{delete, get, post},
     Json, Router,
 };
@@ -12,13 +18,51 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::engine::{InferenceError, InferenceErrorKind};
+use super::metrics::PrometheusMetrics;
 use super::registry::{
     FeatureContract, ModelAliasInfo, ModelRegistry, ModelServingInfo, ResolvedModel, RoutingPolicy,
 };
 use super::tracing::RequestTimer;
 
 /// 应用共享状态。
-pub type AppState = Arc<ModelRegistry>;
+pub type AppState = Arc<ServerState>;
+
+/// HTTP 服务共享的模型注册表和指标注册表。
+pub struct ServerState {
+    registry: Arc<ModelRegistry>,
+    metrics: Arc<PrometheusMetrics>,
+}
+
+impl Deref for ServerState {
+    type Target = ModelRegistry;
+
+    fn deref(&self) -> &Self::Target {
+        &self.registry
+    }
+}
+
+struct InFlightGuard {
+    metrics: Arc<PrometheusMetrics>,
+    route: &'static str,
+    model: String,
+}
+
+impl InFlightGuard {
+    fn new(metrics: Arc<PrometheusMetrics>, route: &'static str, model: &str) -> Self {
+        metrics.inference_started(route, model);
+        Self {
+            metrics,
+            route,
+            model: model.to_string(),
+        }
+    }
+}
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        self.metrics.inference_finished(self.route, &self.model);
+    }
+}
 
 /// 单行特征
 pub type FeatureRow = HashMap<String, Value>;
@@ -152,9 +196,22 @@ pub struct RoutingUpdateRequest {
 }
 
 /// 构建 Axum Router，注册所有 API 路由。
-pub fn router(state: AppState) -> Router {
+pub fn router(registry: Arc<ModelRegistry>) -> Router {
+    router_with_metrics(registry, Arc::new(PrometheusMetrics::new()))
+}
+
+/// 使用指定指标注册表构建 Axum Router。
+pub fn router_with_metrics(
+    registry: Arc<ModelRegistry>,
+    metrics_registry: Arc<PrometheusMetrics>,
+) -> Router {
+    let state = Arc::new(ServerState {
+        registry,
+        metrics: metrics_registry,
+    });
     Router::new()
         .route("/health", get(health))
+        .route("/metrics", get(metrics))
         .route("/models", get(list_models))
         .route("/models/{model}", get(get_model))
         .route("/models/{model}/features", get(get_model_features))
@@ -172,7 +229,46 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/predict", post(predict))
         .route("/predict/broadcast", post(predict_broadcast))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            observe_http_request,
+        ))
         .with_state(state)
+}
+
+async fn metrics(State(state): State<AppState>) -> Response {
+    (
+        [(
+            header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
+        state.metrics.render(&state.registry),
+    )
+        .into_response()
+}
+
+async fn observe_http_request(
+    State(state): State<AppState>,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    let route = request
+        .extensions()
+        .get::<MatchedPath>()
+        .map_or("__unmatched__", MatchedPath::as_str)
+        .to_string();
+    let method = request.method().as_str().to_string();
+    let started = Instant::now();
+    let response = next.run(request).await;
+    if route != "/metrics" {
+        state.metrics.observe_http(
+            &route,
+            &method,
+            response.status().as_u16(),
+            started.elapsed().as_secs_f64(),
+        );
+    }
+    response
 }
 
 async fn health(State(reg): State<AppState>) -> Json<Value> {
@@ -372,10 +468,19 @@ fn resolve_model(
         })
 }
 
+fn metric_model_label(registry: &ModelRegistry, requested_model: &str) -> String {
+    if registry.model_info(requested_model).is_some() {
+        requested_model.to_string()
+    } else {
+        "__unknown__".to_string()
+    }
+}
+
 async fn predict(
     State(reg): State<AppState>,
     Json(req): Json<PredictRequest>,
 ) -> Result<Json<PredictResponse>, ApiError> {
+    const ROUTE: &str = "/predict";
     let mut timer = RequestTimer::new();
     let model = req.model;
     let requested_version = req.version;
@@ -384,31 +489,54 @@ async fn predict(
     let routing_key = req.routing_key;
     let features = req.features;
     let batch_size = features.len();
+    let metric_model = metric_model_label(&reg, &model);
+    let _in_flight = InFlightGuard::new(reg.metrics.clone(), ROUTE, &metric_model);
 
-    let resolved = resolve_model(
+    let resolved = match resolve_model(
         &reg,
         &model,
         requested_version.as_deref(),
         alias.as_deref(),
         fallback_version.as_deref(),
         routing_key.as_deref(),
-    )?;
+    ) {
+        Ok(resolved) => resolved,
+        Err(error) => {
+            reg.metrics
+                .observe_inference(ROUTE, &metric_model, &error.code, batch_size, None);
+            return Err(error);
+        }
+    };
 
     let model_for_error = model.clone();
     let engine = resolved.engine.clone();
-    let (result, metrics) = tokio::task::spawn_blocking(move || engine.predict(&features))
-        .await
-        .map_err(|e| ApiError {
-            code: "INTERNAL_ERROR".to_string(),
-            message: format!("inference worker join error: {}", e),
-            request_id: None,
-            model_id: Some(model_for_error.clone()),
-            details: None,
-        })?
-        .map_err(|e| map_predict_error(e, model_for_error))?;
+    let worker_result = tokio::task::spawn_blocking(move || engine.predict(&features)).await;
+    let (result, metrics) = match worker_result {
+        Err(error) => {
+            let api_error = ApiError {
+                code: "INTERNAL_ERROR".to_string(),
+                message: format!("inference worker join error: {}", error),
+                request_id: None,
+                model_id: Some(model_for_error),
+                details: None,
+            };
+            reg.metrics
+                .observe_inference(ROUTE, &metric_model, &api_error.code, batch_size, None);
+            return Err(api_error);
+        }
+        Ok(Err(error)) => {
+            let api_error = map_predict_error(error, model_for_error);
+            reg.metrics
+                .observe_inference(ROUTE, &metric_model, &api_error.code, batch_size, None);
+            return Err(api_error);
+        }
+        Ok(Ok(result)) => result,
+    };
 
     timer.record(&metrics);
-    timer.finish("/predict", &model, batch_size);
+    timer.finish(ROUTE, &model, batch_size);
+    reg.metrics
+        .observe_inference(ROUTE, &metric_model, "ok", batch_size, Some(&metrics));
 
     Ok(Json(PredictResponse {
         model,
@@ -421,6 +549,7 @@ async fn predict_broadcast(
     State(reg): State<AppState>,
     Json(req): Json<BroadcastRequest>,
 ) -> Result<Json<PredictResponse>, ApiError> {
+    const ROUTE: &str = "/predict/broadcast";
     let mut timer = RequestTimer::new();
     let model = req.model;
     let requested_version = req.version;
@@ -430,32 +559,55 @@ async fn predict_broadcast(
     let user = req.user;
     let items = req.items;
     let batch_size = items.len();
+    let metric_model = metric_model_label(&reg, &model);
+    let _in_flight = InFlightGuard::new(reg.metrics.clone(), ROUTE, &metric_model);
 
-    let resolved = resolve_model(
+    let resolved = match resolve_model(
         &reg,
         &model,
         requested_version.as_deref(),
         alias.as_deref(),
         fallback_version.as_deref(),
         routing_key.as_deref(),
-    )?;
+    ) {
+        Ok(resolved) => resolved,
+        Err(error) => {
+            reg.metrics
+                .observe_inference(ROUTE, &metric_model, &error.code, batch_size, None);
+            return Err(error);
+        }
+    };
 
     let model_for_error = model.clone();
     let engine = resolved.engine.clone();
-    let (result, metrics) =
-        tokio::task::spawn_blocking(move || engine.predict_broadcast(&user, &items))
-            .await
-            .map_err(|e| ApiError {
+    let worker_result =
+        tokio::task::spawn_blocking(move || engine.predict_broadcast(&user, &items)).await;
+    let (result, metrics) = match worker_result {
+        Err(error) => {
+            let api_error = ApiError {
                 code: "INTERNAL_ERROR".to_string(),
-                message: format!("inference worker join error: {}", e),
+                message: format!("inference worker join error: {}", error),
                 request_id: None,
-                model_id: Some(model_for_error.clone()),
+                model_id: Some(model_for_error),
                 details: None,
-            })?
-            .map_err(|e| map_predict_error(e, model_for_error))?;
+            };
+            reg.metrics
+                .observe_inference(ROUTE, &metric_model, &api_error.code, batch_size, None);
+            return Err(api_error);
+        }
+        Ok(Err(error)) => {
+            let api_error = map_predict_error(error, model_for_error);
+            reg.metrics
+                .observe_inference(ROUTE, &metric_model, &api_error.code, batch_size, None);
+            return Err(api_error);
+        }
+        Ok(Ok(result)) => result,
+    };
 
     timer.record(&metrics);
-    timer.finish("/predict/broadcast", &model, batch_size);
+    timer.finish(ROUTE, &model, batch_size);
+    reg.metrics
+        .observe_inference(ROUTE, &metric_model, "ok", batch_size, Some(&metrics));
 
     Ok(Json(PredictResponse {
         model,
@@ -719,6 +871,32 @@ mod tests {
         assert_eq!(prediction.model, "ranker");
         assert_eq!(prediction.version, "20260604_020000");
         assert_eq!(prediction.predictions.len(), 1);
+
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/metrics")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let content_type = resp
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert_eq!(content_type, "text/plain; version=0.0.4; charset=utf-8");
+        let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let metrics = String::from_utf8(body.to_vec()).unwrap();
+        assert!(metrics.contains("scale_rec_http_requests_total"));
+        assert!(metrics.contains("scale_rec_inference_requests_total"));
+        assert!(metrics.contains("model=\"ranker\""));
+        assert!(metrics.contains("scale_rec_model_loaded"));
 
         let resp = app
             .clone()
