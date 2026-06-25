@@ -69,6 +69,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.verify_all
 | 参数 | 类型 | 默认 | 说明 |
 |------|------|------|------|
 | `--data` | str | — | 单文件路径（demo 模式，二选一） |
+| `--eval-data` | str | — | 独立验证文件，格式、字段及字段顺序必须与训练文件一致 |
 | `--user-data` | str | — | 用户行为文件（生产模式，二选一） |
 | `--item-files` | str | — | 物品文件逗号列表（生产模式，必需） |
 | `--feature-config` | str | `examples/shared/feature_config_discover.yaml` | 特征编排配置 |

@@ -51,6 +51,24 @@ data_paths[-1]   -> eval
 
 这意味着“最后一天质量不好”会直接影响监控指标，所以多日训练时要特别注意最后日期的标签分布。
 
+## 使用独立验证文件
+
+如果验证集已经单独产出，使用 `--eval-data`：
+
+```bash
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
+  python -m train.app.main discover \
+  --data-glob 'data/user_*.txt' \
+  --start-date 20260325 \
+  --end-date 20260331 \
+  --eval-data data/eval_20260401.txt \
+  --feature-config examples/shared/feature_config_discover.yaml \
+  --model-config examples/models/gdcn_esmm.yaml \
+  --no-header
+```
+
+此时所有日期范围内的文件都用于训练，验证文件只用于评估。验证文件必须与训练文件使用相同的 header 规则、分隔符、字段数量、字段名称和字段顺序；流式训练仍由 `eval_samples` 控制加载的验证样本规模。
+
 ## 微调和断点恢复不是一回事
 
 这两个参数经常被混用，但语义完全不同：

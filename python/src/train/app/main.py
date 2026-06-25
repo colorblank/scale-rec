@@ -53,6 +53,7 @@ from .cli import (
     resolve_device,
     train_config_from_args,
 )
+from .data import validate_matching_text_format
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "examples"
@@ -147,6 +148,25 @@ def _load_dataframes(paths: list[str]) -> pd.DataFrame:
     if len(dfs) == 1:
         return dfs[0]
     return pd.concat(dfs, ignore_index=True)
+
+
+def _load_eval_dataframe(
+    training_path: str,
+    training_columns: list[str],
+    eval_path: str,
+) -> pd.DataFrame:
+    training_is_parquet = training_path.endswith(".parquet")
+    eval_is_parquet = eval_path.endswith(".parquet")
+    if training_is_parquet != eval_is_parquet:
+        raise ValueError("--eval-data must use the same file format as the training file")
+    eval_df = _load_dataframe(eval_path)
+    eval_columns = eval_df.columns.tolist()
+    if eval_columns != training_columns:
+        raise ValueError(
+            "--eval-data columns must exactly match the training file columns and order: "
+            f"training={training_columns} eval={eval_columns}"
+        )
+    return eval_df
 
 
 def _iter_dataframe_batches(
@@ -583,10 +603,20 @@ def _run_single(args: argparse.Namespace) -> None:
     if "user_id" in df.columns:
         df["user_id"] = df["user_id"].astype("Int64")
 
-    df_shuffled = df.sample(frac=1.0, random_state=42)
-    n_train = int(len(df_shuffled) * 0.8)
-    train_df = df_shuffled.iloc[:n_train]
-    test_df = df_shuffled.iloc[n_train:]
+    if args.eval_data:
+        train_df = df.sample(frac=1.0, random_state=42)
+        test_df = _load_eval_dataframe(data_paths[0], df.columns.tolist(), args.eval_data)
+        if "ctr" in test_df.columns:
+            test_df["ctr"] = test_df["ctr"].astype("Int64")
+        if "cvr" in test_df.columns:
+            test_df["cvr"] = test_df["cvr"].astype("Int64")
+        if "user_id" in test_df.columns:
+            test_df["user_id"] = test_df["user_id"].astype("Int64")
+    else:
+        df_shuffled = df.sample(frac=1.0, random_state=42)
+        n_train = int(len(df_shuffled) * 0.8)
+        train_df = df_shuffled.iloc[:n_train]
+        test_df = df_shuffled.iloc[n_train:]
     logger.info("[Data] train=%d test=%d", len(train_df), len(test_df))
     logger.info(
         "[Data detail] rows=%d batch_size=%d train_batches~%d eval_batches~%d labels=%s",
@@ -756,6 +786,14 @@ def _run_discover(args: argparse.Namespace) -> None:
     logger.info("feature config exported to %s", artifacts.paths.feature_config_path)
     logger.info("model config exported to %s", artifacts.paths.model_config_path)
     logger.info("[Data files] %s", describe_data_paths(data_paths))
+    if args.eval_data:
+        validate_matching_text_format(
+            data_paths[0],
+            args.eval_data,
+            has_header=not args.no_header,
+            sep=args.separator,
+        )
+        logger.info("[Validation file] %s", args.eval_data)
     label_col_map = built.spec.get("label_col_map", {})
 
     trainer = Trainer(
@@ -768,6 +806,7 @@ def _run_discover(args: argparse.Namespace) -> None:
         model_type=built.config.type,
         flow_config=fc,
         data_paths=data_paths,
+        eval_data_path=args.eval_data or None,
         has_header=not args.no_header,
         sep=args.separator,
         null_markers=set(args.null_markers),
@@ -811,10 +850,17 @@ def _run_all(args: argparse.Namespace) -> None:
     for c in ["user_id", "ctr", "cvr"]:
         if c in df.columns:
             df[c] = df[c].astype("Int64")
-    df_shuffled = df.sample(frac=1.0, random_state=42)
-    n_train = int(len(df_shuffled) * 0.8)
-    train_df = df_shuffled.iloc[:n_train]
-    test_df = df_shuffled.iloc[n_train:]
+    if args.eval_data:
+        train_df = df.sample(frac=1.0, random_state=42)
+        test_df = _load_eval_dataframe(data_paths[0], df.columns.tolist(), args.eval_data)
+        for column in ["user_id", "ctr", "cvr"]:
+            if column in test_df.columns:
+                test_df[column] = test_df[column].astype("Int64")
+    else:
+        df_shuffled = df.sample(frac=1.0, random_state=42)
+        n_train = int(len(df_shuffled) * 0.8)
+        train_df = df_shuffled.iloc[:n_train]
+        test_df = df_shuffled.iloc[n_train:]
     logger.info("[Data] train=%d test=%d", len(train_df), len(test_df))
     logger.info(
         "[Data detail] rows=%d batch_size=%d train_batches~%d eval_batches~%d",

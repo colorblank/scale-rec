@@ -135,7 +135,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --epochs 3 --batch-size 1024 --no-header
 ```
 
-使用 `--data-glob` 时，训练文件会按日期升序读取；验证集只从最后日期文件中收集，训练阶段会跳过最后日期文件中已经作为验证集的 batch。
+使用 `--data-glob` 时，训练文件会按日期升序读取；默认验证集只从最后日期文件中收集，训练阶段会跳过最后日期文件中已经作为验证集的 batch。传入 `--eval-data` 后，所有训练文件都用于训练，验证集改为从独立文件读取。
 
 ## 训练流程
 
@@ -179,6 +179,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 | 参数 | 默认 | 说明 |
 |------|------|------|
 | `--data` | 空 | 单文件训练 TSV 路径；未传 `--data-glob` 时必填 |
+| `--eval-data` | 空 | 独立验证文件；格式、字段和字段顺序必须与训练文件完全一致 |
 | `--data-glob` | 空 | 按 glob 展开多日训练文件；设置后优先于 `--data` |
 | `--start-date` | 空 | `--data-glob` 的闭区间开始日期，格式 `YYYYMMDD` |
 | `--end-date` | 空 | `--data-glob` 的闭区间结束日期，格式 `YYYYMMDD` |
@@ -713,7 +714,17 @@ eval:
 
 ### 验证策略
 
-文件头部取 `eval_samples` 行作为验证集，训练时跳过避免数据泄漏。大数据场景建议预 shuffle 或使用独立验证文件。`eval_interval` 控制的是触发评估的频率，不限定评估指标。
+默认从最后一个训练文件头部收集不超过 `eval_samples` 配置范围的 batch 作为验证集，训练时跳过这些 batch，避免数据泄漏。
+
+传入 `--eval-data <path>` 后：
+
+- 所有训练文件和所有训练行都参与训练，不再从训练数据中切验证集。
+- 验证文件复用训练文件的 header、分隔符、NULL 标记、字段类型和读取参数。
+- 有 header 时，启动阶段校验字段名及顺序完全一致；无 header 时校验首个非空数据行的列数一致。
+- `discover` 流式训练仍使用 `eval_samples` 限制常驻内存中的验证样本规模。
+- `single` 和 `all` 整表训练入口使用验证文件的全部数据。
+
+`eval_interval` 控制的是触发评估的频率，不限定评估指标。
 
 如果训练直接报出 `No supervised batches were processed`，通常是以下原因之一：
 

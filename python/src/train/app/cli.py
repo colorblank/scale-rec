@@ -75,6 +75,11 @@ def add_training_args(parser: argparse.ArgumentParser, *, lr: float, batch_size:
 def add_data_range_args(parser: argparse.ArgumentParser, *, data_required: bool) -> None:
     parser.add_argument("--data", required=data_required)
     parser.add_argument(
+        "--eval-data",
+        default="",
+        help="independent validation file using exactly the same format as the training file",
+    )
+    parser.add_argument(
         "--data-glob",
         default="",
         help="glob pattern for dated training files; used before --data when set",

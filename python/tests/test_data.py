@@ -6,7 +6,12 @@ from pathlib import Path
 import pytest
 
 from train.app.cli import resolve_data_paths
-from train.app.data import build_item_index, estimate_files_batches, stream_files_batches
+from train.app.data import (
+    build_item_index,
+    estimate_files_batches,
+    stream_files_batches,
+    validate_matching_text_format,
+)
 from train.core.config import FlowConfig
 
 
@@ -85,6 +90,36 @@ def test_stream_files_batches_yields_multiple_files_in_order(tmp_path: Path):
 
     assert [batch["features"]["user_id"] for batch in batches] == [["u1", "u2"], ["u3"]]
     assert [batch["labels"]["is_click"] for batch in batches] == [[1, 0], [1]]
+
+
+def test_validate_matching_text_format_requires_same_header_order(tmp_path: Path):
+    training = tmp_path / "train.tsv"
+    evaluation = tmp_path / "eval.tsv"
+    training.write_text("user_id\tis_click\nu1\t1\n", encoding="utf-8")
+    evaluation.write_text("is_click\tuser_id\n0\tu2\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="columns must exactly match"):
+        validate_matching_text_format(
+            str(training),
+            str(evaluation),
+            has_header=True,
+            sep="\t",
+        )
+
+
+def test_validate_matching_text_format_requires_same_width_without_header(tmp_path: Path):
+    training = tmp_path / "train.tsv"
+    evaluation = tmp_path / "eval.tsv"
+    training.write_text("u1\t1\n", encoding="utf-8")
+    evaluation.write_text("u2\t0\textra\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="column count must match"):
+        validate_matching_text_format(
+            str(training),
+            str(evaluation),
+            has_header=False,
+            sep="\t",
+        )
 
 
 def test_stream_files_batches_usecols_skips_discard_without_header(tmp_path: Path):

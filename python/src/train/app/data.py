@@ -18,6 +18,42 @@ NULL_MARKERS = {"NULL", "\\N", "null", "None", ""}
 DTYPE_PANDAS = {"int": "Int64", "float": "float64", "string": "str", "enum": "str"}
 
 
+def validate_matching_text_format(
+    training_path: str,
+    eval_path: str,
+    *,
+    has_header: bool,
+    sep: str,
+) -> None:
+    """Validate that a validation text file has the same columns as its training file."""
+
+    if has_header:
+        training_columns = pd.read_csv(training_path, sep=sep, nrows=0).columns.tolist()
+        eval_columns = pd.read_csv(eval_path, sep=sep, nrows=0).columns.tolist()
+        if eval_columns != training_columns:
+            raise ValueError(
+                "--eval-data columns must exactly match the training file columns and order: "
+                f"training={training_columns} eval={eval_columns}"
+            )
+        return
+
+    training_columns = _first_data_row_width(training_path, sep)
+    eval_columns = _first_data_row_width(eval_path, sep)
+    if eval_columns != training_columns:
+        raise ValueError(
+            "--eval-data column count must match the training file: "
+            f"training={training_columns} eval={eval_columns}"
+        )
+
+
+def _first_data_row_width(path: str, sep: str) -> int:
+    with Path(path).open(encoding="utf-8") as file:
+        for line in file:
+            if line.rstrip("\r\n"):
+                return len(line.rstrip("\r\n").split(sep))
+    raise ValueError(f"data file is empty: {path}")
+
+
 def _parse_default(val_str: str, dtype_tag: DTypeTag) -> Any:
     if dtype_tag is DTypeTag.INT:
         return parse_int_strict(val_str) if val_str else 0

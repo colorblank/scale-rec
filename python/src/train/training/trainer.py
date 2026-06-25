@@ -236,6 +236,7 @@ class Trainer:
         flow_config: FlowConfig,
         data_path: str | None = None,
         data_paths: list[str] | None = None,
+        eval_data_path: str | None = None,
         has_header: bool = True,
         sep: str = "\t",
         null_markers: set[str] | None = None,
@@ -307,6 +308,7 @@ class Trainer:
         if not data_paths:
             raise ValueError("Trainer data_paths must not be empty")
         self._data_paths = [str(path) for path in data_paths]
+        self._eval_data_path = str(eval_data_path) if eval_data_path else None
         self._flow_config = flow_config
         self._has_header = has_header
         self._sep = sep
@@ -393,12 +395,14 @@ class Trainer:
             else len(b["features"])
             for b in self.eval_batches
         )
-        train_rows = max(total_rows - eval_rows, 0)
+        train_rows = total_rows if self._eval_data_path else max(total_rows - eval_rows, 0)
         total_batches = estimate_files_batches(
             self._data_paths, self.cfg.batch_size, has_header=self._has_header
         )
         eval_batches = self._n_eval_batches
-        train_batches = max(total_batches - eval_batches, 1)
+        train_batches = (
+            total_batches if self._eval_data_path else max(total_batches - eval_batches, 1)
+        )
 
         logger.info(
             "data: files=%d rows(total=%d train=%d eval=%d) batch_size=%d batches(total~%d train~%d eval=%d) tasks=%s labels=%s",
@@ -596,7 +600,7 @@ class Trainer:
             "validation: %d samples (%d batches) from %s",
             n_samples,
             self._n_eval_batches,
-            self._data_paths[-1],
+            self._eval_data_path or self._data_paths[-1],
         )
         dag = self._preprocessor.dag
         self.feature_quality = summarize_feature_quality(
@@ -802,6 +806,9 @@ class Trainer:
         return result.total if self.output_contract is not None else result
 
     def _iter_batches(self) -> Iterator[Batch]:
+        if self._eval_data_path:
+            yield from self._iter_all_batches()
+            return
         if len(self._data_paths) > 1:
             yield from stream_files_batches(
                 self._data_paths[:-1],
@@ -815,6 +822,13 @@ class Trainer:
             yield batch
 
     def _iter_eval_batches(self) -> Iterator[Batch]:
+        if self._eval_data_path:
+            return stream_file_batches(
+                self._eval_data_path,
+                self._flow_config,
+                self.cfg.batch_size,
+                **self._reader_kwargs(),
+            )
         return self._iter_last_file_batches()
 
     def _iter_last_file_batches(self) -> Iterator[Batch]:

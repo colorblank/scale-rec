@@ -87,6 +87,18 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --epochs 3 --batch-size 1024 --no-header
 ```
 
+需要使用独立验证集时传入 `--eval-data`。验证文件必须与训练文件使用相同格式、字段及字段顺序；训练文件不再切出验证样本：
+
+```bash
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
+  python -m train.app.main discover \
+  --data data/train.tsv \
+  --eval-data data/eval.tsv \
+  --feature-config examples/shared/feature_config_discover.yaml \
+  --model-config examples/models/gdcn_esmm.yaml \
+  --no-header --eval-samples 10000
+```
+
 `train_defaults.yaml` 负责训练默认值，`gdcn_esmm.yaml` 的 `output_contract` 负责任务图、训练目标、评估指标和公开输出，`discover_label_policy.yaml` 只负责 demo 数据标签生成。三者职责分离，训练流程和评估指标都从配置读取，不再在代码里写死。`best.safetensors` 由 `eval.monitor_task`、`eval.monitor_metric` 和 `eval.monitor_mode` 明确决定。
 
 `single`、`discover`、`all` 三个训练入口现在共享同一套特征预处理与可选预取逻辑；`examples/shared/train_defaults.yaml` 里的 `prefetch_batches` 可以用来控制后台提前准备多少个 batch，`checkpoint_interval_steps` / `checkpoint_interval_seconds` 可以控制训练中途的周期 checkpoint，`0` 表示关闭；`--resume-from` 可以从已有 checkpoint 恢复 model、optimizer、EMA、scheduler、step 和 epoch 状态。
