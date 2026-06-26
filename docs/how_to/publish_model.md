@@ -23,6 +23,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --data python/artifacts/demo/demo_train_data.txt \
   --feature-config examples/shared/feature_config_demo.yaml \
   --model-config examples/models/gdcn_esmm.yaml \
+  --run-name demo_train \
   --publish-path python/artifacts/demo/model_gdcn_esmm.safetensors \
   --artifact-dir python/artifacts/demo \
   --model-name model_gdcn_esmm \

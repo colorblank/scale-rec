@@ -40,7 +40,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m train.app.main <single|demo|all> [args...]
+  python -m train.app.main <single|demo|all> --run-name <name> [args...]
 ```
 
 三个训练子命令共享 data、training、artifact 和 runtime 参数。没有在 CLI 显式传入的训练参数会从 `--train-config` 读取；默认配置文件是 `examples/shared/train_defaults.yaml`。
@@ -127,6 +127,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 | `--artifact-dir` / `--export-dir` | path | `python/artifacts/demo` | run 目录根路径 | 可创建或已存在 |
 | `--publish-path` / `--export-path` | path | 自动生成 | 最终 serving 权重路径 | 未传时由 artifact manager 生成 |
 | `--model-name` | string | 自动推导 | 逻辑模型名，写入 manifest | 建议稳定、可读 |
+| `--run-name` | string | 必填 | 人类可读的 run 名称，用于日志文件命名 | 必须显式传入；会被规范化为文件名前缀 |
 | `--run-version` | string | 自动生成 | run/version 字符串 | 建议使用可排序时间戳 |
 | `--keep-checkpoints` | int | `3` | 保留 checkpoint 数 | 非负 |
 
@@ -149,7 +150,8 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m train.app.main single \
   --data data/train.csv \
   --feature-config examples/shared/feature_config_demo.yaml \
-  --model-config examples/models/lr.yaml
+  --model-config examples/models/lr.yaml \
+  --run-name single_train
 ```
 
 `single` 适合 CSV/Parquet 单模型训练。它支持 [common data arguments](#common-data-arguments)、[common training arguments](#common-training-arguments)、[common artifact arguments](#common-artifact-arguments) 和 [common runtime and logging arguments](#common-runtime-and-logging-arguments)。
@@ -168,6 +170,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --data python/artifacts/demo/demo_train_data.txt \
   --feature-config examples/shared/feature_config_demo.yaml \
   --model-config examples/models/gdcn_esmm.yaml \
+  --run-name demo_train \
   --epochs 10 --batch-size 128 --no-header --eval-samples 400
 ```
 
@@ -190,6 +193,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m train.app.main all \
   --data python/artifacts/demo/demo_train_data.txt \
+  --run-name all_train \
   --models all
 ```
 

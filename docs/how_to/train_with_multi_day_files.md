@@ -24,6 +24,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --end-date 20260331 \
   --feature-config examples/shared/feature_config_demo.yaml \
   --model-config examples/models/gdcn_esmm.yaml \
+  --run-name demo_train \
   --train-config examples/shared/train_defaults.yaml \
   --epochs 3 \
   --batch-size 1024 \
@@ -55,6 +56,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --end-date 20260331 \
   --feature-config examples/shared/feature_config_demo.yaml \
   --model-config examples/models/gdcn_esmm.yaml \
+  --run-name demo_train \
   --init-weights python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.safetensors \
   --epochs 3 \
   --batch-size 1024 \

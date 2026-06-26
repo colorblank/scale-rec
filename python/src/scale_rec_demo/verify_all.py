@@ -94,6 +94,8 @@ def run_training_process(model_type: str, data_path: Path, weights_path: Path) -
             str(weights_path),
             "--model-name",
             f"model_{stem}",
+            "--run-name",
+            f"verify_{stem}",
         ]
     )
     args.repo_root = REPO_ROOT

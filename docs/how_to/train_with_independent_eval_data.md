@@ -34,6 +34,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --eval-data data/eval.tsv \
   --feature-config examples/shared/feature_config_demo.yaml \
   --model-config examples/models/gdcn_esmm.yaml \
+  --run-name demo_train \
   --train-config examples/shared/train_defaults.yaml \
   --no-header \
   --epochs 10 \

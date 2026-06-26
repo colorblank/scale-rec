@@ -49,6 +49,7 @@
      --data python/artifacts/demo/demo_train_data.txt \
      --feature-config examples/shared/feature_config_demo.yaml \
      --model-config examples/models/gdcn_esmm.yaml \
+     --run-name demo_train \
      --train-config examples/shared/train_defaults.yaml \
      --epochs 1 --batch-size 128 --no-header \
      --artifact-dir python/artifacts/demo \

@@ -112,6 +112,8 @@ def test_demo_parser_includes_pandas_streaming_options():
             "demo",
             "--model-config",
             "examples/models/gdcn_esmm.yaml",
+            "--run-name",
+            "demo_train",
             "--data",
             "train.tsv",
             "--read-chunk-rows",
@@ -134,6 +136,8 @@ def test_demo_parser_accepts_independent_eval_data():
             "demo",
             "--model-config",
             "examples/models/gdcn_esmm.yaml",
+            "--run-name",
+            "demo_eval",
             "--data",
             "train.tsv",
             "--eval-data",
@@ -142,6 +146,22 @@ def test_demo_parser_accepts_independent_eval_data():
     )
 
     assert args.eval_data == "eval.tsv"
+    assert args.run_name == "demo_eval"
+
+
+def test_training_subcommands_require_run_name():
+    from train.app.main import build_parser
+
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(
+            [
+                "demo",
+                "--model-config",
+                "examples/models/gdcn_esmm.yaml",
+                "--data",
+                "train.tsv",
+            ]
+        )
 
 
 def test_configure_logging_writes_debug_file_logs(tmp_path):
