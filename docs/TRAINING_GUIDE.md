@@ -1,60 +1,50 @@
 # 训练手册
 
-本文档面向模型训练和发布流程，按“快速跑通、配置说明、训练策略、保存发布、服务加载、压测”的顺序组织。HTTP 请求和响应格式已独立到 [HTTP API](API.md)。
+本文档保留原 `TRAINING_GUIDE.md` 路径，作为训练、发布和服务加载的兼容导航页。新的文档结构按 PyTorch 风格拆分为：
 
-如果你想先建立整体心智模型，再回来看实操命令，建议先读 [推荐排序系统教程](tutorial/README.md)。教程章节和本手册的对应关系大致是：
+- [Getting Started](getting_started.md)：最短可运行路径。
+- [How-to Guides](how_to/index.md)：具体操作步骤。
+- [Reference](reference/index.md)：CLI、配置、artifact、模型加载和 API 参考。
+- [Tutorials](tutorials/index.md)：按推荐系统链路学习。
 
-- [01. 排序系统全链路架构](tutorial/01_project_structure.md)
-- [02. 样本表、标签与任务定义](tutorial/02_samples_labels_tasks.md)
-- [03. 特征工程契约](tutorial/03_feature_contract.md)
-- [04. 离线训练流程](tutorial/04_offline_training_flow.md)
-- [05. 多日训练与增量微调](tutorial/05_multi_day_incremental.md)
-- [06. 模型结构与权重绑定](tutorial/06_model_structure_and_weight_binding.md)
-- [07. 训练评估与特征质量](tutorial/07_evaluation_and_feature_quality.md)
-- [08. 产物发布与版本管理](tutorial/08_artifact_publish_and_versioning.md)
-- [09. Rust 在线推理服务](tutorial/09_rust_inference_service.md)
-- [10. 性能优化与大文件训练](tutorial/10_performance_and_large_files.md)
-- [11. Debug 与一致性验证](tutorial/11_debug_and_consistency.md)
+如果你只想跑通一次训练，直接看 [Getting Started](getting_started.md)。
 
 ## 教程对照
 
-如果你是按教程主线学习，再回来看手册，可以按下面的对照快速定位：
-
-| 教程章节 | 手册重点 |
+| 主题 | 新位置 |
 |---|---|
-| [04. 离线训练流程](tutorial/04_offline_training_flow.md) | `快速开始`、`训练流程`、`训练参数`、`训练技巧`、`评估监控` |
-| [05. 多日训练与增量微调](tutorial/05_multi_day_incremental.md) | `快速开始` 中的 `--data-glob` 示例、`数据格式`、`保存与推理导出` |
-| [06. 模型结构与权重绑定](tutorial/06_model_structure_and_weight_binding.md) | `模型配置`、`保存与推理导出`、模型加载规则 |
-| [07. 训练评估与特征质量](tutorial/07_evaluation_and_feature_quality.md) | `评估监控`、`特征预处理 Debug`、feature quality 输出 |
-| [08. 产物发布与版本管理](tutorial/08_artifact_publish_and_versioning.md) | `保存与推理导出`、manifest、`run.manifest.yaml`、发布目录结构 |
-| [09. Rust 在线推理服务](tutorial/09_rust_inference_service.md) | `保存与推理导出` 里的服务加载、`HTTP 压测` 前的服务约定 |
-| [10. 性能优化与大文件训练](tutorial/10_performance_and_large_files.md) | `数据格式`、`训练参数` 中的 chunk / memory map / prefetch |
-| [11. Debug 与一致性验证](tutorial/11_debug_and_consistency.md) | `特征预处理 Debug`、`保存与推理导出`、一致性验证流程 |
+| 离线训练流程 | [Offline Training](tutorials/offline_training.md) |
+| 多日训练与增量微调 | [Multi-day Training](tutorials/multi_day_training.md)、[Train with Multi-day Files](how_to/train_with_multi_day_files.md) |
+| 模型结构与权重绑定 | [Model Structure and Weight Binding](tutorials/model_and_weight_binding.md) |
+| 训练评估与特征质量 | [Evaluation and Feature Quality](tutorials/evaluation_and_feature_quality.md)、[Inspect Feature Quality](how_to/inspect_feature_quality.md) |
+| 产物发布与版本管理 | [Artifact Publishing](tutorials/artifact_publishing.md)、[Artifact Reference](reference/artifacts.md) |
+| Rust 在线推理服务 | [Rust Inference Service](tutorials/rust_inference_service.md)、[Rust Model Loading](reference/rust_model_loading.md) |
+| 性能优化与大文件训练 | [Performance Tuning](tutorials/performance_tuning.md)、[Tune Training Preprocessing](how_to/tune_training_preprocessing.md) |
+| Debug 与一致性验证 | [Debugging and Consistency](tutorials/debugging_consistency.md)、[Debug Python/Rust Mismatch](how_to/debug_python_rust_mismatch.md) |
 
 ## 阅读顺序
 
-| 章节 | 解决的问题 |
+| 目标 | 推荐阅读 |
 |---|---|
-| [快速开始](#快速开始) | 生成 demo 数据、训练 GDCN+ESMM / UniMixer / RankMixer、跑端到端验证 |
-| [数据格式](#数据格式) | discover TSV 和训练输入参数 |
-| [特征配置](#特征配置) | feature config 的 data_sources、sources、operators、role |
-| [训练流程](#训练流程) | 数据、标签、模型、训练配置如何组合 |
-| [模型配置](#模型配置) | LR / GDCN+ESMM / UniMixer / TokenMixer-Large / RankMixer 的任务级配置 |
-| [训练参数](#训练参数) / [训练技巧](#训练技巧) / [评估监控](#评估监控) | 训练超参、优化策略、日志与评估 |
-| [保存与推理导出](#保存与推理导出) | checkpoint、发布权重、serving manifest、加载规则 |
-| [HTTP 压测](#http-压测) | bench 使用方式和后端构建建议 |
+| 先跑起来 | [Getting Started](getting_started.md) |
+| 查命令参数 | [CLI Reference](reference/cli.md) |
+| 查 feature config | [Feature Config Reference](reference/feature_config.md) |
+| 查 model config / output_contract | [Model Config Reference](reference/model_config.md) |
+| 查 artifact / manifest | [Artifact Reference](reference/artifacts.md) |
+| 查 Rust 加载模型规则 | [Rust Model Loading](reference/rust_model_loading.md) |
+| 查 HTTP 请求响应 | [HTTP API](API.md) |
+| 查 Prometheus 指标 | [Prometheus metrics](METRICS.md) |
+| 查特征算子 | [Feature operators](feature_operators.md) |
 
 ## 快速开始
 
-对应教程： [01. 排序系统全链路架构](tutorial/01_project_structure.md)、[04. 离线训练流程](tutorial/04_offline_training_flow.md)、[05. 多日训练与增量微调](tutorial/05_multi_day_incremental.md)。
+最短路径：
 
 ```bash
-# 1. 生成合成数据
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m scale_rec_demo.generate_discover_data \
   --label-policy examples/shared/discover_label_policy.yaml
 
-# 2. 训练
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m train.app.main discover \
   --data python/artifacts/demo/discover_train_data.txt \
@@ -63,1002 +53,195 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --train-config examples/shared/train_defaults.yaml \
   --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
   --artifact-dir python/artifacts/demo \
-  --model-name model_gdcn_esmm \
-  --run-version 20260526_120000
+  --model-name model_gdcn_esmm
 
-# 2b. 可选：训练 UniMixer
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m train.app.main discover \
-  --data python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/shared/feature_config_discover.yaml \
-  --model-config examples/models/unimixer.yaml \
-  --train-config examples/shared/train_defaults.yaml \
-  --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
-  --artifact-dir python/artifacts/demo \
-  --model-name model_discover_unimixer \
-  --run-version 20260526_120000
-
-# 2c. 可选：训练 RankMixer
-PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m train.app.main discover \
-  --data python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/shared/feature_config_discover.yaml \
-  --model-config examples/models/rankmixer.yaml \
-  --train-config examples/shared/train_defaults.yaml \
-  --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
-  --artifact-dir python/artifacts/demo \
-  --model-name model_discover_rankmixer \
-  --run-version 20260526_120000
-
-# 2d. 可选：周期保存 checkpoint
-PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m train.app.main discover \
-  --data python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/shared/feature_config_discover.yaml \
-  --model-config examples/models/gdcn_esmm.yaml \
-  --train-config examples/shared/train_defaults.yaml \
-  --checkpoint-interval-steps 2000 \
-  --checkpoint-interval-seconds 900 \
-  --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
-  --artifact-dir python/artifacts/demo \
-  --model-name model_gdcn_esmm \
-  --run-version 20260526_120000
-
-# 2e. 可选：训练 LR 单目标 baseline
-PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m train.app.main discover \
-  --data python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/shared/feature_config_discover.yaml \
-  --model-config examples/models/lr.yaml \
-  --train-config examples/shared/train_defaults.yaml \
-  --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
-  --artifact-dir python/artifacts/demo \
-  --model-name model_lr \
-  --run-version 20260526_120000
-
-# 3. 端到端验证
-PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m scale_rec_demo.verify_all --models discover_lr,discover_gdcn_esmm,discover_rankmixer --force-train
+  python -m scale_rec_demo.verify_all --models discover_gdcn_esmm --force-train
 ```
 
-多日文件训练和增量微调示例：
-
-```bash
-PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m train.app.main discover \
-  --data-glob 'data/user_*.txt' \
-  --start-date 20260325 --end-date 20260331 \
-  --feature-config examples/shared/feature_config_discover.yaml \
-  --model-config examples/models/gdcn_esmm.yaml \
-  --train-config examples/shared/train_defaults.yaml \
-  --init-weights python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.safetensors \
-  --epochs 3 --batch-size 1024 --no-header
-```
-
-使用 `--data-glob` 时，训练文件会按日期升序读取；默认验证集只从最后日期文件中收集，训练阶段会跳过最后日期文件中已经作为验证集的 batch。传入 `--eval-data` 后，所有训练文件都用于训练，验证集改为从独立文件读取。
+完整说明见 [Getting Started](getting_started.md)。
 
 ## 训练流程
 
-对应教程： [01. 排序系统全链路架构](tutorial/01_project_structure.md)、[04. 离线训练流程](tutorial/04_offline_training_flow.md)、[06. 模型结构与权重绑定](tutorial/06_model_structure_and_weight_binding.md)。
+训练链路由四类配置组成：
 
-训练链路分成 4 层配置，默认优先级从低到高是：`train_defaults.yaml` < 模型 YAML < 命令行参数。
+| 配置 | 说明 |
+|---|---|
+| `examples/shared/feature_config_discover.yaml` | 原始字段、DAG、embedding、label role |
+| `examples/shared/discover_label_policy.yaml` | demo 标签生成规则，不参与模型前向 |
+| `examples/shared/train_defaults.yaml` | batch size、optimizer、eval、checkpoint、EMA 等默认值 |
+| `examples/models/*.yaml` | 模型结构、output_contract、loss、metrics、outputs |
 
-`single`、`discover`、`all` 三个训练入口现在共用同一套批次预处理与可选预取逻辑；区别只在于数据来源、模型配置和是否启用 discover TSV 的流式读取。
+训练主流程：
 
-1. `examples/shared/feature_config_discover.yaml`
-   定义在线取数来源、原始输入列、特征算子 DAG、每个列的 `role`。它决定请求聚合层要准备哪些字段、哪些列进入模型、哪些列作为标签、哪些列只是中间产物。
-2. `examples/shared/discover_label_policy.yaml`
-   定义 demo 数据生成时的标签规则。它只影响合成数据，不参与模型前向。
-3. `examples/shared/train_defaults.yaml`
-   定义训练默认值，包括 batch size、optimizer、eval 样本数、warmup、early stopping、EMA、TensorBoard 等。CLI 可以覆盖其中任意项。
-4. `examples/models/<model>.yaml`
-   定义模型结构和任务语义。当前 8 个示例模型统一使用 `output_contract` 定义任务塔、
-   关系、训练目标、评估指标和公开输出。legacy 字段仅保留兼容性。
+1. pandas chunk 读取样本。
+2. Python feature DAG 预处理 batch。
+3. 构造模型输入 tensor。
+4. PyTorch 模型前向。
+5. 按 `output_contract.objectives` 计算 loss。
+6. 反向传播并更新参数。
+7. 评估 metrics。
+8. 导出 checkpoint、serving 权重和 manifest。
 
-典型执行顺序如下：
-
-1. 先生成 demo 数据，写出 TSV 和标签列。
-2. 再加载 feature config，把原始列编排成模型输入。
-3. 再读取 model config，解析 `output_contract`；旧配置仍可解析 legacy 字段。
-4. 再读取 train config，合并 CLI 覆盖项。
-5. 训练时按 task 计算 loss，评估时按 task 计算 metrics。
-6. 最终导出 safetensors 权重和 manifest。
+教程见 [Offline Training](tutorials/offline_training.md)。
 
 ## 数据格式
 
-对应教程： [02. 样本表、标签与任务定义](tutorial/02_samples_labels_tasks.md)、[05. 多日训练与增量微调](tutorial/05_multi_day_incremental.md)。
+discover demo 默认是无 header TSV，列顺序来自 feature config 的 `sources`。
 
-45 列 Tab 分隔 TSV，无 header。列定义见 `examples/shared/feature_config_discover.yaml`。
+常用数据参数见 [CLI Reference](reference/cli.md#data-arguments)。
 
-**生成合成数据**：`scale_rec_demo.generate_discover_data` 输出 2000 行 × 45 列，其中 38 列是特征输入，7 列是监督标签。
+独立验证集：
 
-标签列包含 `is_click`、`is_cvr`、`is_click_detail`、`is_click_stock`、`stay_time_label` 等字段；具体是否启用某个派生标签，由 `examples/shared/discover_label_policy.yaml` 控制。
+```bash
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
+  python -m train.app.main discover \
+  --data data/train.tsv \
+  --eval-data data/eval.tsv \
+  --feature-config examples/shared/feature_config_discover.yaml \
+  --model-config examples/models/gdcn_esmm.yaml \
+  --no-header
+```
 
-如果你要同时训练 GDCN+ESMM、UniMixer、TokenMixer-Large 和 RankMixer，建议保留完整标签集合，复用同一份 TSV。
+验证文件必须与训练文件格式、字段和字段顺序一致。详细步骤见 [Train with Independent Eval Data](how_to/train_with_independent_eval_data.md)。
 
-| 参数 | 默认 | 说明 |
-|------|------|------|
-| `--data` | 空 | 单文件训练 TSV 路径；未传 `--data-glob` 时必填 |
-| `--eval-data` | 空 | 独立验证文件；格式、字段和字段顺序必须与训练文件完全一致 |
-| `--data-glob` | 空 | 按 glob 展开多日训练文件；设置后优先于 `--data` |
-| `--start-date` | 空 | `--data-glob` 的闭区间开始日期，格式 `YYYYMMDD` |
-| `--end-date` | 空 | `--data-glob` 的闭区间结束日期，格式 `YYYYMMDD` |
-| `--init-weights` | 空 | 从已有 safetensors 权重初始化模型后继续训练，不恢复 optimizer/scheduler/epoch |
-| `--resume-from` | 空 | 从已有 checkpoint 恢复训练状态，恢复 model、optimizer、EMA、scheduler、global_step 和 epoch/batch 进度 |
-| `--no-header` | off | 文件无 header 行时启用 |
-| `--separator` | `\t` | 字段分隔符 |
-| `--null-markers` | NULL \N null None "" | NULL 标记字符串 |
-| `--read-chunk-rows` | 0 | pandas `read_csv(chunksize=...)` 行数；0 表示按 batch size 自动推导，低于 `--batch-size` 时自动提升到 batch size |
-| `--fast-no-na` | off | 关闭 pandas NA 检测，适合 NULL 很少且默认值可由 DAG 处理的大文件 |
-| `--memory-map` | off | 对本地未压缩文件启用 pandas `memory_map=True` |
-| `--artifact-dir` | `python/artifacts/demo` | 训练 run 目录根路径 |
-| `--publish-path` | 自动生成 | 最终发布权重路径；未传时写入当前 run 的 `serving/model.safetensors` |
-| `--model-name` | 自动推导 | 模型逻辑名，用于 run 目录和 manifest |
-| `--run-version` | 自动生成 | 训练 run 版本号 |
-| `--keep-checkpoints` | 3 | 保留的 checkpoint 数量 |
-| `--train-config` | `examples/shared/train_defaults.yaml` | 训练超参、优化器、评估默认值 |
-| `--label-policy` | `examples/shared/discover_label_policy.yaml` | 仅用于合成数据生成的标签规则 |
+多日训练见 [Train with Multi-day Files](how_to/train_with_multi_day_files.md)。
 
 ## 特征配置
 
-对应教程： [03. 特征工程契约](tutorial/03_feature_contract.md)。
+feature config 是 Python 训练和 Rust 推理共享的特征契约。它定义：
 
-`examples/shared/feature_config_discover.yaml` 定义四部分：
+- `data_sources`
+- `sources`
+- `operators`
+- operator 输出上的 `embed`
+- `role: feature | label | discard`
 
-- **data_sources**：在线取数来源目录，例如 request、HBase、ES、Flink、Milvus 等
-- **sources**（45 列）：列名、类型、默认值、角色，以及可选的 `data_source`
-- **operators**（70 个）：17 种算子组成的 DAG
-- **role 标记**：`feature`（入模型）、`label`（入 loss，标签列不依赖 `source`）、`discard`（读后丢弃）
-
-其中 `operators` 里已经使用了一部分融合节点，比如 `ParsedFeatureHash` 和 `ConcatHash`。它们把“解析 + hash”这类常见链路合并成单个算子，减少 DAG 深度和中间值开销；如果某个中间结果还要被 `ListOverlap` 或其它下游算子复用，就保留拆分节点，不要强行融合。
-
-### role 角色说明
-
-```yaml
-sources:
-  - name: user_id          # 默认 role=feature
-    source: User
-    data_source: user_profile_hbase
-    dtype: string
-    default_val: ''
-  - name: is_click         # 标签列，只写 role=label
-    dtype: int
-    default_val: '0'
-    role: label
-  - name: answerscore      # 丢弃列（仅问答有效，不进入模型）
-    dtype: int
-    default_val: '0'
-    role: discard
-```
-
-`data_sources` 与 `sources[].data_source` 用于发布在线请求契约。训练导出时 feature config 会被复制到 run 的 `serving/configs/feature_config.yaml`，Rust 服务加载 manifest 后会从这份归档配置提供 `/models/{model}/features` 和 `/models/{model}/versions/{version}/features` 接口。接口只告诉调用方“需要哪些字段、字段从哪个来源准备”，不会在 Rust 推理服务内直接访问 HBase/ES/Flink/Milvus。
+配置参考见 [Feature Config Reference](reference/feature_config.md)，算子参考见 [Feature operators](feature_operators.md)。
 
 ## 特征预处理 Debug
 
-对应教程： [03. 特征工程契约](tutorial/03_feature_contract.md)、[11. Debug 与一致性验证](tutorial/11_debug_and_consistency.md)。
+排查顺序：
 
-排查特征预处理时，建议按从单样本到批量、从局部到整体的顺序看。核心目标是确认四件事：原始列是否读到、默认值是否符合预期、每个算子输出是否正确、最终送入模型的 tensor 形状和值是否正确。
+1. 先确认训练/推理使用同一份 feature config。
+2. 对单行样本执行 Python DAG，观察 source/default/operator 输出。
+3. 对同一行执行 Rust DAG 或 `scale_rec_demo.verify_all`。
+4. 比较 DictMapper、FeatureHash、Split、sequence padding/truncation。
+5. 确认中文、分隔符、NULL 标记和文件解析没有造成列错位。
 
-### 1. 单样本快照
-
-`FeatureDag(debug_mode=True)` 会在 `execute(row)` 后打印完整特征快照。它使用 Python logger 的 DEBUG 级别，因此需要先打开日志：
-
-```python
-import logging
-
-from train.core.config import FlowConfig
-from train.core.dag import FeatureDag
-
-logging.basicConfig(level=logging.DEBUG)
-
-fc = FlowConfig.from_yaml("examples/shared/feature_config_discover.yaml")
-dag = FeatureDag(fc, debug_mode=True)
-
-row = {
-    "user_id": 123,
-    "item_id": 456,
-    "interest_keywords": "人工智能#0.9|新能源#0.7",
-    "is_click": 1,
-}
-
-result = dag.execute(row)
-print(result.features["user_id_idx"])
-```
-
-日志中的 `source` 表示原始输入列，`computed` 表示算子输出，`raw` 表示输入中存在但不属于 feature source 的字段。这个方式适合快速检查某个字段是否被默认值覆盖、某个 hash/bucket/list 输出是否符合预期。
-
-### 2. 逐算子 Trace
-
-需要看每个算子的输入输出时，用 `DebugTracer`。它记录默认值初始化、原始输入覆盖、每个 operator 的 inputs/outputs，并能输出 JSONL：
-
-```python
-from train.core.config import FlowConfig
-from train.core.dag import FeatureDag
-from train.debug.tracer import DebugConfig, DebugTracer
-
-fc = FlowConfig.from_yaml("examples/shared/feature_config_discover.yaml")
-tracer = DebugTracer(DebugConfig(max_trace_samples=10, output_dir="python/artifacts/debug"))
-dag = FeatureDag(fc, tracer=tracer)
-
-dag.execute(row)
-
-for stage in tracer.traces[0].stages:
-    print(stage.stage_type.value, stage.stage_name)
-    print("inputs:", {k: v.value for k, v in stage.inputs.items()})
-    print("outputs:", {k: v.value for k, v in stage.outputs.items()})
-
-tracer.save()
-```
-
-`DebugTracer` 当前主要用于 `execute(row)` 单样本路径；`preprocess_batch()` 走列式批处理路径，不会记录每个 operator 的 trace。排查算子逻辑时先用单样本复现，再切到 batch tensor 检查。
-
-### 3. 最终 Tensor 检查
-
-模型实际看到的是 `preprocess_batch()` 的输出 tensor。检查 pooling、`seq_len`、padding、`num_hashes` 是否正确时，直接看 tensor：
-
-```python
-batch = [
-    {"user_id": 123, "item_id": 456, "interest_keywords": "人工智能#0.9"},
-    {"user_id": 124, "item_id": 457, "interest_keywords": ""},
-]
-
-tensors = dag.preprocess_batch(batch)
-for name, tensor in tensors.items():
-    print(name, tuple(tensor.shape), tensor[:2])
-```
-
-常见判断：
-
-- 标量特征通常是 `[batch]`。
-- 序列特征通常是 `[batch, seq_len]`。
-- `pooling: flatten` 的序列在 embedding 后会变成 `seq_len * embed_dim`。
-- `pooling: first` 遇到 list 只取第一个值；如果 `FeatureHash num_hashes > 1` 又没有配置 `mean/sum/max/flatten`，后续 hash 会被丢掉。
-- `preprocess_batch()` 会按 `seq_len` 截断/补 `0`，因此要同时看 DAG 输出和 tensor 输出。
-
-### 4. 训练时 Feature Quality
-
-`discover` 训练启动时会先从验证集收集 batch，并计算 feature quality。输出会进入 run manifest 的 metrics，常用字段包括：
-
-| 指标 | 含义 |
-|---|---|
-| `feature_quality.source.<name>.missing_rate` | 原始 source 缺失率，`None` 和空字符串算缺失 |
-| `feature_quality.source.<name>.default_rate` | 原始 source 命中默认值的比例 |
-| `feature_quality.emb.<name>.empty_sequence_rate` | 序列 embeddable 有效长度为 0 的比例 |
-| `feature_quality.emb.<name>.truncation_rate` | 序列因超长被截断的比例 |
-| `feature_quality.emb.<name>.mean_length` | 序列 embeddable 的平均有效长度 |
-| `feature_quality.emb.<name>.padding_rate` | 序列 embeddable 中 padding 项占比 |
-| `feature_quality.emb.<name>.bucket_utilization` | 当前样本中使用过的 hash/bucket 数占 vocab_size 的比例 |
-
-对于多日训练，验证集来自最后日期文件，因此 feature quality 也反映最后日期文件的分布。排查日切数据漂移时，优先看最后日期文件的这些指标。
-
-上述 `feature_quality.*` 是验证集抽样摘要，不等同于完整训练词表覆盖率。训练器还会在
-每个实际执行反向传播的 batch 上累计所有 embedding lookup，并输出
-`embedding_bucket_report.yaml`。报告按特征记录：
-
-- `operator_type`、`vocab_size`、`training_steps`
-- `total_hits`、`active_buckets`、`inactive_buckets`
-- `bucket_utilization`
-- `inactive_bucket_ids`
-- 与 bucket id 一一对应的完整 `bucket_hits`
-
-该统计跨 epoch 累计，并写入 `.resume.pt`；从 checkpoint 恢复时不会丢失前半段训练
-命中记录。当前 embedding pooling 没有 padding mask，因此 padding bucket 只要实际
-参与 lookup，也会按真实训练行为计数。
-
-### 5. 常见问题定位
-
-- 某列 `missing_rate` 很高：检查 TSV header/no-header、列顺序、`--separator`、`--null-markers`、`usecols` 是否和 feature config 一致。
-- 某列 `default_rate` 很高：检查 `default_val` 是否和真实业务值冲突，例如 `user_id` 的默认 `0` 是否也是合法用户。
-- 序列 `padding_rate` 很高：检查上游 `StringParser` / `JsonExtractList` / `Split` 的分隔符、`key_index`、`pad_len`，以及原始字段是否为空。
-- `bucket_utilization` 极低：检查 hash 输入是否大面积为空、`vocab_size` 是否过大、算子是否只看到了 padding token。
-- tensor shape 不符合预期：检查 `embed.pooling`、`embed.seq_len`、上游 schema 的 `pad_len/max_len`。
-- Python/Rust 不一致：先用 `dag.execute(row)` 看 Python 单样本输出，再跑 golden consistency 或 `scale_rec_demo.verify_all` 对比 Rust 推理。
-- 如果要验证“训练 -> 导出 -> 推理”整条链路，优先跑
-  `scale_rec_demo.verify_all --models all --force-train`；这会依次验证全部 8 个模型。
+详细步骤见 [Debug Python/Rust Mismatch](how_to/debug_python_rust_mismatch.md) 和 [Debugging and Consistency](tutorials/debugging_consistency.md)。
 
 ## 模型配置
 
-对应教程： [06. 模型结构与权重绑定](tutorial/06_model_structure_and_weight_binding.md)。
+model config YAML 定义模型结构和任务语义。当前示例模型统一使用 `output_contract.version: 1`。
 
-### LR 单目标基线配置
+参考：
 
-`examples/models/lr.yaml`：
-
-```yaml
-type: lr
-output_contract:
-  version: 1
-  graph:
-    towers:
-      - {name: pred_logit, input: shared, kind: binary_logit, hidden_dims: []}
-    relations:
-      - {name: pred_prob, op: sigmoid, inputs: [pred_logit]}
-  objectives:
-    - {name: pred_loss, source: pred_logit, label: is_click,
-       loss: {type: binary_cross_entropy_with_logits}}
-  metrics:
-    - {name: pred_auc, source: pred_prob, label: is_click, type: auc}
-  outputs:
-    - {name: pred, source: pred_prob}
-```
-
-这是一个最小的单目标二分类配置，适合做 baseline 或快速验证数据和特征是否能闭环。
-LR 先产生标量 `shared` score，再由通用 `OutputHead` 完成显式输出投影。
-
-### GDCN+ESMM 门控交叉网络配置
-
-`examples/models/gdcn_esmm.yaml`：
-
-```yaml
-type: gdcn_esmm
-cross_layers: 3
-deep_hidden_dims: [64, 32]
-shared_bottom_dims: [32, 16]
-output_contract:
-  version: 1
-  graph:
-    towers:
-      - {name: click_logit, input: shared, kind: binary_logit, hidden_dims: [16, 8]}
-      - {name: cvr_logit, input: shared, kind: binary_logit, hidden_dims: [16, 8]}
-    relations:
-      - {name: click_prob, op: sigmoid, inputs: [click_logit]}
-      - {name: cvr_prob, op: sigmoid, inputs: [cvr_logit]}
-      - {name: ctcvr_prob, op: multiply, inputs: [click_prob, cvr_prob]}
-  objectives:
-    - {name: click_loss, source: click_logit, label: is_click,
-       loss: {type: binary_cross_entropy_with_logits}}
-    - {name: cvr_loss, source: ctcvr_prob, label: is_cvr,
-       loss: {type: binary_cross_entropy}}
-  metrics:
-    - {name: cvr_auc, source: ctcvr_prob, label: is_cvr, type: auc}
-  outputs:
-    - {name: ctr, source: click_prob}
-    - {name: ctcvr, source: ctcvr_prob}
-```
-
-GDCN+ESMM 将门控交叉网络与 ESMM 多任务预测塔相结合。底层利用 3 层门控交叉层捕捉高阶显式特征交叉，并行使用两层全连接深层网络提取隐式非线性特征；最终通过 5 个独立的预测塔输出任务 logits，并通过乘积关系计算联合概率。
-
-### UniMixer 配置
-
-`examples/models/unimixer.yaml` 复用同一套 `output_contract`，区别在于 `type: unimixer`
-以及 UniMixer 自身的 token、block、rank 等结构参数。
-
-### TokenMixer-Large 配置
-
-`examples/models/token_mixer_large.yaml` 使用 `type: token_mixer_large`。它通过共享 `FeatureTokenizer` 得到 `[batch, num_tokens, token_dim]` token 序列，再堆叠 TokenMixer-Large block，最后接同一套多任务 tower。关键结构参数是 `token_dim`、`num_tokens`、`num_blocks`、`num_heads`、`hidden_factor` 和 `down_init_scale`。
-
-### RankMixer 配置
-
-`examples/models/rankmixer.yaml` 使用 `type: rankmixer`。它实现论文 RankMixer 的 dense 版本：共享 `FeatureTokenizer` 负责特征 tokenization；每个 RankMixer block 先做无参数 multi-head token mixing，再做 residual + LayerNorm，然后使用 per-token GELU FFN 建模不同 feature subspace，最后再次 residual + LayerNorm。模型输出对 token 维做 mean pooling 后进入 `MultiTaskTower`。
-
-RankMixer 当前要求 `num_heads == num_tokens`，以保持 token mixing 后的形状可与输入做 residual；`token_dim` 也必须能被 `num_heads` 整除。Sparse-MoE、ReLU routing 和 DTSI-MoE 属于论文扩展方向，当前实现未启用。
-
-### 任务定义建议
-
-- 分类 logit 常用 `binary_cross_entropy_with_logits`，概率节点使用
-  `binary_cross_entropy`。
-- 回归节点常用 `mse`、`mae` 或 `huber`，指标使用 `mae/mse`。
-- 如果某个目标没有可用标签，就不要放进 `objectives` 或 `metrics`。
-
-模型配置是训练流程里的第一手任务定义。后续的 trainer、evaluator、manifest 都只读这里，不再根据模型类型猜测任务。
-
-### 原生输出契约
-
-`examples/models/esmm_output_contract.yaml` 展示完整写法；其余 7 个示例遵守同一规则：
-
-```yaml
-type: esmm
-shared_bottom_dims: [32, 16]
-output_contract:
-  version: 1
-  graph:
-    towers:
-      - {name: click_logit, kind: binary_logit, hidden_dims: [16, 8]}
-      - {name: cvr_logit, kind: binary_logit, hidden_dims: [16, 8]}
-    relations:
-      - {name: click_prob, op: sigmoid, inputs: [click_logit]}
-      - {name: cvr_prob, op: sigmoid, inputs: [cvr_logit]}
-      - {name: ctcvr_prob, op: multiply, inputs: [click_prob, cvr_prob]}
-  objectives:
-    - name: click_loss
-      source: click_logit
-      label: is_click
-      loss: {type: binary_cross_entropy_with_logits}
-    - name: cvr_loss
-      source: ctcvr_prob
-      label: is_cvr
-      loss: {type: binary_cross_entropy}
-  metrics:
-    - {name: cvr_auc, source: ctcvr_prob, label: is_cvr, type: auc}
-  outputs:
-    - {name: ctr, source: click_prob}
-    - {name: ctcvr, source: ctcvr_prob}
-```
-
-关键约束：
-
-- probability 不能由 tower 直接输出，必须经过显式 `sigmoid` relation。
-- `multiply` 只接受 probability；ESMM 概率关系因此一定发生在 sigmoid 之后。
-- logits 使用 `binary_cross_entropy_with_logits`，probability 使用
-  `binary_cross_entropy`，两者不能互换。
-- `objectives`、`metrics`、`outputs` 可以引用不同节点。训练内部节点不必公开。
-- 原生契约与 `tasks/task_config/label_col_map/metrics` 禁止混用。
-- 8 个注册模型都接入原生执行路径。legacy 字段仍可加载，但新配置不应继续使用。
-
+- [Model Config Reference](reference/model_config.md)
+- [Model Structure and Weight Binding](tutorials/model_and_weight_binding.md)
+- [ADR 0001: output_contract v1](adr/0001-output-contract-v1.md)
 
 ## 训练参数
 
-对应教程： [04. 离线训练流程](tutorial/04_offline_training_flow.md)、[05. 多日训练与增量微调](tutorial/05_multi_day_incremental.md)。
+训练参数集中见 [CLI Reference](reference/cli.md)。
 
-下面这些参数来自 `examples/shared/train_defaults.yaml`，CLI 只负责覆盖，不再在代码里写死。
+常用入口：
 
-| 参数 | 默认 | 说明 |
-|------|------|------|
-| `--epochs` | 30 | 总 epoch 数 |
-| `--batch-size` | 64 | 批次大小（pandas chunksize） |
-| `--lr` | 0.005 | 初始学习率 |
-| `--weight-decay` | 1e-4 | AdamW 权重衰减 |
-| `--device` | auto | cpu/cuda/mps/auto |
-| `--eval-samples` | 400 | 从文件头部切出的验证样本数 |
-| `--eval-interval` | 50 | 训练中每隔 N batch 触发一次评估 |
-| `--log-interval` | 10 | 训练中每隔 N batch 打一次日志 |
-| `--warmup-steps` | 200 | 学习率 warmup 步数 |
-| `--min-lr-ratio` | 0.01 | Cosine annealing 最低学习率比例 |
-| `--grad-max-norm` | 1.0 | 梯度裁剪阈值 |
-| `--early-stopping-patience` | 5 | 验证指标连续多少次不提升后停止 |
-| `--ema-decay` | 0.999 | EMA 衰减率 |
-| `--loss-weighting` | static | 多任务 loss 的加权策略 |
-| `--monitor-task` | 空 | early stopping 和 best checkpoint 监控的任务名；为空时使用第一个配置任务 |
-| `--monitor-metric` | auc | early stopping 和 best checkpoint 监控的指标名，必须出现在该任务的 `metrics` 中 |
-| `--monitor-mode` | auto | 监控方向，支持 `auto`、`max`、`min`；`auto` 会对 `logloss/mae/mse` 使用 `min`，其它指标使用 `max` |
+- [Data arguments](reference/cli.md#data-arguments)
+- [Config arguments](reference/cli.md#config-arguments)
+- [Artifact arguments](reference/cli.md#artifact-arguments)
 
-### 训练日志摘要
-
-训练启动后，日志会先输出一条数据和批次摘要，重点看这些字段：
-
-- `rows(total=...)`：文件总行数，按 `--no-header` 是否存在 header 自动修正
-- `train / eval`：按当前配置切分后的训练行数和验证行数
-- `batch_size`：当前训练 batch 大小
-- `batches(total~... train~... eval=...)`：估算的总 batch 数、训练 batch 数和验证 batch 数
-- `tasks` / `labels`：模型任务名和任务到标签列的映射
-
-这条摘要用于快速发现两类问题：
-
-- 验证集切得过大，导致训练 batch 太少甚至没有监督 batch
-- 任务配置和数据列名不一致，导致 loss 找不到标签列
-
-### 训练默认配置
-
-`examples/shared/train_defaults.yaml` 是训练超参的基线配置。它控制训练行为，但不定义模型结构：
-
-```yaml
-epochs: 30
-batch_size: 64
-prefetch_batches: 2
-checkpoint_interval_steps: 0
-checkpoint_interval_seconds: 0.0
-optim:
-  name: adamw
-  lr: 0.005
-  weight_decay: 0.0001
-  emb_lr: null
-  emb_weight_decay: null
-eval_samples: 400
-eval_interval: 50
-log_interval: 10
-lr_schedule:
-  warmup_steps: 200
-  min_lr_ratio: 0.01
-grad_max_norm: 1.0
-early_stopping_patience: 5
-ema_decay: 0.999
-loss_weighting: static
-tb_dir: ""
-eval:
-  metrics: [auc]
-  monitor_metric: auc
-  monitor_mode: auto
-  log_path: ""
-  gauc_group_feature: user_id
-```
-
-字段含义：
-
-- `epochs` 和 `batch_size`：控制训练轮数和每次喂入模型的 batch 大小
-- `prefetch_batches`：后台预取的 batch 数量。`0` 表示关闭预取；大于 `0` 时会在后台提前执行特征预处理，主线程继续训练当前 batch
-- `checkpoint_interval_steps`：每隔多少个 batch 额外保存一次 checkpoint。`0` 表示关闭按步保存
-- `checkpoint_interval_seconds`：每隔多少秒额外保存一次 checkpoint。`0` 表示关闭按时间保存
-- `optim`：优化器类型和学习率参数，`emb_lr`、`emb_weight_decay` 允许把 embedding 参数和其它参数分开优化
-- `eval_samples`：从文件头部切出的验证样本数
-- `eval_interval`：训练中每隔多少个 batch 做一次评估
-- `log_interval`：训练中每隔多少个 batch 打一次进度日志
-- `lr_schedule.warmup_steps`：学习率线性 warmup 的步数
-- `lr_schedule.min_lr_ratio`：cosine 衰减的最低学习率比例
-- `grad_max_norm`：梯度裁剪阈值
-- `early_stopping_patience`：验证指标连续多少次不提升后停止
-- `ema_decay`：EMA 影子权重的更新衰减率
-- `loss_weighting`：legacy 多任务 loss 支持 `equal`、`static`、`uncertainty`；原生
-  `output_contract` 当前只支持 `static`，权重来自各 `objectives[].weight`
-- `tb_dir`：TensorBoard 输出目录，空字符串表示不写
-- `eval.metrics`：默认验证指标列表。对于已经在 `tasks:` 里声明 metrics 的模型，这里主要作为兜底和兼容配置
-- `eval.monitor_task`：early stopping 和 best checkpoint 监控的任务名；为空时使用 `tasks:` 中的第一个任务
-- `eval.monitor_metric`：early stopping 和 best checkpoint 监控的指标名。该指标必须出现在 `monitor_task` 对应任务的 `metrics` 中，训练器不会再跨所有任务取最大值
-- `eval.monitor_mode`：监控方向，支持 `auto`、`max`、`min`。`auto` 对 `logloss`、`mae`、`mse` 使用最小化，对 `auc`、`gauc`、`acc`、`recall`、`f1` 等指标使用最大化
-- `eval.log_path`：额外保存评估日志的路径
-- `eval.gauc_group_feature`：GAUC 分组特征名
-
-### 标签策略配置
-
-`examples/shared/discover_label_policy.yaml` 只参与 demo 数据生成，不影响模型结构和推理。它的作用是把原始字段转成监督标签：
-
-```yaml
-version: 1.0.0
-click:
-  quality_weight: 0.45
-  item_type_bonus:
-    news: 0.12
-    report: 0.12
-  source_name_bonus:
-    同花顺: 0.10
-    东方财富: 0.10
-  scene_max: 3
-  scene_bonus: 0.08
-  new_user_label: 新用户
-  new_user_bonus: 0.06
-  stay_time_threshold: 180
-  stay_time_bonus: 0.05
-  threshold: 0.42
-detail:
-  quality_threshold: 0.58
-  item_types: [news, report]
-stock:
-  min_stock_count: 3
-  source_name: 雪球
-cvr:
-  quality_threshold: 0.68
-  stay_time_threshold: 240
-stay_time_label:
-  click_multiplier: [0.85, 0.15]
-  noise_min: -25
-  noise_max: 45
-```
-
-字段含义：
-
-- `click`：点击标签的打分规则，综合质量、来源、场景、新用户偏置等因素
-- `detail`：细分点击标签，通常只对特定 `item_types` 生效
-- `stock`：股票类点击标签，依赖最小持仓数和来源名
-- `cvr`：转化标签，结合质量阈值和停留时间阈值
-- `stay_time_label`：停留时长标签，基于点击信号叠加噪声生成
+`output_contract` 路径只支持 static loss weighting，权重来自 `objectives[].weight`。说明见 [Model Config Reference: Loss weighting](reference/model_config.md#loss-weighting)。
 
 ## 训练技巧
 
-对应教程： [04. 离线训练流程](tutorial/04_offline_training_flow.md)、[07. 训练评估与特征质量](tutorial/07_evaluation_and_feature_quality.md)。
+常用建议：
 
-这些策略的具体数值默认来自 `examples/shared/train_defaults.yaml`。是否启用、采用什么阈值，都应从配置读取。
+- 大文件训练优先调 `--read-chunk-rows`、`--fast-no-na`、`--memory-map` 和 prefetch。
+- 多日文件用 `--data-glob` + 日期闭区间，缺失日期直接失败。
+- 从已有模型继续训练用 `--init-weights`。
+- 中断恢复用 `--resume-from`。
+- 改特征、模型结构或权重命名后必须跑 Python/Rust 一致性验证。
 
-### 学习率调度
-
-前 `warmup_steps` 个 step 线性升温，之后使用 cosine 衰减到 `lr × min_lr_ratio`。这里按 step 而不是按 epoch 计算，避免不同 batch size 下调度节奏漂移。
-
-### Gradient Clipping
-
-每 batch 裁剪梯度范数，防止爆炸。
-
-### Early Stopping
-
-验证指标连续 `early_stopping_patience` 次评估不提升时自动停止。训练过程中会在 epoch 末尾、按步间隔或按时间间隔保存 checkpoint，并维护：
-
-- `best.safetensors`：当前最优 checkpoint
-- `latest.safetensors`：最新 checkpoint
-- `checkpoints/*.safetensors`：按 epoch/step 编号的历史 checkpoint
-
-### EMA (Exponential Moving Average)
-
-每个 batch 更新 shadow weights，训练结束后导出 EMA 权重：
-
-```
-θ_ema = 0.999 × θ_ema + 0.001 × θ
-```
-
-### 不确定性加权损失 (MultiTaskLoss)
-
-Kendall 2018 同方差不确定性，自动平衡：
-
-- **量纲差异**：BCE vs weighted BCE 产生不同 magnitude
-- **任务难度**：难任务自动获得更低 σ（更高权重）
-- **类别不均衡**：通过 `pos_weight` 差异化少数类惩罚
-
-```
-L = Σ exp(-log_var_i) × L_i + 0.5 × log_var_i
-```
-
-日志每 epoch 输出：
-
-```
-[uncertainty] σ(click)=1.036  σ(cvr)=1.031  σ(detail)=1.006  σ(stay)=1.003  σ(stock)=0.971
-```
-
-σ 越低 → 任务学得越好 → 自动分配更高权重。
+性能调优见 [Tune Training Preprocessing](how_to/tune_training_preprocessing.md)。
 
 ## 评估监控
 
-对应教程： [07. 训练评估与特征质量](tutorial/07_evaluation_and_feature_quality.md)。
+评估指标来自 model config 的 `output_contract.metrics`。feature quality 和 bucket hit count 用于发现：
 
-### 监控指标与 checkpoint 选择
+- source 缺失率。
+- 默认值命中率。
+- sequence 空值率和 padding rate。
+- embedding bucket utilization。
+- DictMapper default hit。
 
-`Trainer` 使用 `eval.monitor_task + eval.monitor_metric` 作为唯一监控目标，用于 early
-stopping 和 `best.safetensors` 选择。legacy 模型为空时默认使用 `tasks:` 中的第一个
-任务；原生契约使用 `metrics[].source` 作为 task key，例如 `click_logit` 或
-`ctcvr_prob`。
-
-监控指标必须出现在对应任务的 `metrics` 中，否则训练启动阶段直接报错。例如：
-
-```yaml
-eval:
-  metrics: [auc]
-  monitor_task: click
-  monitor_metric: auc
-  monitor_mode: max
-```
-
-`monitor_mode` 支持：
-
-| 值 | 含义 |
-|---|---|
-| `auto` | 根据指标名自动判断方向：`logloss/mae/mse` 最小化，其它指标最大化 |
-| `max` | 指标越大越好，例如 `auc`、`gauc`、`recall` |
-| `min` | 指标越小越好，例如 `logloss`、`mae`、`mse` |
-
-如果评估结果没有产出 `monitor_task.monitor_metric`，训练会报错，而不是用 0 或其它任务的指标兜底。这样可以避免多任务训练中因为配置错误选错 checkpoint。
-
-### 验证策略
-
-默认从最后一个训练文件头部收集不超过 `eval_samples` 配置范围的 batch 作为验证集，训练时跳过这些 batch，避免数据泄漏。
-
-传入 `--eval-data <path>` 后：
-
-- 所有训练文件和所有训练行都参与训练，不再从训练数据中切验证集。
-- 验证文件复用训练文件的 header、分隔符、NULL 标记、字段类型和读取参数。
-- 有 header 时，启动阶段校验字段名及顺序完全一致；无 header 时校验首个非空数据行的列数一致。
-- `discover` 流式训练仍使用 `eval_samples` 限制常驻内存中的验证样本规模。
-- `single` 和 `all` 整表训练入口使用验证文件的全部数据。
-
-`eval_interval` 控制的是触发评估的频率，不限定评估指标。
-
-如果训练直接报出 `No supervised batches were processed`，通常是以下原因之一：
-
-- 数据文件里没有模型任务所需的 label 列
-- `tasks[].label` 或 `output_contract.objectives/metrics[].label` 和真实列名不一致
-- 训练文件被切分后，训练部分没有任何监督列
-
-这时先检查训练开始时打印的 `labels={...}` 和 `rows(total/train/eval)` 摘要，再对照 `examples/shared/feature_config_discover.yaml` 与 `examples/models/<model>.yaml` 的任务定义。
-
-### TensorBoard
-
-```bash
-# 训练时启用
---tb-dir runs/experiment_name
-
-# 可视化
-tensorboard --logdir runs/
-```
-
-记录指标：
-
-| 类型 | 指标 | 频率 |
-|------|------|------|
-| scalar | `train/loss`、`train/lr` | 每 epoch |
-| scalar | `val/{task}_{metric}` | 每次评估 |
-| scalar | `grad/pre_clip_norm`、`post_clip_norm` | 每 batch |
-| histogram | `grad/{layer}.weight`、`grad/{layer}.bias` | 每 100 batch |
-
-### 日志输出示例
-
-```
-device: mps
-validation: 512 samples (4 batches)
-  batch   10  avg_loss=3.326729  cur_loss=2.968895  lr=2.50e-03
-  [timing epoch 1] total=2.7s  batches=12 |
-    per_batch: data=17ms(8%) preproc=35ms(17%) forward=19ms(9%)
-    loss=46ms(22%) backward=94ms(45%)
-epoch   1/10  loss=3.195845  lr=2.50e-03
-  click: auc=0.5075  logloss=0.6812  cvr: auc=0.5123  logloss=0.6734
-  detail: auc=0.4880  logloss=0.6911  stock: auc=0.5317  logloss=0.6658
-  stay: mae=285.8082  mse=148712.9375
-  [uncertainty] σ(click)=1.015  σ(cvr)=1.015  σ(detail)=1.013
-    σ(stay)=1.015  σ(stock)=1.014
-checkpoint saved to model.safetensors (best val/click_auc=0.5317)
-early stopping at epoch 8 (patience=5, best=val/click_auc=0.7622@epoch3)
-EMA weights exported to model.safetensors
-best metric=val/click_auc=0.7622
-```
+详细说明见 [Evaluation and Feature Quality](tutorials/evaluation_and_feature_quality.md) 和 [Inspect Feature Quality](how_to/inspect_feature_quality.md)。
 
 ## 保存与推理导出
 
-对应教程： [08. 产物发布与版本管理](tutorial/08_artifact_publish_and_versioning.md)、[09. Rust 在线推理服务](tutorial/09_rust_inference_service.md)。
-
-训练侧由 `TrainingArtifactManager` 管理权重、checkpoint 和 manifest。它的保存逻辑分成 run 产物和 serving 发布产物两层。
-
-### Run 产物
-
-run 目录按 `artifact_root/model_name/run_version` 组织。以上面的快速开始为例，目录是：
+默认发布目录：
 
 ```text
-python/artifacts/demo/model_gdcn_esmm/20260526_120000/
-├── checkpoints/
-│   └── epoch-0001-step-000012.safetensors
-│   └── epoch-0001-step-000012.resume.pt
-├── serving/
-│   ├── model.safetensors
-│   ├── model.manifest.yaml
-│   └── configs/
-│       ├── feature_config.yaml
-│       └── model_config.yaml
-├── best.safetensors
-├── best.resume.pt
-├── latest.safetensors
-├── latest.resume.pt
-├── embedding_bucket_report.yaml
-└── run.manifest.yaml
-```
-
-各文件含义：
-
-| 文件 | 说明 |
-|---|---|
-| `checkpoints/*.safetensors` | 每次 checkpoint 保存的真实权重文件，文件名包含 epoch 和 step |
-| `checkpoints/*.resume.pt` | 与 checkpoint 权重同名的训练状态文件，包含 optimizer、EMA、scheduler、step、epoch 等恢复信息 |
-| `serving/model.safetensors` | 默认发布权重；如果显式传入 `--publish-path`，则发布到指定路径 |
-| `serving/model.manifest.yaml` | 默认 serving manifest，绑定权重、特征配置、模型配置和 sha256 |
-| `serving/configs/feature_config.yaml` | 本次训练使用的特征配置副本 |
-| `serving/configs/model_config.yaml` | 本次训练使用的模型配置副本 |
-| `best.safetensors` | 当前最佳 checkpoint 的别名，由 `publish_best` 控制，默认启用 |
-| `best.resume.pt` | `best.safetensors` 对应的训练状态别名，可直接用于 `--resume-from` |
-| `latest.safetensors` | 最新 checkpoint 的别名，由 `publish_latest` 控制，默认启用 |
-| `latest.resume.pt` | `latest.safetensors` 对应的训练状态别名，可直接用于 `--resume-from` |
-| `embedding_bucket_report.yaml` | 完整监督训练流的 embedding bucket 命中报告 |
-| `run.manifest.yaml` | 训练过程记录，包含 checkpoint 历史、best/latest、发布路径和配置路径 |
-
-`keep_checkpoints` 默认保留 3 个历史 checkpoint，超过后从最旧记录开始删除。`run.manifest.yaml` 是训练记录，不会被 Rust 服务当作 serving manifest 加载。对于超大数据集，建议把 `checkpoint_interval_steps` 或 `checkpoint_interval_seconds` 设为非 0，避免只在 epoch 结束时才落盘。周期 checkpoint 会使用 `periodic-epoch-...` 版本名，与 epoch 末尾保存的正式 checkpoint 区分开。需要恢复中断训练时，直接传入 `--resume-from <checkpoint.safetensors|resume.pt>`，训练器会恢复完整训练状态并从对应 epoch/batch 继续。
-
-### 发布产物
-
-发布产物由 `--publish-path` 决定；没有显式传入时，默认写入当前 run 的独立 serving 目录。发布权重旁边会生成同 stem 的 serving manifest：
-
-```text
-python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/
+serving/
+├── model.manifest.yaml
 ├── model.safetensors
-└── model.manifest.yaml
+└── configs/
+    ├── feature_config.yaml
+    └── model_config.yaml
 ```
 
-训练结束时，如果存在 best checkpoint，发布权重默认复制 `best.safetensors`；否则导出当前模型参数。复制或导出完成后，发布流程会根据完整 bucket 报告规范化零命中 embedding row：
+文件职责见 [Artifact Reference](reference/artifacts.md)，发布操作见 [Publish a Model](how_to/publish_model.md)。
 
-- `DictMapper`：所有零命中 bucket，包括没有命中的 `default_idx`，替换为该表活跃 row 均值。
-- `FeatureHash`、`ParsedFeatureHash`、`ConcatHash`：零命中 bucket 未来仍可能被线上新 key 命中，因此保留词表和索引不变，只替换 row 内容为活跃 row 均值。
-- 同一特征在 DeepFM 等模型中对应多张 embedding 表时，每张表独立计算均值。
-- 整张表没有活跃 bucket 时拒绝发布，避免生成无法解释的 serving 权重。
-- 该处理只修改最终 serving safetensors，不修改 `best/latest/checkpoints`，因此不影响 resume。
-
-serving manifest 由 `python/src/train/app/manifest.py` 写入，记录：
-
-| 字段 | 说明 |
-|---|---|
-| `schema_version` | manifest schema，当前为 `1` |
-| `model_id` | 服务接口中的模型名，来自 `--model-name` 或自动推导 |
-| `model_version` | 服务注册版本，来自 `--run-version` 或自动 UTC 时间戳 |
-| `run_version` / `published_version` | 训练 run 版本和发布来源版本 |
-| `model_type` | 模型类型，必须和模型配置 YAML 的 `type` 一致 |
-| `weights_file` / `weights_sha256` | 发布权重路径和 sha256 |
-| `feature_config_file` / `feature_config_sha256` | 特征配置路径和 sha256 |
-| `model_config_file` / `model_config_sha256` | 模型配置路径和 sha256 |
-| `weight_binding` | safetensors 权重命名、prefix 和校验策略 |
-| `embedding_bucket_report_file` | 当前发布权重对应的完整 bucket 命中报告 |
-| `tasks` / `label_col_map` / `metrics` | 任务、标签映射和训练指标 |
-
-当前 CLI 没有暴露 `copy_configs` 参数，默认 `copy_configs=true`。因此每次训练都会把 feature/model config 复制到当前 run 的 `serving/configs/` 目录，并让 serving manifest 指向这份随发布权重归档的配置副本。
-
-- 如果使用默认发布路径，manifest 中的配置路径会相对指向 `configs/feature_config.yaml` 和 `configs/model_config.yaml`。
-- 如果显式传入外部 `--publish-path`，manifest 仍会指向当前 run 的配置副本；跨机器部署时要同时带上 run 目录，或显式把发布路径放在 run 目录内。
-- 服务加载 manifest 时会按这些路径读取并校验 sha256。
-
-默认 `weight_binding` 如下：
-
-```yaml
-weight_binding:
-  format: safetensors
-  schema: candle-varbuilder-v1
-  root_prefix: ""
-  tokenizer_prefix: tokenizer
-  unimixer_prefix: unimixer
-  strict: true
-  allow_extra_tensors: true
-```
-
-`root_prefix`、`tokenizer_prefix` 和 `unimixer_prefix` 对应 Rust Candle `VarBuilder::pp()` 的权重路径；`strict=true` 时缺少预期 tensor 会加载失败，`allow_extra_tensors=true` 时权重文件里多出的 tensor 会被忽略并记录 warning。
+发布 serving 权重时，零命中 embedding row 会根据完整训练流 bucket report 替换为活跃 row 均值；训练 checkpoint 保持原始权重。详细规则见 [Artifact Reference: Embedding bucket report](reference/artifacts.md#embedding-bucket-report)。
 
 ### 服务加载
 
-```bash
-target/release/server \
-  --model-dir python/artifacts/demo \
-  --port 8080 \
-  --worker-threads 4 \
-  --blocking-threads 64
-```
-
-`--model-dir` 会递归扫描最多 3 层目录，加载 `*.manifest.yaml`、`*_manifest.yaml` 和 `model_manifest.yaml`，并跳过 `run.manifest.yaml`。如果扫描到了 serving manifest，服务只按 manifest 加载，不再扫描松散 `.safetensors`。
-
-只加载单个模型版本时，直接指定 serving manifest：
+推荐按 manifest 或 model directory 加载：
 
 ```bash
-target/release/server \
-  --model-path python/artifacts/demo/model_gdcn_esmm.manifest.yaml \
-  --port 8080
+cargo run --bin server --release -- \
+  --model-dir python/artifacts/demo
 ```
 
-`--model-path` 可重复传入，也可以指向目录。只要传入了 `--model-path`，服务只加载显式路径，不再扫描整个 `--model-dir`。
-
-| 路径类型 | 行为 |
-|---|---|
-| `.yaml` / `.yml` | 作为 serving manifest 加载，manifest 是权重、模型配置和特征配置的权威来源 |
-| 目录 | 扫描目录内 serving manifest |
-| `.safetensors` | 旧兼容模式，按文件名作为模型名加载，需要 `--feature-config` fallback |
-
-只有加载旧的无 manifest `.safetensors` 产物时，才需要提供 `--feature-config` 作为 fallback：
+单模型版本：
 
 ```bash
-target/release/server \
-  --model-path python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.safetensors \
-  --feature-config examples/shared/feature_config_discover.yaml \
-  --port 8080
+cargo run --bin server --release -- \
+  --model-path python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.manifest.yaml
 ```
 
-旧兼容模式下，服务会把 `.safetensors` 的文件 stem 作为模型名，版本固定为 `default`；模型配置 YAML 会在权重所在目录、`--model-dir` 和 `--feature-config` 所在目录中按候选文件名查找。
-
-manifest 加载时，所有相对路径都基于 manifest 所在目录解析；加载前会校验 feature config、model config、weights 的 sha256、model type，以及 safetensors key/shape。相同 `model_id` 可以加载多个 `model_version`，默认版本按版本字符串取最大值。因此建议 `--run-version` 使用可排序时间戳，例如 `20260526_120000`。
-
-查询模型、指定版本调用和 fallback 的接口格式见 [HTTP API](API.md)。
+加载规则见 [Rust Model Loading](reference/rust_model_loading.md)，操作步骤见 [Load a Model for Serving](how_to/load_model_for_serving.md)。
 
 ## HTTP 压测
 
-对应教程： [10. 性能优化与大文件训练](tutorial/10_performance_and_large_files.md)。
-
-压测 discover 模型时不要只用 bench 默认随机数据。默认随机数据是通用 synthetic schema，只适合验证 HTTP 链路；真实性能压测必须使用 discover TSV + feature config，让 bench 按 `User/Context/Item` 拆分并构造 `/predict/broadcast` 请求。
-
-GDCN+ESMM 和 UniMixer 实测报告见 `docs/http_benchmark_report.md`。
-
-压测前先按目标平台重建 server 和 bench，并保持两者使用同一套后端特征。常用组合如下：
-
-| 平台 | 后端 | 构建特征 | 说明 |
-|---|---|---|---|
-| macOS | Accelerate CPU | `macos-accelerate` | macOS 上的默认 CPU 压测选择 |
-| macOS | Metal GPU | `macos-metal` | 适合验证 GPU 推理上限 |
-| Linux | MKL CPU | `cpu-mkl` | Linux CPU 压测的推荐后端 |
-
-下面以快速开始生成的发布权重为例。HTTP 请求里的 `model` 是服务实际加载的模型名；先用 `/health` 确认返回列表里包含对应模型，再用同名参数压测：
-
-- `python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.safetensors` → `model`
-- `python/artifacts/demo/model_discover_unimixer/20260526_120000/serving/model.safetensors` → `model`
+HTTP 压测应区分 synthetic smoke 和真实 discover 输入压测。真实压测要传入 discover TSV 和 feature config。
 
 ```bash
-# 启动 Rust HTTP 推理服务
-RUST_LOG=warn \
-target/release/server \
-  --model-dir python/artifacts/demo \
-  --port 8080 \
-  --worker-threads 4 \
-  --blocking-threads 64
-
-# 确认模型和版本已加载；如果执行了 UniMixer 训练，应同时看到 model_discover_unimixer
-curl http://127.0.0.1:8080/health
-curl http://127.0.0.1:8080/models
-
-# GDCN+ESMM synthetic smoke，仅验证 HTTP 链路
-target/release/bench \
-  --target http://127.0.0.1:8080 \
+cargo run --bin bench --release -- \
+  --url http://127.0.0.1:8080 \
   --model model_gdcn_esmm \
-  --mode broadcast \
-  --concurrency 10 \
-  --batch-size 200 \
-  --duration-secs 10 \
-  --target-qps 10
-
-# GDCN+ESMM 真实 discover 输入压测: 1 user/context + 200 candidates, 300 QPS, 60s
-target/release/bench \
-  --target http://127.0.0.1:8080 \
-  --model model_gdcn_esmm \
-  --mode broadcast \
-  --concurrency 300 \
-  --batch-size 200 \
-  --duration-secs 60 \
-  --target-qps 300 \
   --input-file python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/shared/feature_config_discover.yaml \
-  --no-header
-
-# UniMixer synthetic smoke，仅验证 HTTP 链路
-target/release/bench \
-  --target http://127.0.0.1:8080 \
-  --model model_discover_unimixer \
-  --mode broadcast \
-  --concurrency 10 \
-  --batch-size 200 \
-  --duration-secs 10 \
-  --target-qps 10
-
-# UniMixer 真实 discover 输入压测: 1 user/context + 200 candidates, 300 QPS, 60s
-target/release/bench \
-  --target http://127.0.0.1:8080 \
-  --model model_discover_unimixer \
-  --mode broadcast \
-  --concurrency 300 \
-  --batch-size 200 \
-  --duration-secs 60 \
-  --target-qps 300 \
-  --input-file python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/shared/feature_config_discover.yaml \
-  --no-header
+  --feature-config examples/shared/feature_config_discover.yaml
 ```
 
-验收最低要求：`Scheduled=18000`、`Success=18000`、`Errors=0`、`RPS>=295`。如果压测进程在 60 秒后仍长时间等待未完成请求，说明服务端已产生排队积压。
-
-平台/后端构建方式：
-
-```bash
-# macOS + Accelerate
-cargo build --release --features macos-accelerate --bin server --bin bench
-
-# macOS + Metal
-cargo build --release --features macos-metal --bin server --bin bench
-
-# Linux + MKL
-RUSTFLAGS="-C target-cpu=native" \
-cargo build --release --features cpu-mkl --bin server --bin bench
-```
-
-平台/后端启动方式：
-
-```bash
-# 通用启动参数，适用于 macOS Accelerate / macOS Metal / Linux MKL
-RUST_LOG=warn \
-target/release/server \
-  --model-dir python/artifacts/demo \
-  --port 8080 \
-  --worker-threads 4 \
-  --blocking-threads 64
-```
-
-Linux + MKL 时建议设置：
-
-```bash
-RUST_LOG=warn \
-MKL_NUM_THREADS=1 \
-OMP_NUM_THREADS=1 \
-target/release/server \
-  --model-dir python/artifacts/demo \
-  --port 8080 \
-  --worker-threads 4 \
-  --blocking-threads 64
-```
-
-压测时只比较同一平台、同一后端、同一构建参数下的结果。不要把 `Accelerate`、`Metal`、`MKL` 的结果混用。
+说明见 [Performance Tuning](tutorials/performance_tuning.md) 和 [HTTP benchmark report](http_benchmark_report.md)。
 
 ## 代码架构
 
-对应教程： [01. 排序系统全链路架构](tutorial/01_project_structure.md)。
+主要目录：
 
-```
+```text
 python/src/train/
-├── core/        — FlowConfig、FeatureDag、TaskSpec、schema
-├── app/         — CLI、入口、artifact/manifest 管理
-├── training/    — trainer、loss、metrics、eval、optim、quality
-├── models/      — 8 个双端对齐的推荐模型与通用 OutputHead
-├── layers/      — MLP、Embedding、Tokenizer、Towers
-└── ops/         — 特征算子
-python/src/scale_rec_demo/
-├── generate_discover_data.py  — 合成数据生成
-├── verify_all.py              — discover 主线模型一致性验证
-└── paths.py                   — demo 路径常量
-python/artifacts/demo/         — 本地训练输出
+├── app/         # CLI、入口、artifact/manifest 管理
+├── core/        # config、DAG、executor、preprocessor、output_contract
+├── models/      # PyTorch 模型
+├── ops/         # Python 特征算子
+└── training/    # trainer、loss、metrics、quality
+
+src/
+├── feats/       # Rust 特征配置、DAG 和算子
+├── models/      # Candle 模型
+└── server/      # HTTP serving
 ```
+
+开发命令见 [Development](DEVELOPMENT.md)。
