@@ -18,7 +18,7 @@ scale-rec 是一个推荐系统训练与推理框架：Python 侧负责样本读
 | [How-to Guides](docs/how_to/index.md) | 面向具体任务的操作指南，例如独立验证集、多日训练、服务加载和性能调优 |
 | [Reference](docs/reference/index.md) | CLI、配置、HTTP API、Prometheus 指标、特征算子和 artifact 格式 |
 | [Notes](docs/notes/index.md) | 架构、性能、压测报告和设计改进记录 |
-| [Development](docs/DEVELOPMENT.md) | 本地开发、测试、格式化和端到端验证命令 |
+| [Development](docs/reference/development.md) | 本地开发、测试、格式化和端到端验证命令 |
 
 ## Quickstart
 
@@ -80,7 +80,7 @@ cargo run --bin server --release -- \
   --model-path python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.manifest.yaml
 ```
 
-HTTP 请求格式见 [HTTP API Reference](docs/API.md)；模型加载规则见 [Getting Started](docs/getting_started.md#serve-the-model) 和 [训练手册](docs/TRAINING_GUIDE.md#服务加载)。
+HTTP 请求格式见 [HTTP API Reference](docs/reference/http_api.md)；模型加载规则见 [Getting Started](docs/getting_started.md#serve-the-model) 和 [训练手册](docs/TRAINING_GUIDE.md#服务加载)。
 
 ## Repository layout
 

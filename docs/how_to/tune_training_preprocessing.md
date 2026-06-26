@@ -1,6 +1,6 @@
 # Tune Training Preprocessing
 
-本文档说明训练侧特征预处理的性能调优入口。完整大文件训练说明见 [性能优化与大文件训练](../tutorial/10_performance_and_large_files.md)。
+本文档说明训练侧特征预处理的性能调优入口。完整大文件训练说明见 [性能优化与大文件训练](../tutorials/performance_tuning.md)。
 
 ## Reader options
 

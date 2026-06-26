@@ -32,9 +32,9 @@
 | 查 model config / output_contract | [Model Config Reference](reference/model_config.md) |
 | 查 artifact / manifest | [Artifact Reference](reference/artifacts.md) |
 | 查 Rust 加载模型规则 | [Rust Model Loading](reference/rust_model_loading.md) |
-| 查 HTTP 请求响应 | [HTTP API](API.md) |
-| 查 Prometheus 指标 | [Prometheus metrics](METRICS.md) |
-| 查特征算子 | [Feature operators](feature_operators.md) |
+| 查 HTTP 请求响应 | [HTTP API](reference/http_api.md) |
+| 查 Prometheus 指标 | [Prometheus metrics](reference/prometheus_metrics.md) |
+| 查特征算子 | [Feature operators](reference/feature_operators.md) |
 
 ## 快速开始
 
@@ -117,7 +117,7 @@ feature config 是 Python 训练和 Rust 推理共享的特征契约。它定义
 - operator 输出上的 `embed`
 - `role: feature | label | discard`
 
-配置参考见 [Feature Config Reference](reference/feature_config.md)，算子参考见 [Feature operators](feature_operators.md)。
+配置参考见 [Feature Config Reference](reference/feature_config.md)，算子参考见 [Feature operators](reference/feature_operators.md)。
 
 ## 特征预处理 Debug
 
@@ -224,7 +224,7 @@ cargo run --bin bench --release -- \
   --feature-config examples/shared/feature_config_discover.yaml
 ```
 
-说明见 [Performance Tuning](tutorials/performance_tuning.md) 和 [HTTP benchmark report](http_benchmark_report.md)。
+说明见 [Performance Tuning](tutorials/performance_tuning.md) 和 [HTTP benchmark report](notes/http_benchmark_report.md)。
 
 ## 代码架构
 
@@ -244,4 +244,4 @@ src/
 └── server/      # HTTP serving
 ```
 
-开发命令见 [Development](DEVELOPMENT.md)。
+开发命令见 [Development](reference/development.md)。

@@ -7,7 +7,7 @@ scale-rec 文档按 PyTorch 风格分为快速开始、教程、操作指南、�
 | 文档 | 内容 |
 |---|---|
 | [Getting Started](getting_started.md) | 从 demo 数据生成到训练、导出、HTTP 服务和一致性验证 |
-| [Development](DEVELOPMENT.md) | 本地环境、测试、格式化、端到端验证和开发注意事项 |
+| [Development](reference/development.md) | 本地环境、测试、格式化、端到端验证和开发注意事项 |
 
 ## Tutorials
 
@@ -39,9 +39,9 @@ scale-rec 文档按 PyTorch 风格分为快速开始、教程、操作指南、�
 | [Model Config Reference](reference/model_config.md) | model YAML、output_contract 和权重绑定 |
 | [Artifact Reference](reference/artifacts.md) | run 目录、serving manifest 和 bucket report |
 | [Rust Model Loading](reference/rust_model_loading.md) | Rust 服务加载模型文件和版本选择规则 |
-| [HTTP API](API.md) | `/health`、`/models`、`/predict`、`/predict/broadcast` |
-| [Prometheus metrics](METRICS.md) | `/metrics` 指标、计算逻辑和告警建议 |
-| [Feature operators](feature_operators.md) | 17 个特征算子的参数、输入输出和边界行为 |
+| [HTTP API](reference/http_api.md) | `/health`、`/models`、`/predict`、`/predict/broadcast` |
+| [Prometheus metrics](reference/prometheus_metrics.md) | `/metrics` 指标、计算逻辑和告警建议 |
+| [Feature operators](reference/feature_operators.md) | 17 个特征算子的参数、输入输出和边界行为 |
 
 ## Notes
 
@@ -50,8 +50,8 @@ scale-rec 文档按 PyTorch 风格分为快速开始、教程、操作指南、�
 | 入口 | 内容 |
 |---|---|
 | [Notes index](notes/index.md) | 架构、性能和设计记录入口 |
-| [HTTP benchmark report](http_benchmark_report.md) | GDCN+ESMM / UniMixer 压测结果和后端对比 |
-| [Design improvements](design_improvements.md) | 当前架构评估和后续改进方向 |
+| [HTTP benchmark report](notes/http_benchmark_report.md) | GDCN+ESMM / UniMixer 压测结果和后端对比 |
+| [Design improvements](notes/design_improvements.md) | 当前架构评估和后续改进方向 |
 
 ## Architecture decisions
 

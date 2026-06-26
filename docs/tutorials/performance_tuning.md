@@ -54,4 +54,4 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 ## Next
 
 - 操作指南见 [Tune Training Preprocessing](../how_to/tune_training_preprocessing.md)。
-- 压测报告见 [HTTP benchmark report](../http_benchmark_report.md)。
+- 压测报告见 [HTTP benchmark report](../notes/http_benchmark_report.md)。

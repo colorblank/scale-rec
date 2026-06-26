@@ -117,7 +117,7 @@ curl -X POST http://127.0.0.1:8080/predict/broadcast \
   -d '{"model":"model_gdcn_esmm","user":{"user_id":42},"items":[{"item_id":500},{"item_id":501}]}'
 ```
 
-完整 HTTP 协议见 [HTTP API](API.md)。
+完整 HTTP 协议见 [HTTP API](reference/http_api.md)。
 
 ## Verify Python and Rust consistency
 
@@ -147,5 +147,5 @@ Overall Consistency Status: PASS
 
 - 想理解完整链路：读 [Tutorials](tutorials/index.md)。
 - 想查训练参数和 artifact：读 [训练手册](TRAINING_GUIDE.md)。
-- 想查 HTTP 请求响应：读 [HTTP API](API.md)。
-- 想查特征算子：读 [Feature operators](feature_operators.md)。
+- 想查 HTTP 请求响应：读 [HTTP API](reference/http_api.md)。
+- 想查特征算子：读 [Feature operators](reference/feature_operators.md)。

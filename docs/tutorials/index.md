@@ -1,30 +1,30 @@
 # Tutorials
 
-教程面向学习路径，按推荐系统从离线样本到在线推理的建设顺序组织。当前详细教程仍保留在 `docs/tutorial/`，后续会逐步迁移到本目录并统一成 PyTorch 风格结构。
+教程面向学习路径，按推荐系统从离线样本到在线推理的建设顺序组织。正文统一维护在 `docs/tutorials/`；旧 `docs/tutorial/` 目录只保留兼容跳转页。
 
 ## Recommended paths
 
 如果目标是先跑起来：
 
-1. [排序系统全链路架构](../tutorial/01_project_structure.md)
-2. [样本表、标签与任务定义](../tutorial/02_samples_labels_tasks.md)
-3. [离线训练流程](../tutorial/04_offline_training_flow.md)
-4. [产物发布与版本管理](../tutorial/08_artifact_publish_and_versioning.md)
-5. [Rust 在线推理服务](../tutorial/09_rust_inference_service.md)
+1. [排序系统全链路架构](end_to_end_recommendation.md)
+2. [样本表、标签与任务定义](samples_labels_and_tasks.md)
+3. [离线训练流程](offline_training.md)
+4. [产物发布与版本管理](artifact_publishing.md)
+5. [Rust 在线推理服务](rust_inference_service.md)
 
 如果目标是改特征并保证线上一致：
 
-1. [排序系统全链路架构](../tutorial/01_project_structure.md)
-2. [特征工程契约](../tutorial/03_feature_contract.md)
-3. [训练评估与特征质量](../tutorial/07_evaluation_and_feature_quality.md)
-4. [Debug 与一致性验证](../tutorial/11_debug_and_consistency.md)
+1. [排序系统全链路架构](end_to_end_recommendation.md)
+2. [特征工程契约](feature_dag.md)
+3. [训练评估与特征质量](evaluation_and_feature_quality.md)
+4. [Debug 与一致性验证](debugging_consistency.md)
 
 如果目标是新增模型或修改模型结构：
 
-1. [排序系统全链路架构](../tutorial/01_project_structure.md)
-2. [模型结构与权重绑定](../tutorial/06_model_structure_and_weight_binding.md)
-3. [产物发布与版本管理](../tutorial/08_artifact_publish_and_versioning.md)
-4. [Debug 与一致性验证](../tutorial/11_debug_and_consistency.md)
+1. [排序系统全链路架构](end_to_end_recommendation.md)
+2. [模型结构与权重绑定](model_and_weight_binding.md)
+3. [产物发布与版本管理](artifact_publishing.md)
+4. [Debug 与一致性验证](debugging_consistency.md)
 
 ## Tutorials
 
@@ -42,11 +42,11 @@
 | [Performance Tuning](performance_tuning.md) | 理解 pandas chunk、memory map、fast-no-na、prefetch 和压测 |
 | [Debugging and Consistency](debugging_consistency.md) | 排查单样本 trace、batch tensor、Python/Rust mismatch 和权重 key |
 
-## Legacy tutorials
+## Legacy path mapping
 
-旧版详细教程仍保留在 `docs/tutorial/`。如果新教程页需要更深入背景，可以继续查看对应旧章节：
+旧 `docs/tutorial/` 路径保留用于兼容外部链接；正文已合并到下列新教程页：
 
-| Legacy tutorial | New tutorial |
+| Legacy path | Canonical tutorial |
 |---|---|
 | [01. 排序系统全链路架构](../tutorial/01_project_structure.md) | [End-to-end Recommendation Pipeline](end_to_end_recommendation.md) |
 | [02. 样本表、标签与任务定义](../tutorial/02_samples_labels_tasks.md) | [Samples, Labels, and Tasks](samples_labels_and_tasks.md) |

@@ -99,4 +99,4 @@ curl http://127.0.0.1:8080/models/model_gdcn_esmm
 curl http://127.0.0.1:8080/models/model_gdcn_esmm/features
 ```
 
-HTTP 请求响应格式见 [HTTP API](../API.md)。
+HTTP 请求响应格式见 [HTTP API](http_api.md)。

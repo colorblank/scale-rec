@@ -6,19 +6,19 @@ Notes 用于记录架构说明、性能分析、压测报告和设计演进。�
 
 | Note | Content |
 |---|---|
-| [Design improvements](../design_improvements.md) | 当前架构评估、已完成拆分和后续改进方向 |
+| [Design improvements](design_improvements.md) | 当前架构评估、已完成拆分和后续改进方向 |
 | [ADR 0001: output_contract v1](../adr/0001-output-contract-v1.md) | output_contract v1 的设计决策 |
 
 ## Performance
 
 | Note | Content |
 |---|---|
-| [HTTP benchmark report](../http_benchmark_report.md) | GDCN+ESMM / UniMixer 压测结果、后端对比和压测命令 |
-| [性能优化与大文件训练](../tutorial/10_performance_and_large_files.md) | pandas chunk、memory map、fast-no-na、prefetch 和真实 discover 输入压测 |
+| [HTTP benchmark report](http_benchmark_report.md) | GDCN+ESMM / UniMixer 压测结果、后端对比和压测命令 |
+| [性能优化与大文件训练](../tutorials/performance_tuning.md) | pandas chunk、memory map、fast-no-na、prefetch 和真实 discover 输入压测 |
 
 ## Observability
 
 | Note | Content |
 |---|---|
-| [Prometheus metrics](../METRICS.md) | Rust 推理侧指标、计算逻辑和告警建议 |
-| [训练评估与特征质量](../tutorial/07_evaluation_and_feature_quality.md) | feature quality、bucket utilization、inactive bucket 和训练侧质量报告 |
+| [Prometheus metrics](../reference/prometheus_metrics.md) | Rust 推理侧指标、计算逻辑和告警建议 |
+| [训练评估与特征质量](../tutorials/evaluation_and_feature_quality.md) | feature quality、bucket utilization、inactive bucket 和训练侧质量报告 |

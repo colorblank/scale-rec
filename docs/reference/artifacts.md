@@ -1,6 +1,6 @@
 # Artifact Reference
 
-本文档描述训练产物、发布产物和 manifest 文件的职责。操作流程见 [产物发布与版本管理](../tutorial/08_artifact_publish_and_versioning.md)。
+本文档描述训练产物、发布产物和 manifest 文件的职责。操作流程见 [产物发布与版本管理](../tutorials/artifact_publishing.md)。
 
 ## Run directory
 

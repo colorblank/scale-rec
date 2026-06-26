@@ -52,4 +52,4 @@ sequence 特征中的 padding bucket 也会记录命中。当前 embedding pooli
 ## Related docs
 
 - [Artifact Reference](../reference/artifacts.md)
-- [训练评估与特征质量](../tutorial/07_evaluation_and_feature_quality.md)
+- [训练评估与特征质量](../tutorials/evaluation_and_feature_quality.md)

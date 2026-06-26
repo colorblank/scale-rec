@@ -2,7 +2,7 @@
 
 feature config YAML 是 Python 训练和 Rust 推理共享的特征契约。它定义原始输入列、在线字段来源、算子 DAG、embedding 配置和 label/discard 角色。
 
-完整算子参考见 [Feature operators](../feature_operators.md)。
+完整算子参考见 [Feature operators](feature_operators.md)。
 
 ## Top-level schema
 
@@ -96,7 +96,7 @@ CrossFeature, ListOverlap, SequenceOp, StringConcat,
 FeatureHash, PluginOp, ParsedFeatureHash, ConcatHash
 ```
 
-新增算子需要同时实现 Python 和 Rust，并注册到对应 registry。详细参数见 [Feature operators](../feature_operators.md)。
+新增算子需要同时实现 Python 和 Rust，并注册到对应 registry。详细参数见 [Feature operators](feature_operators.md)。
 
 ## Quality and bucket statistics
 

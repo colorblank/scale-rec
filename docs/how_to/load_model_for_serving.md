@@ -62,4 +62,4 @@ curl -X POST http://127.0.0.1:8080/predict \
   -d '{"model":"model_gdcn_esmm","features":[{"user_id":42,"item_id":500}]}'
 ```
 
-完整 HTTP 协议见 [HTTP API](../API.md)。
+完整 HTTP 协议见 [HTTP API](../reference/http_api.md)。

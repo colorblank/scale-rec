@@ -58,5 +58,5 @@ curl http://127.0.0.1:8080/metrics
 ## Next
 
 - 加载规则见 [Rust Model Loading](../reference/rust_model_loading.md)。
-- HTTP 协议见 [HTTP API](../API.md)。
-- 指标见 [Prometheus Metrics](../METRICS.md)。
+- HTTP 协议见 [HTTP API](../reference/http_api.md)。
+- 指标见 [Prometheus Metrics](../reference/prometheus_metrics.md)。

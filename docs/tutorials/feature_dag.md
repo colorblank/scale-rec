@@ -74,5 +74,5 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 ## Next
 
-- 算子参考见 [Feature operators](../feature_operators.md)。
+- 算子参考见 [Feature operators](../reference/feature_operators.md)。
 - 配置参考见 [Feature Config Reference](../reference/feature_config.md)。

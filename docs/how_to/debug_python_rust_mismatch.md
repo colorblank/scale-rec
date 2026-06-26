@@ -90,7 +90,7 @@ LR 模型结构最简单，适合判断问题是在特征预处理还是复杂�
 
 ## Related docs
 
-- [Debug 与一致性验证](../tutorial/11_debug_and_consistency.md)
+- [Debug 与一致性验证](../tutorials/debugging_consistency.md)
 - [Model Config Reference](../reference/model_config.md)
 - [Feature Config Reference](../reference/feature_config.md)
 - [Rust Model Loading](../reference/rust_model_loading.md)
