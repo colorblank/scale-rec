@@ -65,4 +65,4 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 ## Next
 
 - 模型配置参考见 [Model Config Reference](../reference/model_config.md)。
-- output_contract 设计见 [ADR 0001](../adr/0001-output-contract-v1.md)。
+- output_contract 设计见 [Model Config Reference](../reference/model_config.md#output_contract)。

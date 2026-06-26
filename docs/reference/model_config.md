@@ -67,7 +67,82 @@ params:
 | `metrics` | 评估指标列表 |
 | `outputs` | 对外公开输出列表 |
 
-详细设计见 [ADR 0001](../adr/0001-output-contract-v1.md)。
+引入它的原因是消除旧模型里的隐式约定：旧路径把任务塔、ESMM 概率关系、公开输出和
+loss 规则分散在模型实现、训练代码和 serving 适配逻辑中。同一个任务名在不同模型里
+可能代表 logit，也可能代表 probability，容易导致 loss 选择、指标计算和
+Rust/Python 一致性依赖约定而不是配置。
+
+`output_contract.version: 1` 把这些语义全部写进配置：
+
+- `graph.towers` 从 backbone 的命名表示构建标量任务塔。
+- `graph.relations` 在 tower 输出之上构建无参数、有类型的关系 DAG。
+- `objectives` 声明训练目标、标签、损失、权重和可选样本 mask。
+- `metrics` 独立声明评估节点、标签、指标和可选样本 mask。
+- `outputs` 将内部节点投影为稳定的公开输出名称。
+
+### Node types and relations
+
+Tower 只允许输出三类节点：
+
+| `kind` | 语义 |
+|---|---|
+| `binary_logit` | 二分类 logit，适用于 BCE-with-logits |
+| `regression` | 回归值 |
+| `score` | 排序分或通用连续分数 |
+
+概率必须通过显式 `sigmoid` relation 产生。`multiply` 只接受两个及以上 probability
+输入，`add` 只接受两个及以上 regression 输入，`identity` 保留输入类型。relation 按
+DAG 拓扑执行；循环、未知引用、重复名称和未消费节点都会在构建前拒绝。
+
+### Loss and metric type checks
+
+loss 与节点类型严格匹配：
+
+| Loss | 允许的 source 类型 |
+|---|---|
+| `binary_cross_entropy_with_logits` | `binary_logit` |
+| `weighted_bce_stay` | `binary_logit` |
+| `binary_cross_entropy` | `probability` |
+| `mse` / `mae` / `huber` | `regression` 或 `score` |
+
+`binary_cross_entropy` 会对 probability 使用显式 epsilon 截断。
+
+metric 也按节点类型处理：
+
+- `auc` 接受 logit 或 probability；logit 会在 metric 入口转换为 probability，probability 不会重复 sigmoid。
+- `logloss` 只接受 probability。
+- `mae` / `mse` 只接受 regression 或 score。
+
+serving 只序列化 `outputs` 指定的节点，不再自动执行 sigmoid 或任务名映射。
+
+### Consistency and validation
+
+Rust 和 Python 解析并校验同一份 schema。两端共享接受/拒绝 fixtures，规范化过程会展开
+默认值、稳定排序节点，并以统一浮点表示生成 canonical JSON，供 manifest 保存完整契约及摘要。
+
+训练侧还会把 `output_contract` 与 feature config 联合校验：
+
+- objective / metric 引用的 label 必须是 `role: label`。
+- mask source 必须存在。
+- 原生契约引用的 label 不允许引用 feature/discard source。
+
+当前仍保留 `FlowConfig` 的兼容格式；“label 不配置默认值”尚未在实际训练配置中强制。
+
+### Compatibility and migration
+
+原生 `output_contract` 与旧 `tasks` / `task_config` / `label_col_map` / `metrics` 禁止混用。
+仓库中的模型示例均使用原生 `output_contract`；旧字段只作为兼容路径保留，新配置不应继续使用。
+
+当前状态：
+
+- 8 个注册模型 `lr`、`deepfm`、`mmoe`、`esmm`、`gdcn_esmm`、`unimixer`、
+  `token_mixer_large`、`rankmixer` 均支持原生契约。
+- shared-backbone 模型向 `OutputHead` 暴露 `shared` 表示。
+- MMoE 按 `graph.towers[].input` 的首次出现顺序构建 gate，并暴露同名表示。
+- contract 模型的 `forward()` 只返回公开输出，`forward_execution()` 同时保留内部节点，
+  供训练和评估使用。
+- Python 导出与 Rust 加载已覆盖全部 8 个示例模型的 key/shape 绑定检查。
+- manifest 保存规范化契约仍属于后续发布治理工作。
 
 ## Loss weighting
 

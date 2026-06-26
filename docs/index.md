@@ -24,7 +24,6 @@ scale-rec 文档按 PyTorch 风格分为快速开始、教程、操作指南、�
 | 入口 | 内容 |
 |---|---|
 | [How-to index](how_to/index.md) | 常见操作入口和当前旧文档映射 |
-| [Training guide](TRAINING_GUIDE.md) | 训练命令、数据格式、checkpoint、发布 manifest、服务加载和压测 |
 
 ## Reference
 
@@ -51,9 +50,3 @@ scale-rec 文档按 PyTorch 风格分为快速开始、教程、操作指南、�
 | [Notes index](notes/index.md) | 架构、性能和设计记录入口 |
 | [HTTP benchmark report](notes/http_benchmark_report.md) | GDCN+ESMM / UniMixer 压测结果和后端对比 |
 | [Design improvements](notes/design_improvements.md) | 当前架构评估和后续改进方向 |
-
-## Architecture decisions
-
-| ADR | 内容 |
-|---|---|
-| [ADR 0001: output_contract v1](adr/0001-output-contract-v1.md) | 统一模型输出、训练目标、指标和公开输出契约 |

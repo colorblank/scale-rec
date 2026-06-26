@@ -146,6 +146,6 @@ Overall Consistency Status: PASS
 ## Next steps
 
 - 想理解完整链路：读 [Tutorials](tutorials/index.md)。
-- 想查训练参数和 artifact：读 [训练手册](TRAINING_GUIDE.md)。
+- 想查训练参数和 artifact：读 [CLI Reference](reference/cli.md) 和 [Artifact Reference](reference/artifacts.md)。
 - 想查 HTTP 请求响应：读 [HTTP API](reference/http_api.md)。
 - 想查特征算子：读 [Feature operators](reference/feature_operators.md)。

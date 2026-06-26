@@ -126,12 +126,12 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --epochs 3 --batch-size 1024 --no-header
 ```
 
-这里的配置分层和 [训练手册](../TRAINING_GUIDE.md#训练流程) 保持一致：`feature_config`
+这里的配置分层和 [Offline Training](../tutorials/offline_training.md) 保持一致：`feature_config`
 管特征编排，`label_policy` 只管 demo 标签，`model_config` 通过原生
 `output_contract` 定义模型输出语义，`train_config` 定义训练默认值和评估策略。legacy
 字段仅用于兼容旧配置。
 
-调试特征预处理时，先用单样本 `FeatureDag(debug_mode=True).execute(row)` 看 source/default/operator 输出，再用 `dag.preprocess_batch(rows)` 看最终 tensor shape/value；训练侧整体质量看 run manifest 里的 `feature_quality.*` 指标。详细步骤见 [训练手册 - 特征预处理 Debug](../TRAINING_GUIDE.md#特征预处理-debug)。
+调试特征预处理时，先用单样本 `FeatureDag(debug_mode=True).execute(row)` 看 source/default/operator 输出，再用 `dag.preprocess_batch(rows)` 看最终 tensor shape/value；训练侧整体质量看 run manifest 里的 `feature_quality.*` 指标。详细步骤见 [Debug Python/Rust Mismatch](../how_to/debug_python_rust_mismatch.md)。
 
 ## Python 测试与格式化
 

@@ -80,7 +80,7 @@ cargo run --bin server --release -- \
   --model-path python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.manifest.yaml
 ```
 
-HTTP 请求格式见 [HTTP API Reference](docs/reference/http_api.md)；模型加载规则见 [Getting Started](docs/getting_started.md#serve-the-model) 和 [训练手册](docs/TRAINING_GUIDE.md#服务加载)。
+HTTP 请求格式见 [HTTP API Reference](docs/reference/http_api.md)；模型加载规则见 [Getting Started](docs/getting_started.md#serve-the-model) 和 [Rust Model Loading](docs/reference/rust_model_loading.md)。
 
 ## Repository layout
 

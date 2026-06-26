@@ -1,6 +1,6 @@
 # CLI Reference
 
-本文档汇总训练、验证和服务启动常用命令。完整训练策略说明见 [训练手册](../TRAINING_GUIDE.md)。
+本文档汇总训练、验证和服务启动常用命令。完整训练流程见 [Offline Training](../tutorials/offline_training.md)，多日训练见 [Train with Multi-day Files](../how_to/train_with_multi_day_files.md)。
 
 所有命令从仓库根目录执行。
 

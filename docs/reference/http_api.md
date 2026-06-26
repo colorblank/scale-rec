@@ -50,7 +50,7 @@ cargo run --bin server --release -- \
   --port 8080
 ```
 
-完整加载规则见 [训练手册 - 服务加载](../TRAINING_GUIDE.md#服务加载)。
+完整加载规则见 [Rust Model Loading](rust_model_loading.md)。
 
 ## 通用约定
 

@@ -7,7 +7,6 @@ Notes 用于记录架构说明、性能分析、压测报告和设计演进。�
 | Note | Content |
 |---|---|
 | [Design improvements](design_improvements.md) | 当前架构评估、已完成拆分和后续改进方向 |
-| [ADR 0001: output_contract v1](../adr/0001-output-contract-v1.md) | output_contract v1 的设计决策 |
 
 ## Performance
 

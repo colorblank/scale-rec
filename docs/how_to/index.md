@@ -1,15 +1,15 @@
 # How-to Guides
 
-How-to 文档面向具体操作：你已经知道目标，只需要稳定步骤和注意事项。当前详细内容主要仍在 [训练手册](../TRAINING_GUIDE.md) 和教程中，后续会逐步拆成独立页面。
+How-to 文档面向具体操作：你已经知道目标，只需要稳定步骤和注意事项。完整参数查 [CLI Reference](../reference/cli.md)，产物格式查 [Artifact Reference](../reference/artifacts.md)。
 
 ## Training
 
 | Task | Current documentation |
 |---|---|
-| 生成 demo 数据并训练模型 | [Getting Started](../getting_started.md)、[训练手册](../TRAINING_GUIDE.md#快速开始) |
+| 生成 demo 数据并训练模型 | [Getting Started](../getting_started.md)、[Offline Training](../tutorials/offline_training.md) |
 | 使用独立验证集 | [Train with Independent Eval Data](train_with_independent_eval_data.md) |
 | 多日训练和增量微调 | [Train with Multi-day Files](train_with_multi_day_files.md) |
-| 从 checkpoint 恢复训练 | [训练手册](../TRAINING_GUIDE.md#保存与推理导出) |
+| 从 checkpoint 恢复训练 | [CLI Reference](../reference/cli.md)、[Artifact Reference](../reference/artifacts.md) |
 | 调整多目标损失权重 | [Model Config Reference](../reference/model_config.md#loss-weighting)、[样本表、标签与任务定义](../tutorials/samples_labels_and_tasks.md) |
 
 ## Publishing and serving
@@ -29,4 +29,4 @@ How-to 文档面向具体操作：你已经知道目标，只需要稳定步骤�
 | 排查 Python/Rust 输出不一致 | [Debug Python/Rust Mismatch](debug_python_rust_mismatch.md) |
 | 查看 bucket hit count 和 feature quality | [Inspect Feature Quality](inspect_feature_quality.md) |
 | 优化训练预处理性能 | [Tune Training Preprocessing](tune_training_preprocessing.md) |
-| 运行 HTTP 压测 | [HTTP 压测报告](../notes/http_benchmark_report.md)、[训练手册](../TRAINING_GUIDE.md#http-压测) |
+| 运行 HTTP 压测 | [HTTP 压测报告](../notes/http_benchmark_report.md)、[Performance Tuning](../tutorials/performance_tuning.md) |
