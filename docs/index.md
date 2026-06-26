@@ -16,7 +16,6 @@ scale-rec 文档按 PyTorch 风格分为快速开始、教程、操作指南、�
 | 入口 | 内容 |
 |---|---|
 | [Tutorials index](tutorials/index.md) | PyTorch 风格教程入口，按推荐系统链路组织 |
-| [Legacy tutorial index](tutorial/README.md) | 旧版详细教程索引，保留用于兼容和深入阅读 |
 
 ## How-to guides
 
