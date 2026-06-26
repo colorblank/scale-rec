@@ -221,3 +221,21 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 - Python 运行时保持 `PYTHONPATH=python/src:$PYTHONPATH`，否则 `train` 和 `scale_rec_demo` 模块可能无法解析。
 - Rust `server` 默认监听 `0.0.0.0:8080`；本地调用使用 `http://127.0.0.1:8080`。
 - Linux MKL 压测建议设置 `MKL_NUM_THREADS=1` 和 `OMP_NUM_THREADS=1`，避免每个请求内部再开过多 BLAS 线程。
+
+## Command arguments
+
+| Command | Arguments used here | Full parameter table |
+|---|---|---|
+| `rustc --version` / `cargo --version` | `--version` prints tool versions | Rust toolchain check; no project-specific flags |
+| `uv sync --project python` | `--project python` selects the Python project directory | uv project setup |
+| `cargo fmt` / `cargo check` / `cargo test` | `--lib`, `--test`, module paths and test filters select Rust test scope | Rust commands are standard Cargo flags |
+| `cargo build --release --features ... --bin ...` | `--release` builds optimized binaries; `--features` selects Candle backend; `--bin` selects binary targets | Rust commands are standard Cargo flags |
+| `cargo run --bin server` | `--model-dir`, `--model-path` and serving runtime flags | [CLI Reference: Rust server](cli.md#rust-server) |
+| `train.app.main` | `--help` prints subcommand help; other training flags follow the selected mode | [CLI Reference: Train command overview](cli.md#train-command-overview) |
+| `scale_rec_demo.generate_discover_data` | `--label-policy` selects demo label policy YAML | [CLI Reference: Generate discover data](cli.md#generate-discover-data) |
+| `train.app.main discover` | Data/config/training/artifact/runtime flags | [CLI Reference: Train discover](cli.md#train-discover) |
+| `pytest` | `python/tests/ -v` runs verbose Python tests | pytest standard arguments |
+| `uvx --offline ruff check/format` | `--offline` avoids network; `check` lints; `format` formats | Ruff standard arguments |
+| `uv run --project python mypy` | `--project python` selects project; `mypy` runs type checking | mypy standard arguments |
+| `scale_rec_demo.verify_all` | `--models`, `--force-train`, `--threshold` | [CLI Reference: Verify all](cli.md#verify-all) |
+| `OMP_NUM_THREADS=1` / `MKL_NUM_THREADS=1` | Environment variables cap BLAS/OpenMP thread fan-out | Used before benchmark/server commands |

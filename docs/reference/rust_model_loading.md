@@ -100,3 +100,10 @@ curl http://127.0.0.1:8080/models/model_gdcn_esmm/features
 ```
 
 HTTP 请求响应格式见 [HTTP API](http_api.md)。
+
+## Command arguments
+
+| Command | Arguments used here | Full parameter table |
+|---|---|---|
+| `cargo run --bin server` | `--model-dir`, `--model-path`, `--feature-config` and runtime serving flags | [CLI Reference: Rust server](cli.md#rust-server) |
+| `curl /health` / `/models` / `/models/{model}` / `/features` | HTTP endpoint paths and response fields | [HTTP API](http_api.md) |

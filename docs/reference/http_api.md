@@ -428,3 +428,12 @@ Pointwise 示例：
 ```
 
 Broadcast 示例中，`user` 通常放 `source: User` 和 `source: Context` 字段，`items` 放 `source: Item` 字段。服务端只负责合并对象；字段角色由 FeatureDag 配置决定。
+
+## Command arguments
+
+| Command | Arguments used here | Full parameter table |
+|---|---|---|
+| `cargo run --bin server` | `--model-dir`, `--model-path`, `--port` and serving limits | [CLI Reference: Rust server](cli.md#rust-server) |
+| `curl -X GET` | Endpoint path selects the read API; no request body | Endpoint sections above |
+| `curl -X POST /predict` | `-H 'Content-Type: application/json'` sets JSON body type; `-d` provides `model`, optional `version`, optional `fallback_version`, and `features` | [POST /predict](#post-predict) |
+| `curl -X POST /predict/broadcast` | `-H 'Content-Type: application/json'` sets JSON body type; `-d` provides `model`, optional version fields, `user`, and `items` | [POST /predict/broadcast](#post-predictbroadcast) |

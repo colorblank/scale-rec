@@ -172,3 +172,9 @@ Python 导出的 `state_dict` key 必须和 Rust Candle `VarBuilder::pp()` 路�
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m scale_rec_demo.verify_all --models all --force-train
 ```
+
+## Command arguments
+
+| Command | Arguments used here | Full parameter table |
+|---|---|---|
+| `scale_rec_demo.verify_all` | `--models all --force-train` retrains and verifies all demo models | [CLI Reference: Verify all](cli.md#verify-all) |

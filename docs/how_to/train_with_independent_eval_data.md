@@ -62,3 +62,9 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 - 多日训练见 [Train with Multi-day Files](train_with_multi_day_files.md)。
 - 训练参数见 [CLI Reference](../reference/cli.md)。
+
+## Command arguments
+
+| Command | Arguments used here | Full parameter table |
+|---|---|---|
+| `train.app.main discover` | `--eval-data` selects an independent validation file; other data/config/training flags follow the discover trainer | [CLI Reference: Train discover](../reference/cli.md#train-discover) |

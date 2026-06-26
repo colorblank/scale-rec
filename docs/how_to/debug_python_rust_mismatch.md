@@ -94,3 +94,10 @@ LR 模型结构最简单，适合判断问题是在特征预处理还是复杂�
 - [Model Config Reference](../reference/model_config.md)
 - [Feature Config Reference](../reference/feature_config.md)
 - [Rust Model Loading](../reference/rust_model_loading.md)
+
+## Command arguments
+
+| Command | Arguments used here | Full parameter table |
+|---|---|---|
+| `scale_rec_demo.verify_all` | `--models` scopes the model set; `--force-train` regenerates weights before comparison | [CLI Reference: Verify all](../reference/cli.md#verify-all) |
+| `scale_rec_demo.check_weight_bindings` | `--models all` checks every demo model | [CLI Reference: Check weight bindings](../reference/cli.md#check-weight-bindings) |

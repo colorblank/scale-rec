@@ -45,3 +45,10 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 - 操作指南见 [Debug Python/Rust Mismatch](../how_to/debug_python_rust_mismatch.md)。
 - 特征配置见 [Feature Config Reference](../reference/feature_config.md)。
 - 模型配置见 [Model Config Reference](../reference/model_config.md)。
+
+## Command arguments
+
+| Command | Arguments used here | Full parameter table |
+|---|---|---|
+| `scale_rec_demo.verify_all` | `--models` scopes verification; `--force-train` regenerates weights | [CLI Reference: Verify all](../reference/cli.md#verify-all) |
+| `scale_rec_demo.check_weight_bindings` | `--models all` validates every demo model binding | [CLI Reference: Check weight bindings](../reference/cli.md#check-weight-bindings) |

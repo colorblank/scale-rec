@@ -335,3 +335,9 @@ scale_rec_build_info{version="<Cargo package version>"} 1
 - Pod 重启、ready 状态、网络吞吐和连接数。
 - Candle 后端设备利用率及显存；GPU/Metal/CUDA 使用对应平台 exporter。
 - 模型文件加载耗时和热更新失败次数可在后续热更新控制面接入时补充。
+
+## Command arguments
+
+| Command | Arguments used here | Full parameter table |
+|---|---|---|
+| `curl /metrics` | GET `/metrics` returns Prometheus text exposition | [HTTP API: GET /metrics](http_api.md#get-metrics) |

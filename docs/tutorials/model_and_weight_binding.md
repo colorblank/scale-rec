@@ -66,3 +66,10 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 - 模型配置参考见 [Model Config Reference](../reference/model_config.md)。
 - output_contract 设计见 [Model Config Reference](../reference/model_config.md#output_contract)。
+
+## Command arguments
+
+| Command | Arguments used here | Full parameter table |
+|---|---|---|
+| `scale_rec_demo.check_weight_bindings` | `--models all` checks every demo model | [CLI Reference: Check weight bindings](../reference/cli.md#check-weight-bindings) |
+| `scale_rec_demo.verify_all` | `--models all --force-train` retrains and compares Python/Rust outputs | [CLI Reference: Verify all](../reference/cli.md#verify-all) |

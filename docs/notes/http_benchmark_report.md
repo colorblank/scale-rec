@@ -280,3 +280,12 @@ UniMixer 的 P50 稳定在 `12.2 ms`，说明常规请求耗时稳定；尾延�
 - 真实性能结论以带 `--input-file` 和 `--feature-config` 的 discover 输入压测为准。Synthetic smoke 只验证 HTTP 链路。
 - bench 的 open-loop 模式按 `--target-qps` 定速发请求，`--concurrency` 当前不限制最大在途请求数；尾延迟包含服务端处理时间和排队时间。
 - 不同平台、不同后端、不同构建参数的结果不能直接混用对比。
+
+## Command arguments
+
+| Command | Arguments used here | Full parameter table |
+|---|---|---|
+| `cargo build --release --features ... --bin ...` | `--release` builds optimized binaries; `--features` selects Candle backend features; `--bin` selects server/bench targets | [Development Reference](../reference/development.md) |
+| `target/release/server` | `--model-dir`, `--worker-threads`, `--blocking-threads` configure serving process and runtime | [CLI Reference: Rust server](../reference/cli.md#rust-server) |
+| `target/release/bench` | `--target`, `--model`, `--mode`, `--input-file`, `--feature-config`, `--target-qps` and timing flags | [CLI Reference: Rust bench](../reference/cli.md#rust-bench) |
+| `curl /health` | HTTP endpoint check | [HTTP API: GET /health](../reference/http_api.md#get-health) |

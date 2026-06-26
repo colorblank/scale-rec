@@ -82,3 +82,12 @@ Overall Consistency Status: PASS
 - 样本和标签见 [Samples, Labels, and Tasks](samples_labels_and_tasks.md)。
 - 特征 DAG 见 [Feature DAG](feature_dag.md)。
 - 发布产物见 [Artifact Publishing](artifact_publishing.md)。
+
+## Command arguments
+
+| Command | Arguments used here | Full parameter table |
+|---|---|---|
+| `scale_rec_demo.generate_discover_data` | `--label-policy` selects demo label policy YAML | [CLI Reference: Generate discover data](../reference/cli.md#generate-discover-data) |
+| `train.app.main discover` | Data, feature/model configs, training and artifact flags | [CLI Reference: Train discover](../reference/cli.md#train-discover) |
+| `scale_rec_demo.verify_all` | `--models` selects model keys; `--force-train` retrains before comparison | [CLI Reference: Verify all](../reference/cli.md#verify-all) |
+| `cargo run --bin server` | `--model-dir` scans serving artifacts | [CLI Reference: Rust server](../reference/cli.md#rust-server) |

@@ -123,3 +123,15 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python pytest python/tests/ -
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m scale_rec_demo.verify_all --models all --force-train
 ```
+
+## Command arguments
+
+| Command | Arguments used here | Full parameter table |
+|---|---|---|
+| `scale_rec_demo.generate_discover_data` | `--label-policy` selects demo label policy YAML | [CLI Reference: Generate discover data](docs/reference/cli.md#generate-discover-data) |
+| `train.app.main discover` | `--data` / `--feature-config` / `--model-config` / `--train-config` / `--epochs` / `--batch-size` / `--no-header` / `--eval-samples` / `--artifact-dir` / `--model-name` / `--run-version` | [CLI Reference: Train discover](docs/reference/cli.md#train-discover) |
+| `scale_rec_demo.verify_all` | `--models` selects model keys; `--force-train` retrains before comparison | [CLI Reference: Verify all](docs/reference/cli.md#verify-all) |
+| `cargo run --bin server` | `--model-dir` scans a serving directory; `--model-path` loads one manifest | [CLI Reference: Rust server](docs/reference/cli.md#rust-server) |
+| `cargo fmt` / `cargo check` / `cargo test` | No project-specific flags in this page | [Development Reference](docs/reference/development.md) |
+| `uvx --offline ruff check` | `--offline` avoids network access; `check` runs linting | [Development Reference](docs/reference/development.md) |
+| `pytest` | `python/tests/ -q` runs Python tests quietly | [Development Reference](docs/reference/development.md) |

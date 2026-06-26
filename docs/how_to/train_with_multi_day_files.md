@@ -67,3 +67,9 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 - 独立验证集见 [Train with Independent Eval Data](train_with_independent_eval_data.md)。
 - 产物结构见 [Artifact Reference](../reference/artifacts.md)。
+
+## Command arguments
+
+| Command | Arguments used here | Full parameter table |
+|---|---|---|
+| `train.app.main discover` | `--data-glob`, `--start-date`, `--end-date` select dated files; `--init-weights` fine-tunes from safetensors | [CLI Reference: Train discover](../reference/cli.md#train-discover) |

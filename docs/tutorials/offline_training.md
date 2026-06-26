@@ -60,3 +60,9 @@ CLI 参数优先级最高，可以覆盖训练默认值。
 
 - 多日训练见 [Multi-day Training](multi_day_training.md)。
 - artifact 见 [Artifact Publishing](artifact_publishing.md)。
+
+## Command arguments
+
+| Command | Arguments used here | Full parameter table |
+|---|---|---|
+| `train.app.main discover` | Data, config, training, artifact and TSV reader arguments | [CLI Reference: Train discover](../reference/cli.md#train-discover) |

@@ -63,3 +63,10 @@ curl -X POST http://127.0.0.1:8080/predict \
 ```
 
 完整 HTTP 协议见 [HTTP API](../reference/http_api.md)。
+
+## Command arguments
+
+| Command | Arguments used here | Full parameter table |
+|---|---|---|
+| `cargo run --bin server` | `--model-dir`, `--model-path`, `--feature-config`, `--port` and serving limits | [CLI Reference: Rust server](../reference/cli.md#rust-server) |
+| `curl /health` / `/models` / `/predict` | HTTP method, endpoint path, JSON body and headers | [HTTP API](../reference/http_api.md) |

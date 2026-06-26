@@ -60,3 +60,10 @@ curl http://127.0.0.1:8080/metrics
 - 加载规则见 [Rust Model Loading](../reference/rust_model_loading.md)。
 - HTTP 协议见 [HTTP API](../reference/http_api.md)。
 - 指标见 [Prometheus Metrics](../reference/prometheus_metrics.md)。
+
+## Command arguments
+
+| Command | Arguments used here | Full parameter table |
+|---|---|---|
+| `cargo run --bin server` | `--model-dir` scans serving artifacts; `--model-path` loads one manifest | [CLI Reference: Rust server](../reference/cli.md#rust-server) |
+| `curl /health` / `/models` / `/predict` / `/predict/broadcast` / `/metrics` | HTTP method, endpoint path, headers and JSON body | [HTTP API](../reference/http_api.md) |

@@ -76,3 +76,9 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 - 算子参考见 [Feature operators](../reference/feature_operators.md)。
 - 配置参考见 [Feature Config Reference](../reference/feature_config.md)。
+
+## Command arguments
+
+| Command | Arguments used here | Full parameter table |
+|---|---|---|
+| `scale_rec_demo.verify_all` | `--models all --force-train` retrains and verifies Python/Rust consistency | [CLI Reference: Verify all](../reference/cli.md#verify-all) |

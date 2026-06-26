@@ -63,3 +63,10 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 ```text
 Overall Consistency Status: PASS
 ```
+
+## Command arguments
+
+| Command | Arguments used here | Full parameter table |
+|---|---|---|
+| `train.app.main discover` | Training data, feature/model configs, artifact publication and TSV reader flags | [CLI Reference: Train discover](../reference/cli.md#train-discover) |
+| `scale_rec_demo.verify_all` | `--models` selects model keys; `--force-train` retrains before comparison | [CLI Reference: Verify all](../reference/cli.md#verify-all) |

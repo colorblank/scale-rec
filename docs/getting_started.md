@@ -149,3 +149,15 @@ Overall Consistency Status: PASS
 - 想查训练参数和 artifact：读 [CLI Reference](reference/cli.md) 和 [Artifact Reference](reference/artifacts.md)。
 - 想查 HTTP 请求响应：读 [HTTP API](reference/http_api.md)。
 - 想查特征算子：读 [Feature operators](reference/feature_operators.md)。
+
+## Command arguments
+
+| Command | Arguments used here | Full parameter table |
+|---|---|---|
+| `cargo check` | No project-specific flags | [Development Reference](reference/development.md) |
+| `pytest` | `python/tests/ -q` runs the Python test suite quietly | [Development Reference](reference/development.md) |
+| `scale_rec_demo.generate_discover_data` | `--label-policy` selects the demo label policy YAML | [CLI Reference: Generate discover data](reference/cli.md#generate-discover-data) |
+| `train.app.main discover` | Training data, config, artifact, runtime and TSV reader flags | [CLI Reference: Train discover](reference/cli.md#train-discover) |
+| `cargo run --bin server` | `--model-dir` and `--model-path` control model loading | [CLI Reference: Rust server](reference/cli.md#rust-server) |
+| `curl /health` / `/models` / `/predict` / `/predict/broadcast` | HTTP method, endpoint path, JSON body and `Content-Type` header | [HTTP API](reference/http_api.md) |
+| `scale_rec_demo.verify_all` | `--models`, `--force-train`, `--threshold` | [CLI Reference: Verify all](reference/cli.md#verify-all) |

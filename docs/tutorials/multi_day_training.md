@@ -59,3 +59,9 @@ eval-data -> eval
 
 - 操作指南见 [Train with Multi-day Files](../how_to/train_with_multi_day_files.md)。
 - 独立验证集见 [Train with Independent Eval Data](../how_to/train_with_independent_eval_data.md)。
+
+## Command arguments
+
+| Command | Arguments used here | Full parameter table |
+|---|---|---|
+| `train.app.main discover` | `--data-glob`, `--start-date`, `--end-date`, `--init-weights`, `--resume-from` and common training flags | [CLI Reference: Train discover](../reference/cli.md#train-discover) |
