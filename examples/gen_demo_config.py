@@ -1,4 +1,4 @@
-"""生成 discover-main-sort 特征配置文件。
+"""生成 demo-main-sort 特征配置文件。
 
 默认策略：生产测试样本统一使用 FeatureHash（无状态哈希），避免维护离线词表状态。
 
@@ -23,7 +23,7 @@ from typing import Any, Optional
 import yaml
 
 VERSION = "1.0.0"
-FULL_CONFIG_FILE = "shared/feature_config_discover.yaml"
+FULL_CONFIG_FILE = "shared/feature_config_demo.yaml"
 
 ConfigDict = dict[str, Any]
 SourceDef = ConfigDict

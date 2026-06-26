@@ -10,7 +10,7 @@
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m scale_rec_demo.verify_all --models discover_gdcn_esmm --force-train
+  python -m scale_rec_demo.verify_all --models demo_gdcn_esmm --force-train
 ```
 
 ## Debug order
@@ -35,7 +35,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m scale_rec_demo.verify_all --models discover_lr --force-train
+  python -m scale_rec_demo.verify_all --models demo_lr --force-train
 ```
 
 如果 LR 也失败，优先看特征预处理和权重加载；如果只有复杂模型失败，再看模型层实现。

@@ -8,9 +8,9 @@
 
 | Entry point | Purpose | 参数表 |
 |---|---|---|
-| `python -m scale_rec_demo.generate_discover_data` | 生成 discover demo TSV | [Generate discover data](#generate-discover-data) |
+| `python -m scale_rec_demo.generate_demo_data` | 生成 demo TSV | [Generate demo data](#generate-demo-data) |
 | `python -m train.app.main single` | 单模型 CSV/Parquet 训练 | [Train: single](#train-single) |
-| `python -m train.app.main discover` | discover TSV 训练 | [Train: discover](#train-discover) |
+| `python -m train.app.main demo` | demo TSV 训练 | [Train: demo](#train-demo) |
 | `python -m train.app.main all` | 在同一数据集上批量训练示例模型 | [Train: all](#train-all) |
 | `python -m train.main <mode>` | 兼容训练入口，转发到 `train.app.main` | 参数同 `train.app.main` |
 | `python -m scale_rec_demo.verify_all` | Python 训练导出与 Rust 推理一致性验证 | [Verify all](#verify-all) |
@@ -20,19 +20,19 @@
 | `cargo run --bin demo_inference --release -- ...` | 离线加载权重并对 CSV 推理 | [Rust demo inference](#rust-demo-inference) |
 | `cargo run --bin validate_manifest --release -- ...` | 校验 serving manifest 与权重绑定 | [Rust validate manifest](#rust-validate-manifest) |
 
-## Generate discover data
+## Generate demo data
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m scale_rec_demo.generate_discover_data \
-  --label-policy examples/shared/discover_label_policy.yaml
+  python -m scale_rec_demo.generate_demo_data \
+  --label-policy examples/shared/demo_label_policy.yaml
 ```
 
 | 参数 | 类型 | 默认 | 说明 | 约束 |
 |---|---|---|---|---|
-| `--label-policy` | path | `examples/shared/discover_label_policy.yaml` | demo 标签生成规则 YAML | 必须可读 |
+| `--label-policy` | path | `examples/shared/demo_label_policy.yaml` | demo 标签生成规则 YAML | 必须可读 |
 
-输出路径固定为 `python/artifacts/demo/discover_train_data.txt`。当前命令没有 `--output` 参数。
+输出路径固定为 `python/artifacts/demo/demo_train_data.txt`。当前命令没有 `--output` 参数。
 
 ## Train command overview
 
@@ -40,7 +40,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m train.app.main <single|discover|all> [args...]
+  python -m train.app.main <single|demo|all> [args...]
 ```
 
 三个训练子命令共享 data、training、artifact 和 runtime 参数。没有在 CLI 显式传入的训练参数会从 `--train-config` 读取；默认配置文件是 `examples/shared/train_defaults.yaml`。
@@ -71,7 +71,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 ### Common data arguments
 
-适用于 `single`、`discover`、`all`。
+适用于 `single`、`demo`、`all`。
 
 | 参数 | 类型 | 默认 | 说明 | 约束 |
 |---|---|---|---|---|
@@ -83,7 +83,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 ### Common training arguments
 
-适用于 `single`、`discover`、`all`。
+适用于 `single`、`demo`、`all`。
 
 | 参数 | 类型 | 默认 | 说明 | 约束 |
 |---|---|---|---|---|
@@ -120,7 +120,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 ### Common artifact arguments
 
-适用于 `single`、`discover`、`all`。
+适用于 `single`、`demo`、`all`。
 
 | 参数 | 类型 | 默认 | 说明 | 约束 |
 |---|---|---|---|---|
@@ -132,7 +132,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 ### Common runtime and logging arguments
 
-适用于 `single`、`discover`、`all`。
+适用于 `single`、`demo`、`all`。
 
 | 参数 | 类型 | 默认 | 说明 | 约束 |
 |---|---|---|---|---|
@@ -148,7 +148,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m train.app.main single \
   --data data/train.csv \
-  --feature-config examples/shared/feature_config_discover.yaml \
+  --feature-config examples/shared/feature_config_demo.yaml \
   --model-config examples/models/lr.yaml
 ```
 
@@ -156,26 +156,26 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 | 参数 | 类型 | 默认 | 说明 | 约束 |
 |---|---|---|---|---|
-| `--feature-config` | path | `examples/shared/feature_config_discover.yaml` | 特征 DAG 配置 | 必须可读 |
+| `--feature-config` | path | `examples/shared/feature_config_demo.yaml` | 特征 DAG 配置 | 必须可读 |
 | `--model-config` | path | 必填 | 模型结构与 `output_contract` 配置 | 必须可读 |
 | `--debug` | int | `0` | FeatureDag debug 开关 | `>0` 时启用 debug mode |
 
-## Train: discover
+## Train: demo
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m train.app.main discover \
-  --data python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/shared/feature_config_discover.yaml \
+  python -m train.app.main demo \
+  --data python/artifacts/demo/demo_train_data.txt \
+  --feature-config examples/shared/feature_config_demo.yaml \
   --model-config examples/models/gdcn_esmm.yaml \
   --epochs 10 --batch-size 128 --no-header --eval-samples 400
 ```
 
-`discover` 适合 discover-main-sort TSV 训练。它支持 [common data arguments](#common-data-arguments)、[common training arguments](#common-training-arguments)、[common artifact arguments](#common-artifact-arguments) 和 [common runtime and logging arguments](#common-runtime-and-logging-arguments)。
+`demo` 适合 demo-main-sort TSV 训练。它支持 [common data arguments](#common-data-arguments)、[common training arguments](#common-training-arguments)、[common artifact arguments](#common-artifact-arguments) 和 [common runtime and logging arguments](#common-runtime-and-logging-arguments)。
 
 | 参数 | 类型 | 默认 | 说明 | 约束 |
 |---|---|---|---|---|
-| `--feature-config` | path | `examples/shared/feature_config_discover.yaml` | 特征 DAG 配置 | 必须可读 |
+| `--feature-config` | path | `examples/shared/feature_config_demo.yaml` | 特征 DAG 配置 | 必须可读 |
 | `--model-config` | path | 必填 | 模型结构与 `output_contract` 配置 | 必须可读 |
 | `--no-header` | flag | false | 输入 TSV 无 header 行 | demo 数据需要开启 |
 | `--null-markers` | list | `NULL \N null None ""` | 识别为空值的字符串集合 | 空字符串也属于默认集合 |
@@ -189,7 +189,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m train.app.main all \
-  --data python/artifacts/demo/discover_train_data.txt \
+  --data python/artifacts/demo/demo_train_data.txt \
   --models all
 ```
 
@@ -197,10 +197,10 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 | 参数 | 类型 | 默认 | 说明 | 约束 |
 |---|---|---|---|---|
-| `--feature-config` | path | `examples/shared/feature_config_discover.yaml` | 特征 DAG 配置 | 必须可读 |
+| `--feature-config` | path | `examples/shared/feature_config_demo.yaml` | 特征 DAG 配置 | 必须可读 |
 | `--models` | csv 或 `all` | `all` | 要训练的模型 key 列表 | 逗号分隔；支持代码中注册的 demo key |
-| `--model-config-discover-gdcn-esmm` | path | `examples/models/gdcn_esmm.yaml` | `discover_gdcn_esmm` 的模型配置 | 必须可读 |
-| `--model-config-discover-unimixer` | path | `examples/models/unimixer.yaml` | `discover_unimixer` 的模型配置 | 必须可读 |
+| `--model-config-demo-gdcn-esmm` | path | `examples/models/gdcn_esmm.yaml` | `demo_gdcn_esmm` 的模型配置 | 必须可读 |
+| `--model-config-demo-unimixer` | path | `examples/models/unimixer.yaml` | `demo_unimixer` 的模型配置 | 必须可读 |
 | `--debug` | int | `0` | FeatureDag debug 开关 | `>0` 时启用 debug mode |
 
 ## Verify all
@@ -212,7 +212,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 | 参数 | 类型 | 默认 | 说明 | 约束 |
 |---|---|---|---|---|
-| `--models` | csv 或 `all` | `all` | 要验证的模型 key 列表 | 支持 `discover_lr`、`discover_deepfm`、`discover_mmoe`、`discover_esmm`、`discover_gdcn_esmm`、`discover_unimixer`、`discover_token_mixer_large`、`discover_rankmixer` |
+| `--models` | csv 或 `all` | `all` | 要验证的模型 key 列表 | 支持 `demo_lr`、`demo_deepfm`、`demo_mmoe`、`demo_esmm`、`demo_gdcn_esmm`、`demo_unimixer`、`demo_token_mixer_large`、`demo_rankmixer` |
 | `--force-train` | flag | false | 强制重新训练并覆盖 demo 权重 | 会增加运行时间 |
 | `--threshold` | float | `1e-4` | Python/Rust 输出最大允许差异 | 超过阈值视为失败 |
 
@@ -226,7 +226,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 | 参数 | 类型 | 默认 | 说明 | 约束 |
 |---|---|---|---|---|
 | `--models` | csv 或 `all` | `all` | 要检查的模型 key 列表 | 同 [Verify all](#verify-all) |
-| `--feature-config` | path | `examples/shared/feature_config_discover.yaml` | 用于构建 feature info 的特征配置 | 必须可读 |
+| `--feature-config` | path | `examples/shared/feature_config_demo.yaml` | 用于构建 feature info 的特征配置 | 必须可读 |
 | `--keep-temp` | flag | false | 保留临时 safetensors 和 manifest | 用于排查 key/shape 问题 |
 
 ## Rust server
@@ -270,8 +270,8 @@ cargo run --bin bench --release -- \
   --target http://127.0.0.1:8080 \
   --model model_gdcn_esmm \
   --mode broadcast \
-  --input-file python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/shared/feature_config_discover.yaml \
+  --input-file python/artifacts/demo/demo_train_data.txt \
+  --feature-config examples/shared/feature_config_demo.yaml \
   --no-header \
   --target-qps 300
 ```
@@ -294,7 +294,7 @@ cargo run --bin bench --release -- \
 
 ```bash
 cargo run --bin demo_inference --release -- \
-  examples/shared/feature_config_discover.yaml \
+  examples/shared/feature_config_demo.yaml \
   examples/models/gdcn_esmm.yaml \
   python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.safetensors \
   python/artifacts/demo/model_gdcn_esmm_test.csv \

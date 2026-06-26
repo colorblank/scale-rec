@@ -7,8 +7,8 @@ from types import ModuleType
 
 def _load_generator() -> ModuleType:
     repo_root = Path(__file__).resolve().parents[2]
-    path = repo_root / "examples" / "gen_discover_config.py"
-    spec = importlib.util.spec_from_file_location("gen_discover_config", path)
+    path = repo_root / "examples" / "gen_demo_config.py"
+    spec = importlib.util.spec_from_file_location("gen_demo_config", path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -16,7 +16,7 @@ def _load_generator() -> ModuleType:
     return module
 
 
-def test_discover_config_generator_contract() -> None:
+def test_demo_config_generator_contract() -> None:
     generator = _load_generator()
 
     full = generator.generate_config()
@@ -35,7 +35,7 @@ def test_discover_config_generator_contract() -> None:
     )
 
 
-def test_discover_config_operator_names_are_unique() -> None:
+def test_demo_config_operator_names_are_unique() -> None:
     generator = _load_generator()
     operators = generator.generate_config()["operators"]
     names = [op["name"] for op in operators]
@@ -43,15 +43,15 @@ def test_discover_config_operator_names_are_unique() -> None:
     assert len(names) == len(set(names))
 
 
-def test_discover_config_generator_matches_committed_files() -> None:
+def test_demo_config_generator_matches_committed_files() -> None:
     import yaml
 
     generator = _load_generator()
     repo_root = Path(__file__).resolve().parents[2]
 
-    # 1. Full discover config
+    # 1. Full demo config
     full_generated = generator.generate_config()
-    with (repo_root / "examples" / "shared" / "feature_config_discover.yaml").open(
+    with (repo_root / "examples" / "shared" / "feature_config_demo.yaml").open(
         encoding="utf-8"
     ) as f:
         full_committed = yaml.safe_load(f)

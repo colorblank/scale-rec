@@ -8,7 +8,7 @@
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m scale_rec_demo.verify_all --models discover_gdcn_esmm --force-train
+  python -m scale_rec_demo.verify_all --models demo_gdcn_esmm --force-train
 ```
 
 如果失败，按下面顺序缩小范围。
@@ -83,7 +83,7 @@ Rust serving 会根据 output kind 对 binary logit 做 sigmoid。Python 对比�
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m scale_rec_demo.verify_all --models discover_lr --force-train
+  python -m scale_rec_demo.verify_all --models demo_lr --force-train
 ```
 
 LR 模型结构最简单，适合判断问题是在特征预处理还是复杂模型层。

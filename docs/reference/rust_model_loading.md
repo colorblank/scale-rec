@@ -49,7 +49,7 @@ cargo run --bin server --release -- \
 ```bash
 cargo run --bin server --release -- \
   --model-path python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.safetensors \
-  --feature-config examples/shared/feature_config_discover.yaml
+  --feature-config examples/shared/feature_config_demo.yaml
 ```
 
 旧兼容模式下：

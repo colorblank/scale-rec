@@ -35,36 +35,36 @@ uv add <package>                    # add dependency
 uv add --dev <package>              # add dev dependency
 
 # ── 生成特征配置文件 ──
-PYTHONPATH=python/src:$PYTHONPATH uv run python examples/gen_discover_config.py
-# → 输出 examples/shared/feature_config_discover.yaml
+PYTHONPATH=python/src:$PYTHONPATH uv run python examples/gen_demo_config.py
+# → 输出 examples/shared/feature_config_demo.yaml
 
 # ── 训练 (demo 单文件模式) ──
-PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.app.main discover \
-  --data python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/shared/feature_config_discover.yaml \
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.app.main demo \
+  --data python/artifacts/demo/demo_train_data.txt \
+  --feature-config examples/shared/feature_config_demo.yaml \
   --model-config examples/models/gdcn_esmm.yaml \
   --train-config examples/shared/train_defaults.yaml \
   --epochs 10 --batch-size 128 --no-header --eval-samples 400
 
 # ── 训练 (生产流式模式) ──
-PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.app.main discover \
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m train.app.main demo \
   --data-glob 'data/user_*.txt' \
   --start-date 20260325 --end-date 20260331 \
-  --feature-config examples/shared/feature_config_discover.yaml \
+  --feature-config examples/shared/feature_config_demo.yaml \
   --model-config examples/models/gdcn_esmm.yaml \
   --train-config examples/shared/train_defaults.yaml \
   --epochs 10 --batch-size 1024 --no-header
 
 # ── 生成合成数据 ──
 PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.generate_data
-PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.generate_discover_data
+PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.generate_demo_data
 
 # ── PyTorch vs Rust 推理一致性验证 ──
 PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.verify_all
 
 ```
 
-### train_discover.py 参数说明
+### train_demo.py 参数说明
 
 | 参数 | 类型 | 默认 | 说明 |
 |------|------|------|------|
@@ -72,7 +72,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.verify_all
 | `--eval-data` | str | — | 独立验证文件，格式、字段及字段顺序必须与训练文件一致 |
 | `--user-data` | str | — | 用户行为文件（生产模式，二选一） |
 | `--item-files` | str | — | 物品文件逗号列表（生产模式，必需） |
-| `--feature-config` | str | `examples/shared/feature_config_discover.yaml` | 特征编排配置 |
+| `--feature-config` | str | `examples/shared/feature_config_demo.yaml` | 特征编排配置 |
 | `--model-config` | str | — | 模型配置（必填） |
 | `--export-path` | str | run 目录 `serving/model.safetensors` | 权重导出路径 |
 | `--epochs` | int | 30 | 训练轮数 |
@@ -89,7 +89,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.verify_all
 
 ### Feature preprocessing (shared between Rust and Python)
 
-Both sides parse the same `examples/feature_config_discover.yaml` which defines:
+Both sides parse the same `examples/shared/feature_config_demo.yaml` which defines:
 - **sources**: raw input features (NO embed — all embedding through operators)
 - **operators**: a DAG of 17 operator types
 

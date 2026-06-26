@@ -31,14 +31,14 @@
 
 ## Serving benchmark
 
-synthetic smoke 只验证 HTTP 链路；真实性能压测应使用 discover TSV 和 feature config。
+synthetic smoke 只验证 HTTP 链路；真实性能压测应使用 demo TSV 和 feature config。
 
 ```bash
 cargo run --bin bench --release -- \
   --target http://127.0.0.1:8080 \
   --model model_gdcn_esmm \
-  --input-file python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/shared/feature_config_discover.yaml
+  --input-file python/artifacts/demo/demo_train_data.txt \
+  --feature-config examples/shared/feature_config_demo.yaml
 ```
 
 ## Verify
@@ -60,7 +60,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 | Command | Arguments used here | Full parameter table |
 |---|---|---|
-| `train.app.main discover` | `--read-chunk-rows`, `--fast-no-na`, `--memory-map` tune training-side reader and preprocessing | [CLI Reference: Train discover](../reference/cli.md#train-discover) |
+| `train.app.main demo` | `--read-chunk-rows`, `--fast-no-na`, `--memory-map` tune training-side reader and preprocessing | [CLI Reference: Train demo](../reference/cli.md#train-demo) |
 | `cargo run --bin bench` | `--target`, `--model`, `--input-file`, `--feature-config` configure HTTP benchmark input | [CLI Reference: Rust bench](../reference/cli.md#rust-bench) |
 | `pytest` | `python/tests/ -q` runs Python tests quietly | [Development Reference](../reference/development.md) |
 | `scale_rec_demo.verify_all` | `--models all --force-train` verifies all demo models after retraining | [CLI Reference: Verify all](../reference/cli.md#verify-all) |

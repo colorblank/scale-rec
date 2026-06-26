@@ -139,7 +139,7 @@ docker run --rm \
   -e MODEL_PATH=/models/model_gdcn_esmm.safetensors \
   -e FEATURE_CONFIG=/config/feature_config.yaml \
   -v "$PWD/models:/models:ro" \
-  -v "$PWD/examples/feature_config_discover.yaml:/config/feature_config.yaml:ro" \
+  -v "$PWD/examples/shared/feature_config_demo.yaml:/config/feature_config.yaml:ro" \
   scale-rec-server:default-linux-amd64
 ```
 
@@ -152,7 +152,7 @@ curl http://127.0.0.1:8080/models
 curl http://127.0.0.1:8080/models/model_gdcn_esmm
 ```
 
-完整请求和响应格式见 [HTTP API](../docs/API.md)。
+完整请求和响应格式见 [HTTP API](../docs/reference/http_api.md)。
 
 如果你想覆盖默认启动命令，可以直接给容器传入命令，`entrypoint.sh` 会原样执行：
 

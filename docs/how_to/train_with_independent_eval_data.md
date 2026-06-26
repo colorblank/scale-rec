@@ -29,10 +29,10 @@ eval.tsv  -> 只用于验证
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m train.app.main discover \
+  python -m train.app.main demo \
   --data data/train.tsv \
   --eval-data data/eval.tsv \
-  --feature-config examples/shared/feature_config_discover.yaml \
+  --feature-config examples/shared/feature_config_demo.yaml \
   --model-config examples/models/gdcn_esmm.yaml \
   --train-config examples/shared/train_defaults.yaml \
   --no-header \
@@ -46,7 +46,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 - `--data` 或 `--data-glob` 展开的训练文件全部用于训练。
 - `--eval-data` 指定的文件用于验证。
-- `--eval-samples` 仍可限制验证样本数量，尤其适合 discover streaming 模式。
+- `--eval-samples` 仍可限制验证样本数量，尤其适合 demo streaming 模式。
 - CSV/TSV 与 parquet 不能混用。
 
 ## Common failures
@@ -67,4 +67,4 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 | Command | Arguments used here | Full parameter table |
 |---|---|---|
-| `train.app.main discover` | `--eval-data` selects an independent validation file; other data/config/training flags follow the discover trainer | [CLI Reference: Train discover](../reference/cli.md#train-discover) |
+| `train.app.main demo` | `--eval-data` selects an independent validation file; other data/config/training flags follow the demo trainer | [CLI Reference: Train demo](../reference/cli.md#train-demo) |

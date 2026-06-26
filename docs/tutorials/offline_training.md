@@ -1,6 +1,6 @@
 # Offline Training
 
-本教程介绍 discover TSV 的离线训练流程。
+本教程介绍 demo TSV 的离线训练流程。
 
 ## Goal
 
@@ -10,9 +10,9 @@
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m train.app.main discover \
-  --data python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/shared/feature_config_discover.yaml \
+  python -m train.app.main demo \
+  --data python/artifacts/demo/demo_train_data.txt \
+  --feature-config examples/shared/feature_config_demo.yaml \
   --model-config examples/models/gdcn_esmm.yaml \
   --train-config examples/shared/train_defaults.yaml \
   --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
@@ -24,8 +24,8 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 | Config | Purpose |
 |---|---|
-| `feature_config_discover.yaml` | 原始字段、DAG、embedding、label role |
-| `discover_label_policy.yaml` | demo 数据生成规则，不参与训练前向 |
+| `feature_config_demo.yaml` | 原始字段、DAG、embedding、label role |
+| `demo_label_policy.yaml` | demo 数据生成规则，不参与训练前向 |
 | `train_defaults.yaml` | batch size、optimizer、eval、checkpoint、EMA 等默认值 |
 | `examples/models/*.yaml` | 模型结构、output_contract、loss、metrics、outputs |
 
@@ -65,4 +65,4 @@ CLI 参数优先级最高，可以覆盖训练默认值。
 
 | Command | Arguments used here | Full parameter table |
 |---|---|---|
-| `train.app.main discover` | Data, config, training, artifact and TSV reader arguments | [CLI Reference: Train discover](../reference/cli.md#train-discover) |
+| `train.app.main demo` | Data, config, training, artifact and TSV reader arguments | [CLI Reference: Train demo](../reference/cli.md#train-demo) |

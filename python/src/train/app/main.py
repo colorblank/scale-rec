@@ -4,7 +4,7 @@ from __future__ import annotations
 
 一个文件覆盖三种场景：
 1. `single`：单模型训练，适合 LR / DeepFM / ESMM / UniMixer / GDCN+ESMM
-2. `discover`：discover-main-sort 训练，使用单文件 TSV
+2. `demo`：demo-main-sort 训练，使用单文件 TSV
 3. `all`：同一数据集上批量训练多个模型
 """
 import argparse
@@ -733,17 +733,17 @@ def _run_single(args: argparse.Namespace) -> None:
     )
 
 
-def _run_discover(args: argparse.Namespace) -> None:
+def _run_demo(args: argparse.Namespace) -> None:
     data_paths = resolve_data_paths(args)
     if not args.model_config:
-        raise SystemExit("--model-config is required for discover mode")
+        raise SystemExit("--model-config is required for demo mode")
 
     configure_logging(
         args.log_level,
         file_level=args.file_log_level,
         log_dir=args.log_dir or Path(args.artifact_dir) / "logs",
         log_file=args.log_file,
-        run_name="discover_train",
+        run_name="demo_train",
     )
     device = resolve_device(args.device)
     logger.info("device: %s", device)
@@ -874,8 +874,8 @@ def _run_all(args: argparse.Namespace) -> None:
         raise SystemExit("--resume-from cannot be combined with --init-weights")
 
     model_specs = [
-        ("discover_gdcn_esmm", args.model_config_discover_gdcn_esmm),
-        ("discover_unimixer", args.model_config_discover_unimixer),
+        ("demo_gdcn_esmm", args.model_config_demo_gdcn_esmm),
+        ("demo_unimixer", args.model_config_demo_unimixer),
     ]
     if args.models == "all":
         selected = model_specs
@@ -1044,7 +1044,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     single = sub.add_parser("single", help="train a single model on a CSV/Parquet dataset")
     single.add_argument(
-        "--feature-config", default=str(SHARED_EXAMPLES_DIR / "feature_config_discover.yaml")
+        "--feature-config", default=str(SHARED_EXAMPLES_DIR / "feature_config_demo.yaml")
     )
     single.add_argument("--model-config", required=True)
     add_data_range_args(single, data_required=False)
@@ -1057,42 +1057,42 @@ def build_parser() -> argparse.ArgumentParser:
     add_artifact_args(single)
     add_runtime_args(single)
 
-    discover = sub.add_parser("discover", help="train discover-main-sort with TSV input")
-    discover.add_argument(
-        "--feature-config", default=str(SHARED_EXAMPLES_DIR / "feature_config_discover.yaml")
+    demo = sub.add_parser("demo", help="train demo-main-sort with TSV input")
+    demo.add_argument(
+        "--feature-config", default=str(SHARED_EXAMPLES_DIR / "feature_config_demo.yaml")
     )
-    discover.add_argument("--model-config", required=True)
-    add_data_range_args(discover, data_required=False)
-    discover.add_argument(
+    demo.add_argument("--model-config", required=True)
+    add_data_range_args(demo, data_required=False)
+    demo.add_argument(
         "--artifact-dir", "--export-dir", dest="artifact_dir", default=str(DEMO_ARTIFACT_DIR)
     )
-    discover.add_argument("--publish-path", "--export-path", dest="publish_path")
-    discover.add_argument("--no-header", action="store_true")
-    discover.add_argument("--null-markers", nargs="*", default=list(NULL_MARKERS))
-    discover.add_argument("--separator", default="\t")
-    discover.add_argument(
+    demo.add_argument("--publish-path", "--export-path", dest="publish_path")
+    demo.add_argument("--no-header", action="store_true")
+    demo.add_argument("--null-markers", nargs="*", default=list(NULL_MARKERS))
+    demo.add_argument("--separator", default="\t")
+    demo.add_argument(
         "--read-chunk-rows",
         type=int,
         default=0,
         help="pandas read_csv chunk rows; 0 uses the batch-size based default",
     )
-    discover.add_argument(
+    demo.add_argument(
         "--fast-no-na",
         action="store_true",
         help="disable pandas NA detection for faster reads when defaults can be handled later",
     )
-    discover.add_argument(
+    demo.add_argument(
         "--memory-map",
         action="store_true",
         help="enable pandas memory_map for local uncompressed files",
     )
-    add_training_args(discover, lr=0.005, batch_size=64)
-    add_artifact_args(discover)
-    add_runtime_args(discover)
+    add_training_args(demo, lr=0.005, batch_size=64)
+    add_artifact_args(demo)
+    add_runtime_args(demo)
 
     all_ = sub.add_parser("all", help="train multiple models on one dataset")
     all_.add_argument(
-        "--feature-config", default=str(SHARED_EXAMPLES_DIR / "feature_config_discover.yaml")
+        "--feature-config", default=str(SHARED_EXAMPLES_DIR / "feature_config_demo.yaml")
     )
     add_data_range_args(all_, data_required=False)
     all_.add_argument(
@@ -1101,11 +1101,11 @@ def build_parser() -> argparse.ArgumentParser:
     all_.add_argument("--publish-path", "--export-path", dest="publish_path")
     all_.add_argument("--models", default="all")
     all_.add_argument(
-        "--model-config-discover-gdcn-esmm",
+        "--model-config-demo-gdcn-esmm",
         default=str(MODEL_EXAMPLES_DIR / "gdcn_esmm.yaml"),
     )
     all_.add_argument(
-        "--model-config-discover-unimixer",
+        "--model-config-demo-unimixer",
         default=str(MODEL_EXAMPLES_DIR / "unimixer.yaml"),
     )
     all_.add_argument("--debug", type=int, default=0)
@@ -1122,8 +1122,8 @@ def main() -> None:
 
     if args.mode == "single":
         _run_single(args)
-    elif args.mode == "discover":
-        _run_discover(args)
+    elif args.mode == "demo":
+        _run_demo(args)
     elif args.mode == "all":
         _run_all(args)
     else:

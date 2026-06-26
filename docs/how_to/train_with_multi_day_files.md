@@ -18,11 +18,11 @@ data/user_20260327.txt
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m train.app.main discover \
+  python -m train.app.main demo \
   --data-glob 'data/user_*.txt' \
   --start-date 20260325 \
   --end-date 20260331 \
-  --feature-config examples/shared/feature_config_discover.yaml \
+  --feature-config examples/shared/feature_config_demo.yaml \
   --model-config examples/models/gdcn_esmm.yaml \
   --train-config examples/shared/train_defaults.yaml \
   --epochs 3 \
@@ -49,11 +49,11 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m train.app.main discover \
+  python -m train.app.main demo \
   --data-glob 'data/user_*.txt' \
   --start-date 20260325 \
   --end-date 20260331 \
-  --feature-config examples/shared/feature_config_discover.yaml \
+  --feature-config examples/shared/feature_config_demo.yaml \
   --model-config examples/models/gdcn_esmm.yaml \
   --init-weights python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.safetensors \
   --epochs 3 \
@@ -72,4 +72,4 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 | Command | Arguments used here | Full parameter table |
 |---|---|---|
-| `train.app.main discover` | `--data-glob`, `--start-date`, `--end-date` select dated files; `--init-weights` fine-tunes from safetensors | [CLI Reference: Train discover](../reference/cli.md#train-discover) |
+| `train.app.main demo` | `--data-glob`, `--start-date`, `--end-date` select dated files; `--init-weights` fine-tunes from safetensors | [CLI Reference: Train demo](../reference/cli.md#train-demo) |

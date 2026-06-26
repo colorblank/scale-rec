@@ -104,12 +104,12 @@ def test_data_range_args_are_optional_with_glob_support():
     assert args.end_date == "20260331"
 
 
-def test_discover_parser_includes_pandas_streaming_options():
+def test_demo_parser_includes_pandas_streaming_options():
     from train.app.main import build_parser
 
     args = build_parser().parse_args(
         [
-            "discover",
+            "demo",
             "--model-config",
             "examples/models/gdcn_esmm.yaml",
             "--data",
@@ -126,12 +126,12 @@ def test_discover_parser_includes_pandas_streaming_options():
     assert args.memory_map is True
 
 
-def test_discover_parser_accepts_independent_eval_data():
+def test_demo_parser_accepts_independent_eval_data():
     from train.app.main import build_parser
 
     args = build_parser().parse_args(
         [
-            "discover",
+            "demo",
             "--model-config",
             "examples/models/gdcn_esmm.yaml",
             "--data",

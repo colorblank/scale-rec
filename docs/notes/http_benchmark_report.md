@@ -2,17 +2,17 @@
 
 ## 结论
 
-本次 Rust HTTP 推理压测覆盖两个 discover 模型，并对每个模型重复执行 3 轮真实 discover 输入压测：
+本次 Rust HTTP 推理压测覆盖两个 demo 模型，并对每个模型重复执行 3 轮真实 demo 输入压测：
 
 - `model_gdcn_esmm`
-- `model_discover_unimixer`
+- `model_demo_unimixer`
 
-两者均在 broadcast 模式下通过 300 QPS / 60s 验收。请求形态为 1 个 user/context + 200 个 item candidates，输入来自真实 discover TSV，并由 bench 按 `source: User/Context/Item` 构造 `/predict/broadcast` 请求。
+两者均在 broadcast 模式下通过 300 QPS / 60s 验收。请求形态为 1 个 user/context + 200 个 item candidates，输入来自真实 demo TSV，并由 bench 按 `source: User/Context/Item` 构造 `/predict/broadcast` 请求。
 
 | 模型 | 轮次 | Success | Errors | RPS | 平均 P50 | 平均 P95 | 平均 P99 | 平均 P99.9 | 最差 P99.9 | 结论 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | `model_gdcn_esmm` | 3 | 18000/轮 | 0/轮 | 300 | 8.4 ms | 16.1 ms | 30.6 ms | 68.4 ms | 96.8 ms | 通过 |
-| `model_discover_unimixer` | 3 | 18000/轮 | 0/轮 | 300 | 12.2 ms | 20.7 ms | 42.6 ms | 118.7 ms | 236.1 ms | 通过 |
+| `model_demo_unimixer` | 3 | 18000/轮 | 0/轮 | 300 | 12.2 ms | 20.7 ms | 42.6 ms | 118.7 ms | 236.1 ms | 通过 |
 
 UniMixer 的中位数延迟稳定在 `12.2 ms`，但尾延迟波动高于 GDCN+ESMM。上一轮单次测试出现的 1s 级 P99.9 尖峰未在本次 3 轮复测中复现。
 
@@ -37,8 +37,8 @@ UniMixer 的中位数延迟稳定在 `12.2 ms`，但尾延迟波动高于 GDCN+E
 | Rust 后端 | Accelerate CPU |
 | 服务二进制 | `target/release/server` |
 | 压测二进制 | `target/release/bench` |
-| Feature config | `examples/shared/feature_config_discover.yaml` |
-| 输入数据 | `python/artifacts/demo/discover_train_data.txt` |
+| Feature config | `examples/shared/feature_config_demo.yaml` |
+| 输入数据 | `python/artifacts/demo/demo_train_data.txt` |
 | 输入格式 | 45 列 TSV，无 header；bench 只读取 feature config 需要的输入列，标签列随文件保留 |
 | 请求模式 | broadcast |
 | Batch size | 200 candidates/request |
@@ -79,10 +79,10 @@ cargo build --release --features cpu-mkl --bin server --bin bench
 | 平台 / 后端 | 模型 | Success | Errors | RPS | P50 | P95 | P99 | P99.9 | Mean | Min / Max | 说明 |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | macOS / Accelerate | `model_gdcn_esmm` | 18000 | 0 | 300 | 9.3 ms | 22.3 ms | 41.8 ms | 73.3 ms | 11.5 ms | 6.9 / 114.7 ms | GDCN cross/gate GEMM 融合后 |
-| macOS / Accelerate | `model_discover_unimixer` | 18000 | 0 | 300 | 12.7 ms | 27.0 ms | 42.6 ms | 75.8 ms | 14.9 ms | 10.2 / 135.6 ms | UniMixer 小矩阵乘优化后 |
+| macOS / Accelerate | `model_demo_unimixer` | 18000 | 0 | 300 | 12.7 ms | 27.0 ms | 42.6 ms | 75.8 ms | 14.9 ms | 10.2 / 135.6 ms | UniMixer 小矩阵乘优化后 |
 | macOS / native CPU | `model_gdcn_esmm` | 18000 | 0 | 300 | 10.4 ms | 25.6 ms | 43.3 ms | 75.4 ms | 12.8 ms | 7.9 / 121.5 ms | 默认 release，无 Accelerate |
-| macOS / native CPU | `model_discover_unimixer` | 18000 | 0 | 300 | 27.6 ms | 65.6 ms | 97.8 ms | 140.6 ms | 33.3 ms | 19.0 / 181.3 ms | 默认 release，无 Accelerate |
-| Linux / native CPU | `model_discover_unimixer` | - | - | - | 约 8s | - | 约 16s | - | - | - | 用户环境观测，需按当前优化后代码复测 |
+| macOS / native CPU | `model_demo_unimixer` | 18000 | 0 | 300 | 27.6 ms | 65.6 ms | 97.8 ms | 140.6 ms | 33.3 ms | 19.0 / 181.3 ms | 默认 release，无 Accelerate |
+| Linux / native CPU | `model_demo_unimixer` | - | - | - | 约 8s | - | 约 16s | - | - | - | 用户环境观测，需按当前优化后代码复测 |
 
 ### 后端差异分析
 
@@ -106,7 +106,7 @@ Rust 实现已做以下优化：
 | 模型 | Model config | 权重 | HTTP model name |
 |---|---|---|---|
 | GDCN+ESMM | `examples/models/gdcn_esmm.yaml` | `python/artifacts/demo/model_gdcn_esmm/<run_version>/serving/model.safetensors` | `model_gdcn_esmm` |
-| UniMixer | `examples/models/unimixer.yaml` | `python/artifacts/demo/model_discover_unimixer/<run_version>/serving/model.safetensors` | `model_discover_unimixer` |
+| UniMixer | `examples/models/unimixer.yaml` | `python/artifacts/demo/model_demo_unimixer/<run_version>/serving/model.safetensors` | `model_demo_unimixer` |
 
 ## 构建与启动
 
@@ -132,7 +132,7 @@ curl http://127.0.0.1:8080/health
 实测返回：
 
 ```json
-{"models":["model_gdcn_esmm","model_discover_unimixer"],"status":"ok"}
+{"models":["model_gdcn_esmm","model_demo_unimixer"],"status":"ok"}
 ```
 
 ## GDCN+ESMM
@@ -148,8 +148,8 @@ target/release/bench \
   --batch-size 200 \
   --duration-secs 60 \
   --target-qps 300 \
-  --input-file python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/shared/feature_config_discover.yaml \
+  --input-file python/artifacts/demo/demo_train_data.txt \
+  --feature-config examples/shared/feature_config_demo.yaml \
   --no-header
 ```
 
@@ -203,14 +203,14 @@ Min/Max:     6.6/78.6 ms
 ```bash
 target/release/bench \
   --target http://127.0.0.1:8080 \
-  --model model_discover_unimixer \
+  --model model_demo_unimixer \
   --mode broadcast \
   --concurrency 300 \
   --batch-size 200 \
   --duration-secs 60 \
   --target-qps 300 \
-  --input-file python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/shared/feature_config_discover.yaml \
+  --input-file python/artifacts/demo/demo_train_data.txt \
+  --feature-config examples/shared/feature_config_demo.yaml \
   --no-header
 ```
 
@@ -277,7 +277,7 @@ UniMixer 的 P50 稳定在 `12.2 ms`，说明常规请求耗时稳定；尾延�
 ## 注意事项
 
 - HTTP 请求中的 `model` 必须使用 `/health` 返回的模型名，不能使用模型类型名。
-- 真实性能结论以带 `--input-file` 和 `--feature-config` 的 discover 输入压测为准。Synthetic smoke 只验证 HTTP 链路。
+- 真实性能结论以带 `--input-file` 和 `--feature-config` 的 demo 输入压测为准。Synthetic smoke 只验证 HTTP 链路。
 - bench 的 open-loop 模式按 `--target-qps` 定速发请求，`--concurrency` 当前不限制最大在途请求数；尾延迟包含服务端处理时间和排队时间。
 - 不同平台、不同后端、不同构建参数的结果不能直接混用对比。
 

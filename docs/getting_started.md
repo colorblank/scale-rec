@@ -1,6 +1,6 @@
 # Getting Started
 
-本页给出一条最短可运行路径：生成 discover demo 数据，训练并导出模型，启动 Rust HTTP 服务，并验证 Python 与 Rust 推理一致性。所有命令从仓库根目录执行。
+本页给出一条最短可运行路径：生成 demo 数据，训练并导出模型，启动 Rust HTTP 服务，并验证 Python 与 Rust 推理一致性。所有命令从仓库根目录执行。
 
 ## Prerequisites
 
@@ -19,25 +19,25 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python pytest python/tests/ -
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m scale_rec_demo.generate_discover_data \
-  --label-policy examples/shared/discover_label_policy.yaml
+  python -m scale_rec_demo.generate_demo_data \
+  --label-policy examples/shared/demo_label_policy.yaml
 ```
 
 输出：
 
 ```text
-python/artifacts/demo/discover_train_data.txt
+python/artifacts/demo/demo_train_data.txt
 ```
 
-demo 数据是无 header 的 TSV，列顺序来自 `examples/shared/feature_config_discover.yaml`。
+demo 数据是无 header 的 TSV，列顺序来自 `examples/shared/feature_config_demo.yaml`。
 
 ## Train a model
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m train.app.main discover \
-  --data python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/shared/feature_config_discover.yaml \
+  python -m train.app.main demo \
+  --data python/artifacts/demo/demo_train_data.txt \
+  --feature-config examples/shared/feature_config_demo.yaml \
   --model-config examples/models/gdcn_esmm.yaml \
   --train-config examples/shared/train_defaults.yaml \
   --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
@@ -65,10 +65,10 @@ python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m train.app.main discover \
+  python -m train.app.main demo \
   --data data/train.tsv \
   --eval-data data/eval.tsv \
-  --feature-config examples/shared/feature_config_discover.yaml \
+  --feature-config examples/shared/feature_config_demo.yaml \
   --model-config examples/models/gdcn_esmm.yaml \
   --no-header
 ```
@@ -133,7 +133,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m scale_rec_demo.verify_all \
-  --models discover_lr,discover_gdcn_esmm,discover_rankmixer \
+  --models demo_lr,demo_gdcn_esmm,demo_rankmixer \
   --force-train
 ```
 
@@ -156,8 +156,8 @@ Overall Consistency Status: PASS
 |---|---|---|
 | `cargo check` | No project-specific flags | [Development Reference](reference/development.md) |
 | `pytest` | `python/tests/ -q` runs the Python test suite quietly | [Development Reference](reference/development.md) |
-| `scale_rec_demo.generate_discover_data` | `--label-policy` selects the demo label policy YAML | [CLI Reference: Generate discover data](reference/cli.md#generate-discover-data) |
-| `train.app.main discover` | Training data, config, artifact, runtime and TSV reader flags | [CLI Reference: Train discover](reference/cli.md#train-discover) |
+| `scale_rec_demo.generate_demo_data` | `--label-policy` selects the demo label policy YAML | [CLI Reference: Generate demo data](reference/cli.md#generate-demo-data) |
+| `train.app.main demo` | Training data, config, artifact, runtime and TSV reader flags | [CLI Reference: Train demo](reference/cli.md#train-demo) |
 | `cargo run --bin server` | `--model-dir` and `--model-path` control model loading | [CLI Reference: Rust server](reference/cli.md#rust-server) |
 | `curl /health` / `/models` / `/predict` / `/predict/broadcast` | HTTP method, endpoint path, JSON body and `Content-Type` header | [HTTP API](reference/http_api.md) |
 | `scale_rec_demo.verify_all` | `--models`, `--force-train`, `--threshold` | [CLI Reference: Verify all](reference/cli.md#verify-all) |

@@ -4,13 +4,13 @@
 
 ## Reader options
 
-discover 训练使用 pandas chunk 读取 TSV。
+demo 训练使用 pandas chunk 读取 TSV。
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m train.app.main discover \
+  python -m train.app.main demo \
   --data data/train.tsv \
-  --feature-config examples/shared/feature_config_discover.yaml \
+  --feature-config examples/shared/feature_config_demo.yaml \
   --model-config examples/models/gdcn_esmm.yaml \
   --read-chunk-rows 65536 \
   --fast-no-na \
@@ -64,6 +64,6 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 | Command | Arguments used here | Full parameter table |
 |---|---|---|
-| `train.app.main discover` | `--read-chunk-rows`, `--fast-no-na`, `--memory-map` tune TSV reading; data/config/training flags follow discover training | [CLI Reference: Train discover](../reference/cli.md#train-discover) |
+| `train.app.main demo` | `--read-chunk-rows`, `--fast-no-na`, `--memory-map` tune TSV reading; data/config/training flags follow demo training | [CLI Reference: Train demo](../reference/cli.md#train-demo) |
 | `pytest` | `python/tests/ -q` runs Python tests quietly | [Development Reference](../reference/development.md) |
 | `scale_rec_demo.verify_all` | `--models all --force-train` verifies all demo models after retraining | [CLI Reference: Verify all](../reference/cli.md#verify-all) |

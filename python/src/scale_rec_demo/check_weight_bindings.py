@@ -14,7 +14,7 @@ _src = Path(__file__).resolve().parents[1]
 if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
 
-from .paths import DISCOVER_FEATURE_CONFIG, MODEL_CONFIGS, REPO_ROOT
+from .paths import DEMO_FEATURE_CONFIG, MODEL_CONFIGS, REPO_ROOT
 
 
 def parse_args() -> argparse.Namespace:
@@ -26,7 +26,7 @@ def parse_args() -> argparse.Namespace:
         default="all",
         help="Comma-separated MODEL_CONFIGS keys, or 'all'.",
     )
-    parser.add_argument("--feature-config", default=str(DISCOVER_FEATURE_CONFIG))
+    parser.add_argument("--feature-config", default=str(DEMO_FEATURE_CONFIG))
     parser.add_argument(
         "--keep-temp",
         action="store_true",

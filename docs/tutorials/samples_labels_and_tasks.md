@@ -1,6 +1,6 @@
 # Samples, Labels, and Tasks
 
-本教程说明 discover 样本表如何定义 feature、label、discard，以及模型如何通过 `output_contract` 定义训练目标和指标。
+本教程说明 demo 样本表如何定义 feature、label、discard，以及模型如何通过 `output_contract` 定义训练目标和指标。
 
 ## Goal
 
@@ -8,10 +8,10 @@
 
 ## Sample row
 
-discover demo 默认输出无 header TSV。列定义来自：
+demo 默认输出无 header TSV。列定义来自：
 
 ```text
-examples/shared/feature_config_discover.yaml
+examples/shared/feature_config_demo.yaml
 ```
 
 `sources` 中的 `role` 决定列用途：
@@ -24,7 +24,7 @@ examples/shared/feature_config_discover.yaml
 
 ## Labels
 
-discover 示例包含多列 label，例如：
+demo 示例包含多列 label，例如：
 
 ```text
 is_click
@@ -34,7 +34,7 @@ is_click_stock
 stay_time_label
 ```
 
-真实业务接入时，应由业务样本生产链路生成 label；`discover_label_policy.yaml` 只用于 demo 数据生成。
+真实业务接入时，应由业务样本生产链路生成 label；`demo_label_policy.yaml` 只用于 demo 数据生成。
 
 ## Tasks with output_contract
 

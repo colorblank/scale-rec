@@ -19,9 +19,9 @@ python/artifacts/demo/<model-name>/<run-version>/serving/
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m train.app.main discover \
-  --data python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/shared/feature_config_discover.yaml \
+  python -m train.app.main demo \
+  --data python/artifacts/demo/demo_train_data.txt \
+  --feature-config examples/shared/feature_config_demo.yaml \
   --model-config examples/models/gdcn_esmm.yaml \
   --publish-path python/artifacts/demo/model_gdcn_esmm.safetensors \
   --artifact-dir python/artifacts/demo \
@@ -55,7 +55,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m scale_rec_demo.verify_all --models discover_gdcn_esmm --force-train
+  python -m scale_rec_demo.verify_all --models demo_gdcn_esmm --force-train
 ```
 
 期望输出：
@@ -68,5 +68,5 @@ Overall Consistency Status: PASS
 
 | Command | Arguments used here | Full parameter table |
 |---|---|---|
-| `train.app.main discover` | Training data, feature/model configs, artifact publication and TSV reader flags | [CLI Reference: Train discover](../reference/cli.md#train-discover) |
+| `train.app.main demo` | Training data, feature/model configs, artifact publication and TSV reader flags | [CLI Reference: Train demo](../reference/cli.md#train-demo) |
 | `scale_rec_demo.verify_all` | `--models` selects model keys; `--force-train` retrains before comparison | [CLI Reference: Verify all](../reference/cli.md#verify-all) |

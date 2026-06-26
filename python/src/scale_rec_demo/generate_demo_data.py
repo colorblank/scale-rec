@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-"""discover-main-sort 合成训练数据生成。
+"""demo-main-sort 合成训练数据生成。
 
-数据列顺序直接来自 `examples/shared/feature_config_discover.yaml`，确保训练、验证和文档
+数据列顺序直接来自 `examples/shared/feature_config_demo.yaml`，确保训练、验证和文档
 使用同一份 source 契约。
 """
 
@@ -16,12 +16,12 @@ import yaml
 
 from train.core.config import FlowConfig
 
-from .paths import DEMO_ARTIFACT_DIR, DISCOVER_FEATURE_CONFIG
+from .paths import DEMO_ARTIFACT_DIR, DEMO_FEATURE_CONFIG
 
-FLOW_CONFIG = FlowConfig.from_yaml(str(DISCOVER_FEATURE_CONFIG))
+FLOW_CONFIG = FlowConfig.from_yaml(str(DEMO_FEATURE_CONFIG))
 SOURCE_NAMES = [source.name for source in FLOW_CONFIG.sources]
 REPO_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_LABEL_POLICY = REPO_ROOT / "examples" / "shared" / "discover_label_policy.yaml"
+DEFAULT_LABEL_POLICY = REPO_ROOT / "examples" / "shared" / "demo_label_policy.yaml"
 
 STOCK_CODES = [f"60{i:04d}" for i in range(200)]
 ENTITY_CODES = {
@@ -311,18 +311,18 @@ def _make_row(
 
     missing = [name for name in SOURCE_NAMES if name not in record]
     if missing:
-        raise KeyError(f"missing discover sources: {missing}")
+        raise KeyError(f"missing demo sources: {missing}")
     return record
 
 
 def _output_path() -> Path:
-    return DEMO_ARTIFACT_DIR / "discover_train_data.txt"
+    return DEMO_ARTIFACT_DIR / "demo_train_data.txt"
 
 
 def main() -> None:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Generate discover training data")
+    parser = argparse.ArgumentParser(description="Generate demo training data")
     parser.add_argument("--label-policy", default=str(DEFAULT_LABEL_POLICY))
     args = parser.parse_args()
 
@@ -346,7 +346,7 @@ def main() -> None:
                 writer.writerow([row[name] for name in SOURCE_NAMES])
 
     print(
-        f"[Generate discover] {n_users * rows_per_user} rows, {len(SOURCE_NAMES)} cols -> {out_path}"
+        f"[Generate demo] {n_users * rows_per_user} rows, {len(SOURCE_NAMES)} cols -> {out_path}"
     )
 
 

@@ -23,19 +23,19 @@ EXAMPLES_DIR = REPO_ROOT / "examples"
 
 def test_demo_model_configs_exist_and_are_current():
     model_configs = {
-        "discover_lr": EXAMPLES_DIR / "models" / "lr.yaml",
-        "discover_deepfm": EXAMPLES_DIR / "models" / "deepfm.yaml",
-        "discover_mmoe": EXAMPLES_DIR / "models" / "mmoe.yaml",
-        "discover_esmm": EXAMPLES_DIR / "models" / "esmm_output_contract.yaml",
-        "discover_gdcn_esmm": EXAMPLES_DIR / "models" / "gdcn_esmm.yaml",
-        "discover_unimixer": EXAMPLES_DIR / "models" / "unimixer.yaml",
-        "discover_token_mixer_large": EXAMPLES_DIR / "models" / "token_mixer_large.yaml",
-        "discover_rankmixer": EXAMPLES_DIR / "models" / "rankmixer.yaml",
+        "demo_lr": EXAMPLES_DIR / "models" / "lr.yaml",
+        "demo_deepfm": EXAMPLES_DIR / "models" / "deepfm.yaml",
+        "demo_mmoe": EXAMPLES_DIR / "models" / "mmoe.yaml",
+        "demo_esmm": EXAMPLES_DIR / "models" / "esmm_output_contract.yaml",
+        "demo_gdcn_esmm": EXAMPLES_DIR / "models" / "gdcn_esmm.yaml",
+        "demo_unimixer": EXAMPLES_DIR / "models" / "unimixer.yaml",
+        "demo_token_mixer_large": EXAMPLES_DIR / "models" / "token_mixer_large.yaml",
+        "demo_rankmixer": EXAMPLES_DIR / "models" / "rankmixer.yaml",
     }
     ancillary_configs = [
         EXAMPLES_DIR / "shared" / "train_defaults.yaml",
-        EXAMPLES_DIR / "shared" / "discover_label_policy.yaml",
-        EXAMPLES_DIR / "shared" / "feature_config_discover.yaml",
+        EXAMPLES_DIR / "shared" / "demo_label_policy.yaml",
+        EXAMPLES_DIR / "shared" / "feature_config_demo.yaml",
     ]
     actual_files = {
         path.relative_to(EXAMPLES_DIR).as_posix() for path in EXAMPLES_DIR.rglob("*.yaml")
@@ -50,18 +50,18 @@ def test_demo_model_configs_exist_and_are_current():
         "models/token_mixer_large.yaml",
         "models/rankmixer.yaml",
         "shared/train_defaults.yaml",
-        "shared/discover_label_policy.yaml",
-        "shared/feature_config_discover.yaml",
+        "shared/demo_label_policy.yaml",
+        "shared/feature_config_demo.yaml",
     }
 
     for path in list(model_configs.values()) + ancillary_configs:
         assert path.exists(), path
     assert actual_files == expected_files
 
-    discover_fc = FlowConfig.from_yaml(
-        str(EXAMPLES_DIR / "shared" / "feature_config_discover.yaml")
+    demo_fc = FlowConfig.from_yaml(
+        str(EXAMPLES_DIR / "shared" / "feature_config_demo.yaml")
     )
-    assert [s.name for s in discover_fc.label_sources] == [
+    assert [s.name for s in demo_fc.label_sources] == [
         "is_click",
         "is_cvr",
         "is_click_detail",
@@ -70,9 +70,9 @@ def test_demo_model_configs_exist_and_are_current():
         "ctr",
         "cvr",
     ]
-    assert len(discover_fc.feature_sources) == 38
+    assert len(demo_fc.feature_sources) == 38
 
-    gdcn = yaml.safe_load(model_configs["discover_gdcn_esmm"].read_text(encoding="utf-8"))
+    gdcn = yaml.safe_load(model_configs["demo_gdcn_esmm"].read_text(encoding="utf-8"))
     assert gdcn["type"] == "gdcn_esmm"
     assert "task_config" not in gdcn
     assert gdcn["output_contract"]["version"] == 1
@@ -94,18 +94,18 @@ def test_demo_model_configs_exist_and_are_current():
         "ctstay",
     }
 
-    lr = yaml.safe_load(model_configs["discover_lr"].read_text(encoding="utf-8"))
+    lr = yaml.safe_load(model_configs["demo_lr"].read_text(encoding="utf-8"))
     assert lr["type"] == "lr"
     assert lr["output_contract"]["outputs"] == [{"name": "pred", "source": "pred_prob"}]
 
-    unimixer = yaml.safe_load(model_configs["discover_unimixer"].read_text(encoding="utf-8"))
+    unimixer = yaml.safe_load(model_configs["demo_unimixer"].read_text(encoding="utf-8"))
     assert unimixer["type"] == "unimixer"
     assert unimixer["use_siamese"] is False
     assert "task_config" not in unimixer
     assert unimixer["output_contract"]["version"] == 1
 
     label_policy = yaml.safe_load(
-        (EXAMPLES_DIR / "shared" / "discover_label_policy.yaml").read_text(encoding="utf-8")
+        (EXAMPLES_DIR / "shared" / "demo_label_policy.yaml").read_text(encoding="utf-8")
     )
     assert label_policy["click"]["threshold"] == 0.42
     assert label_policy["stay_time_label"]["noise_min"] == -25
@@ -149,22 +149,22 @@ def test_serving_array_applies_output_kind_semantics():
 
 def test_demo_model_path_index_covers_all_example_models():
     assert MODEL_CONFIGS == {
-        "discover_lr": EXAMPLES_DIR / "models" / "lr.yaml",
-        "discover_deepfm": EXAMPLES_DIR / "models" / "deepfm.yaml",
-        "discover_mmoe": EXAMPLES_DIR / "models" / "mmoe.yaml",
-        "discover_esmm": EXAMPLES_DIR / "models" / "esmm_output_contract.yaml",
-        "discover_gdcn_esmm": EXAMPLES_DIR / "models" / "gdcn_esmm.yaml",
-        "discover_unimixer": EXAMPLES_DIR / "models" / "unimixer.yaml",
-        "discover_token_mixer_large": EXAMPLES_DIR / "models" / "token_mixer_large.yaml",
-        "discover_rankmixer": EXAMPLES_DIR / "models" / "rankmixer.yaml",
+        "demo_lr": EXAMPLES_DIR / "models" / "lr.yaml",
+        "demo_deepfm": EXAMPLES_DIR / "models" / "deepfm.yaml",
+        "demo_mmoe": EXAMPLES_DIR / "models" / "mmoe.yaml",
+        "demo_esmm": EXAMPLES_DIR / "models" / "esmm_output_contract.yaml",
+        "demo_gdcn_esmm": EXAMPLES_DIR / "models" / "gdcn_esmm.yaml",
+        "demo_unimixer": EXAMPLES_DIR / "models" / "unimixer.yaml",
+        "demo_token_mixer_large": EXAMPLES_DIR / "models" / "token_mixer_large.yaml",
+        "demo_rankmixer": EXAMPLES_DIR / "models" / "rankmixer.yaml",
     }
 
 
 def test_verify_all_expands_and_validates_model_selection():
     assert selected_model_names("all") == list(MODEL_CONFIGS)
-    assert selected_model_names("discover_lr, discover_esmm") == [
-        "discover_lr",
-        "discover_esmm",
+    assert selected_model_names("demo_lr, demo_esmm") == [
+        "demo_lr",
+        "demo_esmm",
     ]
     with pytest.raises(ValueError, match="unknown models: missing"):
         selected_model_names("missing")

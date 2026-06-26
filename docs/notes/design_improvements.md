@@ -28,12 +28,12 @@ scale-rec 采用 Python 训练 + Rust 推理的双运行时架构：
 
 模型系统应按三层理解，而不是把每个 `type` 都视为同一层级的业务模型：
 
-- **通用模型结构层**：提供可复用的表示学习和输出结构，例如 `FeatureEmbeddings`、`FeatureTokenizer`、`Mlp`、`GatedCrossNetwork`、UniMixer/RankMixer block、`TaskTower`、`MultiTaskTower`、`TaskRelation` 和 `ModelOutput`。这一层关心张量形状、权重命名、输出语义和双端一致性，不应携带 discover 业务字段名或标签策略。
+- **通用模型结构层**：提供可复用的表示学习和输出结构，例如 `FeatureEmbeddings`、`FeatureTokenizer`、`Mlp`、`GatedCrossNetwork`、UniMixer/RankMixer block、`TaskTower`、`MultiTaskTower`、`TaskRelation` 和 `ModelOutput`。这一层关心张量形状、权重命名、输出语义和双端一致性，不应携带 demo 业务字段名或标签策略。
 - **任务契约层**：原生路径用 `output_contract` 统一描述 typed graph、objective、
   metric 和 public output。legacy 路径继续兼容旧配置，两条路径禁止混用。
-- **业务特定模型层**：把通用结构和任务契约组合成某个业务场景可用的模板，例如 discover 场景的 `gdcn_esmm.yaml`、`rankmixer.yaml` 中的 click/cvr/detail/stock/stay tower、ctcvr/ctdetail/ctstock/ctstay relation、标签列名和指标。业务层应该主要体现在 YAML 配置、label policy、artifact manifest 和发布策略中，而不是散落到模型基础实现里。
+- **业务特定模型层**：把通用结构和任务契约组合成某个业务场景可用的模板，例如 demo 场景的 `gdcn_esmm.yaml`、`rankmixer.yaml` 中的 click/cvr/detail/stock/stay tower、ctcvr/ctdetail/ctstock/ctstay relation、标签列名和指标。业务层应该主要体现在 YAML 配置、label policy、artifact manifest 和发布策略中，而不是散落到模型基础实现里。
 
-因此，`gdcn_esmm`、`rankmixer`、`token_mixer_large` 这类模型 `type` 更准确地说是“结构模板”：它们决定 shared representation 如何产生、是否使用 token mixer、是否使用 cross/deep/fusion，但不应该固定某个业务的任务集合。click/cvr/detail/stock/stay 是 discover 业务的一组任务契约；当新业务接入时，理想路径应是复用同一个结构模板，替换 `output_contract`，而不是复制一个新模型文件并把业务名写进代码。
+因此，`gdcn_esmm`、`rankmixer`、`token_mixer_large` 这类模型 `type` 更准确地说是“结构模板”：它们决定 shared representation 如何产生、是否使用 token mixer、是否使用 cross/deep/fusion，但不应该固定某个业务的任务集合。click/cvr/detail/stock/stay 是 demo 业务的一组任务契约；当新业务接入时，理想路径应是复用同一个结构模板，替换 `output_contract`，而不是复制一个新模型文件并把业务名写进代码。
 
 重新梳理后的架构边界如下：
 
@@ -266,7 +266,7 @@ raw sample / request
 - 共享 YAML 特征编排，覆盖 Bucketing、DictMapper、StringParser、JsonExtractList、
   ListStringParser、Split、FlatSplit、ExpressionOp、CrossFeature、ListOverlap、SequenceOp、
   StringConcat、FeatureHash、Log1p、PluginOp、ParsedFeatureHash、ConcatHash 等 17 个算子。
-- Python 单文件训练、discover 训练、多模型训练入口，共享列式 batch 预处理和可选 prefetch。
+- Python 单文件训练、demo 训练、多模型训练入口，共享列式 batch 预处理和可选 prefetch。
 - 多任务 loss、评估、early stopping、EMA、周期 checkpoint、epoch-end checkpoint、resume 和 manifest。
 - 任务级配置落到模型 YAML；legacy 模型由 `TaskContract/MultiTaskLoss` 执行，原生
   ESMM 由 `OutputContract/ObjectiveEngine` 执行。
@@ -276,7 +276,7 @@ raw sample / request
 - Golden consistency 测试覆盖 Python/Rust 特征处理一致性。
 - safetensors 权重 key 与 shape 校验。
 - 示例模型权重绑定检查脚本覆盖 Python 导出到 Rust manifest 加载路径。
-- benchmark 工具支持 synthetic 和真实 discover 输入压测。
+- benchmark 工具支持 synthetic 和真实 demo 输入压测。
 - `docs/notes/http_benchmark_report.md` 已记录 GDCN+ESMM 和 UniMixer 在 broadcast 场景下的端到端压测结果。
 
 这些能力说明项目已经具备工程化迭代基础。下一阶段重点不是堆更多模型，而是收紧配置契约、补齐安全控制面、建立 CI 质量闸门，并把性能优化建立在稳定基线之上。

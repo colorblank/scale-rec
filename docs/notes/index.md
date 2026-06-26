@@ -13,7 +13,7 @@ Notes 用于记录架构说明、性能分析、压测报告和设计演进。�
 | Note | Content |
 |---|---|
 | [HTTP benchmark report](http_benchmark_report.md) | GDCN+ESMM / UniMixer 压测结果、后端对比和压测命令 |
-| [性能优化与大文件训练](../tutorials/performance_tuning.md) | pandas chunk、memory map、fast-no-na、prefetch 和真实 discover 输入压测 |
+| [性能优化与大文件训练](../tutorials/performance_tuning.md) | pandas chunk、memory map、fast-no-na、prefetch 和真实 demo 输入压测 |
 
 ## Observability
 

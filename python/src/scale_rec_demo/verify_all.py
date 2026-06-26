@@ -19,13 +19,13 @@ if str(_src) not in sys.path:
 
 from train.app.cli import build_model_for_dag
 from train.app.data import DTYPE_PANDAS, _parse_default
-from train.app.main import _run_discover as run_discover_in_process
+from train.app.main import _run_demo as run_demo_in_process
 from train.app.main import build_parser as build_train_parser
 from train.core.config import FlowConfig
 from train.core.dag import FeatureDag
 from train.core.model_output import BINARY_LOGIT, OutputTensor, ensure_model_output
 
-from .paths import DEMO_ARTIFACT_DIR, DISCOVER_FEATURE_CONFIG, MODEL_CONFIGS, REPO_ROOT
+from .paths import DEMO_ARTIFACT_DIR, DEMO_FEATURE_CONFIG, MODEL_CONFIGS, REPO_ROOT
 
 
 def selected_model_names(value: str) -> list[str]:
@@ -72,14 +72,14 @@ def read_serving_dataframe(data_path: Path) -> pd.DataFrame:
 def run_training_process(model_type: str, data_path: Path, weights_path: Path) -> None:
     """Train the model for 1 epoch to save safetensors weights."""
     print(f"[Train] Training {model_type} for 1 epoch...")
-    stem = model_type.replace("discover_", "")
+    stem = model_type.replace("demo_", "")
     args = build_train_parser().parse_args(
         [
-            "discover",
+            "demo",
             "--data",
             str(data_path),
             "--feature-config",
-            str(DISCOVER_FEATURE_CONFIG),
+            str(DEMO_FEATURE_CONFIG),
             "--model-config",
             str(MODEL_CONFIGS[model_type]),
             "--epochs",
@@ -97,7 +97,7 @@ def run_training_process(model_type: str, data_path: Path, weights_path: Path) -
         ]
     )
     args.repo_root = REPO_ROOT
-    run_discover_in_process(args)
+    run_demo_in_process(args)
 
 
 def _load_pytorch_model(
@@ -150,7 +150,7 @@ def run_rust_inference(
         "--bin",
         "demo_inference",
         "--",
-        str(DISCOVER_FEATURE_CONFIG),
+        str(DEMO_FEATURE_CONFIG),
         str(MODEL_CONFIGS[model_type]),
         str(weights_path),
         str(test_csv),
@@ -201,8 +201,8 @@ def compare_outputs(
 @contextlib.contextmanager
 def temp_header_data(fc: FlowConfig):
     """Context manager to prepare headered training data and ensure cleanup."""
-    raw_data = DEMO_ARTIFACT_DIR / "discover_train_data.txt"
-    header_data = DEMO_ARTIFACT_DIR / "discover_train_data_header.txt"
+    raw_data = DEMO_ARTIFACT_DIR / "demo_train_data.txt"
+    header_data = DEMO_ARTIFACT_DIR / "demo_train_data_header.txt"
     cols = [s.name for s in fc.sources]
     add_header_to_tsv(raw_data, header_data, cols)
     try:
@@ -217,12 +217,12 @@ def verify_model_pipeline(
 ) -> bool:
     """Run verification pipeline for a given model type."""
     print(f"\n{'=' * 60}\n  Model: {model_type}\n{'=' * 60}")
-    stem = f"model_{model_type.removeprefix('discover_')}"
+    stem = f"model_{model_type.removeprefix('demo_')}"
     weights = DEMO_ARTIFACT_DIR / f"{stem}.safetensors"
     test_csv = DEMO_ARTIFACT_DIR / f"{stem}_test.csv"
     py_preds = DEMO_ARTIFACT_DIR / f"{stem}_py_preds.csv"
     rust_preds = DEMO_ARTIFACT_DIR / f"{stem}_rust_preds.csv"
-    fc = FlowConfig.from_yaml(str(DISCOVER_FEATURE_CONFIG))
+    fc = FlowConfig.from_yaml(str(DEMO_FEATURE_CONFIG))
     with temp_header_data(fc) as header_data:
         if force_train or not weights.exists():
             run_training_process(model_type, header_data, weights)

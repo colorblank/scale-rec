@@ -25,7 +25,7 @@
 
 | Area | Files |
 |---|---|
-| Feature contract | `examples/shared/feature_config_discover.yaml` |
+| Feature contract | `examples/shared/feature_config_demo.yaml` |
 | Model config | `examples/models/*.yaml` |
 | Training entrypoint | `python/src/train/app/main.py` |
 | Demo verification | `python/src/scale_rec_demo/verify_all.py` |
@@ -37,17 +37,17 @@
 
    ```bash
    PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-     python -m scale_rec_demo.generate_discover_data \
-     --label-policy examples/shared/discover_label_policy.yaml
+     python -m scale_rec_demo.generate_demo_data \
+     --label-policy examples/shared/demo_label_policy.yaml
    ```
 
 2. 训练并发布模型：
 
    ```bash
    PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-     python -m train.app.main discover \
-     --data python/artifacts/demo/discover_train_data.txt \
-     --feature-config examples/shared/feature_config_discover.yaml \
+     python -m train.app.main demo \
+     --data python/artifacts/demo/demo_train_data.txt \
+     --feature-config examples/shared/feature_config_demo.yaml \
      --model-config examples/models/gdcn_esmm.yaml \
      --train-config examples/shared/train_defaults.yaml \
      --epochs 1 --batch-size 128 --no-header \
@@ -59,7 +59,7 @@
 
    ```bash
    PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-     python -m scale_rec_demo.verify_all --models discover_gdcn_esmm --force-train
+     python -m scale_rec_demo.verify_all --models demo_gdcn_esmm --force-train
    ```
 
 4. 启动 HTTP 服务：
@@ -87,7 +87,7 @@ Overall Consistency Status: PASS
 
 | Command | Arguments used here | Full parameter table |
 |---|---|---|
-| `scale_rec_demo.generate_discover_data` | `--label-policy` selects demo label policy YAML | [CLI Reference: Generate discover data](../reference/cli.md#generate-discover-data) |
-| `train.app.main discover` | Data, feature/model configs, training and artifact flags | [CLI Reference: Train discover](../reference/cli.md#train-discover) |
+| `scale_rec_demo.generate_demo_data` | `--label-policy` selects demo label policy YAML | [CLI Reference: Generate demo data](../reference/cli.md#generate-demo-data) |
+| `train.app.main demo` | Data, feature/model configs, training and artifact flags | [CLI Reference: Train demo](../reference/cli.md#train-demo) |
 | `scale_rec_demo.verify_all` | `--models` selects model keys; `--force-train` retrains before comparison | [CLI Reference: Verify all](../reference/cli.md#verify-all) |
 | `cargo run --bin server` | `--model-dir` scans serving artifacts | [CLI Reference: Rust server](../reference/cli.md#rust-server) |

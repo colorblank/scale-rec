@@ -11,7 +11,7 @@
 核心文件：
 
 ```text
-examples/shared/feature_config_discover.yaml
+examples/shared/feature_config_demo.yaml
 ```
 
 顶层结构：

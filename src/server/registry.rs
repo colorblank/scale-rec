@@ -570,7 +570,7 @@ impl ModelRegistry {
         parent_candidates.push(self.model_dir.as_path());
         parent_candidates.push(feature_parent.unwrap_or_else(|| Path::new(".")));
         let model_key = model_name.strip_prefix("model_").unwrap_or(model_name);
-        let config_key = model_key.strip_prefix("discover_").unwrap_or(model_key);
+        let config_key = model_key.strip_prefix("demo_").unwrap_or(model_key);
         let demo_key = model_key.strip_suffix("_demo").unwrap_or(model_key);
         let config_names = vec![
             format!("model_{}.yaml", model_key),
@@ -1183,25 +1183,25 @@ mod tests {
         fs::create_dir_all(&artifact_dir).unwrap();
         fs::create_dir_all(&config_dir).unwrap();
 
-        let feature_config = config_dir.join("feature_config_discover.yaml");
-        let discover_gdcn_esmm = config_dir.join("model_discover_gdcn_esmm.yaml");
-        let discover_unimixer = config_dir.join("model_discover_unimixer.yaml");
+        let feature_config = config_dir.join("feature_config_demo.yaml");
+        let demo_gdcn_esmm = config_dir.join("model_demo_gdcn_esmm.yaml");
+        let demo_unimixer = config_dir.join("model_demo_unimixer.yaml");
         fs::write(&feature_config, "").unwrap();
-        fs::write(&discover_gdcn_esmm, "type: gdcn_esmm\n").unwrap();
-        fs::write(&discover_unimixer, "type: unimixer\n").unwrap();
+        fs::write(&demo_gdcn_esmm, "type: gdcn_esmm\n").unwrap();
+        fs::write(&demo_unimixer, "type: unimixer\n").unwrap();
 
         let registry = empty_registry(feature_config, artifact_dir);
         assert_eq!(
             registry
-                .find_model_config_in("model_discover_gdcn_esmm", None)
+                .find_model_config_in("model_demo_gdcn_esmm", None)
                 .unwrap(),
-            discover_gdcn_esmm
+            demo_gdcn_esmm
         );
         assert_eq!(
             registry
-                .find_model_config_in("model_discover_unimixer", None)
+                .find_model_config_in("model_demo_unimixer", None)
                 .unwrap(),
-            discover_unimixer
+            demo_unimixer
         );
 
         fs::remove_dir_all(root).unwrap();

@@ -91,21 +91,21 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m train.app.main --help
 ```
 
-生成 discover demo 数据：
+生成 demo 数据：
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m scale_rec_demo.generate_discover_data \
-  --label-policy examples/shared/discover_label_policy.yaml
+  python -m scale_rec_demo.generate_demo_data \
+  --label-policy examples/shared/demo_label_policy.yaml
 ```
 
 训练 demo 模型：
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m train.app.main discover \
-  --data python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/shared/feature_config_discover.yaml \
+  python -m train.app.main demo \
+  --data python/artifacts/demo/demo_train_data.txt \
+  --feature-config examples/shared/feature_config_demo.yaml \
   --model-config examples/models/gdcn_esmm.yaml \
   --train-config examples/shared/train_defaults.yaml \
   --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
@@ -117,10 +117,10 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m train.app.main discover \
+  python -m train.app.main demo \
   --data-glob 'data/user_*.txt' \
   --start-date 20260325 --end-date 20260331 \
-  --feature-config examples/shared/feature_config_discover.yaml \
+  --feature-config examples/shared/feature_config_demo.yaml \
   --model-config examples/models/gdcn_esmm.yaml \
   --init-weights python/artifacts/demo/model_gdcn_esmm/20260526_120000/serving/model.safetensors \
   --epochs 3 --batch-size 1024 --no-header
@@ -166,7 +166,7 @@ uv run --project python mypy
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m scale_rec_demo.verify_all --models discover_lr,discover_gdcn_esmm,discover_unimixer,discover_token_mixer_large,discover_rankmixer --force-train
+  python -m scale_rec_demo.verify_all --models demo_lr,demo_gdcn_esmm,demo_unimixer,demo_token_mixer_large,demo_rankmixer --force-train
 ```
 
 验证全部 demo 主线：
@@ -176,7 +176,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m scale_rec_demo.verify_all
 ```
 
-最近一次全链路验证已覆盖 `discover_lr`、`discover_gdcn_esmm`、`discover_unimixer`、`discover_token_mixer_large`、`discover_rankmixer`，Python 训练、safetensors 导出、Rust 推理和输出比对均通过；Rust 侧的 `cargo test --test model_smoke` 也同步通过。
+最近一次全链路验证已覆盖 `demo_lr`、`demo_gdcn_esmm`、`demo_unimixer`、`demo_token_mixer_large`、`demo_rankmixer`，Python 训练、safetensors 导出、Rust 推理和输出比对均通过；Rust 侧的 `cargo test --test model_smoke` 也同步通过。
 
 如果本地线程环境对 OpenMP/MKL 比较敏感，可以先设置：
 
@@ -211,7 +211,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 ```bash
 cargo test --test model_smoke
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m scale_rec_demo.verify_all --models discover_gdcn_esmm --force-train
+  python -m scale_rec_demo.verify_all --models demo_gdcn_esmm --force-train
 ```
 
 ## 注意事项
@@ -232,8 +232,8 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 | `cargo build --release --features ... --bin ...` | `--release` builds optimized binaries; `--features` selects Candle backend; `--bin` selects binary targets | Rust commands are standard Cargo flags |
 | `cargo run --bin server` | `--model-dir`, `--model-path` and serving runtime flags | [CLI Reference: Rust server](cli.md#rust-server) |
 | `train.app.main` | `--help` prints subcommand help; other training flags follow the selected mode | [CLI Reference: Train command overview](cli.md#train-command-overview) |
-| `scale_rec_demo.generate_discover_data` | `--label-policy` selects demo label policy YAML | [CLI Reference: Generate discover data](cli.md#generate-discover-data) |
-| `train.app.main discover` | Data/config/training/artifact/runtime flags | [CLI Reference: Train discover](cli.md#train-discover) |
+| `scale_rec_demo.generate_demo_data` | `--label-policy` selects demo label policy YAML | [CLI Reference: Generate demo data](cli.md#generate-demo-data) |
+| `train.app.main demo` | Data/config/training/artifact/runtime flags | [CLI Reference: Train demo](cli.md#train-demo) |
 | `pytest` | `python/tests/ -v` runs verbose Python tests | pytest standard arguments |
 | `uvx --offline ruff check/format` | `--offline` avoids network; `check` lints; `format` formats | Ruff standard arguments |
 | `uv run --project python mypy` | `--project python` selects project; `mypy` runs type checking | mypy standard arguments |

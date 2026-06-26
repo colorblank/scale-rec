@@ -25,16 +25,16 @@ scale-rec 是一个推荐系统训练与推理框架：Python 侧负责样本读
 所有命令从仓库根目录执行。
 
 ```bash
-# 1. 生成 discover demo 数据
+# 1. 生成 demo 数据
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m scale_rec_demo.generate_discover_data \
-  --label-policy examples/shared/discover_label_policy.yaml
+  python -m scale_rec_demo.generate_demo_data \
+  --label-policy examples/shared/demo_label_policy.yaml
 
 # 2. 训练并导出一个 GDCN+ESMM 模型
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
-  python -m train.app.main discover \
-  --data python/artifacts/demo/discover_train_data.txt \
-  --feature-config examples/shared/feature_config_discover.yaml \
+  python -m train.app.main demo \
+  --data python/artifacts/demo/demo_train_data.txt \
+  --feature-config examples/shared/feature_config_demo.yaml \
   --model-config examples/models/gdcn_esmm.yaml \
   --train-config examples/shared/train_defaults.yaml \
   --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
@@ -45,7 +45,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 # 3. 端到端验证 Python 训练导出与 Rust 推理一致性
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m scale_rec_demo.verify_all \
-  --models discover_lr,discover_gdcn_esmm,discover_unimixer,discover_token_mixer_large,discover_rankmixer \
+  --models demo_lr,demo_gdcn_esmm,demo_unimixer,demo_token_mixer_large,demo_rankmixer \
   --force-train
 ```
 
@@ -97,7 +97,7 @@ scale-rec/
 │   ├── src/scale_rec_demo/         # demo 数据生成和端到端验证脚本
 │   ├── tests/                      # Python 测试
 │   └── pyproject.toml              # Python 项目配置
-├── examples/                       # discover 示例共享配置和模型配置
+├── examples/                       # demo 示例共享配置和模型配置
 ├── docs/                           # 文档
 ├── docker/                         # Docker 打包入口
 ├── tests/                          # Rust 集成测试
@@ -128,8 +128,8 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 | Command | Arguments used here | Full parameter table |
 |---|---|---|
-| `scale_rec_demo.generate_discover_data` | `--label-policy` selects demo label policy YAML | [CLI Reference: Generate discover data](docs/reference/cli.md#generate-discover-data) |
-| `train.app.main discover` | `--data` / `--feature-config` / `--model-config` / `--train-config` / `--epochs` / `--batch-size` / `--no-header` / `--eval-samples` / `--artifact-dir` / `--model-name` / `--run-version` | [CLI Reference: Train discover](docs/reference/cli.md#train-discover) |
+| `scale_rec_demo.generate_demo_data` | `--label-policy` selects demo label policy YAML | [CLI Reference: Generate demo data](docs/reference/cli.md#generate-demo-data) |
+| `train.app.main demo` | `--data` / `--feature-config` / `--model-config` / `--train-config` / `--epochs` / `--batch-size` / `--no-header` / `--eval-samples` / `--artifact-dir` / `--model-name` / `--run-version` | [CLI Reference: Train demo](docs/reference/cli.md#train-demo) |
 | `scale_rec_demo.verify_all` | `--models` selects model keys; `--force-train` retrains before comparison | [CLI Reference: Verify all](docs/reference/cli.md#verify-all) |
 | `cargo run --bin server` | `--model-dir` scans a serving directory; `--model-path` loads one manifest | [CLI Reference: Rust server](docs/reference/cli.md#rust-server) |
 | `cargo fmt` / `cargo check` / `cargo test` | No project-specific flags in this page | [Development Reference](docs/reference/development.md) |

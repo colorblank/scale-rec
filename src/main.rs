@@ -22,7 +22,7 @@ fn main() -> Result<()> {
         .try_init();
 
     info!("scale-rec: FeatFlow + UniMixer");
-    let yaml = std::fs::read_to_string("examples/shared/feature_config_discover.yaml")
+    let yaml = std::fs::read_to_string("examples/shared/feature_config_demo.yaml")
         .expect("Failed to read config");
     let flow_config = FlowConfig::from_yaml(&yaml).expect("Invalid YAML");
     info!(version = %flow_config.version, "config loaded");
