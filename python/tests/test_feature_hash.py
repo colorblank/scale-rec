@@ -96,6 +96,15 @@ class TestFeatureHashSingle:
         assert default_op.process(["abc"]) == FeatureHash(1_000_000, 1).process(["abc"])
         assert default_op.process(["abc"]) != scoped_op.process(["abc"])
 
+    def test_cache_stats_count_real_hash_cache_hits(self):
+        op = FeatureHash(1000, 1, "|")
+        op.enable_cache_stats()
+
+        assert op.process(["重复中文", "符号|x"]) == op.process(["重复中文", "符号|x"])
+
+        stats = op.read_cache_stats()
+        assert stats == {"total": 2, "hits": 1, "misses": 1, "cache_size": 1}
+
 
 class TestFeatureHashMulti:
     """多哈希 (num_hashes>1) 测试。"""

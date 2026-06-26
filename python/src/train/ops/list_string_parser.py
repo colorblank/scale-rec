@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import register_op
+from .cache import LruCache
 
 
 @register_op("ListStringParser")
@@ -13,6 +14,7 @@ class ListStringParser:
     def __init__(self, sep: str, key_index: int) -> None:
         self.sep = sep
         self.key_index = key_index
+        self._parse_cache: LruCache[str] = LruCache()
 
     @classmethod
     def from_config(cls, params: dict) -> ListStringParser:
@@ -26,14 +28,7 @@ class ListStringParser:
         if not isinstance(str_list, list):
             raise TypeError("ListStringParser requires a list of strings as input")
 
-        result = []
-        for item in str_list:
-            parts = str(item).split(self.sep)
-            if self.key_index < len(parts):
-                result.append(parts[self.key_index])
-            else:
-                result.append("")
-        return result
+        return [self._parse_item(item) for item in str_list]
 
     def process_batch(self, inputs: list[Any]) -> list[list[str]]:
         list_of_lists = inputs[0]
@@ -47,10 +42,24 @@ class ListStringParser:
                 raise TypeError("ListStringParser requires a list of strings as input")
             result = []
             for item in str_list:
-                parts = str(item).split(sep)
-                if key_index < len(parts):
-                    result.append(parts[key_index])
-                else:
-                    result.append("")
+                key = str(item)
+                hit, cached = self._parse_cache.get(key)
+                if hit and cached is not None:
+                    result.append(cached)
+                    continue
+                parts = key.split(sep)
+                parsed = parts[key_index] if key_index < len(parts) else ""
+                self._parse_cache.put(key, parsed)
+                result.append(parsed)
             results.append(result)
         return results
+
+    def _parse_item(self, item: Any) -> str:
+        key = str(item)
+        hit, cached = self._parse_cache.get(key)
+        if hit and cached is not None:
+            return cached
+        parts = key.split(self.sep)
+        parsed = parts[self.key_index] if self.key_index < len(parts) else ""
+        self._parse_cache.put(key, parsed)
+        return parsed

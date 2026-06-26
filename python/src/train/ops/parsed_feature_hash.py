@@ -3,10 +3,12 @@ from __future__ import annotations
 """融合预处理算子：先解析为 token 序列，再逐 token hash。"""
 
 import json
+from collections.abc import Hashable
 from typing import Any
 
 from ..core.config import ParseMode
 from . import register_op
+from .cache import LruCache
 from .feature_hash import FeatureHash
 
 
@@ -54,6 +56,7 @@ class ParsedFeatureHash:
         self.max_len = max_len
         self.pad_len = pad_len
         self.pad_val = pad_val
+        self._parse_cache: LruCache[tuple[str, ...]] = LruCache()
         self._hash = FeatureHash(
             vocab_size,
             num_hashes=num_hashes,
@@ -96,19 +99,26 @@ class ParsedFeatureHash:
         return [self.process([val]) for val in vals]
 
     def _parse(self, value: Any) -> list[str]:
+        key = _parse_cache_key(value)
+        hit, cached = self._parse_cache.get(key)
+        if hit and cached is not None:
+            return list(cached)
         if self.parse_mode is ParseMode.JSON:
-            return self._parse_json(value)
-        if self.parse_mode is ParseMode.STRUCTURED:
-            return self._parse_structured(value)
-        if self.parse_mode is ParseMode.STRUCTURED_FLAT_SPLIT:
-            return self._parse_structured_flat_split(value)
-        if self.parse_mode is ParseMode.SPLIT:
-            return self._normalize_max((str(value) if value is not None else "").split(self.sep))
-        if self.parse_mode is ParseMode.LIST_SPLIT:
-            return self._parse_list_split(value)
-        if self.parse_mode is ParseMode.FLAT_SPLIT:
-            return self._parse_flat_split(value)
-        raise ValueError(f"Unsupported ParsedFeatureHash mode: {self.parse_mode.value}")
+            result = self._parse_json(value)
+        elif self.parse_mode is ParseMode.STRUCTURED:
+            result = self._parse_structured(value)
+        elif self.parse_mode is ParseMode.STRUCTURED_FLAT_SPLIT:
+            result = self._parse_structured_flat_split(value)
+        elif self.parse_mode is ParseMode.SPLIT:
+            result = self._normalize_max((str(value) if value is not None else "").split(self.sep))
+        elif self.parse_mode is ParseMode.LIST_SPLIT:
+            result = self._parse_list_split(value)
+        elif self.parse_mode is ParseMode.FLAT_SPLIT:
+            result = self._parse_flat_split(value)
+        else:
+            raise ValueError(f"Unsupported ParsedFeatureHash mode: {self.parse_mode.value}")
+        self._parse_cache.put(key, tuple(result))
+        return result
 
     def _parse_json(self, value: Any) -> list[str]:
         s = str(value) if value else ""
@@ -185,3 +195,13 @@ class ParsedFeatureHash:
         if len(parts) < self.max_len:
             parts.extend([self.pad_val] * (self.max_len - len(parts)))
         return parts
+
+
+def _parse_cache_key(value: Any) -> Hashable:
+    if isinstance(value, list):
+        return tuple(_parse_cache_key(item) for item in value)
+    if isinstance(value, dict):
+        return tuple(sorted((str(k), _parse_cache_key(v)) for k, v in value.items()))
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)

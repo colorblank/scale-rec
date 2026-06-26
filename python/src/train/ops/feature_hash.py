@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 """特征哈希算子：DJB2 多种子哈希，支持逐元素 list 哈希。"""
+
 from typing import Any
 
 from . import register_op
+from .cache import LruCache
+
+DEFAULT_HASH_CACHE_SIZE = 100_000
 
 
 @register_op("FeatureHash")
@@ -27,7 +31,7 @@ class FeatureHash:
         scope_parts = [str(part) for part in (namespace, salt, version) if str(part)]
         self.hash_prefix = "::".join(scope_parts) + "::" if scope_parts else ""
         self._cache_stats: dict[str, int] | None = None
-        self._cache_keys: set[tuple[str, int]] | None = None
+        self._hash_cache: LruCache[int] = LruCache(DEFAULT_HASH_CACHE_SIZE)
 
     @classmethod
     def from_config(cls, params: dict) -> FeatureHash:
@@ -94,7 +98,7 @@ class FeatureHash:
 
     def enable_cache_stats(self) -> None:
         self._cache_stats = {"total": 0, "hits": 0, "misses": 0}
-        self._cache_keys = set()
+        self._hash_cache.clear()
 
     def read_cache_stats(self) -> dict[str, int] | None:
         if self._cache_stats is None:
@@ -103,25 +107,28 @@ class FeatureHash:
             "total": self._cache_stats["total"],
             "hits": self._cache_stats["hits"],
             "misses": self._cache_stats["misses"],
-            "cache_size": len(self._cache_keys) if self._cache_keys else 0,
+            "cache_size": len(self._hash_cache),
         }
 
     def disable_cache_stats(self) -> dict[str, int] | None:
         result = self.read_cache_stats()
         self._cache_stats = None
-        self._cache_keys = None
         return result
 
     def _hash_one(self, key: str, seed: int = 0) -> int:
-        if self._cache_stats is not None and self._cache_keys is not None:
-            cache_key = (key, seed)
+        cache_key = (key, seed)
+        hit, cached = self._hash_cache.get(cache_key)
+        if self._cache_stats is not None:
             self._cache_stats["total"] += 1
-            if cache_key in self._cache_keys:
+            if hit:
                 self._cache_stats["hits"] += 1
             else:
                 self._cache_stats["misses"] += 1
-                self._cache_keys.add(cache_key)
-        return _djb2_seeded(f"{self.hash_prefix}{key}", seed) % self.vocab_size
+        if hit and cached is not None:
+            return cached
+        value = _djb2_seeded(f"{self.hash_prefix}{key}", seed) % self.vocab_size
+        self._hash_cache.put(cache_key, value)
+        return value
 
     def _hash_multi(self, key: str) -> int | list[int]:
         if self.num_hashes == 1:

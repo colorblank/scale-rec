@@ -19,19 +19,11 @@ class DagPreprocessor:
         embed_names = self._embed_names
         embed_infos = self._embed_infos
 
-        feature_lists: dict[str, list] = {name: [] for name in embed_names}
-        for i in range(n_rows):
-            for name in embed_names:
-                col = context.get(name)
-                val = col[i] if col is not None and i < len(col) else 0
-                pooling = embed_infos[name].pooling
-                if pooling is PoolingMode.FIRST and isinstance(val, list):
-                    val = val[0] if val else 0
-                feature_lists[name].append(val)
-
         tensors: dict[str, torch.Tensor] = {}
-        for name, vals in feature_lists.items():
+        for name in embed_names:
+            col = context.get(name)
             pooling = embed_infos[name].pooling
+            vals = _feature_values(col, n_rows)
             if pooling is not PoolingMode.FIRST:
                 if not vals:
                     tensors[name] = torch.tensor([], dtype=torch.long)
@@ -57,11 +49,23 @@ class DagPreprocessor:
                     padded = [v[:seq_len] + [0] * max(seq_len - len(v), 0) for v in vals]
                 tensors[name] = torch.tensor(padded, dtype=torch.long)
             else:
+                if vals and isinstance(vals[0], list):
+                    vals = [v[0] if isinstance(v, list) and v else v for v in vals]
                 tensors[name] = torch.tensor(vals, dtype=torch.long)
         return tensors
 
     def embed_names(self) -> tuple[str, ...]:
         return self._embed_names
+
+
+def _feature_values(col: list | None, n_rows: int) -> list:
+    if n_rows <= 0:
+        return []
+    if col is None:
+        return [0] * n_rows
+    if len(col) >= n_rows:
+        return col
+    return [*col, *([0] * (n_rows - len(col)))]
 
 
 class TrainingPreprocessor:

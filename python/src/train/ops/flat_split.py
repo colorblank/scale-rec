@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import register_op
+from .cache import LruCache
 
 
 @register_op("FlatSplit")
@@ -21,6 +22,7 @@ class FlatSplit:
         self.sep = sep
         self.max_len = max_len
         self.pad_val = pad_val
+        self._parse_cache: LruCache[tuple[str, ...]] = LruCache()
 
     @classmethod
     def from_config(cls, params: dict) -> FlatSplit:
@@ -45,7 +47,7 @@ class FlatSplit:
         all_parts: list[str] = []
         for s in str_list:
             if s:
-                all_parts.extend(str(s).split(self.sep))
+                all_parts.extend(self._split_item(s))
         return self._normalize(all_parts)
 
     def process_batch(self, inputs: list[Any]) -> list[list[str]]:
@@ -63,6 +65,22 @@ class FlatSplit:
             all_parts: list[str] = []
             for s in str_list:
                 if s:
-                    all_parts.extend(str(s).split(sep))
+                    key = str(s)
+                    hit, cached = self._parse_cache.get(key)
+                    if hit and cached is not None:
+                        all_parts.extend(cached)
+                        continue
+                    parts = tuple(key.split(sep))
+                    self._parse_cache.put(key, parts)
+                    all_parts.extend(parts)
             results.append(self._normalize(all_parts))
         return results
+
+    def _split_item(self, item: Any) -> tuple[str, ...]:
+        key = str(item)
+        hit, cached = self._parse_cache.get(key)
+        if hit and cached is not None:
+            return cached
+        parts = tuple(key.split(self.sep))
+        self._parse_cache.put(key, parts)
+        return parts

@@ -129,7 +129,7 @@ class FeatureDag:
         context: dict[str, list] = {}
         for name, col in columns.items():
             if name in self.sources:
-                context[name] = list(col)
+                context[name] = col if isinstance(col, list) else list(col)
 
         for name, src in self.sources.items():
             if name not in context:

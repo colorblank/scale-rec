@@ -95,6 +95,14 @@ def test_split_no_limit():
     assert op.process(["hello"]) == ["hello"]
 
 
+def test_split_cache_returns_independent_lists():
+    op = Split("|", 3, "none")
+    first = op.process(["中文|a"])
+    first[0] = "mutated"
+
+    assert op.process(["中文|a"]) == ["中文", "a", "none"]
+
+
 def test_flat_split():
     op = FlatSplit(",", 8, "")
     result = op.process([["a_93,b_129,c_140,d_53", "a_51,b_245,c_205,d_157"]])

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import register_op
+from .cache import LruCache
 
 
 @register_op("Split")
@@ -21,6 +22,7 @@ class Split:
         self.sep = sep
         self.max_len = max_len
         self.pad_val = pad_val
+        self._parse_cache: LruCache[tuple[str, ...]] = LruCache()
 
     @classmethod
     def from_config(cls, params: dict) -> Split:
@@ -39,9 +41,7 @@ class Split:
         return parts
 
     def process(self, inputs: list[Any]) -> list[str]:
-        s = str(inputs[0]) if inputs[0] is not None else ""
-        parts = s.split(self.sep) if s else []
-        return self._normalize(parts)
+        return self._split_cached(inputs[0])
 
     def process_batch(self, inputs: list[Any]) -> list[list[str]]:
         """Columnar batch: 1 col × M rows → M lists."""
@@ -51,7 +51,24 @@ class Split:
         sep = self.sep
         results = []
         for i in range(n):
-            s = str(inputs[0][i]) if inputs[0][i] is not None else ""
+            value = inputs[0][i]
+            s = str(value) if value is not None else ""
+            hit, cached = self._parse_cache.get(s)
+            if hit and cached is not None:
+                results.append(list(cached))
+                continue
             parts = s.split(sep) if s else []
-            results.append(self._normalize(parts))
+            normalized = tuple(self._normalize(parts))
+            self._parse_cache.put(s, normalized)
+            results.append(list(normalized))
         return results
+
+    def _split_cached(self, value: Any) -> list[str]:
+        s = str(value) if value is not None else ""
+        hit, cached = self._parse_cache.get(s)
+        if hit and cached is not None:
+            return list(cached)
+        parts = s.split(self.sep) if s else []
+        normalized = tuple(self._normalize(parts))
+        self._parse_cache.put(s, normalized)
+        return list(normalized)

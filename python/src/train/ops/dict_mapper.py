@@ -28,15 +28,8 @@ class DictMapper:
         """Map string key to integer index; list input -> list output, single -> single."""
         val = inputs[0]
         if isinstance(val, list):
-            return [
-                self.mapping.get(str(v), self.default_idx)
-                if isinstance(v, (str, int, float))
-                else self.default_idx
-                for v in val
-            ]
-        if isinstance(val, (int, float)):
-            val = str(val)
-        return self.mapping.get(val, self.default_idx) if isinstance(val, str) else self.default_idx
+            return [self._map_value(v) for v in val]
+        return self._map_value(val)
 
     def process_batch(self, inputs: list[Any]) -> list[int] | list[list[int]]:
         """Batch map: N values -> N results. Single call for entire column."""
@@ -45,18 +38,12 @@ class DictMapper:
             return []
         first = vals[0]
         if isinstance(first, list):
-            return [
-                [
-                    self.mapping.get(str(v), self.default_idx)
-                    if isinstance(v, (str, int, float))
-                    else self.default_idx
-                    for v in row
-                ]
-                for row in vals
-            ]
-        return [
-            self.mapping.get(str(v), self.default_idx)
-            if isinstance(v, (str, int, float))
-            else self.default_idx
-            for v in vals
-        ]
+            return [[self._map_value(v) for v in row] for row in vals]
+        return [self._map_value(v) for v in vals]
+
+    def _map_value(self, val: Any) -> int:
+        if isinstance(val, str):
+            return self.mapping.get(val, self.default_idx)
+        if isinstance(val, (int, float)):
+            return self.mapping.get(str(val), self.default_idx)
+        return self.default_idx
