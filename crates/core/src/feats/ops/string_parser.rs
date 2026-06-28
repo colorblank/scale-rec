@@ -27,6 +27,24 @@ impl StringParser {
             pad_val,
         }
     }
+
+    fn parse_str(&self, s: &str) -> Vec<String> {
+        let mut result = Vec::with_capacity(self.pad_len);
+        if !s.is_empty() {
+            for item in s.split(&self.sep1) {
+                if result.len() >= self.pad_len {
+                    break;
+                }
+                if let Some(part) = item.split(&self.sep2).nth(self.key_index) {
+                    result.push(part.to_string());
+                }
+            }
+        }
+        while result.len() < self.pad_len {
+            result.push(self.pad_val.clone());
+        }
+        result
+    }
 }
 
 /// 从 YAML params 创建 StringParser 算子。
@@ -66,25 +84,7 @@ impl CustomOp for StringParser {
             Fv::Str(s) => s.as_str(),
             _ => "",
         };
-        let mut result: Vec<String> = if s.is_empty() {
-            Vec::new()
-        } else {
-            s.split(&self.sep1)
-                .filter_map(|item| {
-                    let parts: Vec<&str> = item.split(&self.sep2).collect();
-                    if self.key_index < parts.len() {
-                        Some(parts[self.key_index].to_string())
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        };
-        while result.len() < self.pad_len {
-            result.push(self.pad_val.clone());
-        }
-        result.truncate(self.pad_len);
-        Ok(Fv::StrList(result))
+        Ok(Fv::StrList(self.parse_str(s)))
     }
 
     fn process_batch(&self, inputs: &[&[Fv]], n_rows: usize) -> Result<Vec<Fv>, String> {
@@ -95,26 +95,37 @@ impl CustomOp for StringParser {
                 Fv::Str(s) => s.as_str(),
                 _ => "",
             };
-            let mut result: Vec<String> = if s.is_empty() {
-                Vec::new()
-            } else {
-                s.split(&self.sep1)
-                    .filter_map(|item| {
-                        let parts: Vec<&str> = item.split(&self.sep2).collect();
-                        if self.key_index < parts.len() {
-                            Some(parts[self.key_index].to_string())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect()
-            };
-            while result.len() < self.pad_len {
-                result.push(self.pad_val.clone());
-            }
-            result.truncate(self.pad_len);
-            results.push(Fv::StrList(result));
+            results.push(Fv::StrList(self.parse_str(s)));
         }
         Ok(results)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_key_index_and_pads() {
+        let op = StringParser::new("|".into(), "#".into(), 0, 3, "unknown".into());
+        let result = op.process(&[Fv::Str("a#1|b#2".into())]).unwrap();
+        assert_eq!(
+            result,
+            Fv::StrList(vec!["a".into(), "b".into(), "unknown".into()])
+        );
+    }
+
+    #[test]
+    fn truncates_after_pad_len() {
+        let op = StringParser::new("|".into(), "#".into(), 0, 2, "unknown".into());
+        let result = op.process(&[Fv::Str("a#1|b#2|c#3".into())]).unwrap();
+        assert_eq!(result, Fv::StrList(vec!["a".into(), "b".into()]));
+    }
+
+    #[test]
+    fn skips_items_missing_key_index() {
+        let op = StringParser::new("|".into(), "#".into(), 1, 2, "unknown".into());
+        let result = op.process(&[Fv::Str("a#1|b".into())]).unwrap();
+        assert_eq!(result, Fv::StrList(vec!["1".into(), "unknown".into()]));
     }
 }

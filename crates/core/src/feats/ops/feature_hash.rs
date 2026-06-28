@@ -1,7 +1,6 @@
 //! 特征哈希算子：DJB2 多种子哈希，带缓存加速，与 Python 实现逐位一致。
 
 use crate::feats::ops::{CustomOp, Fv};
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
@@ -194,8 +193,7 @@ impl FeatureHash {
     }
 
     fn hash_one(&self, key: &str, seed: u32) -> i32 {
-        let key = self.scoped_key(key);
-        (djb2_seeded(&key, seed) % self.vocab_size) as i32
+        (djb2_seeded_with_prefix(self.hash_prefix.as_deref(), key, seed) % self.vocab_size) as i32
     }
 
     fn hash_multi(&self, key: &str) -> Fv {
@@ -206,13 +204,6 @@ impl FeatureHash {
                 .map(|seed| self.hash_one(key, seed))
                 .collect();
             Fv::IntList(indices)
-        }
-    }
-
-    fn scoped_key<'a>(&'a self, key: &'a str) -> Cow<'a, str> {
-        match &self.hash_prefix {
-            Some(prefix) => Cow::Owned(format!("{}{}", prefix, key)),
-            None => Cow::Borrowed(key),
         }
     }
 }
@@ -256,11 +247,20 @@ pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
 
 /// DJB2 带种子前缀的哈希，32 位回绕 —— 与 Python _djb2_seeded 完全一致。
 pub fn djb2_seeded(key: &str, seed: u32) -> u32 {
+    djb2_seeded_with_prefix(None, key, seed)
+}
+
+fn djb2_seeded_with_prefix(prefix: Option<&str>, key: &str, seed: u32) -> u32 {
     let mut h: u32 = 5381;
     for ch in seed.to_string().bytes() {
         h = h.wrapping_mul(33).wrapping_add(ch as u32);
     }
     h = h.wrapping_mul(33).wrapping_add(b'_' as u32);
+    if let Some(prefix) = prefix {
+        for ch in prefix.bytes() {
+            h = h.wrapping_mul(33).wrapping_add(ch as u32);
+        }
+    }
     for ch in key.bytes() {
         h = h.wrapping_mul(33).wrapping_add(ch as u32);
     }

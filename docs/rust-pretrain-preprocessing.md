@@ -142,6 +142,21 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 当前 demo 基线（2000 行，Windows dev build）显示 Rust 路径主要耗时在 `rust_execute_s`；小样本下热点集中在 `FeatureHash`、`StringParser`、`JsonExtractList`、`ListOverlap`。
 
+### 预处理优化记录
+
+固定 benchmark 参数：demo 数据 2000 行，`--mode rust --batch-sizes 128,512,1024 --repeat 5 --warmup-batches 2 --no-header --require-rust --profile`，Windows dev build。
+
+| 轮次 | 修改 | batch=128 rows/s | batch=512 rows/s | batch=1024 rows/s | 结论 |
+|------|------|------------------|------------------|-------------------|------|
+| baseline | profile-only，无算子优化 | 3247.4 | 3360.0 | 3466.6 | `ListOverlap`/`StringParser`/`FeatureHash` 为主要热点 |
+| 1 | `ListOverlap` 去掉每行两个 `HashSet` 分配，改为小列表无分配扫描 | 3692.6 (+13.7%) | 3992.2 (+18.8%) | 3945.7 (+13.8%) | 保留 |
+| 2 | `StringParser` 去掉 `collect::<Vec<&str>>()`，用 `nth(key_index)`，达到 `pad_len` 后提前停止 | 3977.3 (+7.7%) | 4179.6 (+4.7%) | 4078.5 (+3.4%) | 保留 |
+| 3 | `FeatureHash` 对 namespace/salt/version 前缀直接按 bytes 参与 DJB2，避免每次 `format!` scoped key | 4022.8 (+1.1%) | 4285.8 (+2.5%) | 4236.6 (+3.9%) | 保留 |
+
+相对 baseline，当前保留优化后的总提升：batch 128 `+23.9%`，batch 512 `+27.6%`，batch 1024 `+22.2%`。
+
+撤回尝试：`JsonExtractList` 预分配 `pad_len` 并在收够输出后停止遍历。benchmark 未提升（约 4012/4259/4224 rows/s），原因是 `serde_json::from_str` 仍完整解析 JSON，减少后续转换不足以抵消波动；该改动未保留。
+
 ## 新增/修改文件清单
 
 | 文件 | 说明 |
