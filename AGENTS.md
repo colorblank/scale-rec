@@ -13,9 +13,10 @@ scale-rec is a recommendation system with a **Rust inference engine** (Candle) a
 ### Rust
 
 ```bash
-cargo check                        # type check
+cargo check                        # type check (root + core)
+cargo check -p scale-rec-core      # type check core crate only
 cargo fmt                          # format all Rust code
-cargo test                         # run all tests (38 tests)
+cargo test                         # run all tests (56 tests)
 cargo test --test model_smoke      # run only integration tests
 cargo test feats::ops::feature_hash  # run specific module tests
 cargo doc --no-deps                # build docs (warn on missing docs)
@@ -27,6 +28,10 @@ cargo run                          # run inference example
 Python 代码统一使用 uv + ruff，不需要手动激活 venv。所有命令从仓库根目录执行。
 
 ```bash
+# ── 构建 Rust 预处理模块 (feat_engine) ──
+# 可选：构建后 dag.py 可使用 use_rust=True 启用 Rust DAG 执行
+PYTHONPATH=python/src:$PYTHONPATH PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 uv run maturin develop --manifest-path python/rust_feat_bridge/Cargo.toml --uv
+
 # ── 测试与检查 ──
 PYTHONPATH=python/src:$PYTHONPATH uv run pytest python/tests/ -v
 uvx ruff check python/src/         # lint
@@ -100,7 +105,12 @@ Both sides parse the same `examples/shared/feature_config_demo.yaml` which defin
 - sources 不配 `embed`，全部 embedding 由 operator 输出 `embed` 字段声明
 - DAG 构建时自动校验 source 消费率 and 输出利用率
 
-`FlowConfig` (Rust: `src/feats/config.rs`, Python: `python/src/train/core/config.py`) deserializes the YAML. `FeatureDag` (Rust: `src/feats/dag.rs`, Python: `python/src/train/core/dag.py`) builds the DAG with topological sort and executes single samples via `execute(raw_inputs) -> FeatureResult`.
+`FlowConfig` (Rust: `crates/core/src/feats/config.rs` via `src/feats/` re-export, Python: `python/src/train/core/config.py`) deserializes the YAML. `FeatureDag` (Rust: `src/feats/dag.rs`, Python: `python/src/train/core/dag.py`) builds the DAG with topological sort and executes single samples via `execute(raw_inputs) -> FeatureResult`.
+
+**Crate structure** — feature engine code is split into `crates/core/` (`scale-rec-core`) and the root `scale-rec` crate:
+- `crates/core/src/feats/` — `FlowConfig`, `DagBuilder`, `ExecutionPlan`, `DagExecutor`, `FeatureInfo`, all 17 operators, `defaults`, `schema`, `tensor_utils` (shared pooling/padding)
+- `src/feats/mod.rs` — `pub use scale_rec_core::feats::*` re-export, plus local `dag`, `metrics`, `debug` modules
+- `python/rust_feat_bridge/` — PyO3 `feat_engine` package wrapping `scale-rec-core` for training preprocessing; built with `maturin develop`
 
 ### Operator registration
 
@@ -112,7 +122,7 @@ Both Rust and Python use a **registry pattern** instead of a central match state
 | Python | `python/src/train/ops/__init__.py` — `OP_REGISTRY: dict[str, type]` | Each operator has `@classmethod from_config(params) -> Self` decorated with `@register_op("OpType")` |
 
 To add a new operator:
-1. **Rust**: implement `CustomOp` in `src/feats/ops/<name>.rs`, export `pub fn create()`, register in `registry.rs`
+1. **Rust**: implement `CustomOp` in `crates/core/src/feats/ops/<name>.rs`, export `pub fn create()`, register in `crates/core/src/feats/ops/registry.rs`
 2. **Python**: implement class in `python/src/train/ops/<name>.py`, add `@register_op` + `from_config`
 3. **No changes** needed in `dag.rs` or `dag.py`.
 

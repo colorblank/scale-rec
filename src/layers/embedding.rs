@@ -3,57 +3,8 @@ use candle_core::{Result, Tensor};
 use candle_nn::{embedding, Embedding, Module, VarBuilder};
 use std::collections::HashMap;
 
-use crate::feats::config::{PoolingStrategy, TruncationSide};
-
-/// 单个特征的嵌入配置：词表大小、嵌入维度、池化策略等。
-#[derive(Debug, Clone)]
-pub struct FeatureSpec {
-    /// 特征名称。
-    pub name: String,
-    /// embedding 词表大小。
-    pub vocab_size: usize,
-    /// embedding 向量维度。
-    pub embed_dim: usize,
-    /// 序列特征池化策略。
-    pub pooling: PoolingStrategy,
-    /// 序列长度；标量特征为 `None`。
-    pub seq_len: Option<usize>,
-    /// 序列截断方向。
-    pub truncation: TruncationSide,
-}
-
-impl FeatureSpec {
-    /// 创建 FeatureSpec，默认使用 First 池化和 Head 截断。
-    pub fn new(name: String, vocab_size: usize, embed_dim: usize) -> Self {
-        Self {
-            name,
-            vocab_size,
-            embed_dim,
-            pooling: PoolingStrategy::First,
-            seq_len: None,
-            truncation: TruncationSide::Head,
-        }
-    }
-
-    /// 克隆并修改嵌入维度。
-    pub fn with_dim(&self, embed_dim: usize) -> Self {
-        Self {
-            name: self.name.clone(),
-            vocab_size: self.vocab_size,
-            embed_dim,
-            pooling: self.pooling,
-            seq_len: self.seq_len,
-            truncation: self.truncation,
-        }
-    }
-
-    fn output_dim(&self) -> usize {
-        match (self.pooling, self.seq_len) {
-            (PoolingStrategy::Flatten, Some(seq_len)) => self.embed_dim * seq_len,
-            _ => self.embed_dim,
-        }
-    }
-}
+use crate::feats::config::PoolingStrategy;
+pub use crate::feats::FeatureSpec;
 
 /// 多特征嵌入管理器：按序查找、池化、拼接。
 pub struct FeatureEmbeddings {

@@ -82,6 +82,25 @@ fn normalize_enum_default(
     }
 }
 
+/// 将训练侧 pandas 字符串值按 dtype 解析为 Fv。
+/// 严格按 dtype 解析；若解析失败（如 int 列收到非数字字符串）则返回 Err。
+/// 调用方应处理 Err（例如回退到 default_val）。
+pub fn parse_string_to_fv(raw: &str, dtype: &DType) -> Result<Fv, String> {
+    match dtype {
+        DType::Int => raw
+            .parse::<i32>()
+            .map(Fv::Int)
+            .map_err(|e| format!("parse int from '{}': {}", raw, e)),
+        DType::Float => raw
+            .parse::<f32>()
+            .map(Fv::Float)
+            .map_err(|e| format!("parse float from '{}': {}", raw, e)),
+        DType::String => Ok(Fv::Str(raw.to_string())),
+        DType::Enum { .. } => Ok(Fv::Str(raw.to_string())),
+        DType::List { .. } => Ok(Fv::Str(raw.to_string())),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

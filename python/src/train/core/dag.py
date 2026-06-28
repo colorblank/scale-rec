@@ -44,6 +44,8 @@ class FeatureDag:
         debug_mode: bool = False,
         tracer: Any | None = None,
         strict_validation: bool = False,
+        use_rust: bool = False,
+        config_path: str | None = None,
     ) -> None:
         artifact = _build(config)
         self._artifact = artifact
@@ -78,6 +80,20 @@ class FeatureDag:
         self._source_name_set = set(artifact.sources)
         self._embed_infos = dict(self._feat_info.embeddable_features())
         self._embed_names = tuple(self._embed_infos)
+
+        self._rust_session = None
+        if use_rust:
+            if config_path is None:
+                raise ValueError("config_path is required when use_rust=True")
+            try:
+                from feat_engine import FeatSession as _FeatSession  # noqa: F811
+
+                self._rust_session = _FeatSession(config_path)
+                logger.info("Rust FeatSession initialized from %s", config_path)
+            except ImportError:
+                logger.warning("feat_engine not available, falling back to Python DAG")
+            except Exception as e:
+                logger.warning("FeatSession init failed (%s), falling back to Python DAG", e)
 
         if strict_validation and self.validation_report.warnings:
             details = ", ".join(issue.message for issue in self.validation_report.warnings)
@@ -175,6 +191,14 @@ class FeatureDag:
                 }
             else:
                 columns = {}
+
+        if self._rust_session is not None:
+            str_columns = {
+                name: [str(v) if v is not None else None for v in col]
+                for name, col in columns.items()
+            }
+            rust_result = self._rust_session.preprocess_batch(str_columns)
+            return {name: torch.tensor(vals, dtype=torch.long) for name, vals in rust_result.items()}
 
         if self.tracer:
             n_rows = len(next(iter(columns.values()))) if columns else 0

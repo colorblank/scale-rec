@@ -2710,6 +2710,7 @@ dependencies = [
  "rayon",
  "reqwest",
  "rhai",
+ "scale-rec-core",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -2718,6 +2719,19 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "scale-rec-core"
+version = "0.1.0"
+dependencies = [
+ "libloading",
+ "petgraph",
+ "rhai",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tracing",
 ]
 
 [[package]]
