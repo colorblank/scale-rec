@@ -22,7 +22,7 @@ def export_to_safetensors(model: nn.Module, path: str) -> None:
 def replace_inactive_embedding_rows(path: str | Path, report: dict[str, Any]) -> None:
     """Replace inactive DictMapper/hash rows with the active-row mean in serving weights."""
     path = Path(path)
-    state_dict = load_file(str(path))
+    state_dict = {name: tensor.clone() for name, tensor in load_file(str(path)).items()}
     changed = 0
     supported_ops = {"DictMapper", "FeatureHash", "ParsedFeatureHash", "ConcatHash"}
 
@@ -50,7 +50,9 @@ def replace_inactive_embedding_rows(path: str | Path, report: dict[str, Any]) ->
             changed += len(inactive)
 
     if changed:
-        save_file(state_dict, str(path))
+        tmp_path = path.with_name(f".{path.name}.tmp")
+        save_file(state_dict, str(tmp_path))
+        tmp_path.replace(path)
         logger.info("replaced %d inactive embedding rows in %s", changed, path)
 
 

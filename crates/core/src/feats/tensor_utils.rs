@@ -4,6 +4,7 @@ use crate::feats::config::{FeatureSpec, PoolingStrategy, TruncationSide};
 use crate::feats::ops::Fv;
 
 /// 特征列转换后的形状。Scalar = [n], Sequence = [n, seq_len]。
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FeatureColumn {
     /// 标量特征（FIRST pooling），形状 [n]。
     Scalar(Vec<i32>),
@@ -12,12 +13,24 @@ pub enum FeatureColumn {
 }
 
 /// 将 Fv 列转换为数值向量，pooling/padding/truncation 逻辑与推理侧一致。
-pub fn feature_column_to_vec(spec: &FeatureSpec, col: &[Fv], n: usize) -> FeatureColumn {
+pub fn feature_column_to_vec(
+    spec: &FeatureSpec,
+    col: &[Fv],
+    n: usize,
+) -> Result<FeatureColumn, String> {
     let use_sequence = spec.pooling != PoolingStrategy::First
         && col.iter().any(|v| matches!(v, Fv::IntList(_)));
 
     if use_sequence {
-        let seq_len = spec.seq_len.unwrap_or(1).max(1);
+        let seq_len = spec
+            .seq_len
+            .ok_or_else(|| {
+                format!(
+                    "feature '{}' sequence pooling requires seq_len > 0",
+                    spec.name
+                )
+            })?
+            .max(1);
         let mut result = Vec::with_capacity(n);
         for val in col.iter().take(n) {
             match val {
@@ -44,7 +57,7 @@ pub fn feature_column_to_vec(spec: &FeatureSpec, col: &[Fv], n: usize) -> Featur
                 }
             }
         }
-        FeatureColumn::Sequence(result)
+        Ok(FeatureColumn::Sequence(result))
     } else {
         let indices: Vec<i32> = col
             .iter()
@@ -55,7 +68,7 @@ pub fn feature_column_to_vec(spec: &FeatureSpec, col: &[Fv], n: usize) -> Featur
                 _ => 0,
             })
             .collect();
-        FeatureColumn::Scalar(indices)
+        Ok(FeatureColumn::Scalar(indices))
     }
 }
 
@@ -88,7 +101,7 @@ mod tests {
     #[test]
     fn scalar_first_pooling() {
         let col = vec![Fv::Int(42), Fv::Int(7), Fv::Int(0)];
-        let result = feature_column_to_vec(&first_spec(), &col, 3);
+        let result = feature_column_to_vec(&first_spec(), &col, 3).unwrap();
         match result {
             FeatureColumn::Scalar(v) => assert_eq!(v, vec![42, 7, 0]),
             _ => panic!("expected Scalar"),
@@ -98,7 +111,7 @@ mod tests {
     #[test]
     fn scalar_takes_first_from_list() {
         let col = vec![Fv::IntList(vec![1, 2, 3]), Fv::Int(99)];
-        let result = feature_column_to_vec(&first_spec(), &col, 2);
+        let result = feature_column_to_vec(&first_spec(), &col, 2).unwrap();
         match result {
             FeatureColumn::Scalar(v) => assert_eq!(v, vec![1, 99]),
             _ => panic!("expected Scalar"),
@@ -108,7 +121,7 @@ mod tests {
     #[test]
     fn seq_head_truncation() {
         let col = vec![Fv::IntList(vec![1, 2, 3, 4, 5])];
-        let result = feature_column_to_vec(&seq_spec(3, TruncationSide::Head), &col, 1);
+        let result = feature_column_to_vec(&seq_spec(3, TruncationSide::Head), &col, 1).unwrap();
         match result {
             FeatureColumn::Sequence(v) => assert_eq!(v, vec![vec![1, 2, 3]]),
             _ => panic!("expected Sequence"),
@@ -118,7 +131,7 @@ mod tests {
     #[test]
     fn seq_tail_truncation() {
         let col = vec![Fv::IntList(vec![1, 2, 3, 4, 5])];
-        let result = feature_column_to_vec(&seq_spec(3, TruncationSide::Tail), &col, 1);
+        let result = feature_column_to_vec(&seq_spec(3, TruncationSide::Tail), &col, 1).unwrap();
         match result {
             FeatureColumn::Sequence(v) => assert_eq!(v, vec![vec![3, 4, 5]]),
             _ => panic!("expected Sequence"),
@@ -128,7 +141,7 @@ mod tests {
     #[test]
     fn seq_padding() {
         let col = vec![Fv::IntList(vec![1, 2])];
-        let result = feature_column_to_vec(&seq_spec(5, TruncationSide::Head), &col, 1);
+        let result = feature_column_to_vec(&seq_spec(5, TruncationSide::Head), &col, 1).unwrap();
         match result {
             FeatureColumn::Sequence(v) => assert_eq!(v, vec![vec![1, 2, 0, 0, 0]]),
             _ => panic!("expected Sequence"),
@@ -136,19 +149,28 @@ mod tests {
     }
 
     #[test]
-    fn seq_scalar_expands_to_sequence() {
+    fn non_list_column_uses_scalar_tensor_shape() {
         let col = vec![Fv::Int(7)];
-        let result = feature_column_to_vec(&seq_spec(3, TruncationSide::Head), &col, 1);
+        let result = feature_column_to_vec(&seq_spec(3, TruncationSide::Head), &col, 1).unwrap();
         match result {
-            FeatureColumn::Sequence(v) => assert_eq!(v, vec![vec![7, 0, 0]]),
-            _ => panic!("expected Sequence"),
+            FeatureColumn::Scalar(v) => assert_eq!(v, vec![7]),
+            _ => panic!("expected Scalar"),
         }
+    }
+
+    #[test]
+    fn sequence_pooling_requires_seq_len_for_list_columns() {
+        let mut spec = seq_spec(3, TruncationSide::Head);
+        spec.seq_len = None;
+        let col = vec![Fv::IntList(vec![1, 2, 3])];
+        let err = feature_column_to_vec(&spec, &col, 1).unwrap_err();
+        assert!(err.contains("requires seq_len"));
     }
 
     #[test]
     fn empty_column_returns_empty_result() {
         let col: Vec<Fv> = vec![];
-        let result = feature_column_to_vec(&first_spec(), &col, 0);
+        let result = feature_column_to_vec(&first_spec(), &col, 0).unwrap();
         match result {
             FeatureColumn::Scalar(v) => assert!(v.is_empty()),
             _ => panic!("expected Scalar"),

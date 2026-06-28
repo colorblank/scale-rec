@@ -510,6 +510,20 @@ def _maybe_save_periodic_checkpoint(
     state.last_time = now
 
 
+def _build_feature_dag(flow_config: FlowConfig, args: argparse.Namespace) -> FeatureDag:
+    use_rust = bool(
+        getattr(args, "use_rust_preprocess", False)
+        or getattr(args, "require_rust_preprocess", False)
+    )
+    return FeatureDag(
+        flow_config,
+        debug_mode=getattr(args, "debug", 0) > 0,
+        use_rust=use_rust,
+        config_path=args.feature_config if use_rust else None,
+        require_rust=bool(getattr(args, "require_rust_preprocess", False)),
+    )
+
+
 def _run_single(args: argparse.Namespace) -> None:
     feature_config = args.feature_config
     model_config = args.model_config
@@ -529,7 +543,7 @@ def _run_single(args: argparse.Namespace) -> None:
     logger.info("device: %s", device)
 
     flow_config = FlowConfig.from_yaml(feature_config)
-    dag = FeatureDag(flow_config, debug_mode=args.debug > 0)
+    dag = _build_feature_dag(flow_config, args)
     feat_info = FeatureInfo(dag.sources, dag.node_defs, dag.feature_schemas, dag.execution_order)
     features = feat_info.feature_tuples()
     logger.info(
@@ -749,7 +763,7 @@ def _run_demo(args: argparse.Namespace) -> None:
     logger.info("device: %s", device)
 
     fc = FlowConfig.from_yaml(args.feature_config)
-    dag = FeatureDag(fc)
+    dag = _build_feature_dag(fc, args)
     feat_info = FeatureInfo(dag.sources, dag.node_defs, dag.feature_schemas, dag.execution_order)
     features = feat_info.feature_tuples()
     logger.info(
@@ -840,7 +854,7 @@ def _run_all(args: argparse.Namespace) -> None:
     logger.info("device: %s", device)
 
     flow_config = FlowConfig.from_yaml(args.feature_config)
-    dag = FeatureDag(flow_config, debug_mode=args.debug > 0)
+    dag = _build_feature_dag(flow_config, args)
     feat_info = FeatureInfo(dag.sources, dag.node_defs, dag.feature_schemas, dag.execution_order)
     features = feat_info.feature_tuples()
     logger.info("%d features, %d ops", len(features), len(flow_config.operators))

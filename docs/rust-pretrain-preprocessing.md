@@ -85,9 +85,22 @@ tensors = dag.preprocess_batch(test_data)  # 自动走 Rust 路径
 
 ```bash
 # 编译 feat_engine 扩展（Python venv 内）
-PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 uv run maturin develop \
+uv run maturin develop \
   --manifest-path python/rust_feat_bridge/Cargo.toml --uv
 ```
+
+训练入口通过显式参数启用：
+
+```bash
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
+  python -m train.app.main demo \
+  --feature-config examples/shared/feature_config_demo.yaml \
+  --model-config examples/models/gdcn_esmm.yaml \
+  --use-rust-preprocess \
+  --require-rust-preprocess
+```
+
+`--use-rust-preprocess` 启用 Rust 预处理；`--require-rust-preprocess` 会在 `feat_engine` 未构建或初始化失败时直接终止训练，而不是回退 Python 路径。
 
 ## 测试
 

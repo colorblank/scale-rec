@@ -4,12 +4,13 @@ use std::time::Instant;
 
 use candle_core::{Device, Tensor};
 
-use crate::feats::config::{DType, PoolingStrategy, TruncationSide};
+use crate::feats::config::DType;
 use crate::feats::dag::FeatureValue;
 use crate::feats::defaults::source_default;
 use crate::feats::executor::DagExecutor;
 use crate::feats::executor::OperatorExecutionStats;
 use crate::feats::ops::Fv;
+use crate::feats::tensor_utils::{feature_column_to_vec, FeatureColumn};
 use crate::layers::embedding::FeatureSpec;
 use crate::models::Model;
 use crate::models::OutputKind;
@@ -460,63 +461,28 @@ fn feature_column_to_tensor(
     n: usize,
     device: &Device,
 ) -> Result<Tensor, String> {
-    let use_sequence =
-        spec.pooling != PoolingStrategy::First && col.iter().any(|v| matches!(v, Fv::IntList(_)));
-
-    if use_sequence {
-        let seq_len = spec
-            .seq_len
-            .ok_or_else(|| {
-                format!(
-                    "feature '{}' sequence pooling requires seq_len > 0",
-                    spec.name
-                )
-            })?
-            .max(1);
-        let mut flat = Vec::with_capacity(n * seq_len);
-        for val in col.iter().take(n) {
-            match val {
-                Fv::IntList(values) => {
-                    let start_offset =
-                        if spec.truncation == TruncationSide::Tail && values.len() > seq_len {
-                            values.len() - seq_len
-                        } else {
-                            0
-                        };
-                    for idx in 0..seq_len {
-                        flat.push(
-                            values.get(start_offset + idx).copied().unwrap_or(0).max(0) as u32
-                        );
-                    }
-                }
-                Fv::Int(i) => {
-                    flat.push((*i).max(0) as u32);
-                    flat.extend(std::iter::repeat(0).take(seq_len - 1));
-                }
-                _ => flat.extend(std::iter::repeat(0).take(seq_len)),
-            }
+    match feature_column_to_vec(spec, col, n)? {
+        FeatureColumn::Scalar(values) => {
+            let indices: Vec<u32> = values.into_iter().map(|v| v.max(0) as u32).collect();
+            let cpu_tensor = Tensor::from_slice(indices.as_slice(), indices.len(), &Device::Cpu)
+                .map_err(|e| format!("tensor '{}': {}", spec.name, e))?;
+            cpu_tensor
+                .to_device(device)
+                .map_err(|e| format!("tensor '{}' to device: {}", spec.name, e))
         }
-        let cpu_tensor = Tensor::from_slice(flat.as_slice(), (n, seq_len), &Device::Cpu)
-            .map_err(|e| format!("tensor '{}': {}", spec.name, e))?;
-        return cpu_tensor
-            .to_device(device)
-            .map_err(|e| format!("tensor '{}' to device: {}", spec.name, e));
+        FeatureColumn::Sequence(rows) => {
+            let seq_len = spec.seq_len.unwrap_or(1).max(1);
+            let flat: Vec<u32> = rows
+                .into_iter()
+                .flat_map(|row| row.into_iter().map(|v| v.max(0) as u32))
+                .collect();
+            let cpu_tensor = Tensor::from_slice(flat.as_slice(), (n, seq_len), &Device::Cpu)
+                .map_err(|e| format!("tensor '{}': {}", spec.name, e))?;
+            cpu_tensor
+                .to_device(device)
+                .map_err(|e| format!("tensor '{}' to device: {}", spec.name, e))
+        }
     }
-
-    let indices: Vec<u32> = col
-        .iter()
-        .take(n)
-        .map(|val| match val {
-            Fv::Int(i) => (*i).max(0) as u32,
-            Fv::IntList(values) => values.first().copied().unwrap_or(0).max(0) as u32,
-            _ => 0,
-        })
-        .collect();
-    let cpu_tensor = Tensor::from_slice(indices.as_slice(), indices.len(), &Device::Cpu)
-        .map_err(|e| format!("tensor '{}': {}", spec.name, e))?;
-    cpu_tensor
-        .to_device(device)
-        .map_err(|e| format!("tensor '{}' to device: {}", spec.name, e))
 }
 
 fn json_to_feature_typed(val: &serde_json::Value, dtype: &DType) -> Result<FeatureValue, String> {
@@ -620,6 +586,7 @@ fn json_to_feature_typed(val: &serde_json::Value, dtype: &DType) -> Result<Featu
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::feats::config::{PoolingStrategy, TruncationSide};
 
     #[test]
     fn serving_value_converts_logits_and_keeps_probabilities() {

@@ -117,6 +117,8 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 | `--gauc-group-feature` | string | 来自 `--train-config` | GAUC 分组特征 | 需存在于 batch values |
 | `--init-weights` | path | 空 | 用 safetensors 初始化模型参数 | 不能与 `--resume-from` 同时使用 |
 | `--resume-from` | path | 空 | 从 checkpoint 权重或 `.resume.pt` sidecar 恢复训练 | 不能与 `--init-weights` 同时使用 |
+| `--use-rust-preprocess` | flag | false | 使用 PyO3 `feat_engine` Rust DAG 执行训练 batch 预处理 | 需要先构建 `python/rust_feat_bridge` |
+| `--require-rust-preprocess` | flag | false | Rust 预处理不可用时直接失败 | 隐含启用 `--use-rust-preprocess` |
 
 ### Common artifact arguments
 

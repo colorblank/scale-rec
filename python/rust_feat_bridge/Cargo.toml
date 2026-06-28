@@ -9,4 +9,4 @@ name = "feat_engine"
 
 [dependencies]
 scale-rec-core = { path = "../../crates/core" }
-pyo3 = { version = "0.21", features = ["extension-module"] }
+pyo3 = { version = "0.21", features = ["extension-module", "abi3-py310"] }

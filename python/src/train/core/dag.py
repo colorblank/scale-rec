@@ -46,6 +46,7 @@ class FeatureDag:
         strict_validation: bool = False,
         use_rust: bool = False,
         config_path: str | None = None,
+        require_rust: bool = False,
     ) -> None:
         artifact = _build(config)
         self._artifact = artifact
@@ -86,13 +87,17 @@ class FeatureDag:
             if config_path is None:
                 raise ValueError("config_path is required when use_rust=True")
             try:
-                from feat_engine import FeatSession as _FeatSession  # noqa: F811
+                from feat_engine import FeatSession as _FeatSession
 
                 self._rust_session = _FeatSession(config_path)
                 logger.info("Rust FeatSession initialized from %s", config_path)
             except ImportError:
+                if require_rust:
+                    raise
                 logger.warning("feat_engine not available, falling back to Python DAG")
             except Exception as e:
+                if require_rust:
+                    raise RuntimeError(f"FeatSession init failed: {e}") from e
                 logger.warning("FeatSession init failed (%s), falling back to Python DAG", e)
 
         if strict_validation and self.validation_report.warnings:

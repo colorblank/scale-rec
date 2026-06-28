@@ -30,7 +30,7 @@ Python 代码统一使用 uv + ruff，不需要手动激活 venv。所有命令�
 ```bash
 # ── 构建 Rust 预处理模块 (feat_engine) ──
 # 可选：构建后 dag.py 可使用 use_rust=True 启用 Rust DAG 执行
-PYTHONPATH=python/src:$PYTHONPATH PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 uv run maturin develop --manifest-path python/rust_feat_bridge/Cargo.toml --uv
+PYTHONPATH=python/src:$PYTHONPATH uv run maturin develop --manifest-path python/rust_feat_bridge/Cargo.toml --uv
 
 # ── 测试与检查 ──
 PYTHONPATH=python/src:$PYTHONPATH uv run pytest python/tests/ -v
@@ -89,6 +89,8 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.verify_all
 | `--separator` | str | `\t` | 字段分隔符 |
 | `--skip-missing-item` | flag | — | 跳过 item_id 不在索引中的行 |
 | `--eval-samples` | int | 2000 | 评估样本数（生产模式截取） |
+| `--use-rust-preprocess` | flag | — | 训练 batch 预处理使用 PyO3 `feat_engine` Rust DAG |
+| `--require-rust-preprocess` | flag | — | Rust 预处理不可用时直接失败，不回退 Python |
 
 ## Architecture
 

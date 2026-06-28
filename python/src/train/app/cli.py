@@ -70,6 +70,16 @@ def add_training_args(parser: argparse.ArgumentParser, *, lr: float, batch_size:
         default="",
         help="resume training from a saved checkpoint weights file or .resume.pt sidecar",
     )
+    parser.add_argument(
+        "--use-rust-preprocess",
+        action="store_true",
+        help="use the PyO3 feat_engine Rust DAG for training batch preprocessing",
+    )
+    parser.add_argument(
+        "--require-rust-preprocess",
+        action="store_true",
+        help="fail instead of falling back when --use-rust-preprocess cannot initialize feat_engine",
+    )
 
 
 def add_data_range_args(parser: argparse.ArgumentParser, *, data_required: bool) -> None:

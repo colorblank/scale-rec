@@ -113,7 +113,8 @@ impl FeatSession {
                 continue;
             }
             let col = &context[*col_id];
-            let fc = feature_column_to_vec(spec, col.as_slice(), n_rows);
+            let fc = feature_column_to_vec(spec, col.as_slice(), n_rows)
+                .map_err(|e| PyRuntimeError::new_err(format!("tensor '{}': {}", spec.name, e)))?;
             match fc {
                 FeatureColumn::Scalar(v) => {
                     result.insert(spec.name.clone(), v.into_py(py));
