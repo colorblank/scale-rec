@@ -2,6 +2,7 @@
 use super::ops::{CustomOp, Fv, OpExecutionStats};
 use crate::feats::config::SourceDef;
 use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 
 /// 预编译执行步骤：算子索引 + 输入/输出列索引。
 pub struct ExecStep {
@@ -34,6 +35,17 @@ pub struct OperatorExecutionStats {
     pub operator: String,
     /// 算子统计值。
     pub stats: OpExecutionStats,
+}
+
+/// 单个配置算子在一次 profile 执行中的耗时。
+#[derive(Debug, Clone, PartialEq)]
+pub struct OperatorTiming {
+    /// 配置中的 operator name。
+    pub operator: String,
+    /// 算子类型名称。
+    pub op_type: String,
+    /// 该算子 batch 执行耗时（秒）。
+    pub seconds: f64,
 }
 
 impl ExecutionPlan {
@@ -143,6 +155,81 @@ impl ExecutionPlan {
         Ok((context, op_stats))
     }
 
+    /// 执行预编译计划，同时返回每个算子的耗时。仅用于 benchmark/profile。
+    pub fn execute_plan_with_timings(
+        &self,
+        columns: &HashMap<String, Vec<Fv>>,
+        skip_op_idx: &HashSet<usize>,
+        precomputed: &HashMap<usize, Fv>,
+    ) -> Result<(Vec<Vec<Fv>>, Vec<(usize, String, f64)>), String> {
+        let n_rows = columns.values().next().map(|v| v.len()).unwrap_or(0);
+        if n_rows == 0 {
+            return Ok((Vec::new(), Vec::new()));
+        }
+
+        let mut context: Vec<Vec<Fv>> = vec![Vec::with_capacity(n_rows); self.col_count];
+
+        for i in 0..self.source_cols.len() {
+            let name = &self.source_names[i];
+            let cid = self.source_cols[i];
+            let source_default = self.source_defaults.get(i).cloned().unwrap_or(Fv::Int(0));
+            if let Some(col) = columns.get(name) {
+                if col.len() == n_rows {
+                    context[cid] = col.clone();
+                } else {
+                    let mut fixed = vec![source_default; n_rows];
+                    for (row, val) in col.iter().take(n_rows).enumerate() {
+                        fixed[row] = val.clone();
+                    }
+                    context[cid] = fixed;
+                }
+            } else {
+                context[cid] = vec![source_default; n_rows];
+            }
+        }
+
+        for (&col_id, val) in precomputed.iter() {
+            if col_id < context.len() {
+                context[col_id] = vec![val.clone(); n_rows];
+            }
+        }
+
+        let mut timings = Vec::new();
+        for step in &self.steps {
+            if skip_op_idx.contains(&step.op_idx) {
+                continue;
+            }
+            let op = &self.ops[step.op_idx];
+            let input_slices: Vec<&[Fv]> = step
+                .input_cols
+                .iter()
+                .map(|&cid| {
+                    context.get(cid).map(|c| c.as_slice()).ok_or_else(|| {
+                        let name = self
+                            .col_names
+                            .get(cid)
+                            .and_then(|n| n.as_deref())
+                            .unwrap_or("<unknown>");
+                        format!("missing required column '{}' (id={})", name, cid)
+                    })
+                })
+                .collect::<Result<_, String>>()?;
+            let start = Instant::now();
+            let result_vec = op
+                .process_batch(&input_slices, n_rows)
+                .map_err(|e| format!("step {}: {}", step.op_idx, e))?;
+            timings.push((
+                step.op_idx,
+                op.name().to_string(),
+                start.elapsed().as_secs_f64(),
+            ));
+            for &cid in &step.output_cols {
+                context[cid] = result_vec.clone();
+            }
+        }
+        Ok((context, timings))
+    }
+
     /// 返回可嵌入特征对应的列 id 列表。
     pub fn embed_ids(&self) -> &[usize] {
         &self.embed_ids
@@ -214,6 +301,31 @@ impl DagExecutor {
             })
             .collect();
         Ok((context, named_stats))
+    }
+
+    /// 执行计划并返回算子级耗时。仅用于 benchmark/profile。
+    pub fn execute_plan_with_timings(
+        &self,
+        columns: &HashMap<String, Vec<Fv>>,
+        skip_op_idx: &HashSet<usize>,
+        precomputed: &HashMap<usize, Fv>,
+    ) -> Result<(Vec<Vec<Fv>>, Vec<OperatorTiming>), String> {
+        let (context, timings) =
+            self.plan
+                .execute_plan_with_timings(columns, skip_op_idx, precomputed)?;
+        let named_timings = timings
+            .into_iter()
+            .map(|(op_idx, op_type, seconds)| OperatorTiming {
+                operator: self
+                    .execution_order
+                    .get(op_idx)
+                    .cloned()
+                    .unwrap_or_else(|| format!("op_{op_idx}")),
+                op_type,
+                seconds,
+            })
+            .collect();
+        Ok((context, named_timings))
     }
 
     /// 返回内部预编译执行计划。

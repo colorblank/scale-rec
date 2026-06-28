@@ -1,15 +1,16 @@
 use std::collections::HashMap;
+use std::time::Instant;
 
 use pyo3::exceptions::{PyIOError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
 use scale_rec_core::feats::builder::DagBuilder;
+use scale_rec_core::feats::config::FlowConfig;
 use scale_rec_core::feats::defaults::{parse_string_to_fv, source_default};
 use scale_rec_core::feats::executor::DagExecutor;
 use scale_rec_core::feats::feature_info::FeatureInfo;
 use scale_rec_core::feats::ops::Fv;
 use scale_rec_core::feats::tensor_utils::{feature_column_to_vec, FeatureColumn};
-use scale_rec_core::feats::config::FlowConfig;
 use scale_rec_core::feats::FeatureSpec;
 
 /// 训练特征预处理引擎：加载 YAML 配置，构建 DAG，批量预处理 pandas 数据。
@@ -89,24 +90,80 @@ impl FeatSession {
         columns: HashMap<String, Vec<Option<String>>>,
         py: Python<'_>,
     ) -> PyResult<HashMap<String, PyObject>> {
+        let (result, _timings) = self.preprocess_batch_inner(columns, py, false)?;
+        Ok(result)
+    }
+
+    /// Profiled batch preprocessing. Returns (features, timings_seconds).
+    #[pyo3(signature = (columns))]
+    fn preprocess_batch_profile(
+        &self,
+        columns: HashMap<String, Vec<Option<String>>>,
+        py: Python<'_>,
+    ) -> PyResult<(HashMap<String, PyObject>, HashMap<String, f64>)> {
+        self.preprocess_batch_inner(columns, py, true)
+    }
+}
+
+impl FeatSession {
+    fn preprocess_batch_inner(
+        &self,
+        columns: HashMap<String, Vec<Option<String>>>,
+        py: Python<'_>,
+        profile: bool,
+    ) -> PyResult<(HashMap<String, PyObject>, HashMap<String, f64>)> {
+        let total_start = Instant::now();
+        let mut timings = HashMap::new();
         let n_rows = columns.values().next().map(|c| c.len()).unwrap_or(0);
         if n_rows == 0 {
-            return Ok(HashMap::new());
+            return Ok((HashMap::new(), timings));
         }
 
         // 1. parse strings to Fv
-        let parsed = py.allow_threads(|| self.parse_columns(&columns))
+        let parse_start = Instant::now();
+        let parsed = py
+            .allow_threads(|| self.parse_columns(&columns))
             .map_err(|e| PyValueError::new_err(e))?;
+        if profile {
+            timings.insert(
+                "rust_parse_s".to_string(),
+                parse_start.elapsed().as_secs_f64(),
+            );
+        }
 
         // 2. execute DAG
         let skip_ops = std::collections::HashSet::new();
         let precomputed = HashMap::new();
-        let context = py.allow_threads(|| {
-            self.executor.execute_plan(&parsed, &skip_ops, &precomputed)
-        })
-            .map_err(|e| PyRuntimeError::new_err(format!("dag execute: {}", e)))?;
+        let execute_start = Instant::now();
+        let context = if profile {
+            let (context, op_timings) = py
+                .allow_threads(|| {
+                    self.executor
+                        .execute_plan_with_timings(&parsed, &skip_ops, &precomputed)
+                })
+                .map_err(|e| PyRuntimeError::new_err(format!("dag execute: {}", e)))?;
+            let mut op_type_totals: HashMap<String, f64> = HashMap::new();
+            for timing in op_timings {
+                timings.insert(format!("op:{}", timing.operator), timing.seconds);
+                *op_type_totals.entry(timing.op_type).or_insert(0.0) += timing.seconds;
+            }
+            for (op_type, seconds) in op_type_totals {
+                timings.insert(format!("op_type:{}", op_type), seconds);
+            }
+            context
+        } else {
+            py.allow_threads(|| self.executor.execute_plan(&parsed, &skip_ops, &precomputed))
+                .map_err(|e| PyRuntimeError::new_err(format!("dag execute: {}", e)))?
+        };
+        if profile {
+            timings.insert(
+                "rust_execute_s".to_string(),
+                execute_start.elapsed().as_secs_f64(),
+            );
+        }
 
         // 3. extract embed features
+        let extract_start = Instant::now();
         let mut result = HashMap::new();
         for (spec, col_id) in &self.embed_features {
             if *col_id >= context.len() {
@@ -124,12 +181,20 @@ impl FeatSession {
                 }
             }
         }
+        if profile {
+            timings.insert(
+                "rust_extract_s".to_string(),
+                extract_start.elapsed().as_secs_f64(),
+            );
+            timings.insert(
+                "rust_total_s".to_string(),
+                total_start.elapsed().as_secs_f64(),
+            );
+        }
 
-        Ok(result)
+        Ok((result, timings))
     }
-}
 
-impl FeatSession {
     fn parse_columns(
         &self,
         columns: &HashMap<String, Vec<Option<String>>>,
@@ -138,15 +203,17 @@ impl FeatSession {
         let mut parsed = HashMap::with_capacity(columns.len());
 
         for (name, values) in columns {
-            let def = source_defs.get(name).ok_or_else(|| {
-                format!("unknown source column '{}'", name)
-            })?;
+            let def = source_defs
+                .get(name)
+                .ok_or_else(|| format!("unknown source column '{}'", name))?;
             let default = source_default(def);
             let col: Vec<Fv> = values
                 .iter()
                 .map(|v| match v {
                     None => default.clone(),
-                    Some(s) => parse_string_to_fv(s, &def.dtype).unwrap_or_else(|_| default.clone()),
+                    Some(s) => {
+                        parse_string_to_fv(s, &def.dtype).unwrap_or_else(|_| default.clone())
+                    }
                 })
                 .collect();
             parsed.insert(name.clone(), col);

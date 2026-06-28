@@ -67,6 +67,12 @@ PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.generate_demo_
 # ── PyTorch vs Rust 推理一致性验证 ──
 PYTHONPATH=python/src:$PYTHONPATH uv run python -m scale_rec_demo.verify_all
 
+# ── Python vs Rust 训练预处理 benchmark ──
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python python -m scale_rec_demo.benchmark_preprocess \
+  --data python/artifacts/demo/demo_train_data.txt \
+  --feature-config examples/shared/feature_config_demo.yaml \
+  --mode both --batch-sizes 128,512,1024 --repeat 3 --warmup-batches 2 --no-header --require-rust
+
 ```
 
 ### train_demo.py 参数说明

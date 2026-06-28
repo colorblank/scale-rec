@@ -115,6 +115,33 @@ uv run pytest python/tests/test_rust_pretrain_consistency.py -v
 
 一致性测试验证：使用相同输入，Rust `FeatSession` 和 Python `FeatureDag` 输出的 45 个 embeddable features 完全相同。
 
+## Benchmark
+
+预处理吞吐基准脚本会模拟训练热路径：pandas batch 切片、列转 `list`、`FeatureDag.preprocess_batch()`，以及 Python 侧 `torch.tensor()` 构造。
+
+```bash
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
+  python -m scale_rec_demo.benchmark_preprocess \
+  --data python/artifacts/demo/demo_train_data.txt \
+  --feature-config examples/shared/feature_config_demo.yaml \
+  --mode both \
+  --batch-sizes 128,512,1024 \
+  --repeat 3 \
+  --warmup-batches 2 \
+  --no-header \
+  --require-rust \
+  --profile
+```
+
+输出指标：
+
+- `prepare_s`：pandas batch 切片后构造 `dict[str, list]` 的耗时。
+- `preprocess_s`：`FeatureDag.preprocess_batch()` 耗时，包含 Rust/Python DAG、PyO3 边界、返回值转 tensor。
+- `total_s` / `rows/s`：端到端预处理吞吐，用于比较后续优化。
+- `--profile`：额外拆分 Python execute/tensor 或 Rust parse/execute/extract，并输出 top operator types / operators。
+
+当前 demo 基线（2000 行，Windows dev build）显示 Rust 路径主要耗时在 `rust_execute_s`；小样本下热点集中在 `FeatureHash`、`StringParser`、`JsonExtractList`、`ListOverlap`。
+
 ## 新增/修改文件清单
 
 | 文件 | 说明 |
@@ -130,12 +157,13 @@ uv run pytest python/tests/test_rust_pretrain_consistency.py -v
 | `src/layers/embedding.rs` | 删除 FeatureSpec 定义，改为 `pub use crate::feats::FeatureSpec` |
 | `python/rust_feat_bridge/` | 新增 PyO3 crate (feat_engine Python 包) |
 | `python/src/train/core/dag.py` | 新增 `use_rust`/`config_path` 参数 |
+| `python/src/scale_rec_demo/benchmark_preprocess.py` | Python/Rust 预处理吞吐 benchmark |
 | `AGENTS.md` | 更新构建和测试命令 |
 
 ## 关键决策
 
 1. **PyO3 而非子进程** — 零拷贝传递 Python 对象，GIL 可释放
-2. **返回值 `list[int]` 而非 torch.Tensor** — 避免引入 `tch-rs`，Python `torch.tensor()` 零开销
+2. **返回值 `list[int]` 而非 torch.Tensor** — 避免引入 `tch-rs`，保持 bridge 轻量；代价是 Python 侧仍需构造 tensor
 3. **严格 dtype 解析** — 与推理 `json_to_feature_typed()` 一致；坏数据用 `default_val`
 4. **Python 侧 str 转换** — 调用 Rust 前 `str(v) if v is not None else None`，避免 PyO3 类型冲突
 5. **Fallback** — `import feat_engine` 失败时自动回退 Python 路径
