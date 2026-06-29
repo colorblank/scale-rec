@@ -110,24 +110,43 @@ impl CustomOp for FeatureHash {
         if inputs.is_empty() || n_rows == 0 {
             return Ok(vec![]);
         }
-        let row_has_list: Vec<bool> = (0..n_rows)
-            .map(|row| {
-                inputs.iter().any(|col| {
-                    row < col.len()
-                        && matches!(col[row], Fv::StrList(_) | Fv::IntList(_) | Fv::FloatList(_))
-                })
-            })
-            .collect();
-        let has_list_row = row_has_list.iter().any(|v| *v);
-        let has_scalar_row = row_has_list.iter().any(|v| !*v);
-        if has_list_row && has_scalar_row {
-            return Err(
-                "mixed scalar/list rows are not supported in FeatureHash batch".to_string(),
-            );
+        let mut has_list_row = false;
+        let mut has_scalar_row = false;
+        for row in 0..n_rows {
+            let row_has_list = inputs.iter().any(|col| {
+                row < col.len()
+                    && matches!(col[row], Fv::StrList(_) | Fv::IntList(_) | Fv::FloatList(_))
+            });
+            has_list_row |= row_has_list;
+            has_scalar_row |= !row_has_list;
+            if has_list_row && has_scalar_row {
+                return Err(
+                    "mixed scalar/list rows are not supported in FeatureHash batch".to_string(),
+                );
+            }
         }
 
         let mut results: Vec<Fv> = Vec::with_capacity(n_rows);
         if has_list_row {
+            if inputs.len() == 1 {
+                let col = inputs[0];
+                for value in col.iter().take(n_rows) {
+                    let indices: Vec<i32> = match value {
+                        Fv::StrList(list) => list.iter().map(|s| self.hash_one(s, 0)).collect(),
+                        Fv::IntList(list) => list
+                            .iter()
+                            .map(|i| self.hash_one(&i.to_string(), 0))
+                            .collect(),
+                        Fv::FloatList(list) => list
+                            .iter()
+                            .map(|f| self.hash_one(&f.to_string(), 0))
+                            .collect(),
+                        other => vec![self.hash_one(&other.to_string(), 0)],
+                    };
+                    results.push(Fv::IntList(indices));
+                }
+                return Ok(results);
+            }
             for row in 0..n_rows {
                 let mut elems: Vec<String> = Vec::new();
                 for col in inputs.iter() {
@@ -152,16 +171,47 @@ impl CustomOp for FeatureHash {
             .cache
             .write()
             .map_err(|e| format!("FeatureHash cache lock poisoned: {}", e))?;
-        for row in 0..n_rows {
-            let key = build_row_key(inputs, row, &self.separator);
-            if let Some(cached) = cache.get(&key) {
-                self.hits.fetch_add(1, Ordering::Relaxed);
-                results.push(cached.clone());
-            } else {
-                let val = self.hash_multi(&key);
-                cache.insert(key, val.clone());
-                self.misses.fetch_add(1, Ordering::Relaxed);
-                results.push(val);
+        if inputs.len() == 1 {
+            let col = inputs[0];
+            for value in col.iter().take(n_rows) {
+                match value {
+                    Fv::Str(key) => {
+                        if let Some(cached) = cache.get(key.as_str()) {
+                            self.hits.fetch_add(1, Ordering::Relaxed);
+                            results.push(cached.clone());
+                        } else {
+                            let val = self.hash_multi(key);
+                            cache.insert(key.clone(), val.clone());
+                            self.misses.fetch_add(1, Ordering::Relaxed);
+                            results.push(val);
+                        }
+                    }
+                    other => {
+                        let key = other.to_string();
+                        if let Some(cached) = cache.get(&key) {
+                            self.hits.fetch_add(1, Ordering::Relaxed);
+                            results.push(cached.clone());
+                        } else {
+                            let val = self.hash_multi(&key);
+                            cache.insert(key, val.clone());
+                            self.misses.fetch_add(1, Ordering::Relaxed);
+                            results.push(val);
+                        }
+                    }
+                }
+            }
+        } else {
+            for row in 0..n_rows {
+                let key = build_row_key(inputs, row, &self.separator);
+                if let Some(cached) = cache.get(&key) {
+                    self.hits.fetch_add(1, Ordering::Relaxed);
+                    results.push(cached.clone());
+                } else {
+                    let val = self.hash_multi(&key);
+                    cache.insert(key, val.clone());
+                    self.misses.fetch_add(1, Ordering::Relaxed);
+                    results.push(val);
+                }
             }
         }
         Ok(results)

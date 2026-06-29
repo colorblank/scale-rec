@@ -126,8 +126,10 @@ pub trait CustomOp: Send + Sync {
     /// Batch: columnar inputs → Vec of results. Default falls back to row-by-row.
     fn process_batch(&self, inputs: &[&[Fv]], n_rows: usize) -> Result<Vec<Fv>, String> {
         let mut results = Vec::with_capacity(n_rows);
+        let mut row = Vec::with_capacity(inputs.len());
         for i in 0..n_rows {
-            let row: Vec<Fv> = inputs.iter().map(|col| col[i].clone()).collect();
+            row.clear();
+            row.extend(inputs.iter().map(|col| col[i].clone()));
             results.push(self.process(&row)?);
         }
         Ok(results)

@@ -152,8 +152,30 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 | 1 | `ListOverlap` 去掉每行两个 `HashSet` 分配，改为小列表无分配扫描 | 3692.6 (+13.7%) | 3992.2 (+18.8%) | 3945.7 (+13.8%) | 保留 |
 | 2 | `StringParser` 去掉 `collect::<Vec<&str>>()`，用 `nth(key_index)`，达到 `pad_len` 后提前停止 | 3977.3 (+7.7%) | 4179.6 (+4.7%) | 4078.5 (+3.4%) | 保留 |
 | 3 | `FeatureHash` 对 namespace/salt/version 前缀直接按 bytes 参与 DJB2，避免每次 `format!` scoped key | 4022.8 (+1.1%) | 4285.8 (+2.5%) | 4236.6 (+3.9%) | 保留 |
+| 4 | `ExecutionPlan` 单输出列直接 move 结果，避免对每个输出列都 clone；默认 `CustomOp::process_batch()` 复用行缓冲，避免 fallback 算子每行分配 `Vec<Fv>` | 未同机复测 | 未同机复测 | 未同机复测 | 保留，属于低风险内存分配优化 |
 
 相对 baseline，当前保留优化后的总提升：batch 128 `+23.9%`，batch 512 `+27.6%`，batch 1024 `+22.2%`。
+
+当前本机校验（Darwin arm64 dev build，demo 数据 2000 行，`--mode rust --batch-sizes 128,512,1024 --repeat 5 --warmup-batches 2 --no-header --require-rust --profile`）：
+
+| case | rows/s | total_s | preprocess_s | 主要热点 |
+|-------|--------|---------|--------------|----------|
+| baseline batch=128 | 8996.1 | 0.2223 | 0.2132 | `FeatureHash` 0.0675s、`JsonExtractList` 0.0490s、`StringParser` 0.0240s |
+| baseline batch=512 | 9270.4 | 0.2157 | 0.2116 | `FeatureHash` 0.0662s、`JsonExtractList` 0.0486s、`StringParser` 0.0238s |
+| baseline batch=1024 | 9562.0 | 0.2092 | 0.2061 | `FeatureHash` 0.0660s、`JsonExtractList` 0.0485s、`StringParser` 0.0238s |
+| final batch=128 | 9629.9 | 0.2077 | 0.1977 | `FeatureHash` 0.0498s、`JsonExtractList` 0.0494s、`StringParser` 0.0241s |
+| final batch=512 | 10302.5 | 0.1941 | 0.1899 | `JsonExtractList` 0.0491s、`FeatureHash` 0.0485s、`StringParser` 0.0239s |
+| final batch=1024 | 10449.4 | 0.1914 | 0.1882 | `JsonExtractList` 0.0488s、`FeatureHash` 0.0483s、`StringParser` 0.0237s |
+
+这个结果只用于确认当前热区，不与 Windows dev build 基线直接计算百分比。
+
+本轮 Darwin arm64 连续优化记录：
+
+| 轮次 | 修改 | before rows/s (128/512/1024) | after rows/s (128/512/1024) | 结论 |
+|------|------|-------------------------------|------------------------------|------|
+| A | `ExpressionOp` 实现专用 `process_batch()`，复用 Rhai `Scope` 和变量名，避免默认 batch fallback 每行重建输入向量和变量名 | 8996.1 / 9270.4 / 9562.0 | 8995.4 / 9450.0 / 9573.6 | 保留；总吞吐基本持平到小幅提升，`ExpressionOp` 从约 0.0097/0.0094/0.0093s 降到 0.0087/0.0084/0.0082s |
+| B | `FeatureHash` 标量单输入 cache hit 避免构造 key；单输入 list 直接逐元素 hash，避免每行中间 `Vec<String>` | 8995.4 / 9450.0 / 9573.6 | 9807.5 / 10367.4 / 10517.9 | 保留；`FeatureHash` 从约 0.066s 降到 0.048s |
+| C | `FeatSession` 初始化时缓存 source default，`parse_columns()` 复用缓存 | 9807.5 / 10367.4 / 10517.9 | 9764.6 / 10265.1 / 10428.3 | 回滚；三档 batch 均无提升 |
 
 撤回尝试：`JsonExtractList` 预分配 `pad_len` 并在收够输出后停止遍历。benchmark 未提升（约 4012/4259/4224 rows/s），原因是 `serde_json::from_str` 仍完整解析 JSON，减少后续转换不足以抵消波动；该改动未保留。
 
@@ -166,6 +188,10 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 | `crates/core/src/feats/mod.rs` | 子模块声明 + 导出 `FeatureSpec` |
 | `crates/core/src/feats/config.rs` | 新增 `FeatureSpec` struct |
 | `crates/core/src/feats/defaults.rs` | 新增 `parse_string_to_fv()` |
+| `crates/core/src/feats/executor.rs` | 优化单输出列赋值，避免不必要的结果列 clone |
+| `crates/core/src/feats/ops/expression.rs` | `ExpressionOp` 专用 batch 路径，复用 Rhai scope 和变量名 |
+| `crates/core/src/feats/ops/feature_hash.rs` | 优化单输入标量/list batch hash 快路径，减少 key 和中间列表分配 |
+| `crates/core/src/feats/ops/mod.rs` | 默认 batch fallback 复用行缓冲，减少逐行分配 |
 | `crates/core/src/feats/tensor_utils.rs` | 新增：`feature_column_to_vec()` 共享 pooling/padding |
 | `Cargo.toml` | 改为 `[workspace]`，members = `crates/core` |
 | `src/feats/mod.rs` | 改为 `pub use scale_rec_core::feats::*` + 本地模块 |

@@ -148,8 +148,12 @@ impl ExecutionPlan {
             if stats != OpExecutionStats::default() {
                 op_stats.push((step.op_idx, stats));
             }
-            for &cid in &step.output_cols {
-                context[cid] = result_vec.clone();
+            if step.output_cols.len() == 1 {
+                context[step.output_cols[0]] = result_vec;
+            } else {
+                for &cid in &step.output_cols {
+                    context[cid] = result_vec.clone();
+                }
             }
         }
         Ok((context, op_stats))
@@ -223,8 +227,12 @@ impl ExecutionPlan {
                 op.name().to_string(),
                 start.elapsed().as_secs_f64(),
             ));
-            for &cid in &step.output_cols {
-                context[cid] = result_vec.clone();
+            if step.output_cols.len() == 1 {
+                context[step.output_cols[0]] = result_vec;
+            } else {
+                for &cid in &step.output_cols {
+                    context[cid] = result_vec.clone();
+                }
             }
         }
         Ok((context, timings))
