@@ -27,4 +27,5 @@ MODEL_CONFIGS = {
     "demo_unimixer": MODEL_EXAMPLES_DIR / "unimixer.yaml",
     "demo_token_mixer_large": MODEL_EXAMPLES_DIR / "token_mixer_large.yaml",
     "demo_rankmixer": MODEL_EXAMPLES_DIR / "rankmixer.yaml",
+    "demo_pepnet": MODEL_EXAMPLES_DIR / "pepnet.yaml",
 }

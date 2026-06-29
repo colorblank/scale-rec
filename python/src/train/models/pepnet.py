@@ -23,7 +23,7 @@ from ..core.output_contract import NormalizedOutputContract
 from ..layers.embedding import FeatureEmbeddings, FeatureTensorMap, FeatureTuple
 from ..layers.mlp import Mlp
 from ..layers.towers import Activation, MultiTaskConfig, TaskRelation, TaskTower
-from ..utils.output_contract_tower import _probability_for_relation
+from .esmm import _probability_for_relation
 from .output_head import OutputHead
 
 
@@ -106,9 +106,7 @@ class PEPNet(nn.Module):
         # stacked: list of [batch, 1, dim_i]
 
         # Prior: mean-pool each feature → concat → project
-        prior_parts = []
-        for emb in stacked:
-            prior_parts.append(emb.mean(dim=2, keepdim=True))  # [batch, 1, 1]
+        prior_parts = [emb.mean(dim=2, keepdim=True) for emb in stacked]  # [batch, 1, 1]
         prior_raw = torch.cat(prior_parts, dim=1)  # [batch, num_features, 1]
         prior_raw = prior_raw.squeeze(2)           # [batch, num_features]
         prior = self.prior_proj(prior_raw)         # [batch, prior_dim]

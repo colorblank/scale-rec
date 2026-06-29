@@ -429,6 +429,24 @@ _MODEL_PARAM_SPECS: dict[str, tuple[set[str], set[str], dict[str, type | tuple[t
             "output_contract": dict,
         },
     ),
+    "pepnet": (
+        _COMMON_MODEL_KEYS
+        | {
+            "prior_dim",
+            "deep_hidden_dims",
+            "shared_bottom_dims",
+        },
+        set(),
+        {
+            "prior_dim": int,
+            "deep_hidden_dims": list,
+            "shared_bottom_dims": list,
+            "tasks": list,
+            "label_col_map": dict,
+            "metrics": dict,
+            "output_contract": dict,
+        },
+    ),
 }
 
 

@@ -34,7 +34,7 @@ pub struct PEPNet {
 
 impl PEPNet {
     fn build_gate(vb: VarBuilder, prior_dim: usize, gate_dim: usize) -> Result<candle_nn::Linear> {
-        linear_no_bias(prior_dim, gate_dim, vb)
+        linear(prior_dim, gate_dim, vb)
     }
 
     pub fn new(
@@ -48,7 +48,7 @@ impl PEPNet {
         let embeddings = FeatureEmbeddings::new(vb.pp("embeddings"), features)?;
         let total_dim = embeddings.total_dim;
 
-        let prior_proj = linear(embeddings.num_features, prior_dim, vb.pp("prior_proj"))?;
+        let prior_proj = linear_no_bias(embeddings.num_features, prior_dim, vb.pp("prior_proj"))?;
         let epnet_gate = Self::build_gate(vb.pp("epnet_gate"), prior_dim, total_dim)?;
         let ppnet_gate = Self::build_gate(
             vb.pp("ppnet_gate"),
@@ -120,7 +120,7 @@ impl PEPNet {
         let embeddings = FeatureEmbeddings::new(vb.pp("embeddings"), features)?;
         let total_dim = embeddings.total_dim;
 
-        let prior_proj = linear(embeddings.num_features, prior_dim, vb.pp("prior_proj"))?;
+        let prior_proj = linear_no_bias(embeddings.num_features, prior_dim, vb.pp("prior_proj"))?;
         let epnet_gate = Self::build_gate(vb.pp("epnet_gate"), prior_dim, total_dim)?;
         let ppnet_gate = Self::build_gate(
             vb.pp("ppnet_gate"),
