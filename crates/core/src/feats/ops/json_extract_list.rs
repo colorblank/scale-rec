@@ -203,4 +203,46 @@ mod tests {
             Fv::StrList(vec!["a".into(), "b".into(), "none".into()])
         );
     }
+
+    #[test]
+    fn test_json_extract_null_value_in_array() {
+        let op = JsonExtractList::new(Some("tag".into()), 3, "none".into());
+        // serde_json serialises null as "null" via to_string
+        let input = Fv::Str("[{\"tag\":null},{\"tag\":\"real\"}]".into());
+        let res = op.process(&[input]).unwrap();
+        assert_eq!(
+            res,
+            Fv::StrList(vec!["null".into(), "real".into(), "none".into()])
+        );
+    }
+
+    #[test]
+    fn test_json_extract_non_string_fv_input() {
+        let op = JsonExtractList::new(Some("tag".into()), 2, "pad".into());
+        let res = op.process(&[Fv::Int(123)]).unwrap();
+        assert_eq!(res, Fv::StrList(vec!["pad".into(), "pad".into()]));
+    }
+
+    #[test]
+    fn test_json_extract_pad_len_zero() {
+        let op = JsonExtractList::new(Some("tag".into()), 0, "ignored".into());
+        let input = Fv::Str("[{\"tag\":\"a\"},{\"tag\":\"b\"}]".into());
+        let res = op.process(&[input]).unwrap();
+        assert_eq!(res, Fv::StrList(vec![] as Vec<String>));
+    }
+
+    #[test]
+    fn test_json_extract_batch() {
+        let op = JsonExtractList::new(Some("tag".into()), 2, "none".into());
+        let col = vec![
+            Fv::Str("[{\"tag\":\"a\"}]".into()),
+            Fv::Str("invalid".into()),
+            Fv::Str("[{\"tag\":\"b\"},{\"tag\":\"c\"}]".into()),
+        ];
+        let res = op.process_batch(&[&col], 3).unwrap();
+        assert_eq!(res.len(), 3);
+        assert_eq!(res[0], Fv::StrList(vec!["a".into(), "none".into()]));
+        assert_eq!(res[1], Fv::StrList(vec!["none".into(), "none".into()]));
+        assert_eq!(res[2], Fv::StrList(vec!["b".into(), "c".into()]));
+    }
 }

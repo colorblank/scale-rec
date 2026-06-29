@@ -128,4 +128,28 @@ mod tests {
         let result = op.process(&[Fv::Str("a#1|b".into())]).unwrap();
         assert_eq!(result, Fv::StrList(vec!["1".into(), "unknown".into()]));
     }
+
+    #[test]
+    fn empty_input_string() {
+        let op = StringParser::new("|".into(), "#".into(), 0, 3, "pad".into());
+        let result = op.process(&[Fv::Str("".into())]).unwrap();
+        assert_eq!(
+            result,
+            Fv::StrList(vec!["pad".into(), "pad".into(), "pad".into()])
+        );
+    }
+
+    #[test]
+    fn non_string_input_fallback() {
+        let op = StringParser::new("|".into(), "#".into(), 0, 2, "x".into());
+        let result = op.process(&[Fv::Int(42)]).unwrap();
+        assert_eq!(result, Fv::StrList(vec!["x".into(), "x".into()]));
+    }
+
+    #[test]
+    fn pad_len_zero() {
+        let op = StringParser::new("|".into(), "#".into(), 0, 0, "pad".into());
+        let result = op.process(&[Fv::Str("a|b|c".into())]).unwrap();
+        assert_eq!(result, Fv::StrList(vec![] as Vec<String>));
+    }
 }

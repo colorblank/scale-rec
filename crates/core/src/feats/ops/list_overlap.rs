@@ -84,6 +84,44 @@ mod tests {
     }
 
     #[test]
+    fn list_overlap_one_side_empty() {
+        let op = ListOverlap::new();
+        assert_eq!(
+            op.process(&[Fv::StrList(vec![]), Fv::StrList(vec!["a".into()]),])
+                .unwrap(),
+            Fv::Int(0)
+        );
+        assert_eq!(
+            op.process(&[Fv::StrList(vec!["a".into()]), Fv::StrList(vec![]),])
+                .unwrap(),
+            Fv::Int(0)
+        );
+    }
+
+    #[test]
+    fn list_overlap_both_empty() {
+        let op = ListOverlap::new();
+        assert_eq!(
+            op.process(&[Fv::StrList(vec![]), Fv::StrList(vec![]),])
+                .unwrap(),
+            Fv::Int(0)
+        );
+    }
+
+    #[test]
+    fn list_overlap_duplicate_items() {
+        let op = ListOverlap::new();
+        assert_eq!(
+            op.process(&[
+                Fv::StrList(vec!["a".into(), "a".into()]),
+                Fv::StrList(vec!["a".into()]),
+            ])
+            .unwrap(),
+            Fv::Int(1)
+        );
+    }
+
+    #[test]
     fn list_overlap_batch_matches_single_row() {
         let op = ListOverlap::new();
         let left = vec![

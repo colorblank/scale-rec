@@ -86,4 +86,45 @@ mod tests {
         let res2 = op2.process(&[input2]).unwrap();
         assert_eq!(res2, Fv::StrList(vec!["17".into(), "33".into()]));
     }
+
+    #[test]
+    fn test_list_string_parser_empty_list() {
+        let op = ListStringParser::new(",".into(), 0);
+        let res = op.process(&[Fv::StrList(vec![])]).unwrap();
+        assert_eq!(res, Fv::StrList(vec![] as Vec<String>));
+    }
+
+    #[test]
+    fn test_list_string_parser_key_out_of_bounds() {
+        let op = ListStringParser::new(",".into(), 5);
+        let res = op.process(&[Fv::StrList(vec!["a,b".into()])]).unwrap();
+        assert_eq!(res, Fv::StrList(vec!["".into()]));
+    }
+
+    #[test]
+    fn test_list_string_parser_separator_not_found() {
+        let op = ListStringParser::new("|".into(), 0);
+        let res = op.process(&[Fv::StrList(vec!["abc".into()])]).unwrap();
+        assert_eq!(res, Fv::StrList(vec!["abc".into()]));
+    }
+
+    #[test]
+    fn test_list_string_parser_batch() {
+        let op = ListStringParser::new(":".into(), 0);
+        let col = vec![
+            Fv::StrList(vec!["a:1".into(), "b:2".into()]),
+            Fv::StrList(vec!["c:3".into()]),
+        ];
+        let res = op.process_batch(&[&col], 2).unwrap();
+        assert_eq!(res.len(), 2);
+        assert_eq!(res[0], Fv::StrList(vec!["a".into(), "b".into()]));
+        assert_eq!(res[1], Fv::StrList(vec!["c".into()]));
+    }
+
+    #[test]
+    fn test_list_string_parser_wrong_input_type() {
+        let op = ListStringParser::new(",".into(), 0);
+        let err = op.process(&[Fv::Int(42)]).unwrap_err();
+        assert!(err.contains("StrList"));
+    }
 }

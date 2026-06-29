@@ -169,4 +169,25 @@ mod tests {
         assert_eq!(results[0], Fv::StrList(vec!["a".into(), "".into()]));
         assert_eq!(results[1], Fv::StrList(vec!["x".into(), "y".into()]));
     }
+
+    #[test]
+    fn test_non_string_input_fallback() {
+        let op = Split::new("|".into(), 2, "pad".into());
+        let result = op.process(&[Fv::Int(42)]).unwrap();
+        assert_eq!(result, Fv::StrList(vec!["pad".into(), "pad".into()]));
+    }
+
+    #[test]
+    fn test_separator_not_found() {
+        let op = Split::new("|".into(), 0, "".into());
+        let result = op.process(&[Fv::Str("hello".into())]).unwrap();
+        assert_eq!(result, Fv::StrList(vec!["hello".into()]));
+    }
+
+    #[test]
+    fn test_pad_len_zero() {
+        let op = Split::new("|".into(), 0, "pad".into());
+        let result = op.process(&[Fv::Str("a|b".into())]).unwrap();
+        assert_eq!(result, Fv::StrList(vec!["a".into(), "b".into()]));
+    }
 }

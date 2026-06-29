@@ -80,5 +80,34 @@ mod tests {
     fn test_log1p_rejects_domain_error() {
         let op = Log1p::new();
         assert!(op.process(&[Fv::Float(-1.0)]).is_err());
+        assert!(op.process(&[Fv::Float(-2.0)]).is_err());
+        assert!(op.process(&[Fv::Int(-1)]).is_err());
+    }
+
+    #[test]
+    fn test_log1p_near_zero() {
+        let op = Log1p::new();
+        let Fv::Float(v) = op.process(&[Fv::Float(-0.999)]).unwrap() else {
+            panic!()
+        };
+        assert!((v - (-0.999_f32).ln_1p()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_log1p_non_numeric_type() {
+        let op = Log1p::new();
+        let err = op.process(&[Fv::Str("hello".into())]).unwrap_err();
+        assert!(err.contains("expected numeric scalar"));
+    }
+
+    #[test]
+    fn test_log1p_batch() {
+        let op = Log1p::new();
+        let col = vec![Fv::Float(0.0), Fv::Float(1.0), Fv::Float(2.0)];
+        let res = op.process_batch(&[&col], 3).unwrap();
+        assert_eq!(res.len(), 3);
+        assert!(matches!(res[0], Fv::Float(v) if (v - 0.0_f32.ln_1p()).abs() < 1e-6));
+        assert!(matches!(res[1], Fv::Float(v) if (v - 1.0_f32.ln_1p()).abs() < 1e-6));
+        assert!(matches!(res[2], Fv::Float(v) if (v - 2.0_f32.ln_1p()).abs() < 1e-6));
     }
 }

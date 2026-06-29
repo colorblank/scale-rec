@@ -106,3 +106,76 @@ impl CustomOp for ConcatHash {
         Ok(results)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_op() -> ConcatHash {
+        ConcatHash::new(100, 1, "_".into(), "".into(), "".into(), "".into()).unwrap()
+    }
+
+    fn assert_hash_in_range(res: Fv) {
+        assert!(
+            matches!(res, Fv::Int(v) if v >= 0 && v < 100),
+            "expected Int in [0, 100), got {:?}",
+            res
+        );
+    }
+
+    #[test]
+    fn test_concat_basic() {
+        let op = make_op();
+        let res = op
+            .process(&[Fv::Str("a".into()), Fv::Str("b".into())])
+            .unwrap();
+        assert_hash_in_range(res);
+    }
+
+    #[test]
+    fn test_concat_single_input() {
+        let op = make_op();
+        let res = op.process(&[Fv::Str("hello".into())]).unwrap();
+        assert_hash_in_range(res);
+    }
+
+    #[test]
+    fn test_concat_empty_inputs() {
+        let op = make_op();
+        let res = op.process(&[]).unwrap();
+        assert_hash_in_range(res);
+    }
+
+    #[test]
+    fn test_concat_float_input() {
+        let op = make_op();
+        let res = op.process(&[Fv::Float(3.14), Fv::Str("x".into())]).unwrap();
+        assert_hash_in_range(res);
+    }
+
+    #[test]
+    fn test_concat_empty_separator() {
+        let op = ConcatHash::new(100, 1, "".into(), "".into(), "".into(), "".into()).unwrap();
+        let res = op
+            .process(&[Fv::Str("ab".into()), Fv::Str("cd".into())])
+            .unwrap();
+        assert_hash_in_range(res);
+    }
+
+    #[test]
+    fn test_concat_batch_empty_returns_empty() {
+        let op = make_op();
+        let res = op.process_batch(&[], 0).unwrap();
+        assert!(res.is_empty());
+    }
+
+    #[test]
+    fn test_concat_batch_with_wrong_type_fallback() {
+        let op = make_op();
+        let col_a = vec![Fv::IntList(vec![1, 2])];
+        let col_b = vec![Fv::Str("x".into())];
+        let res = op.process_batch(&[&col_a, &col_b], 1).unwrap();
+        assert_eq!(res.len(), 1);
+        assert_hash_in_range(res[0].clone());
+    }
+}

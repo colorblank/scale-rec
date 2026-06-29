@@ -519,4 +519,38 @@ mod tests {
         let err = op.process_batch(&[&col_a, &col_b], 3).unwrap_err();
         assert!(err.contains("mixed scalar/list rows"));
     }
+
+    #[test]
+    fn test_empty_str_list_input() {
+        let op = FeatureHash::new(1000, 1, "|".into()).unwrap();
+        let result = op.process(&[Fv::StrList(vec![])]).unwrap();
+        assert_eq!(result, Fv::IntList(vec![]));
+    }
+
+    #[test]
+    fn test_empty_int_list_input() {
+        let op = FeatureHash::new(1000, 1, "|".into()).unwrap();
+        let result = op.process(&[Fv::IntList(vec![])]).unwrap();
+        assert_eq!(result, Fv::IntList(vec![]));
+    }
+
+    #[test]
+    fn test_non_string_scalar_to_string_fallback() {
+        let op = FeatureHash::new(1000, 1, "|".into()).unwrap();
+        let i_result = op.process(&[Fv::Int(42)]).unwrap();
+        let f_result = op.process(&[Fv::Float(3.14)]).unwrap();
+        assert!(matches!(i_result, Fv::Int(v) if v >= 0 && v < 1000));
+        assert!(matches!(f_result, Fv::Int(v) if v >= 0 && v < 1000));
+        let i42 = op.process(&[Fv::Int(42)]).unwrap();
+        let f42_5 = op.process(&[Fv::Float(42.5)]).unwrap();
+        assert_ne!(i42, f42_5);
+    }
+
+    #[test]
+    fn test_single_long_string_doesnt_crash() {
+        let op = FeatureHash::new(1000, 1, "|".into()).unwrap();
+        let long = "x".repeat(100_000);
+        let result = op.process(&[Fv::Str(long)]).unwrap();
+        assert!(matches!(result, Fv::Int(v) if v >= 0 && v < 1000));
+    }
 }

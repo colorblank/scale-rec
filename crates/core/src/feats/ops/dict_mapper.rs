@@ -135,6 +135,38 @@ mod tests {
     }
 
     #[test]
+    fn empty_map_returns_default() {
+        let op = DictMapper::new(HashMap::new(), 0);
+        assert_eq!(
+            op.process(&[Fv::Str("anything".into())]).unwrap(),
+            Fv::Int(0)
+        );
+    }
+
+    #[test]
+    fn float_input_falls_back_to_default() {
+        let op = DictMapper::new([("a".into(), 1)].into(), 0);
+        let result = op.process(&[Fv::Float(99.9)]).unwrap();
+        assert_eq!(result, Fv::Int(0));
+    }
+
+    #[test]
+    fn int_input_matches_string_key() {
+        let mut m = HashMap::new();
+        m.insert("42".into(), 7);
+        let op = DictMapper::new(m, 0);
+        assert_eq!(op.process(&[Fv::Int(42)]).unwrap(), Fv::Int(7));
+        assert_eq!(op.process(&[Fv::Int(99)]).unwrap(), Fv::Int(0));
+    }
+
+    #[test]
+    fn empty_str_list_returns_empty_list() {
+        let op = DictMapper::new([("a".into(), 1)].into(), 0);
+        let result = op.process(&[Fv::StrList(vec![])]).unwrap();
+        assert_eq!(result, Fv::IntList(vec![]));
+    }
+
+    #[test]
     fn batch_stats_count_only_actual_mapping_misses() {
         let op = DictMapper::new(
             [("known".into(), 1), ("same_as_default".into(), 99)].into(),

@@ -151,6 +151,26 @@ mod tests {
     }
 
     #[test]
+    fn test_non_string_list_input() {
+        let op = FlatSplit::new(",".into(), 3, "pad".into());
+        let result = op.process(&[Fv::Int(42)]).unwrap();
+        assert_eq!(
+            result,
+            Fv::StrList(vec!["pad".into(), "pad".into(), "pad".into()])
+        );
+    }
+
+    #[test]
+    fn test_separator_not_found() {
+        let op = FlatSplit::new("|".into(), 3, "pad".into());
+        let result = op.process(&[Fv::StrList(vec!["hello".into()])]).unwrap();
+        assert_eq!(
+            result,
+            Fv::StrList(vec!["hello".into(), "pad".into(), "pad".into()])
+        );
+    }
+
+    #[test]
     fn test_batch() {
         let op = FlatSplit::new(",".into(), 0, "".into());
         let col = vec![

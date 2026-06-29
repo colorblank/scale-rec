@@ -94,4 +94,39 @@ mod tests {
         let op = Bucketing::new(vec![10.0, 20.0]);
         assert_eq!(op.process(&[Fv::Float(30.0)]).unwrap(), Fv::Int(2));
     }
+
+    #[test]
+    fn test_bucketing_int_input() {
+        let op = Bucketing::new(vec![10, 20, 30].into_iter().map(|v| v as f32).collect());
+        assert_eq!(op.process(&[Fv::Int(25)]).unwrap(), Fv::Int(2));
+    }
+
+    #[test]
+    fn test_bucketing_wrong_type() {
+        let op = Bucketing::new(vec![1.0, 2.0]);
+        let err = op.process(&[Fv::Str("hello".into())]).unwrap_err();
+        assert!(err.contains("expected float"));
+    }
+
+    #[test]
+    fn test_bucketing_empty_boundaries() {
+        let op = Bucketing::new(vec![]);
+        assert_eq!(op.process(&[Fv::Float(100.0)]).unwrap(), Fv::Int(0));
+    }
+
+    #[test]
+    fn test_bucketing_batch() {
+        let op = Bucketing::new(vec![5.0, 10.0]);
+        let col = vec![Fv::Float(2.0), Fv::Float(7.0), Fv::Float(12.0)];
+        let res = op.process_batch(&[&col], 3).unwrap();
+        assert_eq!(res, vec![Fv::Int(0), Fv::Int(1), Fv::Int(2)]);
+    }
+
+    #[test]
+    fn test_bucketing_batch_wrong_type() {
+        let op = Bucketing::new(vec![5.0]);
+        let col = vec![Fv::Str("x".into())];
+        let err = op.process_batch(&[&col], 1).unwrap_err();
+        assert!(err.contains("expected float"));
+    }
 }

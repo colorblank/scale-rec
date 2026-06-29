@@ -65,3 +65,93 @@ impl CustomOp for CrossFeature {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cross_cartesian_basic() {
+        let op = CrossFeature::new("cartesian".into());
+        let res = op
+            .process(&[
+                Fv::StrList(vec!["a".into(), "b".into()]),
+                Fv::StrList(vec!["1".into(), "2".into()]),
+            ])
+            .unwrap();
+        assert_eq!(
+            res,
+            Fv::StrList(vec!["a_1".into(), "a_2".into(), "b_1".into(), "b_2".into()])
+        );
+    }
+
+    #[test]
+    fn test_cross_cartesian_empty_first() {
+        let op = CrossFeature::new("cartesian".into());
+        let res = op
+            .process(&[Fv::StrList(vec![]), Fv::StrList(vec!["a".into()])])
+            .unwrap();
+        assert_eq!(res, Fv::StrList(vec![]));
+    }
+
+    #[test]
+    fn test_cross_cartesian_empty_second() {
+        let op = CrossFeature::new("cartesian".into());
+        let res = op
+            .process(&[Fv::StrList(vec!["a".into()]), Fv::StrList(vec![])])
+            .unwrap();
+        assert_eq!(res, Fv::StrList(vec![]));
+    }
+
+    #[test]
+    fn test_cross_cartesian_wrong_type_first() {
+        let op = CrossFeature::new("cartesian".into());
+        let err = op
+            .process(&[Fv::IntList(vec![1]), Fv::StrList(vec!["a".into()])])
+            .unwrap_err();
+        assert!(err.contains("Expected StrList"));
+    }
+
+    #[test]
+    fn test_cross_inner_product_basic() {
+        let op = CrossFeature::new("inner_product".into());
+        let res = op
+            .process(&[Fv::IntList(vec![1, 2, 3]), Fv::IntList(vec![4, 5, 6])])
+            .unwrap();
+        assert_eq!(res, Fv::Float(32.0));
+    }
+
+    #[test]
+    fn test_cross_inner_product_empty() {
+        let op = CrossFeature::new("inner_product".into());
+        let res = op
+            .process(&[Fv::IntList(vec![]), Fv::IntList(vec![])])
+            .unwrap();
+        assert_eq!(res, Fv::Float(0.0));
+    }
+
+    #[test]
+    fn test_cross_inner_product_mismatched_lengths() {
+        let op = CrossFeature::new("inner_product".into());
+        let res = op
+            .process(&[Fv::IntList(vec![1, 2]), Fv::IntList(vec![3])])
+            .unwrap();
+        assert_eq!(res, Fv::Float(3.0));
+    }
+
+    #[test]
+    fn test_cross_inner_product_wrong_type() {
+        let op = CrossFeature::new("inner_product".into());
+        let err = op
+            .process(&[Fv::StrList(vec!["a".into()]), Fv::IntList(vec![1])])
+            .unwrap_err();
+        assert!(err.contains("Expected IntList"));
+    }
+
+    #[test]
+    fn test_cross_wrong_input_count() {
+        let op = CrossFeature::new("cartesian".into());
+        let err = op.process(&[Fv::StrList(vec!["a".into()])]).unwrap_err();
+        assert!(err.contains("expects exactly 2 inputs"));
+    }
+}
