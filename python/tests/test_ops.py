@@ -11,6 +11,7 @@ from train.ops.log1p import Log1p
 from train.ops.sequence import SequenceOp
 from train.ops.split import Split
 from train.ops.string_parser import StringParser
+from train.ops.time_parser import TimeParser
 
 
 def test_bucketing():
@@ -69,6 +70,31 @@ def test_log1p_rejects_domain_error():
     op = Log1p()
     with pytest.raises(ValueError, match="greater than -1"):
         op.process([-1.0])
+
+
+def test_time_parser_rfc3339_to_utc_hour():
+    op = TimeParser(input_format="rfc3339", output="hour", default_val=-1)
+    assert op.process(["2026-06-29T10:30:00+08:00"]) == 2
+
+
+def test_time_parser_custom_format_to_weekday():
+    op = TimeParser(
+        input_format="strftime",
+        output="weekday",
+        formats=["%Y.%m.%d %H:%M"],
+        default_val=-1,
+    )
+    assert op.process(["2026.06.29 12:00"]) == 0
+
+
+def test_time_parser_epoch_ms_to_yyyymmdd():
+    op = TimeParser(input_format="epoch_ms", output="yyyymmdd", default_val=-1)
+    assert op.process(["1782727200000"]) == 20260629
+
+
+def test_time_parser_invalid_uses_default():
+    op = TimeParser(input_format="auto", output="day_of_year", default_val=366)
+    assert op.process(["bad"]) == 366
 
 
 def test_sequence():

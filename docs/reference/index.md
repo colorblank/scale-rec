@@ -9,7 +9,7 @@ Reference 文档用于查稳定接口、配置项、文件格式和行为边界�
 | [CLI Reference](cli.md) | 训练、验证和服务启动命令参数 |
 | [Feature Config Reference](feature_config.md) | feature config 顶层结构、sources、operators 和 embed |
 | [Model Config Reference](model_config.md) | model YAML、output_contract、loss weighting 和 weight binding |
-| [Feature operators](feature_operators.md) | 17 个特征算子的参数、输入输出和边界行为 |
+| [Feature operators](feature_operators.md) | 18 个特征算子的参数、输入输出和边界行为 |
 
 ## Serving
 

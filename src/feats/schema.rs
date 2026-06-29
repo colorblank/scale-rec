@@ -249,6 +249,7 @@ fn infer_operator_output(
             require_scalar_number(op, first)?;
             FeatureDType::Float
         }
+        OpType::TimeParser => FeatureDType::Int,
         OpType::SequenceOp => FeatureDType::List {
             dtype: Box::new(FeatureDType::Int),
             length: Some(yaml_usize(&op.params, "max_len").unwrap_or(10)),

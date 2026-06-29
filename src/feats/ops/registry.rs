@@ -30,6 +30,7 @@ static OP_REGISTRY: LazyLock<HashMap<OpType, OpFactory>> = LazyLock::new(|| {
     m.insert(OpType::Split, super::split::create);
     m.insert(OpType::StringConcat, super::string_concat::create);
     m.insert(OpType::StringParser, super::string_parser::create);
+    m.insert(OpType::TimeParser, super::time_parser::create);
     m
 });
 
@@ -46,7 +47,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn all_17_ops_are_registered() {
+    fn all_18_ops_are_registered() {
         let expected = [
             OpType::Bucketing,
             OpType::ConcatHash,
@@ -65,6 +66,7 @@ mod tests {
             OpType::Split,
             OpType::StringConcat,
             OpType::StringParser,
+            OpType::TimeParser,
         ];
         for op in &expected {
             assert!(OP_REGISTRY.contains_key(op), "{:?} is not registered", op);

@@ -58,6 +58,7 @@ from .sequence import SequenceOp as SequenceOp
 from .split import Split as Split
 from .string_concat import StringConcat as StringConcat
 from .string_parser import StringParser as StringParser
+from .time_parser import TimeParser as TimeParser
 
 __all__ = [
     "OP_REGISTRY",
@@ -78,6 +79,7 @@ __all__ = [
     "Split",
     "StringConcat",
     "StringParser",
+    "TimeParser",
     "create_op",
     "register_op",
 ]

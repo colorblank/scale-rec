@@ -331,6 +331,8 @@ pub enum OpType {
     StringConcat,
     /// 字符串解析算子。
     StringParser,
+    /// 时间解析算子。
+    TimeParser,
 }
 
 /// 算子节点定义。`params` 使用原生 YAML 值，由各算子自行解析。

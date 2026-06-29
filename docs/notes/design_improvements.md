@@ -265,7 +265,7 @@ raw sample / request
 
 - 共享 YAML 特征编排，覆盖 Bucketing、DictMapper、StringParser、JsonExtractList、
   ListStringParser、Split、FlatSplit、ExpressionOp、CrossFeature、ListOverlap、SequenceOp、
-  StringConcat、FeatureHash、Log1p、PluginOp、ParsedFeatureHash、ConcatHash 等 17 个算子。
+  StringConcat、FeatureHash、Log1p、PluginOp、ParsedFeatureHash、ConcatHash、TimeParser 等 18 个算子。
 - Python 单文件训练、demo 训练、多模型训练入口，共享列式 batch 预处理和可选 prefetch。
 - 多任务 loss、评估、early stopping、EMA、周期 checkpoint、epoch-end checkpoint、resume 和 manifest。
 - 任务级配置落到模型 YAML；legacy 模型由 `TaskContract/MultiTaskLoss` 执行，原生

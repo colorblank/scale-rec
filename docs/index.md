@@ -39,7 +39,7 @@ scale-rec 文档按 PyTorch 风格分为快速开始、教程、操作指南、�
 | [Rust Model Loading](reference/rust_model_loading.md) | Rust 服务加载模型文件和版本选择规则 |
 | [HTTP API](reference/http_api.md) | `/health`、`/models`、`/predict`、`/predict/broadcast` |
 | [Prometheus metrics](reference/prometheus_metrics.md) | `/metrics` 指标、计算逻辑和告警建议 |
-| [Feature operators](reference/feature_operators.md) | 17 个特征算子的参数、输入输出和边界行为 |
+| [Feature operators](reference/feature_operators.md) | 18 个特征算子的参数、输入输出和边界行为 |
 
 ## Notes
 

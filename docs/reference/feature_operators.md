@@ -1,6 +1,6 @@
 # 特征预处理系统文档
 
-本文档完整描述 scale-rec 特征预处理系统的架构、配置格式、17 个基础算子及其执行模式，面向算法工程师和系统开发者。
+本文档完整描述 scale-rec 特征预处理系统的架构、配置格式、18 个基础算子及其执行模式，面向算法工程师和系统开发者。
 
 如果你想先理解这些算子在整个推荐系统里的位置，建议先读 [推荐排序系统教程 - 03. 特征工程契约](../tutorials/feature_dag.md)。教程讲的是“为什么要这么配”，本文档讲的是“每个算子具体怎么做”。
 
@@ -234,7 +234,7 @@ DAG 在初始化阶段根据 SourceDef.dtype 生成默认值及类型映射：
 
 ---
 
-## 4. 全部 17 个算子
+## 4. 全部 18 个算子
 
 ### 4.1 Bucketing — 数值分桶
 
@@ -570,7 +570,57 @@ mapping = {phone:1, pad:2, pc:3}, default_idx=0
 
 ---
 
-### 4.7 ListStringParser — 列表二次切分
+### 4.7 TimeParser — 时间格式解析
+
+将字符串、秒时间戳或毫秒时间戳解析为整数时间特征。适用于小时、星期、日期桶等上下文特征，输出可直接配置 embedding 或继续送入其他算子。
+
+**参数**：
+
+| 参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `input_format` | string | `"auto"` | 输入格式：`auto`、`epoch_s`、`epoch_ms`、`rfc3339`、`strftime` |
+| `formats` | list[string] | `[]` | `strftime` 自定义格式列表，例如 `"%Y.%m.%d %H:%M"` |
+| `output` | string | `"timestamp_s"` | 输出字段：`timestamp_s`、`year`、`month`、`day`、`hour`、`minute`、`weekday`、`day_of_year`、`yyyymmdd`、`minute_of_day` |
+| `default_val` | int | 0 | 解析失败或输出溢出时返回的默认值 |
+
+**输入**：`Str` / `Int` / `Float`
+**输出**：`Int`
+
+**语义**：
+
+- `rfc3339` 输入保留原始 offset，并转换到 UTC 后再提取输出字段。
+- `strftime` 和无时区的 `auto` 字符串按 UTC 解释。
+- `weekday` 使用 Monday=0, Sunday=6。
+- `epoch_ms` 只作为输入格式支持；输出不支持毫秒时间戳，因为当前特征整数类型为 `i32`。
+
+**示例**：
+
+```yaml
+- name: request_hour
+  op_type: TimeParser
+  inputs: [request_time]
+  outputs: [request_hour_idx]
+  params:
+    input_format: auto
+    formats: ["%Y.%m.%d %H:%M"]
+    output: hour
+    default_val: 0
+  embed: { vocab_size: 24, embed_dim: 4 }
+```
+
+```
+输入 "2026-06-29T10:30:00+08:00"
+  转 UTC → 2026-06-29 02:30:00
+  output=hour → 2
+
+输入 "2026.06.29 12:00"
+  formats 命中 "%Y.%m.%d %H:%M"
+  output=hour → 12
+```
+
+---
+
+### 4.8 ListStringParser — 列表二次切分
 
 对 `StrList` 中每个元素进行分隔符切分，提取指定索引位置的值。适用于从 `"code,market"` 格式的列表中提取纯代码。
 
@@ -613,7 +663,7 @@ mapping = {phone:1, pad:2, pc:3}, default_idx=0
 
 ---
 
-### 4.8 ExpressionOp — 脚本表达式
+### 4.9 ExpressionOp — 脚本表达式
 
 使用 Rhai 脚本执行数学计算。变量 `v0, v1, ...` 对应输入列表的索引位置。
 
@@ -661,7 +711,7 @@ mapping = {phone:1, pad:2, pc:3}, default_idx=0
 
 ---
 
-### 4.9 Log1p — 对数平滑变换
+### 4.10 Log1p — 对数平滑变换
 
 计算单个数值输入的 `ln(1 + x)`，用于曝光、点击、成交额等非负计数或金额特征的平滑压缩。
 
@@ -693,7 +743,7 @@ mapping = {phone:1, pad:2, pc:3}, default_idx=0
 
 ---
 
-### 4.10 CrossFeature — 特征交叉
+### 4.11 CrossFeature — 特征交叉
 
 对两个列表特征进行组合操作，支持笛卡尔积和内积。
 
@@ -746,7 +796,7 @@ mapping = {phone:1, pad:2, pc:3}, default_idx=0
 
 ---
 
-### 4.11 ListOverlap — 列表交集检测
+### 4.12 ListOverlap — 列表交集检测
 
 判断两个字符串列表是否有交集，用于用户-物品交互信号提取。
 
@@ -783,7 +833,7 @@ mapping = {phone:1, pad:2, pc:3}, default_idx=0
 
 ---
 
-### 4.12 SequenceOp — 序列截断填充
+### 4.13 SequenceOp — 序列截断填充
 
 将整数序列裁剪或填充至固定长度，确保下游模型接收统一长度的序列输入。
 
@@ -823,7 +873,7 @@ max_len=5, pad_val=0
 
 ---
 
-### 4.13 StringConcat — 字符串拼接
+### 4.14 StringConcat — 字符串拼接
 
 将多路输入拼接到单个字符串，类型不限。作为特征交叉前的桥接算子，与 `FeatureHash` 配合完成特征哈希。
 
@@ -860,7 +910,7 @@ max_len=5, pad_val=0
 
 ---
 
-### 4.14 FeatureHash — 特征哈希
+### 4.15 FeatureHash — 特征哈希
 
 无状态 DJB2 多种子哈希。将输入拼接后用 k 个独立种子分别哈希，输出一个或一组索引。此外，原生支持对列表输入进行逐元素哈希。Python 与 Rust 实现逐位一致。
 
@@ -958,7 +1008,7 @@ max_len=5, pad_val=0
 
 ---
 
-### 4.15 融合预处理算子
+### 4.16 融合预处理算子
 
 融合预处理算子把“先解析，再逐元素哈希”的链路合并成一个节点，用来减少 DAG 深度、降低运行时中间值分配，并简化配置。
 
@@ -998,7 +1048,7 @@ max_len=5, pad_val=0
 
 ---
 
-### 4.16 PluginOp — 外部插件
+### 4.17 PluginOp — 外部插件
 
 通过 `cdylib` 动态加载外部算子，用于实验性特征快速验证。
 
@@ -1219,6 +1269,7 @@ RQ-VAE 语义 ID 序列的完整处理链路：两级解析 → 打平 → 映�
 | Bucketing | Int/Float | Int | boundaries | 连续值离散化 |
 | DictMapper | Any/List | Int/IntList | mapping, default_idx | 类别→索引 |
 | StringParser | Str | StrList | sep1, sep2, key_index, pad_len | 结构化字符串解析 |
+| TimeParser | Str/Int/Float | Int | input_format, formats, output | 时间格式解析与离散化 |
 | JsonExtractList | Str | StrList | key, pad_len | JSON 数组提取 |
 | Split | Str | StrList | sep, max_len | 简单分隔字符串切分 |
 | FlatSplit | StrList | StrList | sep, max_len | 序列化向量打平 |
@@ -1248,7 +1299,7 @@ RQ-VAE 语义 ID 序列的完整处理链路：两级解析 → 打平 → 映�
    - 添加 `@register_op("<OpType>")` 装饰器 + `@classmethod from_config(params) -> Self`
 
 3. **验证**：
-   - Rust：`cargo test`（`all_17_ops_are_registered` 测试自动验证注册完整性）
+   - Rust：`cargo test`（`all_18_ops_are_registered` 测试自动验证注册完整性）
    - Python：`PYTHONPATH=python/src uv run --directory python pytest tests/ -v`
    - 双端一致性：`PYTHONPATH=python/src uv run --project python python -m scale_rec_demo.verify_all`
 
