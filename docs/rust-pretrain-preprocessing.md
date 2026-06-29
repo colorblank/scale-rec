@@ -106,7 +106,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 ```bash
 # Rust 测试
-cargo test         # 56 个测试全部通过
+cargo test         # 146 个测试全部通过（67 core + 38 lib + 41 integration）
 cargo check        # 编译检查
 
 # Python 一致性测试（需要先 build feat_engine）
@@ -178,8 +178,9 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 | C | `FeatSession` 初始化时缓存 source default，`parse_columns()` 复用缓存 | 9807.5 / 10367.4 / 10517.9 | 9764.6 / 10265.1 / 10428.3 | 回滚；三档 batch 均无提升 |
 | D | `ListStringParser` 去掉 `collect::<Vec<&str>>()`，用 `nth(key_index)`；`ParsedFeatureHash` `parse_structured`/`parse_list_split`/`parse_structured_flat_split` 同样处理 | ~9060 / ~9960 / ~10180 | ~9070 / ~9970 / ~10190 | 保留；这些算子不在前 3 热点中，改动使代码一致且减少分配 |
 | E | `StringConcat`/`ConcatHash` 去掉 `collect::<Vec<_>>().join()` 中间 Vec 分配，改为直接 `push_str` 累积；对 `Fv::Str` 直接引用避免 `to_string()` 分配 | ~9070 / ~9970 / ~10190 | ~9070 / ~9970 / ~10190 | 保留；总吞吐持平（算子本身 <0.003s，改动后减少分配但不在热点路径上） |
+| F | `JsonExtractList` 添加 7 个边缘 case 测试（bool/number 值、key 缺失、非法 JSON、空字符串值、空数组、转义字符串、no-key 对象数组）。`FlatSplit` `process_batch` 消除不必要的 `list.clone()` 改用 `&[String]` 借用 | 9557.8 / 10156.4 / 10324.7 | 同上 | 已提交；JsonExtractList 使用 serde_json <100 字节 JSON 无性能差异，自定义字节扫描器因分支密集反而不如 serde_json 表驱动解析器；新增测试保留用于回归覆盖 |
 
-`JsonExtractList` 本次新增 `extract_values()` 辅助函数（不改变逻辑，仅分解 padding/truncation 逻辑到单独方法）。benchmark 未观察到显著变化。
+`JsonExtractList` 本次尝试用自定义字节扫描器替代 `serde_json::from_str` DOM 分配，但 demo JSON 字符串极短（15-100 字节），serde_json 的 SIMD 表驱动解析已是最优选择；自定义扫描器因密集分支判断和字节级操作未能胜出，已回退。新增的 7 个边缘 case 测试保留。
 
 撤回尝试：`JsonExtractList` 预分配 `pad_len` 并在收够输出后停止遍历。benchmark 未提升（约 4012/4259/4224 rows/s），原因是 `serde_json::from_str` 仍完整解析 JSON，减少后续转换不足以抵消波动；该改动未保留。
 
@@ -201,7 +202,8 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 | `crates/core/src/feats/ops/parsed_feature_hash.rs` | 同上，`parse_structured`/`parse_list_split`/`parse_structured_flat_split` 去掉 Collect Vec |
 | `crates/core/src/feats/ops/string_concat.rs` | 去掉 `collect::<Vec<_>>().join()` 改用直接 `push_str` 累积，`Fv::Str` 零分配拼接 |
 | `crates/core/src/feats/ops/concat_hash.rs` | 同上 |
-| `crates/core/src/feats/ops/json_extract_list.rs` | 提取 `extract_values()` 辅助函数，代码逻辑不变 |
+| `crates/core/src/feats/ops/json_extract_list.rs` | 提取 `extract_values()` 辅助函数；添加 7 个边缘 case 测试（保留 serde_json 实现） |
+| `crates/core/src/feats/ops/flat_split.rs` | `process_batch` 消除 `list.clone()`，改用 `&[String]` 借用 |
 | `crates/core/src/feats/ops/mod.rs` | 默认 batch fallback 复用行缓冲，减少逐行分配 |
 | `crates/core/src/feats/tensor_utils.rs` | 新增：`feature_column_to_vec()` 共享 pooling/padding |
 | `Cargo.toml` | 改为 `[workspace]`，members = `crates/core` |

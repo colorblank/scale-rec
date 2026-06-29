@@ -56,19 +56,15 @@ impl CustomOp for FlatSplit {
         if n_rows == 0 {
             return Ok(vec![]);
         }
-        let col = inputs.first().map(|c| *c).unwrap_or(&[]);
+        let col = inputs.first().copied().unwrap_or(&[]);
         let mut results: Vec<Fv> = Vec::with_capacity(n_rows);
         for row in 0..n_rows {
-            let str_list = if row < col.len() {
-                match &col[row] {
-                    Fv::StrList(list) => list.clone(),
-                    _ => Vec::new(),
-                }
-            } else {
-                Vec::new()
+            let str_list: &[String] = match col.get(row) {
+                Some(Fv::StrList(list)) => list.as_slice(),
+                _ => &[],
             };
             let mut all: Vec<String> = Vec::new();
-            for s in &str_list {
+            for s in str_list {
                 if !s.is_empty() {
                     for part in s.split(&self.sep) {
                         all.push(part.to_string());

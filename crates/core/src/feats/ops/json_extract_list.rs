@@ -1,8 +1,9 @@
-//! JSON 数组提取算子：解析 JSON 数组/对象数组并提取内容。
+//! JSON array extraction operator: parses JSON arrays/object arrays and extracts values.
 use super::{CustomOp, Fv};
 use serde_json::Value;
 
-/// 从 JSON 数组中提取值并填充/截断为定长字符串列表。
+/// Extracts string values from a JSON array, with optional key-based extraction
+/// from object arrays. Pads/truncates to a fixed length.
 pub struct JsonExtractList {
     key: Option<String>,
     pad_len: usize,
@@ -10,7 +11,6 @@ pub struct JsonExtractList {
 }
 
 impl JsonExtractList {
-    /// 创建 JSON 数组提取算子。
     pub fn new(key: Option<String>, pad_len: usize, pad_val: String) -> Self {
         Self {
             key,
@@ -85,7 +85,6 @@ impl CustomOp for JsonExtractList {
     }
 }
 
-/// 从 YAML params 创建 JsonExtractList 算子。
 pub fn create(params: &serde_yaml::Value) -> Result<Box<dyn CustomOp>, String> {
     let key = params
         .get("key")
@@ -106,7 +105,6 @@ mod tests {
 
     #[test]
     fn test_json_extract_list() {
-        // Test extracting from object array
         let op_obj = JsonExtractList::new(Some("tag".into()), 2, "none".into());
         let input_obj = Fv::Str(
             "[{\"score\":0.99,\"tag\":\"invest\"}, {\"score\":0.5,\"tag\":\"finance\"}]".into(),
@@ -117,7 +115,6 @@ mod tests {
             Fv::StrList(vec!["invest".into(), "finance".into()])
         );
 
-        // Test extracting from simple string array
         let op_str = JsonExtractList::new(None, 2, "none".into());
         let input_str = Fv::Str("[\"603538,17\"]".into());
         let res_str = op_str.process(&[input_str]).unwrap();
@@ -126,8 +123,84 @@ mod tests {
             Fv::StrList(vec!["603538,17".into(), "none".into()])
         );
 
-        // Test empty string
         let res_empty = op_str.process(&[Fv::Str("".into())]).unwrap();
         assert_eq!(res_empty, Fv::StrList(vec!["none".into(), "none".into()]));
+    }
+
+    #[test]
+    fn test_json_extract_bool_and_number() {
+        let op = JsonExtractList::new(Some("tag".into()), 3, "none".into());
+        let input = Fv::Str("[{\"tag\":true},{\"tag\":123.4}]".into());
+        let res = op.process(&[input]).unwrap();
+        assert_eq!(
+            res,
+            Fv::StrList(vec!["True".into(), "123.4".into(), "none".into()])
+        );
+    }
+
+    #[test]
+    fn test_json_extract_key_missing() {
+        let op = JsonExtractList::new(Some("tag".into()), 3, "none".into());
+        let input = Fv::Str("[{\"not_tag\":\"value\"}]".into());
+        let res = op.process(&[input]).unwrap();
+        assert_eq!(
+            res,
+            Fv::StrList(vec!["none".into(), "none".into(), "none".into()])
+        );
+    }
+
+    #[test]
+    fn test_json_extract_invalid() {
+        let op = JsonExtractList::new(Some("tag".into()), 3, "none".into());
+        let input = Fv::Str("invalid json strings { }".into());
+        let res = op.process(&[input]).unwrap();
+        assert_eq!(
+            res,
+            Fv::StrList(vec!["none".into(), "none".into(), "none".into()])
+        );
+    }
+
+    #[test]
+    fn test_json_extract_empty_string_value() {
+        let op = JsonExtractList::new(Some("tag".into()), 3, "none".into());
+        let input = Fv::Str("[{\"tag\":\"\"}]".into());
+        let res = op.process(&[input]).unwrap();
+        assert_eq!(
+            res,
+            Fv::StrList(vec!["".into(), "none".into(), "none".into()])
+        );
+    }
+
+    #[test]
+    fn test_json_extract_empty_array() {
+        let op = JsonExtractList::new(Some("tag".into()), 3, "none".into());
+        let input = Fv::Str("[]".into());
+        let res = op.process(&[input]).unwrap();
+        assert_eq!(
+            res,
+            Fv::StrList(vec!["none".into(), "none".into(), "none".into()])
+        );
+    }
+
+    #[test]
+    fn test_json_extract_escaped_string() {
+        let op = JsonExtractList::new(Some("tag".into()), 3, "none".into());
+        let input = Fv::Str("[{\"tag\":\"hello\\\"world\"}]".into());
+        let res = op.process(&[input]).unwrap();
+        assert_eq!(
+            res,
+            Fv::StrList(vec!["hello\"world".into(), "none".into(), "none".into()])
+        );
+    }
+
+    #[test]
+    fn test_json_extract_no_key_with_objects() {
+        let op = JsonExtractList::new(None, 3, "none".into());
+        let input = Fv::Str("[\"a\",\"b\"]".into());
+        let res = op.process(&[input]).unwrap();
+        assert_eq!(
+            res,
+            Fv::StrList(vec!["a".into(), "b".into(), "none".into()])
+        );
     }
 }
