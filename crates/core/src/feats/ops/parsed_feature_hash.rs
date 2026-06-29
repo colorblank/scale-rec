@@ -82,7 +82,7 @@ impl ParsedFeatureHash {
         };
         let mut result = Vec::new();
         if !s.is_empty() {
-            if let Ok(Value::Array(arr)) = serde_json::from_str::<Value>(s) {
+            if let Ok(Value::Array(arr)) = serde_json::from_str(s) {
                 for item in arr {
                     if let Some(k) = &self.key {
                         if let Some(val) = item.get(k) {
@@ -115,9 +115,8 @@ impl ParsedFeatureHash {
         let mut result = Vec::new();
         if !s.is_empty() {
             for item in s.split(&self.sep1) {
-                let parts: Vec<&str> = item.split(&self.sep2).collect();
-                if self.key_index < parts.len() {
-                    result.push(parts[self.key_index].to_string());
+                if let Some(part) = item.split(&self.sep2).nth(self.key_index) {
+                    result.push(part.to_string());
                 }
             }
         }
@@ -131,11 +130,9 @@ impl ParsedFeatureHash {
         };
         let mut result = Vec::with_capacity(list.len());
         for item in list {
-            let parts: Vec<&str> = item.split(&self.sep).collect();
-            if self.key_index < parts.len() {
-                result.push(parts[self.key_index].to_string());
-            } else {
-                result.push(String::new());
+            match item.split(&self.sep).nth(self.key_index) {
+                Some(part) => result.push(part.to_string()),
+                None => result.push(String::new()),
             }
         }
         Ok(self.normalize(result))
@@ -163,9 +160,7 @@ impl ParsedFeatureHash {
         let mut result = Vec::new();
         if !s.is_empty() {
             for item in s.split(&self.sep1) {
-                let parts: Vec<&str> = item.split(&self.sep2).collect();
-                if self.key_index < parts.len() {
-                    let token = parts[self.key_index];
+                if let Some(token) = item.split(&self.sep2).nth(self.key_index) {
                     if !token.is_empty() {
                         result.extend(token.split(&self.sep).map(|s| s.to_string()));
                     }

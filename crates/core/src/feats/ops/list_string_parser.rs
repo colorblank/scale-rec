@@ -26,11 +26,9 @@ impl CustomOp for ListStringParser {
         };
         let mut result = Vec::with_capacity(list.len());
         for item in list {
-            let parts: Vec<&str> = item.split(&self.sep).collect();
-            if self.key_index < parts.len() {
-                result.push(parts[self.key_index].to_string());
-            } else {
-                result.push("".to_string()); // Or preserve pad_val if needed, but simple is better.
+            match item.split(&self.sep).nth(self.key_index) {
+                Some(part) => result.push(part.to_string()),
+                None => result.push(String::new()),
             }
         }
         Ok(Fv::StrList(result))
@@ -44,11 +42,9 @@ impl CustomOp for ListStringParser {
                 Fv::StrList(list) => {
                     let mut result = Vec::with_capacity(list.len());
                     for item in list {
-                        let parts: Vec<&str> = item.split(&self.sep).collect();
-                        if self.key_index < parts.len() {
-                            result.push(parts[self.key_index].to_string());
-                        } else {
-                            result.push("".to_string());
+                        match item.split(&self.sep).nth(self.key_index) {
+                            Some(part) => result.push(part.to_string()),
+                            None => result.push(String::new()),
                         }
                     }
                     results.push(Fv::StrList(result));

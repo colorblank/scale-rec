@@ -176,8 +176,14 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 | A | `ExpressionOp` 实现专用 `process_batch()`，复用 Rhai `Scope` 和变量名，避免默认 batch fallback 每行重建输入向量和变量名 | 8996.1 / 9270.4 / 9562.0 | 8995.4 / 9450.0 / 9573.6 | 保留；总吞吐基本持平到小幅提升，`ExpressionOp` 从约 0.0097/0.0094/0.0093s 降到 0.0087/0.0084/0.0082s |
 | B | `FeatureHash` 标量单输入 cache hit 避免构造 key；单输入 list 直接逐元素 hash，避免每行中间 `Vec<String>` | 8995.4 / 9450.0 / 9573.6 | 9807.5 / 10367.4 / 10517.9 | 保留；`FeatureHash` 从约 0.066s 降到 0.048s |
 | C | `FeatSession` 初始化时缓存 source default，`parse_columns()` 复用缓存 | 9807.5 / 10367.4 / 10517.9 | 9764.6 / 10265.1 / 10428.3 | 回滚；三档 batch 均无提升 |
+| D | `ListStringParser` 去掉 `collect::<Vec<&str>>()`，用 `nth(key_index)`；`ParsedFeatureHash` `parse_structured`/`parse_list_split`/`parse_structured_flat_split` 同样处理 | ~9060 / ~9960 / ~10180 | ~9070 / ~9970 / ~10190 | 保留；这些算子不在前 3 热点中，改动使代码一致且减少分配 |
+| E | `StringConcat`/`ConcatHash` 去掉 `collect::<Vec<_>>().join()` 中间 Vec 分配，改为直接 `push_str` 累积；对 `Fv::Str` 直接引用避免 `to_string()` 分配 | ~9070 / ~9970 / ~10190 | ~9070 / ~9970 / ~10190 | 保留；总吞吐持平（算子本身 <0.003s，改动后减少分配但不在热点路径上） |
+
+`JsonExtractList` 本次新增 `extract_values()` 辅助函数（不改变逻辑，仅分解 padding/truncation 逻辑到单独方法）。benchmark 未观察到显著变化。
 
 撤回尝试：`JsonExtractList` 预分配 `pad_len` 并在收够输出后停止遍历。benchmark 未提升（约 4012/4259/4224 rows/s），原因是 `serde_json::from_str` 仍完整解析 JSON，减少后续转换不足以抵消波动；该改动未保留。
+
+撤回尝试：`JsonExtractList` + `ParsedFeatureHash` 换用 `simd-json` 替代 `serde_json::from_str`。由于 demo 数据 JSON 字符串极短（15-100 字节），simd-json 的 SIMD 加速优势无法发挥，且为获取 `&mut str` 需额外 clone 输入字符串，提升 < 1%。该改动未保留。
 
 ## 新增/修改文件清单
 
@@ -191,6 +197,11 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 | `crates/core/src/feats/executor.rs` | 优化单输出列赋值，避免不必要的结果列 clone |
 | `crates/core/src/feats/ops/expression.rs` | `ExpressionOp` 专用 batch 路径，复用 Rhai scope 和变量名 |
 | `crates/core/src/feats/ops/feature_hash.rs` | 优化单输入标量/list batch hash 快路径，减少 key 和中间列表分配 |
+| `crates/core/src/feats/ops/list_string_parser.rs` | 去掉 `collect::<Vec<&str>>()` 改用 `nth(key_index)`，消除中间 Vec 分配 |
+| `crates/core/src/feats/ops/parsed_feature_hash.rs` | 同上，`parse_structured`/`parse_list_split`/`parse_structured_flat_split` 去掉 Collect Vec |
+| `crates/core/src/feats/ops/string_concat.rs` | 去掉 `collect::<Vec<_>>().join()` 改用直接 `push_str` 累积，`Fv::Str` 零分配拼接 |
+| `crates/core/src/feats/ops/concat_hash.rs` | 同上 |
+| `crates/core/src/feats/ops/json_extract_list.rs` | 提取 `extract_values()` 辅助函数，代码逻辑不变 |
 | `crates/core/src/feats/ops/mod.rs` | 默认 batch fallback 复用行缓冲，减少逐行分配 |
 | `crates/core/src/feats/tensor_utils.rs` | 新增：`feature_column_to_vec()` 共享 pooling/padding |
 | `Cargo.toml` | 改为 `[workspace]`，members = `crates/core` |

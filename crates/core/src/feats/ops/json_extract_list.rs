@@ -18,6 +18,44 @@ impl JsonExtractList {
             pad_val,
         }
     }
+
+    fn extract_values(&self, s: &str) -> Vec<String> {
+        let mut result = Vec::new();
+        if let Ok(Value::Array(arr)) = serde_json::from_str(s) {
+            for item in arr {
+                if let Some(k) = &self.key {
+                    if let Some(val) = item.get(k) {
+                        if let Some(v_str) = val.as_str() {
+                            result.push(v_str.to_string());
+                        } else if let Some(b) = val.as_bool() {
+                            result.push(if b {
+                                "True".to_string()
+                            } else {
+                                "False".to_string()
+                            });
+                        } else {
+                            result.push(val.to_string());
+                        }
+                    }
+                } else if let Some(v_str) = item.as_str() {
+                    result.push(v_str.to_string());
+                } else if let Some(b) = item.as_bool() {
+                    result.push(if b {
+                        "True".to_string()
+                    } else {
+                        "False".to_string()
+                    });
+                } else {
+                    result.push(item.to_string());
+                }
+            }
+        }
+        while result.len() < self.pad_len {
+            result.push(self.pad_val.clone());
+        }
+        result.truncate(self.pad_len);
+        result
+    }
 }
 
 impl CustomOp for JsonExtractList {
@@ -30,46 +68,7 @@ impl CustomOp for JsonExtractList {
             Fv::Str(s) => s.as_str(),
             _ => "",
         };
-        let mut result = Vec::new();
-        if !s.is_empty() {
-            if let Ok(Value::Array(arr)) = serde_json::from_str(s) {
-                for item in arr {
-                    if let Some(k) = &self.key {
-                        if let Some(val) = item.get(k) {
-                            if let Some(v_str) = val.as_str() {
-                                result.push(v_str.to_string());
-                            } else if let Some(b) = val.as_bool() {
-                                result.push(if b {
-                                    "True".to_string()
-                                } else {
-                                    "False".to_string()
-                                });
-                            } else {
-                                // Fallback to raw string representation (e.g. for numbers)
-                                result.push(val.to_string());
-                            }
-                        }
-                    } else {
-                        if let Some(v_str) = item.as_str() {
-                            result.push(v_str.to_string());
-                        } else if let Some(b) = item.as_bool() {
-                            result.push(if b {
-                                "True".to_string()
-                            } else {
-                                "False".to_string()
-                            });
-                        } else {
-                            result.push(item.to_string());
-                        }
-                    }
-                }
-            }
-        }
-        while result.len() < self.pad_len {
-            result.push(self.pad_val.clone());
-        }
-        result.truncate(self.pad_len);
-        Ok(Fv::StrList(result))
+        Ok(Fv::StrList(self.extract_values(s)))
     }
 
     fn process_batch(&self, inputs: &[&[Fv]], n_rows: usize) -> Result<Vec<Fv>, String> {
@@ -80,45 +79,7 @@ impl CustomOp for JsonExtractList {
                 Fv::Str(s) => s.as_str(),
                 _ => "",
             };
-            let mut result = Vec::new();
-            if !s.is_empty() {
-                if let Ok(Value::Array(arr)) = serde_json::from_str(s) {
-                    for item in arr {
-                        if let Some(k) = &self.key {
-                            if let Some(val) = item.get(k) {
-                                if let Some(v_str) = val.as_str() {
-                                    result.push(v_str.to_string());
-                                } else if let Some(b) = val.as_bool() {
-                                    result.push(if b {
-                                        "True".to_string()
-                                    } else {
-                                        "False".to_string()
-                                    });
-                                } else {
-                                    result.push(val.to_string());
-                                }
-                            }
-                        } else {
-                            if let Some(v_str) = item.as_str() {
-                                result.push(v_str.to_string());
-                            } else if let Some(b) = item.as_bool() {
-                                result.push(if b {
-                                    "True".to_string()
-                                } else {
-                                    "False".to_string()
-                                });
-                            } else {
-                                result.push(item.to_string());
-                            }
-                        }
-                    }
-                }
-            }
-            while result.len() < self.pad_len {
-                result.push(self.pad_val.clone());
-            }
-            result.truncate(self.pad_len);
-            results.push(Fv::StrList(result));
+            results.push(Fv::StrList(self.extract_values(s)));
         }
         Ok(results)
     }

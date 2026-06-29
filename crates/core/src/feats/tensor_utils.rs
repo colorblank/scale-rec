@@ -18,8 +18,8 @@ pub fn feature_column_to_vec(
     col: &[Fv],
     n: usize,
 ) -> Result<FeatureColumn, String> {
-    let use_sequence = spec.pooling != PoolingStrategy::First
-        && col.iter().any(|v| matches!(v, Fv::IntList(_)));
+    let use_sequence =
+        spec.pooling != PoolingStrategy::First && col.iter().any(|v| matches!(v, Fv::IntList(_)));
 
     if use_sequence {
         let seq_len = spec

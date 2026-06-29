@@ -20,11 +20,13 @@ impl CustomOp for StringConcat {
     }
 
     fn process(&self, inputs: &[Fv]) -> Result<Fv, String> {
-        let key: String = inputs
-            .iter()
-            .map(|v| v.to_string())
-            .collect::<Vec<_>>()
-            .join(&self.separator);
+        let mut key = String::new();
+        for (i, v) in inputs.iter().enumerate() {
+            if i > 0 {
+                key.push_str(&self.separator);
+            }
+            push_fv(&mut key, v);
+        }
         Ok(Fv::Str(key))
     }
 
@@ -34,20 +36,25 @@ impl CustomOp for StringConcat {
         }
         let mut results: Vec<Fv> = Vec::with_capacity(n_rows);
         for row in 0..n_rows {
-            let key: String = inputs
-                .iter()
-                .map(|col| {
-                    if row < col.len() {
-                        col[row].to_string()
-                    } else {
-                        String::new()
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join(&self.separator);
+            let mut key = String::new();
+            for (ci, col) in inputs.iter().enumerate() {
+                if ci > 0 {
+                    key.push_str(&self.separator);
+                }
+                if row < col.len() {
+                    push_fv(&mut key, &col[row]);
+                }
+            }
             results.push(Fv::Str(key));
         }
         Ok(results)
+    }
+}
+
+fn push_fv(buf: &mut String, v: &Fv) {
+    match v {
+        Fv::Str(s) => buf.push_str(s),
+        other => buf.push_str(&other.to_string()),
     }
 }
 
