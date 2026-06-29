@@ -1,0 +1,41 @@
+type: pepnet
+prior_dim: 16
+deep_hidden_dims: [64, 32]
+shared_bottom_dims: [32, 16]
+output_contract:
+  version: 1
+  graph:
+    towers:
+      - {name: click_logit, kind: binary_logit, hidden_dims: [16, 8]}
+      - {name: cvr_logit, kind: binary_logit, hidden_dims: [16, 8]}
+      - {name: detail_logit, kind: binary_logit, hidden_dims: [16, 8]}
+      - {name: stock_logit, kind: binary_logit, hidden_dims: [16, 8]}
+      - {name: stay_logit, kind: binary_logit, hidden_dims: [16, 8]}
+    relations:
+      - {name: click_prob, op: sigmoid, inputs: [click_logit]}
+      - {name: cvr_prob, op: sigmoid, inputs: [cvr_logit]}
+      - {name: ctcvr_prob, op: multiply, inputs: [click_prob, cvr_prob]}
+      - {name: detail_prob, op: sigmoid, inputs: [detail_logit]}
+      - {name: ct_detail, op: multiply, inputs: [click_prob, detail_prob]}
+      - {name: stock_prob, op: sigmoid, inputs: [stock_logit]}
+      - {name: ct_stock, op: multiply, inputs: [click_prob, stock_prob]}
+      - {name: stay_prob, op: sigmoid, inputs: [stay_logit]}
+      - {name: ct_stay, op: multiply, inputs: [detail_prob, stay_prob]}
+  objectives:
+    - {name: click_loss, source: click_logit, label: is_click, loss: {type: binary_cross_entropy_with_logits}}
+    - {name: cvr_loss, source: cvr_logit, label: is_cvr, loss: {type: binary_cross_entropy_with_logits}}
+    - {name: detail_loss, source: detail_logit, label: is_click_detail, loss: {type: binary_cross_entropy_with_logits}}
+    - {name: stock_loss, source: stock_logit, label: is_click_stock, loss: {type: binary_cross_entropy_with_logits}}
+    - {name: stay_loss, source: stay_logit, label: stay_time_label, loss: {type: binary_cross_entropy_with_logits}}
+  metrics:
+    - {name: click_auc, source: click_prob, label: is_click, type: auc}
+    - {name: cvr_auc, source: ctcvr_prob, label: is_cvr, type: auc}
+    - {name: detail_auc, source: ct_detail, label: is_click_detail, type: auc}
+    - {name: stock_auc, source: ct_stock, label: is_click_stock, type: auc}
+    - {name: stay_auc, source: ct_stay, label: stay_time_label, type: auc}
+  outputs:
+    - {name: ctr, source: click_prob}
+    - {name: ctcvr, source: ctcvr_prob}
+    - {name: detail_ratio, source: ct_detail}
+    - {name: stock_ratio, source: ct_stock}
+    - {name: stay_ratio, source: ct_stay}

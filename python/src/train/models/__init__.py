@@ -15,6 +15,7 @@ from .esmm import ESMM, default_task_config
 from .gdcn_esmm import GDCNESMM
 from .lr import LogisticRegression
 from .mmoe import MMoE
+from .pepnet import PEPNet
 from .rankmixer import RankMixerModel
 from .token_mixer_large import TokenMixerLargeModel
 from .unimixer.model import UniMixerModel
@@ -393,6 +394,25 @@ def _build_token_mixer_large(
     )
 
 
+def _build_pepnet(
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
+) -> PEPNet:
+    output_contract = _parse_output_contract(params)
+    task_config = _parse_task_config(params.get("task_config"))
+    if task_config is None and output_contract is None:
+        raise ValueError("PEPNet requires task_config or output_contract")
+    return PEPNet(
+        features,
+        prior_dim=params.get("prior_dim", 16),
+        deep_hidden_dims=params.get("deep_hidden_dims", []),
+        shared_bottom_dims=params.get("shared_bottom_dims", []),
+        task_config=task_config,
+        pooling_map=params.get("_pooling_map"),
+        total_dim=params.get("_total_dim"),
+        output_contract=output_contract,
+    )
+
+
 def _build_rankmixer(
     features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
 ) -> RankMixerModel:
@@ -423,3 +443,4 @@ register_model("gdcn_esmm", _spec_esmm, _build_gdcn_esmm)
 register_model("unimixer", _spec_unimixer, _build_unimixer)
 register_model("token_mixer_large", _spec_unimixer, _build_token_mixer_large)
 register_model("rankmixer", _spec_unimixer, _build_rankmixer)
+register_model("pepnet", _spec_esmm, _build_pepnet)

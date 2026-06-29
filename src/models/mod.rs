@@ -24,6 +24,8 @@ pub mod mmoe;
 pub mod output_contract;
 /// Contract-driven task towers, relation graph and public output projection.
 pub mod output_head;
+/// PEPNet: Parameter and Embedding Personalized Network。
+pub mod pepnet;
 /// RankMixer：Token Mixing + Per-token FFN 排序模型。
 pub mod rankmixer;
 /// TokenMixer-Large：Mixing & Reverting 大规模排序模型。
@@ -213,6 +215,7 @@ static REGISTRY: LazyLock<HashMap<&'static str, BuildFn>> = LazyLock::new(|| {
     m.insert("unimixer", build_unimixer);
     m.insert("token_mixer_large", build_token_mixer_large);
     m.insert("rankmixer", build_rankmixer);
+    m.insert("pepnet", build_pepnet);
     m
 });
 
@@ -545,6 +548,41 @@ fn build_rankmixer(
     )?))
 }
 
+fn build_pepnet(
+    vb: VarBuilder,
+    features: &[FeatureSpec],
+    _tokenizer: Option<FeatureTokenizer>,
+    params: &serde_yaml::Value,
+    _options: &ModelBuildOptions,
+) -> Result<Box<dyn Model>> {
+    let prior_dim = yaml_usize(params, "prior_dim", 16);
+    let deep_hidden_dims: Vec<usize> = yaml_usize_seq(params, "deep_hidden_dims");
+    let shared_bottom_dims: Vec<usize> = yaml_usize_seq(params, "shared_bottom_dims");
+    if let Some(contract) = parse_output_contract_param(params)? {
+        return Ok(Box::new(pepnet::PEPNet::with_output_contract(
+            vb,
+            features,
+            prior_dim,
+            &deep_hidden_dims,
+            &shared_bottom_dims,
+            &contract,
+        )?));
+    }
+    let task_config = params
+        .get("task_config")
+        .ok_or_else(|| candle_core::Error::Msg("PEPNet requires task_config".into()))?;
+    let task_config = serde_yaml::from_value(task_config.clone())
+        .map_err(|e| candle_core::Error::Msg(format!("parse pepnet task_config: {}", e)))?;
+    Ok(Box::new(pepnet::PEPNet::new(
+        vb,
+        features,
+        prior_dim,
+        &deep_hidden_dims,
+        &shared_bottom_dims,
+        &task_config,
+    )?))
+}
+
 // ── YAML param helpers ──
 
 fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result<()> {
@@ -638,6 +676,18 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
                 "num_blocks",
                 "num_heads",
                 "hidden_factor",
+                "task_config",
+            ],
+            &["task_config"],
+        ),
+        "pepnet" => (
+            &[
+                "tasks",
+                "label_col_map",
+                "metrics",
+                "prior_dim",
+                "deep_hidden_dims",
+                "shared_bottom_dims",
                 "task_config",
             ],
             &["task_config"],

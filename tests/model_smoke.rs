@@ -7,7 +7,7 @@ use scale_rec::layers::towers::{
     apply_relation, Activation, MultiTaskConfig, RelationOp, TaskRelation, TowerConfig,
 };
 use scale_rec::models::{
-    deepfm, esmm, gdcn_esmm, lr, mmoe, Model, ModelConfig, ModelOutput, OutputKind,
+    deepfm, esmm, gdcn_esmm, lr, mmoe, pepnet, Model, ModelConfig, ModelOutput, OutputKind,
 };
 
 fn dummy_features() -> Vec<FeatureSpec> {
@@ -162,6 +162,39 @@ fn test_gdcn_esmm_forward_shape() {
 }
 
 #[test]
+fn test_pepnet_forward_shape() {
+    let tc = MultiTaskConfig {
+        towers: vec![
+            TowerConfig {
+                name: "click".into(),
+                hidden_dims: vec![4],
+                output_dim: 1,
+                activation: Activation::Relu,
+                output_kind: OutputKind::BinaryLogit,
+            },
+            TowerConfig {
+                name: "cvr".into(),
+                hidden_dims: vec![4],
+                output_dim: 1,
+                activation: Activation::Relu,
+                output_kind: OutputKind::BinaryLogit,
+            },
+        ],
+        relations: vec![TaskRelation {
+            target: "ctcvr".into(),
+            sources: vec!["click".into(), "cvr".into()],
+            op: RelationOp::Multiply,
+        }],
+    };
+    let model = pepnet::PEPNet::new(vb(), &dummy_features(), 4, &[8], &[8], &tc).unwrap();
+    let out = model.forward(&dummy_inputs(3)).unwrap();
+    assert_eq!(out.len(), 3);
+    assert_eq!(out.tensor("click").unwrap().dims(), &[3, 1]);
+    assert_eq!(out.tensor("cvr").unwrap().dims(), &[3, 1]);
+    assert_eq!(out.tensor("ctcvr").unwrap().dims(), &[3, 1]);
+}
+
+#[test]
 fn test_modelconfig_build_gdcn_esmm() {
     let params = serde_yaml::from_str(
         r#"
@@ -223,6 +256,7 @@ fn test_all_example_models_build_with_native_output_contract() {
         "unimixer.yaml",
         "token_mixer_large.yaml",
         "rankmixer.yaml",
+        "pepnet.yaml",
     ];
     for name in configs {
         let path = format!("{}/examples/models/{name}", env!("CARGO_MANIFEST_DIR"));
