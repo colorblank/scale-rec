@@ -27,6 +27,19 @@ from .esmm import _probability_for_relation
 from .output_head import OutputHead
 
 
+class GateNU(nn.Module):
+    """Gate Neural Unit: ReLU hidden layer followed by gamma-scaled sigmoid gate."""
+
+    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int, gamma: float = 2.0) -> None:
+        super().__init__()
+        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, output_dim)
+        self.gamma = gamma
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.gamma * torch.sigmoid(self.fc2(torch.relu(self.fc1(x))))
+
+
 class PEPNet(nn.Module):
     """PEPNet: personalized embedding and parameter gating for multi-task learning."""
 
@@ -52,8 +65,8 @@ class PEPNet(nn.Module):
         # Prior projection: num_features → prior_dim
         self.prior_proj = nn.Linear(num_features, prior_dim, bias=False)
 
-        # EPNet gate: prior_dim → total_dim (learned bias for sigmoid centering)
-        self.epnet_gate = nn.Linear(prior_dim, total_dim, bias=True)
+        # EPNet gate: prior_dim → total_dim, scaled to (0, 2) as in Gate NU.
+        self.epnet_gate = GateNU(prior_dim, prior_dim, total_dim)
 
         # Deep MLP
         self.has_deep = bool(deep_hidden_dims)
@@ -72,8 +85,8 @@ class PEPNet(nn.Module):
         else:
             shared_dim = fusion_dim
 
-        # PPNet gate: prior_dim → shared_dim
-        self.ppnet_gate = nn.Linear(prior_dim, shared_dim, bias=True)
+        # PPNet gate: prior_dim → shared_dim, scaled to (0, 2) as in Gate NU.
+        self.ppnet_gate = GateNU(prior_dim, prior_dim, shared_dim)
 
         if output_contract is not None:
             self.output_head = OutputHead(output_contract, {"shared": shared_dim})
@@ -109,10 +122,11 @@ class PEPNet(nn.Module):
         prior_parts = [emb.mean(dim=2, keepdim=True) for emb in stacked]  # [batch, 1, 1]
         prior_raw = torch.cat(prior_parts, dim=1)  # [batch, num_features, 1]
         prior_raw = prior_raw.squeeze(2)           # [batch, num_features]
+        prior_raw = prior_raw.detach()
         prior = self.prior_proj(prior_raw)         # [batch, prior_dim]
 
         # EPNet gate on embeddings
-        epnet_scale = torch.sigmoid(self.epnet_gate(prior))  # [batch, total_dim]
+        epnet_scale = self.epnet_gate(prior)  # [batch, total_dim]
         dense_concat = torch.cat([e.squeeze(1) for e in stacked], dim=1)  # [batch, total_dim]
         gated = dense_concat * epnet_scale
 
@@ -121,7 +135,7 @@ class PEPNet(nn.Module):
             shared = self.shared_bottom(shared)
 
         # PPNet gate on shared representation
-        ppnet_scale = torch.sigmoid(self.ppnet_gate(prior))  # [batch, shared_dim]
+        ppnet_scale = self.ppnet_gate(prior)  # [batch, shared_dim]
         gated_shared = shared * ppnet_scale
         return gated_shared
 

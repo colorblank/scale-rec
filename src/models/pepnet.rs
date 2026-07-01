@@ -17,14 +17,37 @@ use candle_core::{Result, Tensor};
 use candle_nn::{linear, linear_no_bias, Module, VarBuilder};
 use std::collections::HashMap;
 
+struct GateNu {
+    fc1: candle_nn::Linear,
+    fc2: candle_nn::Linear,
+    gamma: f64,
+}
+
+impl GateNu {
+    fn new(vb: VarBuilder, input_dim: usize, hidden_dim: usize, output_dim: usize) -> Result<Self> {
+        Ok(Self {
+            fc1: linear(input_dim, hidden_dim, vb.pp("fc1"))?,
+            fc2: linear(hidden_dim, output_dim, vb.pp("fc2"))?,
+            gamma: 2.0,
+        })
+    }
+}
+
+impl Module for GateNu {
+    fn forward(&self, x: &Tensor) -> Result<Tensor> {
+        let hidden = self.fc1.forward(x)?.relu()?;
+        candle_nn::ops::sigmoid(&self.fc2.forward(&hidden)?)?.affine(self.gamma, 0.0)
+    }
+}
+
 pub struct PEPNet {
     embeddings: FeatureEmbeddings,
     /// Projects feature-wise pooled prior → fixed-dim prior representation.
     prior_proj: candle_nn::Linear,
     /// EPNet gate: prior_rep → [total_dim] sigmoid gate applied to embeddings.
-    epnet_gate: candle_nn::Linear,
+    epnet_gate: GateNu,
     /// PPNet gate: prior_rep → [shared_dim] sigmoid gate applied to shared bottom.
-    ppnet_gate: candle_nn::Linear,
+    ppnet_gate: GateNu,
     deep: Option<Mlp>,
     shared_bottom: Option<Mlp>,
     towers: Vec<(String, TaskTower)>,
@@ -33,8 +56,8 @@ pub struct PEPNet {
 }
 
 impl PEPNet {
-    fn build_gate(vb: VarBuilder, prior_dim: usize, gate_dim: usize) -> Result<candle_nn::Linear> {
-        linear(prior_dim, gate_dim, vb)
+    fn build_gate(vb: VarBuilder, prior_dim: usize, gate_dim: usize) -> Result<GateNu> {
+        GateNu::new(vb, prior_dim, prior_dim, gate_dim)
     }
 
     pub fn new(
@@ -50,11 +73,6 @@ impl PEPNet {
 
         let prior_proj = linear_no_bias(embeddings.num_features, prior_dim, vb.pp("prior_proj"))?;
         let epnet_gate = Self::build_gate(vb.pp("epnet_gate"), prior_dim, total_dim)?;
-        let ppnet_gate = Self::build_gate(
-            vb.pp("ppnet_gate"),
-            prior_dim,
-            shared_bottom_dims.last().copied().unwrap_or(total_dim),
-        )?;
 
         let (deep, fusion_dim) = if deep_hidden_dims.is_empty() {
             (None, total_dim)
@@ -83,6 +101,7 @@ impl PEPNet {
             )?;
             (Some(mlp), output_dim)
         };
+        let ppnet_gate = Self::build_gate(vb.pp("ppnet_gate"), prior_dim, shared_dim)?;
 
         let mut towers = Vec::with_capacity(task_config.towers.len());
         for tower_config in &task_config.towers {
@@ -122,11 +141,6 @@ impl PEPNet {
 
         let prior_proj = linear_no_bias(embeddings.num_features, prior_dim, vb.pp("prior_proj"))?;
         let epnet_gate = Self::build_gate(vb.pp("epnet_gate"), prior_dim, total_dim)?;
-        let ppnet_gate = Self::build_gate(
-            vb.pp("ppnet_gate"),
-            prior_dim,
-            shared_bottom_dims.last().copied().unwrap_or(total_dim),
-        )?;
 
         let (deep, fusion_dim) = if deep_hidden_dims.is_empty() {
             (None, total_dim)
@@ -159,6 +173,7 @@ impl PEPNet {
                 output_dim,
             )
         };
+        let ppnet_gate = Self::build_gate(vb.pp("ppnet_gate"), prior_dim, shared_dim)?;
 
         let output_head = OutputHead::new(
             contract,
@@ -196,7 +211,6 @@ impl PEPNet {
 
         // EPNet gate on embeddings
         let epnet_scale = self.epnet_gate.forward(&prior)?; // [batch, total_dim]
-        let epnet_scale = candle_nn::ops::sigmoid(&epnet_scale)?;
         let dense_concat = Tensor::cat(
             &stacked
                 .iter()
@@ -216,7 +230,6 @@ impl PEPNet {
 
         // PPNet gate on shared representation
         let ppnet_scale = self.ppnet_gate.forward(&prior)?; // [batch, shared_dim]
-        let ppnet_scale = candle_nn::ops::sigmoid(&ppnet_scale)?;
         let gated_shared = shared.broadcast_mul(&ppnet_scale)?;
 
         Ok(gated_shared)

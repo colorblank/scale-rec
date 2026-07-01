@@ -31,6 +31,7 @@ def test_demo_model_configs_exist_and_are_current():
         "demo_unimixer": EXAMPLES_DIR / "models" / "unimixer.yaml",
         "demo_token_mixer_large": EXAMPLES_DIR / "models" / "token_mixer_large.yaml",
         "demo_rankmixer": EXAMPLES_DIR / "models" / "rankmixer.yaml",
+        "demo_pepnet": EXAMPLES_DIR / "models" / "pepnet.yaml",
     }
     ancillary_configs = [
         EXAMPLES_DIR / "shared" / "train_defaults.yaml",
@@ -49,6 +50,7 @@ def test_demo_model_configs_exist_and_are_current():
         "models/unimixer.yaml",
         "models/token_mixer_large.yaml",
         "models/rankmixer.yaml",
+        "models/pepnet.yaml",
         "shared/train_defaults.yaml",
         "shared/demo_label_policy.yaml",
         "shared/feature_config_demo.yaml",
@@ -157,6 +159,7 @@ def test_demo_model_path_index_covers_all_example_models():
         "demo_unimixer": EXAMPLES_DIR / "models" / "unimixer.yaml",
         "demo_token_mixer_large": EXAMPLES_DIR / "models" / "token_mixer_large.yaml",
         "demo_rankmixer": EXAMPLES_DIR / "models" / "rankmixer.yaml",
+        "demo_pepnet": EXAMPLES_DIR / "models" / "pepnet.yaml",
     }
 
 

@@ -195,6 +195,24 @@ fn test_pepnet_forward_shape() {
 }
 
 #[test]
+fn test_pepnet_forward_shape_with_deep_without_shared_bottom() {
+    let tc = MultiTaskConfig {
+        towers: vec![TowerConfig {
+            name: "click".into(),
+            hidden_dims: vec![4],
+            output_dim: 1,
+            activation: Activation::Relu,
+            output_kind: OutputKind::BinaryLogit,
+        }],
+        relations: vec![],
+    };
+    let model = pepnet::PEPNet::new(vb(), &dummy_features(), 4, &[8], &[], &tc).unwrap();
+    let out = model.forward(&dummy_inputs(3)).unwrap();
+    assert_eq!(out.len(), 1);
+    assert_eq!(out.tensor("click").unwrap().dims(), &[3, 1]);
+}
+
+#[test]
 fn test_modelconfig_build_gdcn_esmm() {
     let params = serde_yaml::from_str(
         r#"

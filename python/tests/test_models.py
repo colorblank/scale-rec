@@ -14,6 +14,7 @@ from train.models.gdcn_esmm import GDCNESMM
 from train.models.lr import LogisticRegression
 from train.models.mmoe import MMoE
 from train.models.output import ModelOutput
+from train.models.pepnet import GateNU, PEPNet
 
 FEATURES = [("a", 10, 4), ("b", 5, 4)]
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -103,6 +104,7 @@ def test_native_output_contract_esmm_exposes_public_and_internal_outputs():
         "unimixer.yaml",
         "token_mixer_large.yaml",
         "rankmixer.yaml",
+        "pepnet.yaml",
     ],
 )
 def test_all_example_models_use_native_output_contract(config_name):
@@ -276,6 +278,28 @@ def test_gdcn_esmm_builds_from_model_config():
 
     assert set(out.names()) == {"view", "buy", "ctbuy"}
     assert spec["task_names"] == ["view", "buy"]
+
+
+def test_gate_nu_scales_to_paper_range():
+    gate = GateNU(input_dim=3, hidden_dim=4, output_dim=2)
+
+    out = gate(torch.randn(5, 3))
+
+    assert out.shape == (5, 2)
+    assert torch.all(out >= 0)
+    assert torch.all(out <= 2)
+
+
+def test_pepnet_forward_with_deep_without_shared_bottom():
+    task_config = MultiTaskConfig(
+        towers=[TowerConfig("click", [4], 1, Activation.RELU)],
+        relations=[],
+    )
+    model = PEPNet(FEATURES, prior_dim=4, deep_hidden_dims=[8], task_config=task_config)
+
+    out = model(_inputs(3))
+
+    assert out.tensor("click").shape == (3, 1)
 
 
 def test_unimixer_forward():
