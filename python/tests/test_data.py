@@ -1,18 +1,33 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import random
 from pathlib import Path
 
 import pytest
 
+from scale_rec_demo.generate_demo_data import (
+    DEFAULT_LABEL_POLICY,
+    DEMO_NULL_MARKERS,
+    SOURCE_NAMES,
+    _inject_demo_nulls,
+    _load_label_policy,
+    _make_item,
+    _make_row,
+)
 from train.app.cli import resolve_data_paths
 from train.app.data import (
     build_item_index,
     estimate_files_batches,
+    stream_file_batches,
     stream_files_batches,
     validate_matching_text_format,
 )
 from train.core.config import FlowConfig
+from train.core.dag import FeatureDag
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_build_item_index_honors_null_markers(tmp_path: Path):
@@ -32,6 +47,52 @@ def test_build_item_index_honors_null_markers(tmp_path: Path):
 
     assert index["1"]["category"] == ""
     assert index["2"]["category"] == "books"
+
+
+def test_demo_null_markers_can_be_preprocessed(tmp_path: Path):
+    flow_config = FlowConfig.from_yaml(str(REPO_ROOT / "examples/shared/feature_config_demo.yaml"))
+    policy = _load_label_policy(DEFAULT_LABEL_POLICY)
+    rng = random.Random(7)
+    item = _make_item(1, rng)
+    forced_nulls = {
+        "quality_score_label": 1.0,
+        "stock_list": 1.0,
+        "author_id": 1.0,
+        "scene": 1.0,
+        "fav_securities": 1.0,
+        "interest_keywords": 1.0,
+        "historical_click_items": 1.0,
+    }
+    path = tmp_path / "demo_with_nulls.tsv"
+
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f, delimiter="\t")
+        for uid in range(2):
+            row = _make_row(item, uid, rng, policy)
+            _inject_demo_nulls(row, rng, forced_nulls)
+            writer.writerow([row[name] for name in SOURCE_NAMES])
+
+    batch = next(
+        stream_file_batches(
+            str(path),
+            flow_config,
+            batch_size=2,
+            has_header=False,
+            null_markers=set(DEMO_NULL_MARKERS),
+            read_chunk_rows=2,
+        )
+    )
+
+    assert batch["features"]["quality_score_label"] == [0.0, 0.0]
+    assert batch["features"]["stock_list"] == ["[]", "[]"]
+    assert batch["features"]["author_id"] == [0, 0]
+    assert batch["features"]["scene"] == [0, 0]
+    assert batch["features"]["fav_securities"] == ["", ""]
+    assert batch["labels"]["is_click"] in ([0, 0], [0, 1], [1, 0], [1, 1])
+
+    tensors = FeatureDag(flow_config).preprocess_batch(batch["features"])
+    assert tensors
+    assert all(tensor.shape[0] == 2 for tensor in tensors.values())
 
 
 def test_resolve_data_paths_expands_date_glob_inclusive_sorted(tmp_path: Path):

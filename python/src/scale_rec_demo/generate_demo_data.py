@@ -97,6 +97,42 @@ AUTHOR_NAMES = [
 ]
 INVESTMENT_HORIZONS = ["超短", "短", "中", "长", "超长线"]
 THEME_LEVELS = ["高度关注", "一般关注", "偶尔关注", "极少关注"]
+DEMO_NULL_MARKERS = ("NULL", "\\N", "")
+DEMO_NULL_RATES = {
+    "title": 0.02,
+    "content": 0.02,
+    "insight": 0.02,
+    "roleneeds_first_label": 0.02,
+    "roleneeds_second_label": 0.02,
+    "invest_label": 0.02,
+    "invest_label_second": 0.02,
+    "invest_label_third": 0.02,
+    "quality_score_label": 0.01,
+    "stock_list": 0.02,
+    "entity_words_label": 0.02,
+    "item_entities_v3": 0.02,
+    "author_id": 0.01,
+    "author": 0.02,
+    "source_name": 0.02,
+    "emb_id": 0.02,
+    "rec_algo": 0.01,
+    "scene": 0.01,
+    "stay_time": 0.01,
+    "fav_securities": 0.03,
+    "recent_stocks": 0.03,
+    "interest_keywords": 0.03,
+    "follow_authors": 0.03,
+    "hold_stocks": 0.03,
+    "hist_hold_stocks": 0.03,
+    "historical_click_items": 0.03,
+    "asset_level": 0.02,
+    "last_trade_date": 0.02,
+    "city": 0.02,
+    "investment_horizon": 0.03,
+    "invest_style": 0.03,
+    "theme_interest": 0.03,
+    "industry_interest": 0.03,
+}
 
 
 def _json_list(items: list[object]) -> str:
@@ -121,6 +157,16 @@ def _load_label_policy(path: Path) -> dict[str, Any]:
     if not isinstance(policy, dict):
         raise TypeError(f"invalid label policy file: {path}")
     return policy
+
+
+def _inject_demo_nulls(
+    record: dict[str, object],
+    rng: random.Random,
+    null_rates: dict[str, float] = DEMO_NULL_RATES,
+) -> None:
+    for name, rate in null_rates.items():
+        if name in record and rng.random() < rate:
+            record[name] = rng.choice(DEMO_NULL_MARKERS)
 
 
 def _make_item(item_id: int, rng: random.Random) -> dict[str, object]:
@@ -343,6 +389,7 @@ def main() -> None:
             for _ in range(rows_per_user):
                 item_id = rng.randint(0, n_items - 1)
                 row = _make_row(item_pool[item_id], uid, rng, policy)
+                _inject_demo_nulls(row, rng)
                 writer.writerow([row[name] for name in SOURCE_NAMES])
 
     print(
