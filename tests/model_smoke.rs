@@ -2,6 +2,8 @@ use candle_core::{DType, Device, Tensor};
 use candle_nn::{VarBuilder, VarMap};
 use std::collections::HashMap;
 
+use scale_rec::feats::config::FlowConfig;
+use scale_rec::feats::dag::FeatureDag;
 use scale_rec::layers::embedding::FeatureSpec;
 use scale_rec::layers::towers::{
     apply_relation, Activation, MultiTaskConfig, RelationOp, TaskRelation, TowerConfig,
@@ -28,6 +30,43 @@ fn dummy_inputs(batch: usize) -> HashMap<String, Tensor> {
         Tensor::from_slice(&[0u32, 1, 2][..batch], batch, &Device::Cpu).unwrap(),
     );
     m
+}
+
+fn demo_features() -> Vec<FeatureSpec> {
+    let path = format!(
+        "{}/examples/shared/feature_config_demo.yaml",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let yaml = std::fs::read_to_string(path).unwrap();
+    let config = FlowConfig::from_yaml(&yaml).unwrap();
+    let dag = FeatureDag::from_config(config, false, None).unwrap();
+    dag.embeddable_features()
+        .into_iter()
+        .map(|(name, emb)| FeatureSpec {
+            name: name.to_string(),
+            vocab_size: emb.vocab_size,
+            embed_dim: emb.embed_dim,
+            pooling: emb.pooling,
+            seq_len: emb.seq_len,
+            truncation: emb.truncation,
+        })
+        .collect()
+}
+
+fn zero_inputs(features: &[FeatureSpec], batch: usize) -> HashMap<String, Tensor> {
+    features
+        .iter()
+        .map(|feature| {
+            let shape = if let Some(seq_len) = feature.seq_len {
+                vec![batch, seq_len]
+            } else {
+                vec![batch]
+            };
+            let len = shape.iter().product();
+            let tensor = Tensor::from_vec(vec![0u32; len], shape, &Device::Cpu).unwrap();
+            (feature.name.clone(), tensor)
+        })
+        .collect()
 }
 
 fn vb() -> VarBuilder<'static> {
@@ -186,7 +225,7 @@ fn test_pepnet_forward_shape() {
             op: RelationOp::Multiply,
         }],
     };
-    let model = pepnet::PEPNet::new(vb(), &dummy_features(), 4, &[8], &[8], &tc).unwrap();
+    let model = pepnet::PEPNet::new(vb(), &dummy_features(), 4, &[8], &[8], &tc, &[], &[]).unwrap();
     let out = model.forward(&dummy_inputs(3)).unwrap();
     assert_eq!(out.len(), 3);
     assert_eq!(out.tensor("click").unwrap().dims(), &[3, 1]);
@@ -206,7 +245,7 @@ fn test_pepnet_forward_shape_with_deep_without_shared_bottom() {
         }],
         relations: vec![],
     };
-    let model = pepnet::PEPNet::new(vb(), &dummy_features(), 4, &[8], &[], &tc).unwrap();
+    let model = pepnet::PEPNet::new(vb(), &dummy_features(), 4, &[8], &[], &tc, &[], &[]).unwrap();
     let out = model.forward(&dummy_inputs(3)).unwrap();
     assert_eq!(out.len(), 1);
     assert_eq!(out.tensor("click").unwrap().dims(), &[3, 1]);
@@ -281,6 +320,16 @@ fn test_all_example_models_build_with_native_output_contract() {
         let yaml = std::fs::read_to_string(path).unwrap();
         let config: ModelConfig = serde_yaml::from_str(&yaml).unwrap();
         let builder = vb();
+        let features = if config.model_type == "pepnet" {
+            demo_features()
+        } else {
+            dummy_features()
+        };
+        let inputs = if config.model_type == "pepnet" {
+            zero_inputs(&features, 2)
+        } else {
+            dummy_inputs(2)
+        };
         let tokenizer = if matches!(
             config.model_type.as_str(),
             "unimixer" | "token_mixer_large" | "rankmixer"
@@ -288,23 +337,18 @@ fn test_all_example_models_build_with_native_output_contract() {
             let token_dim = config.params["token_dim"].as_u64().unwrap() as usize;
             let num_tokens = config.params["num_tokens"].as_u64().unwrap() as usize;
             Some(
-                FeatureTokenizer::new(
-                    builder.pp("tokenizer"),
-                    &dummy_features(),
-                    token_dim,
-                    num_tokens,
-                )
-                .unwrap(),
+                FeatureTokenizer::new(builder.pp("tokenizer"), &features, token_dim, num_tokens)
+                    .unwrap(),
             )
         } else {
             None
         };
 
         let model = config
-            .build(builder, &dummy_features(), tokenizer)
+            .build(builder, &features, tokenizer)
             .unwrap_or_else(|error| panic!("{name}: {error}"));
         let execution = model
-            .forward_execution(&dummy_inputs(2))
+            .forward_execution(&inputs)
             .unwrap_or_else(|error| panic!("{name}: {error}"));
 
         assert!(!execution.nodes.is_empty(), "{name}");

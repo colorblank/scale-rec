@@ -558,6 +558,8 @@ fn build_pepnet(
     let prior_dim = yaml_usize(params, "prior_dim", 16);
     let deep_hidden_dims: Vec<usize> = yaml_usize_seq(params, "deep_hidden_dims");
     let shared_bottom_dims: Vec<usize> = yaml_usize_seq(params, "shared_bottom_dims");
+    let ep_prior_features = yaml_string_seq(params, "ep_prior_features");
+    let pp_prior_features = yaml_string_seq(params, "pp_prior_features");
     if let Some(contract) = parse_output_contract_param(params)? {
         return Ok(Box::new(pepnet::PEPNet::with_output_contract(
             vb,
@@ -566,6 +568,8 @@ fn build_pepnet(
             &deep_hidden_dims,
             &shared_bottom_dims,
             &contract,
+            &ep_prior_features,
+            &pp_prior_features,
         )?));
     }
     let task_config = params
@@ -580,6 +584,8 @@ fn build_pepnet(
         &deep_hidden_dims,
         &shared_bottom_dims,
         &task_config,
+        &ep_prior_features,
+        &pp_prior_features,
     )?))
 }
 
@@ -688,6 +694,8 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
                 "prior_dim",
                 "deep_hidden_dims",
                 "shared_bottom_dims",
+                "ep_prior_features",
+                "pp_prior_features",
                 "task_config",
             ],
             &["task_config"],
@@ -734,6 +742,8 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
         "detail_hidden_dims",
         "stock_hidden_dims",
         "stay_hidden_dims",
+        "ep_prior_features",
+        "pp_prior_features",
     ] {
         expect_optional_seq(model_type, params, key)?;
     }
@@ -874,6 +884,17 @@ fn yaml_usize_seq(v: &serde_yaml::Value, key: &str) -> Vec<usize> {
         .map(|seq| {
             seq.iter()
                 .filter_map(|v| v.as_u64().map(|n| n as usize))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn yaml_string_seq(v: &serde_yaml::Value, key: &str) -> Vec<String> {
+    v.get(key)
+        .and_then(|v| v.as_sequence())
+        .map(|seq| {
+            seq.iter()
+                .filter_map(|v| v.as_str().map(ToString::to_string))
                 .collect()
         })
         .unwrap_or_default()

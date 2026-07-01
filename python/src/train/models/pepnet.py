@@ -22,9 +22,9 @@ from ..core.model_output import ModelExecution, ModelOutput
 from ..core.output_contract import NormalizedOutputContract
 from ..layers.embedding import FeatureEmbeddings, FeatureTensorMap, FeatureTuple
 from ..layers.mlp import Mlp
-from ..layers.towers import Activation, MultiTaskConfig, TaskRelation, TaskTower
+from ..layers.towers import Activation, MultiTaskConfig, TaskRelation
 from .esmm import _probability_for_relation
-from .output_head import OutputHead
+from .output_head import _execute_relation
 
 
 class GateNU(nn.Module):
@@ -40,6 +40,34 @@ class GateNU(nn.Module):
         return self.gamma * torch.sigmoid(self.fc2(torch.relu(self.fc1(x))))
 
 
+class PersonalizedTaskTower(nn.Module):
+    """Task tower with PPNet gates applied to every hidden layer."""
+
+    def __init__(self, config: object, input_dim: int, prior_dim: int) -> None:
+        super().__init__()
+        self.name = config.name
+        self.output_kind = config.output_kind if hasattr(config, "output_kind") else config.kind
+        activation = config.activation
+        self._act = activation if isinstance(activation, Activation) else Activation.from_str(activation)
+        self.hidden = nn.ModuleDict()
+        self.pp_gates = nn.ModuleDict()
+        in_dim = input_dim
+        for i, h_dim in enumerate(config.hidden_dims):
+            key = str(i)
+            self.hidden[key] = nn.Linear(in_dim, h_dim)
+            self.pp_gates[key] = GateNU(prior_dim, prior_dim, h_dim)
+            in_dim = h_dim
+        n = len(config.hidden_dims)
+        self.output = nn.ModuleDict()
+        self.output[str(n)] = nn.Linear(in_dim, getattr(config, "output_dim", 1))
+
+    def forward(self, x: torch.Tensor, prior: torch.Tensor) -> torch.Tensor:
+        for i in range(len(self.hidden)):
+            key = str(i)
+            x = self._act.apply(self.hidden[key](x)) * self.pp_gates[key](prior)
+        return self.output[str(len(self.hidden))](x)
+
+
 class PEPNet(nn.Module):
     """PEPNet: personalized embedding and parameter gating for multi-task learning."""
 
@@ -53,6 +81,8 @@ class PEPNet(nn.Module):
         pooling_map: dict[str, PoolingMode] | None = None,
         total_dim: int | None = None,
         output_contract: NormalizedOutputContract | None = None,
+        ep_prior_features: list[str] | None = None,
+        pp_prior_features: list[str] | None = None,
     ) -> None:
         super().__init__()
         deep_hidden_dims = deep_hidden_dims or []
@@ -60,10 +90,12 @@ class PEPNet(nn.Module):
 
         self.embeddings = FeatureEmbeddings(features, pooling_map, total_dim=total_dim)
         total_dim = self.embeddings.total_dim
-        num_features = self.embeddings.num_features
+        self.ep_prior_indices = self._prior_indices(ep_prior_features)
+        self.pp_prior_indices = self._prior_indices(pp_prior_features)
 
-        # Prior projection: num_features → prior_dim
-        self.prior_proj = nn.Linear(num_features, prior_dim, bias=False)
+        # Explicit personalized priors selected by feature name.
+        self.ep_prior_proj = nn.Linear(len(self.ep_prior_indices), prior_dim, bias=False)
+        self.pp_prior_proj = nn.Linear(len(self.pp_prior_indices), prior_dim, bias=False)
 
         # EPNet gate: prior_dim → total_dim, scaled to (0, 2) as in Gate NU.
         self.epnet_gate = GateNU(prior_dim, prior_dim, total_dim)
@@ -85,11 +117,17 @@ class PEPNet(nn.Module):
         else:
             shared_dim = fusion_dim
 
-        # PPNet gate: prior_dim → shared_dim, scaled to (0, 2) as in Gate NU.
-        self.ppnet_gate = GateNU(prior_dim, prior_dim, shared_dim)
-
         if output_contract is not None:
-            self.output_head = OutputHead(output_contract, {"shared": shared_dim})
+            self.output_contract = output_contract
+            self.output_towers = nn.ModuleDict()
+            self._tower_inputs: dict[str, str] = {}
+            for tower in output_contract.towers:
+                if tower.input != "shared":
+                    raise ValueError("PEPNet output_contract towers must use input='shared'")
+                self.output_towers[tower.name] = PersonalizedTaskTower(tower, shared_dim, prior_dim)
+                self._tower_inputs[tower.name] = tower.input
+            relations = {relation.name: relation for relation in output_contract.relations}
+            self._relations = [relations[name] for name in output_contract.relation_order]
             self.task_names = [tower.name for tower in output_contract.towers]
             self.relation_names = list(output_contract.relation_order)
             return
@@ -100,33 +138,38 @@ class PEPNet(nn.Module):
         self.task_names = [tower.name for tower in self.task_config.towers]
         self.relation_names = [relation.target for relation in self.task_config.relations]
         for tower in self.task_config.towers:
-            setattr(self, f"{tower.name}_tower", TaskTower(tower, shared_dim))
+            setattr(self, f"{tower.name}_tower", PersonalizedTaskTower(tower, shared_dim, prior_dim))
+
+    def _prior_indices(self, names: list[str] | None) -> list[int]:
+        if not names:
+            return list(range(self.embeddings.num_features))
+        unknown = [name for name in names if name not in self.embeddings.feature_to_idx]
+        if unknown:
+            raise ValueError(f"PEPNet prior feature(s) not embeddable: {unknown}")
+        return [self.embeddings.feature_to_idx[name] for name in names]
 
     def forward(self, x_inputs: FeatureTensorMap) -> ModelOutput:
-        if hasattr(self, "output_head"):
+        if hasattr(self, "output_contract"):
             return self.forward_execution(x_inputs).outputs
-        return self._forward_legacy(self._shared(x_inputs))
+        shared, pp_prior = self._shared(x_inputs)
+        return self._forward_legacy(shared, pp_prior)
 
     def forward_execution(self, x_inputs: FeatureTensorMap) -> ModelExecution:
-        shared = self._shared(x_inputs)
-        if hasattr(self, "output_head"):
-            return self.output_head({"shared": shared})
-        outputs = self._forward_legacy(shared)
+        shared, pp_prior = self._shared(x_inputs)
+        if hasattr(self, "output_contract"):
+            return self._forward_contract(shared, pp_prior)
+        outputs = self._forward_legacy(shared, pp_prior)
         return ModelExecution(nodes=outputs, outputs=outputs)
 
-    def _shared(self, x_inputs: FeatureTensorMap) -> torch.Tensor:
+    def _shared(self, x_inputs: FeatureTensorMap) -> tuple[torch.Tensor, torch.Tensor]:
         stacked = self.embeddings.forward_stacked(x_inputs)
         # stacked: list of [batch, 1, dim_i]
 
-        # Prior: mean-pool each feature → concat → project
-        prior_parts = [emb.mean(dim=2, keepdim=True) for emb in stacked]  # [batch, 1, 1]
-        prior_raw = torch.cat(prior_parts, dim=1)  # [batch, num_features, 1]
-        prior_raw = prior_raw.squeeze(2)           # [batch, num_features]
-        prior_raw = prior_raw.detach()
-        prior = self.prior_proj(prior_raw)         # [batch, prior_dim]
+        ep_prior = self.ep_prior_proj(self._prior_raw(stacked, self.ep_prior_indices))
+        pp_prior = self.pp_prior_proj(self._prior_raw(stacked, self.pp_prior_indices))
 
         # EPNet gate on embeddings
-        epnet_scale = self.epnet_gate(prior)  # [batch, total_dim]
+        epnet_scale = self.epnet_gate(ep_prior)  # [batch, total_dim]
         dense_concat = torch.cat([e.squeeze(1) for e in stacked], dim=1)  # [batch, total_dim]
         gated = dense_concat * epnet_scale
 
@@ -134,16 +177,34 @@ class PEPNet(nn.Module):
         if hasattr(self, "shared_bottom"):
             shared = self.shared_bottom(shared)
 
-        # PPNet gate on shared representation
-        ppnet_scale = self.ppnet_gate(prior)  # [batch, shared_dim]
-        gated_shared = shared * ppnet_scale
-        return gated_shared
+        return shared, pp_prior
 
-    def _forward_legacy(self, shared: torch.Tensor) -> ModelOutput:
+    @staticmethod
+    def _prior_raw(stacked: list[torch.Tensor], indices: list[int]) -> torch.Tensor:
+        prior_parts = [stacked[index].mean(dim=2, keepdim=True) for index in indices]
+        prior_raw = torch.cat(prior_parts, dim=1)
+        return prior_raw.squeeze(2).detach()
+
+    def _forward_contract(self, shared: torch.Tensor, pp_prior: torch.Tensor) -> ModelExecution:
+        nodes = ModelOutput()
+        for name, tower in self.output_towers.items():
+            nodes.insert(name, tower(shared, pp_prior), tower.output_kind)
+        for relation in self._relations:
+            tensor, kind = _execute_relation(relation, nodes)
+            nodes.insert(relation.name, tensor, kind)
+        outputs = ModelOutput()
+        for output in self.output_contract.outputs:
+            source = nodes.get(output.source)
+            if source is None:
+                raise ValueError(f"public output '{output.name}' source '{output.source}' is missing")
+            outputs.insert(output.name, source.tensor, source.kind)
+        return ModelExecution(nodes=nodes, outputs=outputs)
+
+    def _forward_legacy(self, shared: torch.Tensor, pp_prior: torch.Tensor) -> ModelOutput:
         outputs = ModelOutput()
         for name in self.task_names:
             tower = getattr(self, f"{name}_tower")
-            outputs.insert(name, tower(shared), tower.output_kind)
+            outputs.insert(name, tower(shared, pp_prior), tower.output_kind)
         for relation in self.task_config.relations:
             outputs.insert_probability(relation.target, self._apply_relation(relation, outputs))
         return outputs

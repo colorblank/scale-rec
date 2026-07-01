@@ -112,7 +112,7 @@ impl OutputHead {
     }
 }
 
-fn execute_relation(
+pub(crate) fn execute_relation(
     relation: &ContractRelation,
     nodes: &ModelOutput,
 ) -> Result<(Tensor, OutputKind)> {
@@ -151,7 +151,7 @@ fn execute_relation(
     }
 }
 
-fn activation(name: &str) -> Result<Activation> {
+pub(crate) fn activation(name: &str) -> Result<Activation> {
     match name {
         "relu" => Ok(Activation::Relu),
         "sigmoid" => Ok(Activation::Sigmoid),
@@ -164,7 +164,7 @@ fn activation(name: &str) -> Result<Activation> {
     }
 }
 
-fn output_kind(kind: ContractNodeKind) -> OutputKind {
+pub(crate) fn output_kind(kind: ContractNodeKind) -> OutputKind {
     match kind {
         ContractNodeKind::BinaryLogit => OutputKind::BinaryLogit,
         ContractNodeKind::Probability => OutputKind::Probability,

@@ -111,17 +111,26 @@ def test_all_example_models_use_native_output_contract(config_name):
     from train.models.unimixer.tokenizer import FeatureTokenizer
 
     config = ModelConfig.from_yaml(REPO_ROOT / "examples/models" / config_name)
+    features = FEATURES
+    inputs = _inputs(2)
     tokenizer = None
+    if config.type == "pepnet":
+        from train.core.config import FlowConfig
+        from train.core.dag import FeatureDag
+
+        dag = FeatureDag(FlowConfig.from_yaml(str(REPO_ROOT / "examples/shared/feature_config_demo.yaml")))
+        features = dag.feature_tuples()
+        inputs = {name: torch.zeros(2, dtype=torch.long) for name, _, _ in features}
     if config.type in {"unimixer", "token_mixer_large", "rankmixer"}:
         tokenizer = FeatureTokenizer(
-            FEATURES,
+            features,
             token_dim=config.params["token_dim"],
             num_tokens=config.params["num_tokens"],
         )
 
-    model = config.build(FEATURES, tokenizer=tokenizer)
+    model = config.build(features, tokenizer=tokenizer)
     spec = get_output_spec(config.type, model, config.params)
-    execution = model.forward_execution(_inputs(2))
+    execution = model.forward_execution(inputs)
 
     assert spec["output_contract"].version == 1
     assert execution.outputs.names()

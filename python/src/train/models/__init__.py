@@ -410,6 +410,8 @@ def _build_pepnet(
         pooling_map=params.get("_pooling_map"),
         total_dim=params.get("_total_dim"),
         output_contract=output_contract,
+        ep_prior_features=params.get("ep_prior_features"),
+        pp_prior_features=params.get("pp_prior_features"),
     )
 
 

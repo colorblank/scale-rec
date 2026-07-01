@@ -1,5 +1,7 @@
 type: pepnet
 prior_dim: 16
+ep_prior_features: [rec_algo_idx, scene_idx, p_date_idx]
+pp_prior_features: [user_id_idx_a, user_id_idx_b, item_id_idx, author_id_idx, item_type_idx]
 deep_hidden_dims: [64, 32]
 shared_bottom_dims: [32, 16]
 output_contract:
