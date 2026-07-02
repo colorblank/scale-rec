@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """时间解析算子：将多种时间格式解析为稳定整数特征。"""
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from . import register_op
@@ -144,7 +144,7 @@ def _datetime_from_epoch(value: Any, scale: int) -> datetime | None:
     if number is None:
         return None
     try:
-        return datetime.fromtimestamp(number / scale, tz=UTC)
+        return datetime.fromtimestamp(number / scale, tz=timezone.utc)
     except (OSError, OverflowError, ValueError):
         return None
 
@@ -162,8 +162,8 @@ def _parse_rfc3339(value: Any) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _parse_with_formats(value: Any, formats: list[str] | tuple[str, ...]) -> datetime | None:
@@ -178,6 +178,6 @@ def _parse_with_formats(value: Any, formats: list[str] | tuple[str, ...]) -> dat
         except ValueError:
             continue
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=UTC)
-        return parsed.astimezone(UTC)
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
     return None
