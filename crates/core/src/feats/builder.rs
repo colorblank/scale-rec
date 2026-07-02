@@ -431,6 +431,7 @@ impl DagBuilder {
             OpType::SequenceOp => (&["max_len", "pad_val"], &["max_len"]),
             OpType::StringConcat => (&["separator"], &[]),
             OpType::StringParser => (&["sep1", "sep2", "key_index", "pad_len", "pad_val"], &[]),
+            OpType::TimeParser => (&["input_format", "formats", "output", "default_val"], &[]),
         };
         validate_param_keys(&def.name, &def.params, allowed, required)?;
         match def.op_type {
@@ -506,6 +507,14 @@ impl DagBuilder {
                 expect_optional_usize(&def.name, &def.params, "key_index")?;
                 expect_optional_usize(&def.name, &def.params, "pad_len")?;
                 expect_optional_str(&def.name, &def.params, "pad_val")
+            }
+            OpType::TimeParser => {
+                expect_optional_str(&def.name, &def.params, "input_format")?;
+                if def.params.get("formats").is_some() {
+                    expect_sequence(&def.name, &def.params, "formats")?;
+                }
+                expect_optional_str(&def.name, &def.params, "output")?;
+                expect_optional_i64(&def.name, &def.params, "default_val")
             }
         }
     }

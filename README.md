@@ -36,6 +36,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --data python/artifacts/demo/demo_train_data.txt \
   --feature-config examples/shared/feature_config_demo.yaml \
   --model-config examples/models/gdcn_esmm.yaml \
+  --run-name demo_train \
   --train-config examples/shared/train_defaults.yaml \
   --epochs 10 --batch-size 128 --no-header --eval-samples 400 \
   --artifact-dir python/artifacts/demo \
@@ -129,7 +130,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 | Command | Arguments used here | Full parameter table |
 |---|---|---|
 | `scale_rec_demo.generate_demo_data` | `--label-policy` selects demo label policy YAML | [CLI Reference: Generate demo data](docs/reference/cli.md#generate-demo-data) |
-| `train.app.main demo` | `--data` / `--feature-config` / `--model-config` / `--train-config` / `--epochs` / `--batch-size` / `--no-header` / `--eval-samples` / `--artifact-dir` / `--model-name` / `--run-version` | [CLI Reference: Train demo](docs/reference/cli.md#train-demo) |
+| `train.app.main demo` | `--data` / `--feature-config` / `--model-config` / `--run-name` / `--train-config` / `--epochs` / `--batch-size` / `--no-header` / `--eval-samples` / `--artifact-dir` / `--model-name` / `--run-version` | [CLI Reference: Train demo](docs/reference/cli.md#train-demo) |
 | `scale_rec_demo.verify_all` | `--models` selects model keys; `--force-train` retrains before comparison | [CLI Reference: Verify all](docs/reference/cli.md#verify-all) |
 | `cargo run --bin server` | `--model-dir` scans a serving directory; `--model-path` loads one manifest | [CLI Reference: Rust server](docs/reference/cli.md#rust-server) |
 | `cargo fmt` / `cargo check` / `cargo test` | No project-specific flags in this page | [Development Reference](docs/reference/development.md) |

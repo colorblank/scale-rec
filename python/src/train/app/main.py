@@ -537,7 +537,7 @@ def _run_single(args: argparse.Namespace) -> None:
         file_level=args.file_log_level,
         log_dir=args.log_dir or Path(args.artifact_dir) / "logs",
         log_file=args.log_file,
-        run_name="single_train",
+        run_name=args.run_name,
     )
     device = resolve_device(args.device)
     logger.info("device: %s", device)
@@ -757,7 +757,7 @@ def _run_demo(args: argparse.Namespace) -> None:
         file_level=args.file_log_level,
         log_dir=args.log_dir or Path(args.artifact_dir) / "logs",
         log_file=args.log_file,
-        run_name="demo_train",
+        run_name=args.run_name,
     )
     device = resolve_device(args.device)
     logger.info("device: %s", device)
@@ -848,7 +848,7 @@ def _run_all(args: argparse.Namespace) -> None:
         file_level=args.file_log_level,
         log_dir=args.log_dir or Path(args.artifact_dir) / "logs",
         log_file=args.log_file,
-        run_name="all_train",
+        run_name=args.run_name,
     )
     device = resolve_device(args.device)
     logger.info("device: %s", device)

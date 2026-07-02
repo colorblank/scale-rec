@@ -87,10 +87,10 @@ operator 输出声明 `embed` 后会进入模型 embedding。模型不应重复�
 
 ## Operator registry
 
-当前支持 17 个基础算子：
+当前支持 18 个基础算子：
 
 ```text
-Bucketing, DictMapper, StringParser, JsonExtractList,
+Bucketing, DictMapper, StringParser, TimeParser, JsonExtractList,
 ListStringParser, Split, FlatSplit, ExpressionOp, Log1p,
 CrossFeature, ListOverlap, SequenceOp, StringConcat,
 FeatureHash, PluginOp, ParsedFeatureHash, ConcatHash

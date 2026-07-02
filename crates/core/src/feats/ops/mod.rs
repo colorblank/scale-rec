@@ -1,4 +1,4 @@
-//! 算子库：统一 CustomOp trait 及 7 个内置算子的注册。
+//! 算子库：统一 CustomOp trait 及内置算子的注册。
 
 /// 连续值分桶算子。
 pub mod bucketing;
@@ -36,6 +36,8 @@ pub mod split;
 pub mod string_concat;
 /// 结构化字符串解析算子。
 pub mod string_parser;
+/// 时间解析算子。
+pub mod time_parser;
 
 /// Bucketing 算子重新导出。
 pub use bucketing::Bucketing;
@@ -71,6 +73,8 @@ pub use split::Split;
 pub use string_concat::StringConcat;
 /// StringParser 算子重新导出。
 pub use string_parser::StringParser;
+/// TimeParser 算子重新导出。
+pub use time_parser::TimeParser;
 
 /// 强类型特征值，替代 `Arc<dyn Any>`，消除 vtable/downcast 开销。
 #[derive(Debug, Clone, PartialEq)]

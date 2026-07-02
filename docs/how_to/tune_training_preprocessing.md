@@ -12,6 +12,7 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --data data/train.tsv \
   --feature-config examples/shared/feature_config_demo.yaml \
   --model-config examples/models/gdcn_esmm.yaml \
+  --run-name demo_train \
   --read-chunk-rows 65536 \
   --fast-no-na \
   --memory-map \

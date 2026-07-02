@@ -169,6 +169,7 @@ class OpType(str, Enum):
     SPLIT = "Split"
     STRING_CONCAT = "StringConcat"
     STRING_PARSER = "StringParser"
+    TIME_PARSER = "TimeParser"
 
 
 _OP_PARAM_SPECS: dict[OpType, tuple[set[str], set[str], dict[str, type | tuple[type, ...]]]] = {
@@ -270,6 +271,11 @@ _OP_PARAM_SPECS: dict[OpType, tuple[set[str], set[str], dict[str, type | tuple[t
         {"sep1", "sep2", "key_index", "pad_len", "pad_val"},
         set(),
         {"sep1": str, "sep2": str, "key_index": int, "pad_len": int, "pad_val": str},
+    ),
+    OpType.TIME_PARSER: (
+        {"input_format", "formats", "output", "default_val"},
+        set(),
+        {"input_format": str, "formats": list, "output": str, "default_val": int},
     ),
 }
 

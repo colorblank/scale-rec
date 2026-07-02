@@ -11,3 +11,4 @@ petgraph = "0.6"
 rhai = { version = "1.19", features = ["sync"] }
 libloading = "0.8"
 tracing = "0.1"
+chrono = "0.4.44"

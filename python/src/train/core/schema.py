@@ -212,6 +212,8 @@ def _infer_operator_output(op: OperatorDef, input_schemas: list[FeatureSchema]) 
     if op_type is OpType.LOG1P:
         _require_scalar_number(op, first)
         return _schema(op, FeatureDType(DTypeTag.FLOAT))
+    if op_type is OpType.TIME_PARSER:
+        return _schema(op, FeatureDType(DTypeTag.INT))
     if op_type is OpType.SEQUENCE_OP:
         return _schema(
             op,
