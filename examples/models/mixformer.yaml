@@ -1,0 +1,31 @@
+# MixFormer: Co-Scaling Up Dense and Sequence in Industrial Recommenders — KDD 2026
+# Paper: arXiv:2602.14110
+#
+# MixFormer-small config (N=16, D=386, L=4, as in paper Table 1)
+# -------------------------------------------------------------------
+type: mixformer
+d: 386
+d_ff: 1024
+num_heads: 16
+num_layers: 4
+output_contract:
+  version: 1
+  towers:
+    - name: click
+      output: binary_logit
+    - name: finish
+      output: binary_logit
+  objectives:
+    - source: click
+      label: is_click
+      loss: binary_cross_entropy
+    - source: finish
+      label: is_finish
+      loss: binary_cross_entropy
+  metrics:
+    - source: click
+      label: is_click
+      type: auc
+    - source: finish
+      label: is_finish
+      type: auc

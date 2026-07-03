@@ -16,6 +16,8 @@ pub mod deepfm;
 pub mod esmm;
 /// FAT: Field-Aware Transformer (KDD 2026, arXiv:2511.12081)。
 pub mod fat;
+/// MixFormer: Co-Scaling Up Dense and Sequence in Industrial Recommenders (KDD 2026, arXiv:2602.14110)。
+pub mod mixformer;
 /// OneRank: Unified Transformer-Native Ranking Architecture (KDD 2026, arXiv:2606.16838)。
 pub mod onerank;
 /// GDCN + ESMM 混合模型。
@@ -221,6 +223,7 @@ static REGISTRY: LazyLock<HashMap<&'static str, BuildFn>> = LazyLock::new(|| {
     m.insert("rankmixer", build_rankmixer);
     m.insert("pepnet", build_pepnet);
     m.insert("fat", build_fat);
+    m.insert("mixformer", build_mixformer);
     m.insert("onerank", build_onerank);
     m
 });
@@ -554,6 +557,24 @@ fn build_rankmixer(
     )?))
 }
 
+fn build_mixformer(
+    vb: VarBuilder,
+    features: &[FeatureSpec],
+    _tokenizer: Option<FeatureTokenizer>,
+    params: &serde_yaml::Value,
+    _options: &ModelBuildOptions,
+) -> Result<Box<dyn Model>> {
+    let d = yaml_usize(params, "d", 386);
+    let d_ff = yaml_usize(params, "d_ff", 1024);
+    let num_heads = yaml_usize(params, "num_heads", 16);
+    let num_layers = yaml_usize(params, "num_layers", 4);
+    let contract = parse_output_contract_param(params)?
+        .ok_or_else(|| candle_core::Error::Msg("MixFormer requires output_contract".into()))?;
+    Ok(Box::new(mixformer::model::MixFormerModel::new(
+        vb, features, d, d_ff, num_heads, num_layers, &contract,
+    )?))
+}
+
 fn build_onerank(
     vb: VarBuilder,
     features: &[FeatureSpec],
@@ -781,6 +802,18 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
             ],
             &["task_config"],
         ),
+        "mixformer" => (
+            &[
+                "tasks",
+                "label_col_map",
+                "metrics",
+                "d",
+                "d_ff",
+                "num_heads",
+                "num_layers",
+            ],
+            &[],
+        ),
         "onerank" => (
             &[
                 "tasks",
@@ -865,6 +898,7 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
         "k",
         "K",
         "num_tasks",
+        "num_heads",
     ] {
         expect_optional_usize(model_type, params, key)?;
     }

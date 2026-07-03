@@ -15,6 +15,7 @@ from .esmm import ESMM, default_task_config
 from .fat import FATModel
 from .gdcn_esmm import GDCNESMM
 from .lr import LogisticRegression
+from .mixformer import MixFormerModel
 from .mmoe import MMoE
 from .onerank import OneRankModel
 from .pepnet import PEPNet
@@ -484,8 +485,29 @@ def _build_onerank(
     )
 
 
+def _build_mixformer(
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
+) -> MixFormerModel:
+    output_contract = _parse_output_contract(params)
+    total_dim = params.get("_total_dim")
+    if total_dim is None:
+        total_dim = sum(f[2] for f in features)
+    return MixFormerModel(
+        features,
+        d=params.get("d", 386),
+        d_ff=params.get("d_ff", 1024),
+        num_heads=params.get("num_heads", 16),
+        num_layers=params.get("num_layers", 4),
+        dropout=params.get("dropout", 0.0),
+        pooling_map=params.get("_pooling_map"),
+        total_dim=total_dim,
+        output_contract=output_contract,
+    )
+
+
 register_model("lr", _spec_pred, _build_lr)
 register_model("deepfm", _spec_pred, _build_deepfm)
+register_model("mixformer", _spec_pred, _build_mixformer)
 register_model("mmoe", _spec_mmoe, _build_mmoe)
 register_model("esmm", _spec_esmm, _build_esmm)
 register_model("gdcn_esmm", _spec_esmm, _build_gdcn_esmm)
