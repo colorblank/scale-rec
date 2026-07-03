@@ -16,6 +16,7 @@ from .fat import FATModel
 from .gdcn_esmm import GDCNESMM
 from .lr import LogisticRegression
 from .mmoe import MMoE
+from .onerank import OneRankModel
 from .pepnet import PEPNet
 from .rankmixer import RankMixerModel
 from .token_mixer_large import TokenMixerLargeModel
@@ -464,6 +465,25 @@ def _build_fat(
     )
 
 
+def _build_onerank(
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
+) -> OneRankModel:
+    output_contract = _parse_output_contract(params)
+    return OneRankModel(
+        features,
+        d=params.get("d", 128),
+        d_ff=params.get("d_ff", 512),
+        num_layers=params.get("num_layers", 2),
+        n_heads=params.get("n_heads", 8),
+        num_tasks=params.get("num_tasks", 3),
+        cross_task_mask=params.get("cross_task_mask", "cascade"),
+        dropout=params.get("dropout", 0.0),
+        pooling_map=params.get("_pooling_map"),
+        total_dim=params.get("_total_dim"),
+        output_contract=output_contract,
+    )
+
+
 register_model("lr", _spec_pred, _build_lr)
 register_model("deepfm", _spec_pred, _build_deepfm)
 register_model("mmoe", _spec_mmoe, _build_mmoe)
@@ -474,3 +494,4 @@ register_model("token_mixer_large", _spec_unimixer, _build_token_mixer_large)
 register_model("rankmixer", _spec_unimixer, _build_rankmixer)
 register_model("pepnet", _spec_esmm, _build_pepnet)
 register_model("fat", _spec_pred, _build_fat)
+register_model("onerank", _spec_pred, _build_onerank)

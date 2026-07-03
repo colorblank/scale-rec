@@ -1,0 +1,42 @@
+# OneRank: Unified Transformer-Native Ranking Architecture — KDD 2026
+# Paper: arXiv:2606.16838
+#
+# 3-task Click / Add-to-Cart / Order with cascade masking
+# (click → add-to-cart → order funnel as in paper Table 2)
+# -------------------------------------------------------------------
+type: onerank
+d: 128
+d_ff: 512
+num_layers: 2
+n_heads: 8
+num_tasks: 3
+cross_task_mask: cascade
+output_contract:
+  version: 1
+  towers:
+    - name: click
+      output: binary_logit
+    - name: add_to_cart
+      output: binary_logit
+    - name: order
+      output: binary_logit
+  objectives:
+    - source: click
+      label: is_click
+      loss: binary_cross_entropy
+    - source: add_to_cart
+      label: is_add_to_cart
+      loss: binary_cross_entropy
+    - source: order
+      label: is_order
+      loss: binary_cross_entropy
+  metrics:
+    - source: click
+      label: is_click
+      type: auc
+    - source: add_to_cart
+      label: is_add_to_cart
+      type: auc
+    - source: order
+      label: is_order
+      type: auc

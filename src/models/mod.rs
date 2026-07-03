@@ -16,6 +16,8 @@ pub mod deepfm;
 pub mod esmm;
 /// FAT: Field-Aware Transformer (KDD 2026, arXiv:2511.12081)。
 pub mod fat;
+/// OneRank: Unified Transformer-Native Ranking Architecture (KDD 2026, arXiv:2606.16838)。
+pub mod onerank;
 /// GDCN + ESMM 混合模型。
 pub mod gdcn_esmm;
 /// 逻辑回归基线模型。
@@ -219,6 +221,7 @@ static REGISTRY: LazyLock<HashMap<&'static str, BuildFn>> = LazyLock::new(|| {
     m.insert("rankmixer", build_rankmixer);
     m.insert("pepnet", build_pepnet);
     m.insert("fat", build_fat);
+    m.insert("onerank", build_onerank);
     m
 });
 
@@ -551,6 +554,30 @@ fn build_rankmixer(
     )?))
 }
 
+fn build_onerank(
+    vb: VarBuilder,
+    features: &[FeatureSpec],
+    _tokenizer: Option<FeatureTokenizer>,
+    params: &serde_yaml::Value,
+    _options: &ModelBuildOptions,
+) -> Result<Box<dyn Model>> {
+    let d = yaml_usize(params, "d", 128);
+    let d_ff = yaml_usize(params, "d_ff", 512);
+    let num_layers = yaml_usize(params, "num_layers", 2);
+    let n_heads = yaml_usize(params, "n_heads", 8);
+    let num_tasks = yaml_usize(params, "num_tasks", 3);
+    let cross_task_mask = params
+        .get("cross_task_mask")
+        .and_then(|v| v.as_str())
+        .unwrap_or("cascade")
+        .to_string();
+    let contract = parse_output_contract_param(params)?
+        .ok_or_else(|| candle_core::Error::Msg("OneRank requires output_contract".into()))?;
+    Ok(Box::new(onerank::model::OneRankModel::new(
+        vb, features, d, d_ff, num_layers, n_heads, num_tasks, &cross_task_mask, &contract,
+    )?))
+}
+
 fn build_pepnet(
     vb: VarBuilder,
     features: &[FeatureSpec],
@@ -754,6 +781,20 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
             ],
             &["task_config"],
         ),
+        "onerank" => (
+            &[
+                "tasks",
+                "label_col_map",
+                "metrics",
+                "d",
+                "d_ff",
+                "num_layers",
+                "n_heads",
+                "num_tasks",
+                "cross_task_mask",
+            ],
+            &[],
+        ),
         _ => return Ok(()),
     };
     let has_output_contract = params.get("output_contract").is_some();
@@ -823,6 +864,7 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
         "M",
         "k",
         "K",
+        "num_tasks",
     ] {
         expect_optional_usize(model_type, params, key)?;
     }
