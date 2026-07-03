@@ -12,6 +12,7 @@ from ..layers.embedding import FeatureTuple
 from ..layers.towers import Activation, MultiTaskConfig, TaskRelation, TowerConfig
 from .deepfm import DeepFM
 from .esmm import ESMM, default_task_config
+from .fat import FATModel
 from .gdcn_esmm import GDCNESMM
 from .lr import LogisticRegression
 from .mmoe import MMoE
@@ -437,6 +438,32 @@ def _build_rankmixer(
     )
 
 
+def _build_fat(
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
+) -> FATModel:
+    output_contract = _parse_output_contract(params)
+    task_config = _parse_task_config(params.get("task_config"))
+    if task_config is None and output_contract is None:
+        raise ValueError("FAT requires task_config or output_contract")
+    return FATModel(
+        features,
+        d=params.get("d", 128),
+        d_ff=params.get("d_ff", 512),
+        num_layers=params.get("num_layers", 2),
+        n_heads=params.get("n_heads", 8),
+        M=params.get("M", 64),
+        k=params.get("k", 64),
+        K=params.get("K", 3),
+        dropout=params.get("dropout", 0.0),
+        deep_hidden_dims=params.get("deep_hidden_dims", []),
+        shared_bottom_dims=params.get("shared_bottom_dims", []),
+        task_config=task_config,
+        pooling_map=params.get("_pooling_map"),
+        total_dim=params.get("_total_dim"),
+        output_contract=output_contract,
+    )
+
+
 register_model("lr", _spec_pred, _build_lr)
 register_model("deepfm", _spec_pred, _build_deepfm)
 register_model("mmoe", _spec_mmoe, _build_mmoe)
@@ -446,3 +473,4 @@ register_model("unimixer", _spec_unimixer, _build_unimixer)
 register_model("token_mixer_large", _spec_unimixer, _build_token_mixer_large)
 register_model("rankmixer", _spec_unimixer, _build_rankmixer)
 register_model("pepnet", _spec_esmm, _build_pepnet)
+register_model("fat", _spec_pred, _build_fat)

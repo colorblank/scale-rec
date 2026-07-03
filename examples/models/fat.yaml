@@ -1,0 +1,61 @@
+# FAT (Field-Aware Transformer) 模型配置
+#
+# Paper: From Scaling to Structured Expressivity: Rethinking Transformers
+#        for CTR Prediction.  arXiv:2511.12081  (KDD 2026)
+#
+# 超参数参考论文 §5.1.3：
+#   d=128, d_ff=512, num_layers=2, n_heads=8,
+#   M=64 (基矩阵数), k=64 (field meta-embedding 维), K=3 (Top-K 激活)
+#   field_pair_w 初始化: 𝒩(0, 0.01), 激活函数: SiLU
+
+type: fat
+
+# ── FAT 特定参数 ──
+d: 128
+d_ff: 512
+num_layers: 2
+n_heads: 8
+M: 64
+k: 64
+K: 3
+deep_hidden_dims: [64, 32]
+shared_bottom_dims: [32, 16]
+
+# ── OutputContract (v1) ──
+output_contract:
+  version: 1
+
+  graph:
+    towers:
+      - {name: click_logit,        kind: binary_logit, input: shared, hidden_dims: [16, 8]}
+      - {name: cvr_logit,          kind: binary_logit, input: shared, hidden_dims: [16, 8]}
+      - {name: detail_logit,       kind: binary_logit, input: shared, hidden_dims: [16, 8]}
+      - {name: stock_logit,        kind: binary_logit, input: shared, hidden_dims: [16, 8]}
+      - {name: stay_logit,         kind: regression,   input: shared, hidden_dims: [16, 8]}
+
+    relations:
+      - {name: click_prob,         op: sigmoid,  inputs: [click_logit]}
+      - {name: cvr_prob_uncond,    op: sigmoid,  inputs: [cvr_logit]}
+      - {name: detail_prob_uncond, op: sigmoid,  inputs: [detail_logit]}
+      - {name: stock_prob_uncond,  op: sigmoid,  inputs: [stock_logit]}
+      - {name: ctcvr_prob,         op: multiply, inputs: [click_prob, cvr_prob_uncond]}
+      - {name: ctdetail_prob,      op: multiply, inputs: [click_prob, detail_prob_uncond]}
+      - {name: ctstock_prob,       op: multiply, inputs: [click_prob, stock_prob_uncond]}
+
+  objectives:
+    - {name: click_loss, source: click_logit,  label: is_click, loss: {type: binary_cross_entropy}}
+    - {name: cvr_loss,   source: cvr_logit,    label: is_cvr,   loss: {type: binary_cross_entropy}}
+    - {name: detail_loss, source: detail_logit, label: is_click_detail, loss: {type: binary_cross_entropy}}
+    - {name: stock_loss,  source: stock_logit,  label: is_click_stock,  loss: {type: binary_cross_entropy}}
+    - {name: stay_loss,   source: stay_logit,   label: stay_time_label, loss: {type: mse}}
+
+  metrics:
+    - {name: click_auc, source: click_logit,  label: is_click, type: auc}
+    - {name: cvr_auc,   source: cvr_logit,    label: is_cvr,   type: auc}
+    - {name: detail_auc, source: detail_logit, label: is_click_detail, type: auc}
+    - {name: stock_auc,  source: stock_logit,  label: is_click_stock,  type: auc}
+
+  outputs:
+    - {name: ctr,    source: click_prob}
+    - {name: ctcvr,  source: ctcvr_prob}
+    - {name: cvr,    source: cvr_prob_uncond}

@@ -14,6 +14,8 @@ use tracing::error;
 pub mod deepfm;
 /// ESMM 多任务模型。
 pub mod esmm;
+/// FAT: Field-Aware Transformer (KDD 2026, arXiv:2511.12081)。
+pub mod fat;
 /// GDCN + ESMM 混合模型。
 pub mod gdcn_esmm;
 /// 逻辑回归基线模型。
@@ -216,6 +218,7 @@ static REGISTRY: LazyLock<HashMap<&'static str, BuildFn>> = LazyLock::new(|| {
     m.insert("token_mixer_large", build_token_mixer_large);
     m.insert("rankmixer", build_rankmixer);
     m.insert("pepnet", build_pepnet);
+    m.insert("fat", build_fat);
     m
 });
 
@@ -589,6 +592,39 @@ fn build_pepnet(
     )?))
 }
 
+fn build_fat(
+    vb: VarBuilder,
+    features: &[FeatureSpec],
+    _tokenizer: Option<FeatureTokenizer>,
+    params: &serde_yaml::Value,
+    _options: &ModelBuildOptions,
+) -> Result<Box<dyn Model>> {
+    let d = yaml_usize(params, "d", 128);
+    let d_ff = yaml_usize(params, "d_ff", 512);
+    let num_layers = yaml_usize(params, "num_layers", 2);
+    let n_heads = yaml_usize(params, "n_heads", 8);
+    let m = yaml_usize(params, "M", 64);
+    let k = yaml_usize(params, "k", 64);
+    let k_top = yaml_usize(params, "K", 3);
+    let deep_hidden_dims: Vec<usize> = yaml_usize_seq(params, "deep_hidden_dims");
+    let shared_bottom_dims: Vec<usize> = yaml_usize_seq(params, "shared_bottom_dims");
+    if let Some(contract) = parse_output_contract_param(params)? {
+        return Ok(Box::new(fat::model::FATModel::with_output_contract(
+            vb, features, d, d_ff, num_layers, n_heads, m, k, k_top,
+            &deep_hidden_dims, &shared_bottom_dims, &contract,
+        )?));
+    }
+    let task_config = params
+        .get("task_config")
+        .ok_or_else(|| candle_core::Error::Msg("FAT requires task_config".into()))?;
+    let task_config = serde_yaml::from_value(task_config.clone())
+        .map_err(|e| candle_core::Error::Msg(format!("parse fat task_config: {}", e)))?;
+    Ok(Box::new(fat::model::FATModel::new(
+        vb, features, d, d_ff, num_layers, n_heads, m, k, k_top,
+        &deep_hidden_dims, &shared_bottom_dims, &task_config,
+    )?))
+}
+
 // ── YAML param helpers ──
 
 fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result<()> {
@@ -700,6 +736,24 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
             ],
             &["task_config"],
         ),
+        "fat" => (
+            &[
+                "tasks",
+                "label_col_map",
+                "metrics",
+                "d",
+                "d_ff",
+                "num_layers",
+                "n_heads",
+                "M",
+                "k",
+                "K",
+                "deep_hidden_dims",
+                "shared_bottom_dims",
+                "task_config",
+            ],
+            &["task_config"],
+        ),
         _ => return Ok(()),
     };
     let has_output_contract = params.get("output_contract").is_some();
@@ -762,6 +816,13 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
         "num_heads",
         "num_basis",
         "rank",
+        "d",
+        "d_ff",
+        "num_layers",
+        "n_heads",
+        "M",
+        "k",
+        "K",
     ] {
         expect_optional_usize(model_type, params, key)?;
     }
