@@ -106,6 +106,7 @@ def test_native_output_contract_esmm_exposes_public_and_internal_outputs():
         "token_mixer_large.yaml",
         "rankmixer.yaml",
         "rankup.yaml",
+        "hyformer.yaml",
         "pepnet.yaml",
     ],
 )
@@ -203,6 +204,50 @@ def test_rankup_forward_with_task_token_output_contract():
     model = RankUpModel(
         FEATURES,
         RankUpConfig(token_dim=4, num_sparse_tokens=2, num_blocks=1, num_task_tokens=1),
+        task_config=None,
+        output_contract=contract,
+    )
+
+    execution = model.forward_execution(_inputs(3))
+
+    assert execution.nodes.tensor("ctr_logit").shape == (3, 1)
+    assert execution.outputs.tensor("ctr").shape == (3, 1)
+
+
+def test_hyformer_forward_with_output_contract():
+    from train.core.output_contract import parse_output_contract
+    from train.models.hyformer import HyFormerConfig, HyFormerModel
+
+    contract = parse_output_contract(
+        {
+            "version": 1,
+            "graph": {
+                "towers": [
+                    {
+                        "name": "ctr_logit",
+                        "kind": "binary_logit",
+                        "hidden_dims": [4],
+                    }
+                ],
+                "relations": [{"name": "ctr_prob", "op": "sigmoid", "inputs": ["ctr_logit"]}],
+            },
+            "objectives": [
+                {
+                    "name": "ctr_loss",
+                    "source": "ctr_logit",
+                    "label": "is_click",
+                    "loss": {"type": "binary_cross_entropy_with_logits"},
+                }
+            ],
+            "metrics": [
+                {"name": "ctr_auc", "source": "ctr_logit", "label": "is_click", "type": "auc"}
+            ],
+            "outputs": [{"name": "ctr", "source": "ctr_prob"}],
+        }
+    )
+    model = HyFormerModel(
+        FEATURES,
+        HyFormerConfig(d=4, d_ff=8, num_queries=2, num_layers=1),
         task_config=None,
         output_contract=contract,
     )

@@ -14,6 +14,7 @@ from .deepfm import DeepFM
 from .esmm import ESMM, default_task_config
 from .fat import FATModel
 from .gdcn_esmm import GDCNESMM
+from .hyformer import HyFormerConfig, HyFormerModel
 from .lr import LogisticRegression
 from .mixformer import MixFormerModel
 from .mmoe import MMoE
@@ -539,9 +540,33 @@ def _build_mixformer(
     )
 
 
+def _build_hyformer(
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
+) -> HyFormerModel:
+    output_contract = _parse_output_contract(params)
+    task_config = _parse_task_config(params.get("task_config"))
+    if task_config is None and output_contract is None:
+        raise ValueError("HyFormer requires task_config or output_contract")
+    return HyFormerModel(
+        features,
+        HyFormerConfig(
+            d=params.get("d", 64),
+            d_ff=params.get("d_ff", 128),
+            num_queries=params.get("num_queries", 2),
+            num_layers=params.get("num_layers", 2),
+            hidden_factor=params.get("hidden_factor", 1.0),
+        ),
+        task_config=task_config,
+        output_contract=output_contract,
+        pooling_map=params.get("_pooling_map"),
+        seq_len_map=params.get("_seq_len_map"),
+    )
+
+
 register_model("lr", _spec_pred, _build_lr)
 register_model("deepfm", _spec_pred, _build_deepfm)
 register_model("mixformer", _spec_pred, _build_mixformer)
+register_model("hyformer", _spec_pred, _build_hyformer)
 register_model("mmoe", _spec_mmoe, _build_mmoe)
 register_model("esmm", _spec_esmm, _build_esmm)
 register_model("gdcn_esmm", _spec_esmm, _build_gdcn_esmm)

@@ -314,6 +314,7 @@ fn test_all_example_models_build_with_native_output_contract() {
         "token_mixer_large.yaml",
         "rankmixer.yaml",
         "rankup.yaml",
+        "hyformer.yaml",
         "pepnet.yaml",
     ];
     for name in configs {
@@ -497,6 +498,48 @@ outputs:
             use_global_token: true,
             cross_token: None,
             num_task_tokens: 1,
+        },
+        &contract,
+    )
+    .unwrap();
+
+    let execution = model.forward_execution(&dummy_inputs(3)).unwrap();
+
+    assert_eq!(execution.nodes.tensor("ctr_logit").unwrap().dims(), &[3, 1]);
+    assert_eq!(execution.outputs.tensor("ctr").unwrap().dims(), &[3, 1]);
+}
+
+#[test]
+fn test_hyformer_forward_with_output_contract() {
+    use scale_rec::models::hyformer::model::{HyFormerConfig, HyFormerModel};
+
+    let features = dummy_features();
+    let contract: scale_rec::models::output_contract::OutputContract = serde_yaml::from_str(
+        r#"
+version: 1
+graph:
+  towers:
+    - {name: ctr_logit, kind: binary_logit, hidden_dims: [4]}
+  relations:
+    - {name: ctr_prob, op: sigmoid, inputs: [ctr_logit]}
+objectives:
+  - {name: ctr_loss, source: ctr_logit, label: is_click, loss: {type: binary_cross_entropy_with_logits}}
+metrics:
+  - {name: ctr_auc, source: ctr_logit, label: is_click, type: auc}
+outputs:
+  - {name: ctr, source: ctr_prob}
+"#,
+    )
+    .unwrap();
+    let model = HyFormerModel::with_output_contract(
+        vb(),
+        &features,
+        HyFormerConfig {
+            d: 4,
+            d_ff: 8,
+            num_queries: 2,
+            num_layers: 1,
+            hidden_factor: 1.0,
         },
         &contract,
     )

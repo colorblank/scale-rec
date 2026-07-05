@@ -469,6 +469,30 @@ _MODEL_PARAM_SPECS: dict[str, tuple[set[str], set[str], dict[str, type | tuple[t
             "output_contract": dict,
         },
     ),
+    "hyformer": (
+        _COMMON_MODEL_KEYS
+        | {
+            "d",
+            "d_ff",
+            "num_queries",
+            "num_layers",
+            "hidden_factor",
+            "task_config",
+        },
+        {"task_config"},
+        {
+            "d": int,
+            "d_ff": int,
+            "num_queries": int,
+            "num_layers": int,
+            "hidden_factor": (int, float),
+            "task_config": dict,
+            "tasks": list,
+            "label_col_map": dict,
+            "metrics": dict,
+            "output_contract": dict,
+        },
+    ),
     "pepnet": (
         _COMMON_MODEL_KEYS
         | {

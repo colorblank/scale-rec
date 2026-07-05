@@ -18,6 +18,8 @@ pub mod esmm;
 pub mod fat;
 /// GDCN + ESMM 混合模型。
 pub mod gdcn_esmm;
+/// HyFormer: Revisiting sequence modeling and feature interaction in CTR prediction (arXiv:2601.12681).
+pub mod hyformer;
 /// 逻辑回归基线模型。
 pub mod lr;
 /// MixFormer: Co-Scaling Up Dense and Sequence in Industrial Recommenders (KDD 2026, arXiv:2602.14110)。
@@ -225,6 +227,7 @@ static REGISTRY: LazyLock<HashMap<&'static str, BuildFn>> = LazyLock::new(|| {
     m.insert("rankmixer", build_rankmixer);
     m.insert("rankup", build_rankup);
     m.insert("pepnet", build_pepnet);
+    m.insert("hyformer", build_hyformer);
     m.insert("fat", build_fat);
     m.insert("mixformer", build_mixformer);
     m.insert("onerank", build_onerank);
@@ -618,6 +621,34 @@ fn build_mixformer(
     )?))
 }
 
+fn build_hyformer(
+    vb: VarBuilder,
+    features: &[FeatureSpec],
+    _tokenizer: Option<FeatureTokenizer>,
+    params: &serde_yaml::Value,
+    _options: &ModelBuildOptions,
+) -> Result<Box<dyn Model>> {
+    let config = hyformer::model::HyFormerConfig {
+        d: yaml_usize(params, "d", 64),
+        d_ff: yaml_usize(params, "d_ff", 128),
+        num_queries: yaml_usize(params, "num_queries", 2),
+        num_layers: yaml_usize(params, "num_layers", 2),
+        hidden_factor: yaml_f64(params, "hidden_factor", 1.0),
+    };
+    if let Some(contract) = parse_output_contract_param(params)? {
+        return Ok(Box::new(
+            hyformer::model::HyFormerModel::with_output_contract(vb, features, config, &contract)?,
+        ));
+    }
+    let task_config = parse_multi_task_config(params)?;
+    Ok(Box::new(hyformer::model::HyFormerModel::new(
+        vb,
+        features,
+        config,
+        &task_config,
+    )?))
+}
+
 fn build_onerank(
     vb: VarBuilder,
     features: &[FeatureSpec],
@@ -904,6 +935,20 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
             ],
             &[],
         ),
+        "hyformer" => (
+            &[
+                "tasks",
+                "label_col_map",
+                "metrics",
+                "d",
+                "d_ff",
+                "num_queries",
+                "num_layers",
+                "hidden_factor",
+                "task_config",
+            ],
+            &["task_config"],
+        ),
         "onerank" => (
             &[
                 "tasks",
@@ -999,6 +1044,7 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
         "permutation_seed",
         "multi_embedding_tables",
         "num_task_tokens",
+        "num_queries",
     ] {
         expect_optional_usize(model_type, params, key)?;
     }
