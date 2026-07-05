@@ -15,6 +15,7 @@ from train.models.lr import LogisticRegression
 from train.models.mmoe import MMoE
 from train.models.output import ModelOutput
 from train.models.pepnet import GateNU, PEPNet
+from train.models.rankup import RankUpConfig, RankUpModel
 
 FEATURES = [("a", 10, 4), ("b", 5, 4)]
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -104,6 +105,7 @@ def test_native_output_contract_esmm_exposes_public_and_internal_outputs():
         "unimixer.yaml",
         "token_mixer_large.yaml",
         "rankmixer.yaml",
+        "rankup.yaml",
         "pepnet.yaml",
     ],
 )
@@ -167,6 +169,48 @@ def test_mmoe_forward():
     out = model(_inputs(3))
     assert out.tensor("ctr").shape == (3, 1)
     assert out.tensor("cvr").shape == (3, 1)
+
+
+def test_rankup_forward_with_task_token_output_contract():
+    from train.core.output_contract import parse_output_contract
+
+    contract = parse_output_contract(
+        {
+            "version": 1,
+            "graph": {
+                "towers": [
+                    {
+                        "name": "ctr_logit",
+                        "input": "task_0",
+                        "kind": "binary_logit",
+                        "hidden_dims": [4],
+                    }
+                ],
+                "relations": [{"name": "ctr_prob", "op": "sigmoid", "inputs": ["ctr_logit"]}],
+            },
+            "objectives": [
+                {
+                    "name": "ctr_loss",
+                    "source": "ctr_logit",
+                    "label": "is_click",
+                    "loss": {"type": "binary_cross_entropy_with_logits"},
+                }
+            ],
+            "metrics": [{"name": "ctr_auc", "source": "ctr_logit", "label": "is_click", "type": "auc"}],
+            "outputs": [{"name": "ctr", "source": "ctr_prob"}],
+        }
+    )
+    model = RankUpModel(
+        FEATURES,
+        RankUpConfig(token_dim=4, num_sparse_tokens=2, num_blocks=1, num_task_tokens=1),
+        task_config=None,
+        output_contract=contract,
+    )
+
+    execution = model.forward_execution(_inputs(3))
+
+    assert execution.nodes.tensor("ctr_logit").shape == (3, 1)
+    assert execution.outputs.tensor("ctr").shape == (3, 1)
 
 
 def test_esmm_forward():

@@ -17,11 +17,12 @@ import torch
 import torch.nn as nn
 
 if TYPE_CHECKING:
-    from ..core.config import PoolingMode
+    from ...core.config import PoolingMode
 
-from ..core.model_output import ModelExecution, ModelOutput, OutputKind
-from ..core.output_contract import NormalizedOutputContract
-from ..layers.embedding import FeatureEmbeddings, FeatureTensorMap, FeatureTuple
+from ...core.model_output import ModelExecution, ModelOutput, OutputKind
+from ...core.output_contract import NormalizedOutputContract
+from ...layers.embedding import FeatureEmbeddings, FeatureTensorMap, FeatureTuple
+from ..output_head import OutputHead
 from .encoding import MixFormerBlock
 
 
@@ -76,7 +77,6 @@ class MixFormerModel(nn.Module):
 
         if output_contract is not None:
             self.output_contract = output_contract
-            from ..models.output_head import OutputHead
 
             self.output_head = OutputHead(
                 output_contract,

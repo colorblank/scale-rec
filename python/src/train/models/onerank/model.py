@@ -20,11 +20,11 @@ import torch
 import torch.nn as nn
 
 if TYPE_CHECKING:
-    from ..core.config import PoolingMode
+    from ...core.config import PoolingMode
 
-from ..core.model_output import ModelExecution, ModelOutput, OutputKind
-from ..core.output_contract import NormalizedOutputContract
-from ..layers.embedding import FeatureEmbeddings, FeatureTensorMap, FeatureTuple
+from ...core.model_output import ModelExecution, ModelOutput, OutputKind
+from ...core.output_contract import NormalizedOutputContract
+from ...layers.embedding import FeatureEmbeddings, FeatureTensorMap, FeatureTuple
 from .encoding import OneRankBlock, build_attention_mask
 from .prediction import CrossTaskAttention, matching_score
 

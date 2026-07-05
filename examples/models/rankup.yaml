@@ -1,0 +1,47 @@
+type: rankup
+token_dim: 64
+num_sparse_tokens: 2
+num_blocks: 2
+hidden_factor: 1.0
+permutation_seed: 2026
+multi_embedding_tables: 2
+use_global_token: true
+num_task_tokens: 5
+output_contract:
+  version: 1
+  graph:
+    towers:
+      - {name: click_logit, input: task_0, kind: binary_logit, hidden_dims: [16, 8]}
+      - {name: cvr_logit, input: task_1, kind: binary_logit, hidden_dims: [16, 8]}
+      - {name: detail_logit, input: task_2, kind: binary_logit, hidden_dims: [8]}
+      - {name: stock_logit, input: task_3, kind: binary_logit, hidden_dims: [8]}
+      - {name: stay_logit, input: task_4, kind: binary_logit, hidden_dims: [8], activation: none}
+    relations:
+      - {name: click_prob, op: sigmoid, inputs: [click_logit]}
+      - {name: cvr_prob, op: sigmoid, inputs: [cvr_logit]}
+      - {name: detail_prob, op: sigmoid, inputs: [detail_logit]}
+      - {name: stock_prob, op: sigmoid, inputs: [stock_logit]}
+      - {name: stay_prob, op: sigmoid, inputs: [stay_logit]}
+      - {name: ctcvr_prob, op: multiply, inputs: [click_prob, cvr_prob]}
+      - {name: ctdetail_prob, op: multiply, inputs: [click_prob, detail_prob]}
+      - {name: ctstock_prob, op: multiply, inputs: [click_prob, stock_prob]}
+      - {name: ctstay_prob, op: multiply, inputs: [detail_prob, stay_prob]}
+  objectives:
+    - {name: click_loss, source: click_logit, label: is_click, loss: {type: binary_cross_entropy_with_logits}}
+    - {name: cvr_loss, source: ctcvr_prob, label: is_cvr, loss: {type: focal_binary_cross_entropy, alpha: 0.25, gamma: 2.0}}
+    - {name: detail_loss, source: ctdetail_prob, label: is_click_detail, loss: {type: binary_cross_entropy}}
+    - {name: stock_loss, source: ctstock_prob, label: is_click_stock, loss: {type: binary_cross_entropy}}
+    - {name: stay_loss, source: stay_logit, label: stay_time_label, loss: {type: weighted_bce_stay}}
+  metrics:
+    - {name: click_auc, source: click_logit, label: is_click, type: auc}
+    - {name: click_logloss, source: click_prob, label: is_click, type: logloss}
+    - {name: cvr_auc, source: ctcvr_prob, label: is_cvr, type: auc}
+    - {name: cvr_logloss, source: ctcvr_prob, label: is_cvr, type: logloss}
+    - {name: detail_auc, source: ctdetail_prob, label: is_click_detail, type: auc}
+    - {name: stock_auc, source: ctstock_prob, label: is_click_stock, type: auc}
+  outputs:
+    - {name: ctr, source: click_prob}
+    - {name: ctcvr, source: ctcvr_prob}
+    - {name: ctdetail, source: ctdetail_prob}
+    - {name: ctstock, source: ctstock_prob}
+    - {name: ctstay, source: ctstay_prob}

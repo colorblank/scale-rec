@@ -313,6 +313,7 @@ fn test_all_example_models_build_with_native_output_contract() {
         "unimixer.yaml",
         "token_mixer_large.yaml",
         "rankmixer.yaml",
+        "rankup.yaml",
         "pepnet.yaml",
     ];
     for name in configs {
@@ -458,6 +459,53 @@ fn test_rankmixer_forward_shape() {
     let out = model.forward(&dummy_inputs(3)).unwrap();
     assert!(out.contains_key("ctr"));
     assert_eq!(out.tensor("ctr").unwrap().dims(), &[3, 1]);
+}
+
+#[test]
+fn test_rankup_forward_with_task_token_output_contract() {
+    use scale_rec::models::rankup::model::{RankUpConfig, RankUpModel};
+
+    let features = dummy_features();
+    let contract: scale_rec::models::output_contract::OutputContract = serde_yaml::from_str(
+        r#"
+version: 1
+graph:
+  towers:
+    - {name: ctr_logit, input: task_0, kind: binary_logit, hidden_dims: [4]}
+  relations:
+    - {name: ctr_prob, op: sigmoid, inputs: [ctr_logit]}
+objectives:
+  - {name: ctr_loss, source: ctr_logit, label: is_click, loss: {type: binary_cross_entropy_with_logits}}
+metrics:
+  - {name: ctr_auc, source: ctr_logit, label: is_click, type: auc}
+outputs:
+  - {name: ctr, source: ctr_prob}
+"#,
+    )
+    .unwrap();
+    let model = RankUpModel::with_output_contract(
+        vb(),
+        &features,
+        RankUpConfig {
+            token_dim: 4,
+            num_sparse_tokens: 2,
+            num_blocks: 1,
+            num_heads: None,
+            hidden_factor: 1.0,
+            permutation_seed: 2026,
+            multi_embedding_tables: 1,
+            use_global_token: true,
+            cross_token: None,
+            num_task_tokens: 1,
+        },
+        &contract,
+    )
+    .unwrap();
+
+    let execution = model.forward_execution(&dummy_inputs(3)).unwrap();
+
+    assert_eq!(execution.nodes.tensor("ctr_logit").unwrap().dims(), &[3, 1]);
+    assert_eq!(execution.outputs.tensor("ctr").unwrap().dims(), &[3, 1]);
 }
 
 #[test]

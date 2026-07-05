@@ -23,15 +23,16 @@ import torch
 import torch.nn as nn
 
 if TYPE_CHECKING:
-    from ..core.config import PoolingMode
+    from ...core.config import PoolingMode
 
-from ..core.model_output import ModelExecution, ModelOutput
-from ..core.output_contract import NormalizedOutputContract
-from ..layers.embedding import FeatureEmbeddings, FeatureTensorMap, FeatureTuple
-from ..layers.mlp import Mlp
-from ..layers.towers import Activation, MultiTaskConfig, TaskTower
+from ...core.model_output import ModelExecution, ModelOutput
+from ...core.output_contract import NormalizedOutputContract
+from ...layers.embedding import FeatureEmbeddings, FeatureTensorMap, FeatureTuple
+from ...layers.mlp import Mlp
+from ...layers.towers import Activation, MultiTaskConfig, TaskTower
+from ..esmm import _probability_for_relation
+from ..output_head import OutputHead
 from .attention import FieldDecomposedAttention
-from .esmm import _probability_for_relation
 from .ffn import FieldAwareFFN
 from .hypernetwork import BasisHypernetwork
 
@@ -157,7 +158,6 @@ class FATModel(nn.Module):
 
         if output_contract is not None:
             self.output_contract = output_contract
-            from ..models.output_head import OutputHead
             self.output_head = OutputHead(
                 output_contract,
                 {"shared": shared_dim},

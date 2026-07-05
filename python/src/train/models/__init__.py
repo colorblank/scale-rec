@@ -20,6 +20,8 @@ from .mmoe import MMoE
 from .onerank import OneRankModel
 from .pepnet import PEPNet
 from .rankmixer import RankMixerModel
+from .rankup import RankUpConfig, RankUpModel
+from .rankup.tokenizer import CrossTokenConfig as RankUpCrossTokenConfig
 from .token_mixer_large import TokenMixerLargeModel
 from .unimixer.model import UniMixerModel
 
@@ -440,6 +442,38 @@ def _build_rankmixer(
     )
 
 
+def _build_rankup(
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
+) -> RankUpModel:
+    output_contract = _parse_output_contract(params)
+    task_config = _parse_task_config(params.get("task_config"))
+    if task_config is None and output_contract is None:
+        raise ValueError("RankUp requires task_config or output_contract")
+    cross_token = None
+    if params.get("cross_token") is not None:
+        raw = params["cross_token"]
+        cross_token = RankUpCrossTokenConfig(left=raw["left"], right=raw["right"])
+    return RankUpModel(
+        features,
+        RankUpConfig(
+            token_dim=params.get("token_dim", 64),
+            num_sparse_tokens=params.get("num_sparse_tokens", 4),
+            num_blocks=params.get("num_blocks", 2),
+            num_heads=params.get("num_heads"),
+            hidden_factor=params.get("hidden_factor", 1.0),
+            permutation_seed=params.get("permutation_seed", 2026),
+            multi_embedding_tables=params.get("multi_embedding_tables", 1),
+            use_global_token=params.get("use_global_token", True),
+            cross_token=cross_token,
+            num_task_tokens=params.get("num_task_tokens", 0),
+        ),
+        task_config=task_config,
+        output_contract=output_contract,
+        pooling_map=params.get("_pooling_map"),
+        seq_len_map=params.get("_seq_len_map"),
+    )
+
+
 def _build_fat(
     features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
 ) -> FATModel:
@@ -514,6 +548,7 @@ register_model("gdcn_esmm", _spec_esmm, _build_gdcn_esmm)
 register_model("unimixer", _spec_unimixer, _build_unimixer)
 register_model("token_mixer_large", _spec_unimixer, _build_token_mixer_large)
 register_model("rankmixer", _spec_unimixer, _build_rankmixer)
+register_model("rankup", _spec_unimixer, _build_rankup)
 register_model("pepnet", _spec_esmm, _build_pepnet)
 register_model("fat", _spec_pred, _build_fat)
 register_model("onerank", _spec_pred, _build_onerank)

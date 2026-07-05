@@ -16,16 +16,16 @@ pub mod deepfm;
 pub mod esmm;
 /// FAT: Field-Aware Transformer (KDD 2026, arXiv:2511.12081)。
 pub mod fat;
-/// MixFormer: Co-Scaling Up Dense and Sequence in Industrial Recommenders (KDD 2026, arXiv:2602.14110)。
-pub mod mixformer;
-/// OneRank: Unified Transformer-Native Ranking Architecture (KDD 2026, arXiv:2606.16838)。
-pub mod onerank;
 /// GDCN + ESMM 混合模型。
 pub mod gdcn_esmm;
 /// 逻辑回归基线模型。
 pub mod lr;
+/// MixFormer: Co-Scaling Up Dense and Sequence in Industrial Recommenders (KDD 2026, arXiv:2602.14110)。
+pub mod mixformer;
 /// MMoE 多门控专家混合模型。
 pub mod mmoe;
+/// OneRank: Unified Transformer-Native Ranking Architecture (KDD 2026, arXiv:2606.16838)。
+pub mod onerank;
 /// Versioned output-contract schema and validation.
 pub mod output_contract;
 /// Contract-driven task towers, relation graph and public output projection.
@@ -34,6 +34,8 @@ pub mod output_head;
 pub mod pepnet;
 /// RankMixer：Token Mixing + Per-token FFN 排序模型。
 pub mod rankmixer;
+/// RankUp: Scaling Up Top-K Sparse Features for CTR Prediction (arXiv:2604.17878).
+pub mod rankup;
 /// TokenMixer-Large：Mixing & Reverting 大规模排序模型。
 pub mod token_mixer_large;
 /// UniMixer 双随机矩阵交互模型。
@@ -221,6 +223,7 @@ static REGISTRY: LazyLock<HashMap<&'static str, BuildFn>> = LazyLock::new(|| {
     m.insert("unimixer", build_unimixer);
     m.insert("token_mixer_large", build_token_mixer_large);
     m.insert("rankmixer", build_rankmixer);
+    m.insert("rankup", build_rankup);
     m.insert("pepnet", build_pepnet);
     m.insert("fat", build_fat);
     m.insert("mixformer", build_mixformer);
@@ -557,6 +560,46 @@ fn build_rankmixer(
     )?))
 }
 
+fn build_rankup(
+    vb: VarBuilder,
+    features: &[FeatureSpec],
+    _tokenizer: Option<FeatureTokenizer>,
+    params: &serde_yaml::Value,
+    _options: &ModelBuildOptions,
+) -> Result<Box<dyn Model>> {
+    let cross_token = match params.get("cross_token") {
+        Some(value) if !value.is_null() => Some(parse_rankup_cross_token(value)?),
+        _ => None,
+    };
+    let config = rankup::model::RankUpConfig {
+        token_dim: yaml_usize(params, "token_dim", 64),
+        num_sparse_tokens: yaml_usize(params, "num_sparse_tokens", 4),
+        num_blocks: yaml_usize(params, "num_blocks", 2),
+        num_heads: yaml_usize_opt(params, "num_heads"),
+        hidden_factor: yaml_f64(params, "hidden_factor", 1.0),
+        permutation_seed: yaml_usize(params, "permutation_seed", 2026) as u64,
+        multi_embedding_tables: yaml_usize(params, "multi_embedding_tables", 1),
+        use_global_token: params
+            .get("use_global_token")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true),
+        cross_token,
+        num_task_tokens: yaml_usize(params, "num_task_tokens", 0),
+    };
+    if let Some(contract) = parse_output_contract_param(params)? {
+        return Ok(Box::new(rankup::model::RankUpModel::with_output_contract(
+            vb, features, config, &contract,
+        )?));
+    }
+    let task_config = parse_multi_task_config(params)?;
+    Ok(Box::new(rankup::model::RankUpModel::new(
+        vb,
+        features,
+        config,
+        &task_config,
+    )?))
+}
+
 fn build_mixformer(
     vb: VarBuilder,
     features: &[FeatureSpec],
@@ -595,7 +638,15 @@ fn build_onerank(
     let contract = parse_output_contract_param(params)?
         .ok_or_else(|| candle_core::Error::Msg("OneRank requires output_contract".into()))?;
     Ok(Box::new(onerank::model::OneRankModel::new(
-        vb, features, d, d_ff, num_layers, n_heads, num_tasks, &cross_task_mask, &contract,
+        vb,
+        features,
+        d,
+        d_ff,
+        num_layers,
+        n_heads,
+        num_tasks,
+        &cross_task_mask,
+        &contract,
     )?))
 }
 
@@ -658,8 +709,18 @@ fn build_fat(
     let shared_bottom_dims: Vec<usize> = yaml_usize_seq(params, "shared_bottom_dims");
     if let Some(contract) = parse_output_contract_param(params)? {
         return Ok(Box::new(fat::model::FATModel::with_output_contract(
-            vb, features, d, d_ff, num_layers, n_heads, m, k, k_top,
-            &deep_hidden_dims, &shared_bottom_dims, &contract,
+            vb,
+            features,
+            d,
+            d_ff,
+            num_layers,
+            n_heads,
+            m,
+            k,
+            k_top,
+            &deep_hidden_dims,
+            &shared_bottom_dims,
+            &contract,
         )?));
     }
     let task_config = params
@@ -668,8 +729,18 @@ fn build_fat(
     let task_config = serde_yaml::from_value(task_config.clone())
         .map_err(|e| candle_core::Error::Msg(format!("parse fat task_config: {}", e)))?;
     Ok(Box::new(fat::model::FATModel::new(
-        vb, features, d, d_ff, num_layers, n_heads, m, k, k_top,
-        &deep_hidden_dims, &shared_bottom_dims, &task_config,
+        vb,
+        features,
+        d,
+        d_ff,
+        num_layers,
+        n_heads,
+        m,
+        k,
+        k_top,
+        &deep_hidden_dims,
+        &shared_bottom_dims,
+        &task_config,
     )?))
 }
 
@@ -766,6 +837,25 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
                 "num_blocks",
                 "num_heads",
                 "hidden_factor",
+                "task_config",
+            ],
+            &["task_config"],
+        ),
+        "rankup" => (
+            &[
+                "tasks",
+                "label_col_map",
+                "metrics",
+                "token_dim",
+                "num_sparse_tokens",
+                "num_blocks",
+                "num_heads",
+                "hidden_factor",
+                "permutation_seed",
+                "multi_embedding_tables",
+                "use_global_token",
+                "cross_token",
+                "num_task_tokens",
                 "task_config",
             ],
             &["task_config"],
@@ -875,7 +965,13 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
     ] {
         expect_optional_seq(model_type, params, key)?;
     }
-    for key in ["label_col_map", "metrics", "task_config", "output_contract"] {
+    for key in [
+        "label_col_map",
+        "metrics",
+        "task_config",
+        "output_contract",
+        "cross_token",
+    ] {
         expect_optional_mapping(model_type, params, key)?;
     }
     for key in [
@@ -899,10 +995,14 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
         "K",
         "num_tasks",
         "num_heads",
+        "num_sparse_tokens",
+        "permutation_seed",
+        "multi_embedding_tables",
+        "num_task_tokens",
     ] {
         expect_optional_usize(model_type, params, key)?;
     }
-    for key in ["use_lite", "use_siamese"] {
+    for key in ["use_lite", "use_siamese", "use_global_token"] {
         expect_optional_bool(model_type, params, key)?;
     }
     expect_optional_f64(model_type, params, "hidden_factor")?;
@@ -1039,6 +1139,26 @@ fn yaml_string_seq(v: &serde_yaml::Value, key: &str) -> Vec<String> {
 
 fn yaml_f64(v: &serde_yaml::Value, key: &str, default: f64) -> f64 {
     v.get(key).and_then(|v| v.as_f64()).unwrap_or(default)
+}
+
+fn parse_rankup_cross_token(
+    value: &serde_yaml::Value,
+) -> Result<rankup::tokenizer::CrossTokenConfig> {
+    let map = value
+        .as_mapping()
+        .ok_or_else(|| candle_core::Error::Msg("rankup cross_token must be mapping".into()))?;
+    let get = |key: &str| -> Result<String> {
+        map.get(serde_yaml::Value::String(key.to_string()))
+            .and_then(|value| value.as_str())
+            .map(ToString::to_string)
+            .ok_or_else(|| {
+                candle_core::Error::Msg(format!("rankup cross_token.{key} must be string"))
+            })
+    };
+    Ok(rankup::tokenizer::CrossTokenConfig {
+        left: get("left")?,
+        right: get("right")?,
+    })
 }
 
 fn yaml_bool(v: &serde_yaml::Value, key: &str) -> bool {

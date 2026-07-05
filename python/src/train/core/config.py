@@ -435,6 +435,40 @@ _MODEL_PARAM_SPECS: dict[str, tuple[set[str], set[str], dict[str, type | tuple[t
             "output_contract": dict,
         },
     ),
+    "rankup": (
+        _COMMON_MODEL_KEYS
+        | {
+            "token_dim",
+            "num_sparse_tokens",
+            "num_blocks",
+            "num_heads",
+            "hidden_factor",
+            "permutation_seed",
+            "multi_embedding_tables",
+            "use_global_token",
+            "cross_token",
+            "num_task_tokens",
+            "task_config",
+        },
+        {"task_config"},
+        {
+            "token_dim": int,
+            "num_sparse_tokens": int,
+            "num_blocks": int,
+            "num_heads": int,
+            "hidden_factor": (int, float),
+            "permutation_seed": int,
+            "multi_embedding_tables": int,
+            "use_global_token": bool,
+            "cross_token": dict,
+            "num_task_tokens": int,
+            "task_config": dict,
+            "tasks": list,
+            "label_col_map": dict,
+            "metrics": dict,
+            "output_contract": dict,
+        },
+    ),
     "pepnet": (
         _COMMON_MODEL_KEYS
         | {
