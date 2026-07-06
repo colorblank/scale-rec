@@ -1,11 +1,13 @@
 //! PEPNet: Parameter and Embedding Personalized Network.
 //!
 //! Architecture:
-//!   FeatureEmbeddings → EPNet gate → Deep MLP → shared_bottom → PPNet gate → towers
+//!   FeatureEmbeddings → EPNet (per-domain gates) → Deep MLP → shared_bottom → PPNet gate → towers
 //!
-//! EPNet computes an element-wise gate on the concatenated embedding vector,
-//! conditioned on selected personalized prior features. PPNet applies per-layer gates inside each
-//! task tower using selected personalized prior features.
+//! EPNet applies a separate element-wise gate per domain (paper §3.2), each conditioned
+//! on the domain's own pooled prior features. PPNet applies per-layer gates inside each
+//! task tower using a global prior.
+//!
+//! Reference: PEPNet (Kuaishou 2023, KDD).
 
 use super::output_contract::{ContractPublicOutput, ContractRelation, OutputContract};
 use super::output_head::{
@@ -106,16 +108,30 @@ struct ContractMode {
     outputs: Vec<ContractPublicOutput>,
 }
 
-/// PEPNet model with EPNet embedding gates and per-task PPNet tower gates.
+struct DomainInfo {
+    /// Domain name (for VarBuilder scope).
+    name: String,
+    /// Indices into the FeatureEmbeddings stacked output for this domain's features.
+    feature_indices: Vec<usize>,
+    /// Indices into the FeatureEmbeddings stacked output for this domain's prior features.
+    prior_indices: Vec<usize>,
+    /// Sum of embed_dim across all features in this domain.
+    dim: usize,
+}
+
+/// PEPNet model with per-domain EPNet gates and per-task PPNet tower gates.
 pub struct PEPNet {
     embeddings: FeatureEmbeddings,
-    ep_prior_indices: Vec<usize>,
-    pp_prior_indices: Vec<usize>,
-    /// Projects feature-wise pooled prior → fixed-dim prior representation.
-    ep_prior_proj: candle_nn::Linear,
+    ep_prior_projs: Vec<candle_nn::Linear>,
+    epnet_gates: Vec<GateNu>,
+    /// Per-domain metadata (same length as ep_prior_projs / epnet_gates).
+    domains: Vec<DomainInfo>,
+    /// Global PPNet prior projection (shared across all towers).
     pp_prior_proj: candle_nn::Linear,
-    /// EPNet gate: prior_rep → [total_dim] sigmoid gate applied to embeddings.
-    epnet_gate: GateNu,
+    pp_prior_indices: Vec<usize>,
+    epnet_gate: Option<GateNu>,
+    ep_prior_proj: Option<candle_nn::Linear>,
+    ep_prior_indices: Vec<usize>,
     deep: Option<Mlp>,
     shared_bottom: Option<Mlp>,
     towers: Vec<PersonalizedTower>,
@@ -148,6 +164,104 @@ impl PEPNet {
         Ok(indices)
     }
 
+    fn build_domains(
+        features: &[FeatureSpec],
+        domains: &[serde_yaml::Value],
+        vb: VarBuilder,
+        prior_dim: usize,
+    ) -> Result<(Vec<DomainInfo>, Vec<candle_nn::Linear>, Vec<GateNu>)> {
+        let feat_name_to_idx: HashMap<&str, usize> = features
+            .iter()
+            .enumerate()
+            .map(|(i, f)| (f.name.as_str(), i))
+            .collect();
+        let feat_name_to_dim: HashMap<&str, usize> = features
+            .iter()
+            .map(|f| (f.name.as_str(), f.embed_dim))
+            .collect();
+
+        let mut all_assigned: Vec<bool> = vec![false; features.len()];
+        let mut infos = Vec::with_capacity(domains.len());
+        let mut prior_projs = Vec::with_capacity(domains.len());
+        let mut gates = Vec::with_capacity(domains.len());
+
+        for d in domains.iter() {
+            let name = d["name"]
+                .as_str()
+                .ok_or_else(|| {
+                    candle_core::Error::Msg("PEPNet domain missing 'name'".into())
+                })?;
+            let feat_names: Vec<&str> = d["features"]
+                .as_sequence()
+                .ok_or_else(|| {
+                    candle_core::Error::Msg(format!("PEPNet domain '{}' missing 'features'", name))
+                })?
+                .iter()
+                .map(|v| v.as_str().unwrap())
+                .collect();
+
+            let mut feature_indices = Vec::with_capacity(feat_names.len());
+            let mut dim = 0usize;
+            for &fn_ in &feat_names {
+                let &idx = feat_name_to_idx.get(fn_).ok_or_else(|| {
+                    candle_core::Error::Msg(format!(
+                        "PEPNet domain '{}' unknown feature '{}'",
+                        name, fn_
+                    ))
+                })?;
+                all_assigned[idx] = true;
+                feature_indices.push(idx);
+                dim += feat_name_to_dim.get(fn_).unwrap_or(&0);
+            }
+
+            let prior_names: Vec<&str> = d.get("ep_prior_features")
+                .and_then(|v| v.as_sequence())
+                .map(|seq| seq.iter().map(|v| v.as_str().unwrap()).collect())
+                .unwrap_or_else(|| feat_names.clone());
+
+            let mut prior_indices = Vec::with_capacity(prior_names.len());
+            for &fn_ in &prior_names {
+                let &idx = feat_name_to_idx.get(fn_).ok_or_else(|| {
+                    candle_core::Error::Msg(format!(
+                        "PEPNet domain '{}' unknown ep_prior_feature '{}'",
+                        name, fn_
+                    ))
+                })?;
+                prior_indices.push(idx);
+            }
+
+            let domain_vb = vb.pp("ep_prior_projs").pp(name);
+            let proj = linear_no_bias(prior_indices.len(), prior_dim, domain_vb)?;
+            let gate_vb = vb.pp("epnet_gates").pp(name);
+            let gate = Self::build_gate(gate_vb, prior_dim, dim)?;
+
+            infos.push(DomainInfo {
+                name: name.to_string(),
+                feature_indices,
+                prior_indices,
+                dim,
+            });
+            prior_projs.push(proj);
+            gates.push(gate);
+        }
+
+        // Check all features are assigned
+        let unassigned: Vec<String> = all_assigned
+            .iter()
+            .enumerate()
+            .filter(|(_, &a)| !a)
+            .map(|(i, _)| features[i].name.clone())
+            .collect();
+        if !unassigned.is_empty() {
+            return Err(candle_core::Error::Msg(format!(
+                "PEPNet features not assigned to any domain: {:?}",
+                unassigned
+            )));
+        }
+
+        Ok((infos, prior_projs, gates))
+    }
+
     /// Build PEPNet from the legacy multi-task tower configuration.
     pub fn new(
         vb: VarBuilder,
@@ -158,17 +272,28 @@ impl PEPNet {
         task_config: &MultiTaskConfig,
         ep_prior_features: &[String],
         pp_prior_features: &[String],
+        domains: &[serde_yaml::Value],
     ) -> Result<Self> {
         let embeddings = FeatureEmbeddings::new(vb.pp("embeddings"), features)?;
         let total_dim = embeddings.total_dim;
-        let ep_prior_indices = Self::prior_indices(features, ep_prior_features)?;
         let pp_prior_indices = Self::prior_indices(features, pp_prior_features)?;
-
-        let ep_prior_proj =
-            linear_no_bias(ep_prior_indices.len(), prior_dim, vb.pp("ep_prior_proj"))?;
         let pp_prior_proj =
             linear_no_bias(pp_prior_indices.len(), prior_dim, vb.pp("pp_prior_proj"))?;
-        let epnet_gate = Self::build_gate(vb.pp("epnet_gate"), prior_dim, total_dim)?;
+
+        let (domain_infos, ep_prior_projs, epnet_gates) = if !domains.is_empty() {
+            Self::build_domains(features, domains, vb.clone(), prior_dim)?
+        } else {
+            (vec![], vec![], vec![])
+        };
+
+        let (ep_prior_proj, epnet_gate, ep_prior_indices) = if domains.is_empty() {
+            let indices = Self::prior_indices(features, ep_prior_features)?;
+            let proj = linear_no_bias(indices.len(), prior_dim, vb.pp("ep_prior_proj"))?;
+            let gate = Self::build_gate(vb.pp("epnet_gate"), prior_dim, total_dim)?;
+            (Some(proj), Some(gate), indices)
+        } else {
+            (None, None, vec![])
+        };
 
         let (deep, fusion_dim) = if deep_hidden_dims.is_empty() {
             (None, total_dim)
@@ -209,11 +334,14 @@ impl PEPNet {
 
         Ok(Self {
             embeddings,
-            ep_prior_indices,
-            pp_prior_indices,
-            ep_prior_proj,
+            ep_prior_projs,
+            epnet_gates,
+            domains: domain_infos,
             pp_prior_proj,
+            pp_prior_indices,
             epnet_gate,
+            ep_prior_proj,
+            ep_prior_indices,
             deep,
             shared_bottom,
             towers,
@@ -232,17 +360,28 @@ impl PEPNet {
         contract: &OutputContract,
         ep_prior_features: &[String],
         pp_prior_features: &[String],
+        domains: &[serde_yaml::Value],
     ) -> Result<Self> {
         let embeddings = FeatureEmbeddings::new(vb.pp("embeddings"), features)?;
         let total_dim = embeddings.total_dim;
-        let ep_prior_indices = Self::prior_indices(features, ep_prior_features)?;
         let pp_prior_indices = Self::prior_indices(features, pp_prior_features)?;
-
-        let ep_prior_proj =
-            linear_no_bias(ep_prior_indices.len(), prior_dim, vb.pp("ep_prior_proj"))?;
         let pp_prior_proj =
             linear_no_bias(pp_prior_indices.len(), prior_dim, vb.pp("pp_prior_proj"))?;
-        let epnet_gate = Self::build_gate(vb.pp("epnet_gate"), prior_dim, total_dim)?;
+
+        let (domain_infos, ep_prior_projs, epnet_gates) = if !domains.is_empty() {
+            Self::build_domains(features, domains, vb.clone(), prior_dim)?
+        } else {
+            (vec![], vec![], vec![])
+        };
+
+        let (ep_prior_proj, epnet_gate, ep_prior_indices) = if domains.is_empty() {
+            let indices = Self::prior_indices(features, ep_prior_features)?;
+            let proj = linear_no_bias(indices.len(), prior_dim, vb.pp("ep_prior_proj"))?;
+            let gate = Self::build_gate(vb.pp("epnet_gate"), prior_dim, total_dim)?;
+            (Some(proj), Some(gate), indices)
+        } else {
+            (None, None, vec![])
+        };
 
         let (deep, fusion_dim) = if deep_hidden_dims.is_empty() {
             (None, total_dim)
@@ -311,11 +450,14 @@ impl PEPNet {
 
         Ok(Self {
             embeddings,
-            ep_prior_indices,
-            pp_prior_indices,
-            ep_prior_proj,
+            ep_prior_projs,
+            epnet_gates,
+            domains: domain_infos,
             pp_prior_proj,
+            pp_prior_indices,
             epnet_gate,
+            ep_prior_proj,
+            ep_prior_indices,
             deep,
             shared_bottom,
             towers,
@@ -339,25 +481,41 @@ impl PEPNet {
     /// Build the shared representation and PPNet prior.
     fn shared(&self, x_inputs: &HashMap<String, Tensor>) -> Result<(Tensor, Tensor)> {
         let stacked = self.embeddings.forward_stacked(x_inputs)?;
-        // stacked: Vec<[batch, 1, dim_i]>
 
-        let ep_prior = self
-            .ep_prior_proj
-            .forward(&Self::prior_raw(&stacked, &self.ep_prior_indices)?)?;
         let pp_prior = self
             .pp_prior_proj
             .forward(&Self::prior_raw(&stacked, &self.pp_prior_indices)?)?;
 
-        // EPNet gate on embeddings
-        let epnet_scale = self.epnet_gate.forward(&ep_prior)?; // [batch, total_dim]
-        let dense_concat = Tensor::cat(
-            &stacked
-                .iter()
-                .map(|e| e.squeeze(1))
-                .collect::<Result<Vec<_>>>()?,
-            1,
-        )?; // [batch, total_dim]
-        let gated = dense_concat.broadcast_mul(&epnet_scale)?;
+        let gated = if !self.domains.is_empty() {
+            let mut gated_parts = Vec::with_capacity(self.domains.len());
+            for (di, info) in self.domains.iter().enumerate() {
+                let mut domain_embs = Vec::with_capacity(info.feature_indices.len());
+                for &idx in &info.feature_indices {
+                    domain_embs.push(stacked[idx].squeeze(1)?);
+                }
+                let domain_concat = Tensor::cat(&domain_embs, 1)?;
+                let domain_prior = Self::prior_raw(&stacked, &info.prior_indices)?;
+                let domain_prior_proj = self.ep_prior_projs[di].forward(&domain_prior)?;
+                let domain_scale = self.epnet_gates[di].forward(&domain_prior_proj)?;
+                gated_parts.push(domain_concat.broadcast_mul(&domain_scale)?);
+            }
+            Tensor::cat(&gated_parts, 1)?
+        } else {
+            let ep_prior = self
+                .ep_prior_proj
+                .as_ref()
+                .unwrap()
+                .forward(&Self::prior_raw(&stacked, &self.ep_prior_indices)?)?;
+            let epnet_scale = self.epnet_gate.as_ref().unwrap().forward(&ep_prior)?;
+            let dense_concat = Tensor::cat(
+                &stacked
+                    .iter()
+                    .map(|e| e.squeeze(1))
+                    .collect::<Result<Vec<_>>>()?,
+                1,
+            )?;
+            dense_concat.broadcast_mul(&epnet_scale)?
+        };
 
         let mut shared = match &self.deep {
             Some(deep) => deep.forward(&gated)?,

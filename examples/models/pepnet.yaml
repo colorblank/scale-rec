@@ -1,6 +1,13 @@
 type: pepnet
 prior_dim: 16
-ep_prior_features: [rec_algo_idx, scene_idx, p_date_idx]
+domains:
+  - name: identity
+    features: [user_id_idx_a, user_id_idx_b, item_id_idx, author_id_idx, author_idx, user_author_hash_idx]
+    ep_prior_features: [user_id_idx_a, item_id_idx]
+  - name: context
+    features: [scene_idx, rec_algo_idx, p_date_idx, source_name_idx]
+  - name: attributes
+    features: [item_type_idx, title_idx, content_idx, insight_idx, quality_score_bucket, quality_score_log_bucket, stock_code_ids, emb_id_ids, entities_v3_ids, entity_words_ids, entity_overlap_flag, stock_overlap_flag, stock_overlap_recent_flag, invest_label_ids, invest_label_second_ids, invest_label_third_ids, roleneeds_first_ids, roleneeds_second_ids, type_source_hash_idx, asset_level_idx, city_idx, is_new_user_idx, last_trade_date_idx, investment_horizon_idx, invest_style_ids, theme_interest_ids, industry_interest_ids, fav_stock_ids, recent_stocks_ids, interest_kw_ids, follow_authors_ids, hold_stocks_ids, hist_hold_stocks_ids, hist_semantic_mapped, stay_time_bucket]
 pp_prior_features: [user_id_idx_a, user_id_idx_b, item_id_idx, author_id_idx, item_type_idx]
 deep_hidden_dims: [64, 32]
 shared_bottom_dims: [32, 16]

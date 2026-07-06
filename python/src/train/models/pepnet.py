@@ -1,15 +1,18 @@
 """PEPNet: Parameter and Embedding Personalized Network.
 
 Architecture:
-  FeatureEmbeddings → EPNet gate → Deep MLP → shared_bottom → PPNet gate → towers
+  FeatureEmbeddings → EPNet (per-domain gates) → Deep MLP → shared_bottom → PPNet gate → towers
 
-EPNet conditions an element-wise gate on the learned prior (aggregated from
-all feature embeddings). PPNet applies a similar gate to the shared
-representation before task towers.
+EPNet applies a separate element-wise gate per domain (paper §3.2), each conditioned
+on the domain's own pooled prior features. PPNet applies per-layer gates inside each
+task tower using a global prior.
+
+Reference: PEPNet (Kuaishou 2023, KDD) — sec 3.2 Domain-Specific Embedding Personalization.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import torch
@@ -68,8 +71,21 @@ class PersonalizedTaskTower(nn.Module):
         return self.output[str(len(self.hidden))](x)
 
 
+@dataclass
+class _DomainInfo:
+    name: str
+    feature_indices: list[int] = field(default_factory=list)
+    prior_indices: list[int] = field(default_factory=list)
+    dim: int = 0
+
+
 class PEPNet(nn.Module):
-    """PEPNet: personalized embedding and parameter gating for multi-task learning."""
+    """PEPNet: personalized embedding and parameter gating for multi-task learning.
+
+    Supports two EPNet modes:
+      - **Per-domain** (paper): each domain gets its own GateNU (default when ``domains`` is set).
+      - **Single-gate** (fallback): one GateNU for the full embedding vector (backward compat).
+    """
 
     def __init__(
         self,
@@ -83,6 +99,7 @@ class PEPNet(nn.Module):
         output_contract: NormalizedOutputContract | None = None,
         ep_prior_features: list[str] | None = None,
         pp_prior_features: list[str] | None = None,
+        domains: list[dict] | None = None,
     ) -> None:
         super().__init__()
         deep_hidden_dims = deep_hidden_dims or []
@@ -90,15 +107,26 @@ class PEPNet(nn.Module):
 
         self.embeddings = FeatureEmbeddings(features, pooling_map, total_dim=total_dim)
         total_dim = self.embeddings.total_dim
-        self.ep_prior_indices = self._prior_indices(ep_prior_features)
         self.pp_prior_indices = self._prior_indices(pp_prior_features)
 
-        # Explicit personalized priors selected by feature name.
-        self.ep_prior_proj = nn.Linear(len(self.ep_prior_indices), prior_dim, bias=False)
-        self.pp_prior_proj = nn.Linear(len(self.pp_prior_indices), prior_dim, bias=False)
+        self._feat_dim: dict[str, int] = {name: dim for name, _, dim in features}
 
-        # EPNet gate: prior_dim → total_dim, scaled to (0, 2) as in Gate NU.
-        self.epnet_gate = GateNU(prior_dim, prior_dim, total_dim)
+        if domains is not None:
+            self.domains = self._build_domains(domains)
+            self.ep_prior_projs = nn.ModuleDict()
+            self.epnet_gates = nn.ModuleDict()
+            for info in self.domains:
+                self.ep_prior_projs[info.name] = nn.Linear(len(info.prior_indices), prior_dim, bias=False)
+                self.epnet_gates[info.name] = GateNU(prior_dim, prior_dim, info.dim)
+            self.ep_prior_proj = None
+            self.epnet_gate = None
+        else:
+            self.domains = None
+            self.ep_prior_indices = self._prior_indices(ep_prior_features)
+            self.ep_prior_proj = nn.Linear(len(self.ep_prior_indices), prior_dim, bias=False)
+            self.epnet_gate = GateNU(prior_dim, prior_dim, total_dim)
+
+        self.pp_prior_proj = nn.Linear(len(self.pp_prior_indices), prior_dim, bias=False)
 
         # Deep MLP
         self.has_deep = bool(deep_hidden_dims)
@@ -140,6 +168,30 @@ class PEPNet(nn.Module):
         for tower in self.task_config.towers:
             setattr(self, f"{tower.name}_tower", PersonalizedTaskTower(tower, shared_dim, prior_dim))
 
+    def _build_domains(self, domains: list[dict]) -> list[_DomainInfo]:
+        all_indices: set[int] = set()
+        infos: list[_DomainInfo] = []
+        for domain in domains:
+            name = domain["name"]
+            feat_names = domain["features"]
+            unknown = [n for n in feat_names if n not in self.embeddings.feature_to_idx]
+            if unknown:
+                raise ValueError(f"PEPNet domain '{name}' unknown features: {unknown}")
+            feature_indices = [self.embeddings.feature_to_idx[n] for n in feat_names]
+            prior_names = domain.get("ep_prior_features", feat_names)
+            unknown_prior = [n for n in prior_names if n not in self.embeddings.feature_to_idx]
+            if unknown_prior:
+                raise ValueError(f"PEPNet domain '{name}' unknown ep_prior_features: {unknown_prior}")
+            prior_indices = [self.embeddings.feature_to_idx[n] for n in prior_names]
+            dim = sum(self._feat_dim[n] for n in feat_names)
+            infos.append(_DomainInfo(name, feature_indices, prior_indices, dim))
+            all_indices.update(feature_indices)
+        unassigned = set(range(self.embeddings.num_features)) - all_indices
+        if unassigned:
+            names = [self.embeddings.ordered_names[i] for i in unassigned]
+            raise ValueError(f"PEPNet features not assigned to any domain: {names}")
+        return infos
+
     def _prior_indices(self, names: list[str] | None) -> list[int]:
         if not names:
             return list(range(self.embeddings.num_features))
@@ -163,15 +215,25 @@ class PEPNet(nn.Module):
 
     def _shared(self, x_inputs: FeatureTensorMap) -> tuple[torch.Tensor, torch.Tensor]:
         stacked = self.embeddings.forward_stacked(x_inputs)
-        # stacked: list of [batch, 1, dim_i]
 
-        ep_prior = self.ep_prior_proj(self._prior_raw(stacked, self.ep_prior_indices))
         pp_prior = self.pp_prior_proj(self._prior_raw(stacked, self.pp_prior_indices))
 
-        # EPNet gate on embeddings
-        epnet_scale = self.epnet_gate(ep_prior)  # [batch, total_dim]
-        dense_concat = torch.cat([e.squeeze(1) for e in stacked], dim=1)  # [batch, total_dim]
-        gated = dense_concat * epnet_scale
+        if self.domains is not None:
+            gated_parts = []
+            for info in self.domains:
+                domain_embs = [stacked[i] for i in info.feature_indices]
+                domain_concat = torch.cat([e.squeeze(1) for e in domain_embs], dim=1)
+                domain_prior = self.ep_prior_projs[info.name](
+                    self._prior_raw(stacked, info.prior_indices)
+                )
+                domain_scale = self.epnet_gates[info.name](domain_prior)
+                gated_parts.append(domain_concat * domain_scale)
+            gated = torch.cat(gated_parts, dim=1)
+        else:
+            ep_prior = self.ep_prior_proj(self._prior_raw(stacked, self.ep_prior_indices))
+            epnet_scale = self.epnet_gate(ep_prior)
+            dense_concat = torch.cat([e.squeeze(1) for e in stacked], dim=1)
+            gated = dense_concat * epnet_scale
 
         shared = self.deep(gated) if self.has_deep else gated
         if hasattr(self, "shared_bottom"):

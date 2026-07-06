@@ -655,6 +655,7 @@ _MODEL_PARAM_SPECS: dict[str, tuple[set[str], set[str], dict[str, type | tuple[t
             "shared_bottom_dims",
             "ep_prior_features",
             "pp_prior_features",
+            "domains",
         },
         set(),
         {
@@ -663,6 +664,7 @@ _MODEL_PARAM_SPECS: dict[str, tuple[set[str], set[str], dict[str, type | tuple[t
             "shared_bottom_dims": list,
             "ep_prior_features": list,
             "pp_prior_features": list,
+            "domains": list,
             "tasks": list,
             "label_col_map": dict,
             "metrics": dict,

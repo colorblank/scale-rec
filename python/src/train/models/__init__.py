@@ -421,6 +421,7 @@ def _build_pepnet(
         output_contract=output_contract,
         ep_prior_features=params.get("ep_prior_features"),
         pp_prior_features=params.get("pp_prior_features"),
+        domains=params.get("domains"),
     )
 
 

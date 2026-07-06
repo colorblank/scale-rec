@@ -799,6 +799,11 @@ fn build_pepnet(
     let shared_bottom_dims: Vec<usize> = yaml_usize_seq(params, "shared_bottom_dims");
     let ep_prior_features = yaml_string_seq(params, "ep_prior_features");
     let pp_prior_features = yaml_string_seq(params, "pp_prior_features");
+    let domains: Vec<serde_yaml::Value> = params
+        .get("domains")
+        .and_then(|v| v.as_sequence())
+        .map(|s| s.iter().cloned().collect())
+        .unwrap_or_default();
     if let Some(contract) = parse_output_contract_param(params)? {
         return Ok(Box::new(pepnet::PEPNet::with_output_contract(
             vb,
@@ -809,6 +814,7 @@ fn build_pepnet(
             &contract,
             &ep_prior_features,
             &pp_prior_features,
+            &domains,
         )?));
     }
     let task_config = params
@@ -825,6 +831,7 @@ fn build_pepnet(
         &task_config,
         &ep_prior_features,
         &pp_prior_features,
+        &domains,
     )?))
 }
 
@@ -1023,6 +1030,7 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
                 "shared_bottom_dims",
                 "ep_prior_features",
                 "pp_prior_features",
+                "domains",
                 "task_config",
             ],
             &["task_config"],
