@@ -9,113 +9,37 @@
 //!
 //! Reference: PEPNet (Kuaishou 2023, KDD).
 
+mod gate;
+mod tower;
+
 use super::output_contract::{ContractPublicOutput, ContractRelation, OutputContract};
 use super::output_head::{
     activation as contract_activation, execute_relation as execute_contract_relation,
     output_kind as contract_output_kind,
 };
-use super::{Model, ModelExecution, ModelOutput, OutputKind};
+use super::{Model, ModelExecution, ModelOutput};
 use crate::layers::embedding::{FeatureEmbeddings, FeatureSpec};
 use crate::layers::mlp::Mlp;
 use crate::layers::towers::{
     apply_relation, Activation, MultiTaskConfig, TaskRelation, TowerConfig,
 };
 use candle_core::{Result, Tensor};
-use candle_nn::{linear, linear_no_bias, Module, VarBuilder};
+use candle_nn::{linear_no_bias, Module, VarBuilder};
 use std::collections::HashMap;
 
-struct GateNu {
-    fc1: candle_nn::Linear,
-    fc2: candle_nn::Linear,
-    gamma: f64,
-}
-
-impl GateNu {
-    fn new(vb: VarBuilder, input_dim: usize, hidden_dim: usize, output_dim: usize) -> Result<Self> {
-        Ok(Self {
-            fc1: linear(input_dim, hidden_dim, vb.pp("fc1"))?,
-            fc2: linear(hidden_dim, output_dim, vb.pp("fc2"))?,
-            gamma: 2.0,
-        })
-    }
-}
-
-impl Module for GateNu {
-    fn forward(&self, x: &Tensor) -> Result<Tensor> {
-        let hidden = self.fc1.forward(x)?.relu()?;
-        candle_nn::ops::sigmoid(&self.fc2.forward(&hidden)?)?.affine(self.gamma, 0.0)
-    }
-}
-
-struct PersonalizedTower {
-    name: String,
-    layers: Vec<candle_nn::Linear>,
-    pp_gates: Vec<GateNu>,
-    activation: Activation,
-    output_kind: OutputKind,
-}
-
-impl PersonalizedTower {
-    fn new(
-        config: &TowerConfig,
-        input_dim: usize,
-        prior_dim: usize,
-        vb: VarBuilder,
-    ) -> Result<Self> {
-        let mut layers = Vec::with_capacity(config.hidden_dims.len() + 1);
-        let mut pp_gates = Vec::with_capacity(config.hidden_dims.len());
-        let mut in_dim = input_dim;
-        for (i, &h_dim) in config.hidden_dims.iter().enumerate() {
-            layers.push(linear(in_dim, h_dim, vb.pp(format!("hidden.{}", i)))?);
-            pp_gates.push(GateNu::new(
-                vb.pp("pp_gates").pp(i.to_string()),
-                prior_dim,
-                prior_dim,
-                h_dim,
-            )?);
-            in_dim = h_dim;
-        }
-        layers.push(linear(
-            in_dim,
-            config.output_dim,
-            vb.pp(format!("output.{}", config.hidden_dims.len())),
-        )?);
-        Ok(Self {
-            name: config.name.clone(),
-            layers,
-            pp_gates,
-            activation: config.activation.clone(),
-            output_kind: config.output_kind,
-        })
-    }
-
-    fn forward(&self, shared: &Tensor, prior: &Tensor) -> Result<Tensor> {
-        let mut out = shared.clone();
-        let last = self.layers.len() - 1;
-        for (i, layer) in self.layers.iter().enumerate() {
-            out = layer.forward(&out)?;
-            if i < last {
-                out = apply_activation(&self.activation, &out)?;
-                out = out.broadcast_mul(&self.pp_gates[i].forward(prior)?)?;
-            }
-        }
-        Ok(out)
-    }
-}
+use self::gate::GateNu;
+use self::tower::PersonalizedTower;
 
 struct ContractMode {
     relations: Vec<ContractRelation>,
     outputs: Vec<ContractPublicOutput>,
 }
 
+#[allow(dead_code)]
 struct DomainInfo {
-    /// Domain name (for VarBuilder scope).
     name: String,
-    /// Indices into the FeatureEmbeddings stacked output for this domain's features.
     feature_indices: Vec<usize>,
-    /// Indices into the FeatureEmbeddings stacked output for this domain's prior features.
     prior_indices: Vec<usize>,
-    /// Sum of embed_dim across all features in this domain.
     dim: usize,
 }
 
@@ -124,9 +48,7 @@ pub struct PEPNet {
     embeddings: FeatureEmbeddings,
     ep_prior_projs: Vec<candle_nn::Linear>,
     epnet_gates: Vec<GateNu>,
-    /// Per-domain metadata (same length as ep_prior_projs / epnet_gates).
     domains: Vec<DomainInfo>,
-    /// Global PPNet prior projection (shared across all towers).
     pp_prior_proj: candle_nn::Linear,
     pp_prior_indices: Vec<usize>,
     epnet_gate: Option<GateNu>,
@@ -188,13 +110,14 @@ impl PEPNet {
         for d in domains.iter() {
             let name = d["name"]
                 .as_str()
-                .ok_or_else(|| {
-                    candle_core::Error::Msg("PEPNet domain missing 'name'".into())
-                })?;
+                .ok_or_else(|| candle_core::Error::Msg("PEPNet domain missing 'name'".into()))?;
             let feat_names: Vec<&str> = d["features"]
                 .as_sequence()
                 .ok_or_else(|| {
-                    candle_core::Error::Msg(format!("PEPNet domain '{}' missing 'features'", name))
+                    candle_core::Error::Msg(format!(
+                        "PEPNet domain '{}' missing 'features'",
+                        name
+                    ))
                 })?
                 .iter()
                 .map(|v| v.as_str().unwrap())
@@ -214,7 +137,8 @@ impl PEPNet {
                 dim += feat_name_to_dim.get(fn_).unwrap_or(&0);
             }
 
-            let prior_names: Vec<&str> = d.get("ep_prior_features")
+            let prior_names: Vec<&str> = d
+                .get("ep_prior_features")
                 .and_then(|v| v.as_sequence())
                 .map(|seq| seq.iter().map(|v| v.as_str().unwrap()).collect())
                 .unwrap_or_else(|| feat_names.clone());
@@ -245,7 +169,6 @@ impl PEPNet {
             gates.push(gate);
         }
 
-        // Check all features are assigned
         let unassigned: Vec<String> = all_assigned
             .iter()
             .enumerate()
@@ -478,7 +401,6 @@ impl PEPNet {
         Tensor::cat(&prior_parts, 1)
     }
 
-    /// Build the shared representation and PPNet prior.
     fn shared(&self, x_inputs: &HashMap<String, Tensor>) -> Result<(Tensor, Tensor)> {
         let stacked = self.embeddings.forward_stacked(x_inputs)?;
 
@@ -579,18 +501,5 @@ impl Model for PEPNet {
         }
         let outputs = self.forward(x_inputs)?;
         Ok(ModelExecution::new(outputs.clone(), outputs))
-    }
-}
-
-fn apply_activation(activation: &Activation, x: &Tensor) -> Result<Tensor> {
-    match activation {
-        Activation::Relu => x.relu(),
-        Activation::Sigmoid => candle_nn::ops::sigmoid(x),
-        Activation::Swish => {
-            let sig = candle_nn::ops::sigmoid(x)?;
-            x.mul(&sig)
-        }
-        Activation::Gelu => x.gelu(),
-        Activation::None_ => Ok(x.clone()),
     }
 }
