@@ -1,8 +1,18 @@
-# Rust 训练预处理引擎
+# Rust 训练阶段特征预处理
 
-## 目标
+本文说明如何在 Python 训练阶段启用 Rust 实现的特征预处理。该路径通过 PyO3 扩展 `feat_engine` 调用 `scale-rec-core` 中的 DAG 构建、算子执行和 pooling/padding 逻辑，使训练 batch 预处理与 Rust 推理侧尽量复用同一套实现。
 
-将训练特征预处理（DAG 算子执行 + tensor 转换）下沉到 Rust，使训练与推理共用完全相同的算子代码和 pooling 逻辑。CSV/TSV 读取仍由 pandas 完成。
+适用场景：
+
+- 训练 profile 显示 CPU 时间主要消耗在特征 DAG、hash、字符串解析、序列 padding。
+- 希望训练预处理语义与 Rust serving 更接近，减少 Python/Rust 算子实现漂移。
+- 大 batch 或多日流式训练中，Python 预处理成为 GPU 前置瓶颈。
+
+不适用场景：
+
+- 当前瓶颈在数据读取、模型 forward/backward、评估指标或 IO。
+- 需要 Python debug tracer 的逐算子可视化输出；Rust 路径只替换 `preprocess_batch()` 热路径。
+- 尚未构建本机 `feat_engine` 扩展，且训练任务要求不可回退。
 
 ## 架构
 
@@ -26,16 +36,22 @@
                               └── src/lib.rs           # FeatSession PyO3 class
 ```
 
-## 数据流
+## 训练数据流
 
 ```
-训练 (改造后):
-  TSV → pandas → {col: [raw_str, ...]}
+训练:
+  TSV / 多日文件
+    → Python reader 切 batch
+    → {source_col: [raw_value, ...]}
+    → FeatureDag.preprocess_batch(rows_or_columns)
+    → Python 将 source 值转成 str | None
     → FeatSession.preprocess_batch(columns)
-      ├── parse_string_to_fv()  按 dtype 严格解析
-      ├── execute_plan()        Rust ExecutionPlan (与推理相同)
-      └── feature_column_to_vec()  pooling/padding (与推理相同)
-    → {name: list[int]} → torch.tensor() → model.forward()
+      ├── parse_string_to_fv()     按 SourceDef.dtype 解析
+      ├── DagExecutor.execute_plan Rust DAG 执行
+      └── feature_column_to_vec()  Rust pooling/padding
+    → {feature_name: list[int] | list[list[int]]}
+    → torch.tensor(dtype=torch.long)
+    → model.forward()
 
 推理 (不变):
   JSON → rows_to_columns()
@@ -44,7 +60,15 @@
     → Candle Tensor → model.forward()
 ```
 
+Rust 训练预处理只接管特征 batch 预处理，不改变以下部分：
+
+- 训练文件读取、shuffle、batch 切分、label 解析仍在 Python 侧。
+- 模型训练、loss、optimizer、评估和 artifact 发布仍在 Python 侧。
+- `FeatureDag` 的 Python metadata 仍会构建，供模型构建、特征维度推导、bucket tracker、导出逻辑使用。
+
 ## FeatSession
+
+`FeatSession` 是 PyO3 暴露给 Python 的 Rust 会话对象。它在初始化时读取 feature YAML、构建 DAG，并缓存 embeddable features 的输出列位置；训练时对每个 batch 调用 `preprocess_batch()`。
 
 ```python
 from feat_engine import FeatSession
@@ -62,62 +86,206 @@ result = session.preprocess_batch({
 ```
 
 输入列值必须是 `str | None`，Rust 侧按 `SourceDef.dtype` 严格解析：
+
 - `dtype: int` → `s.parse::<i32>()`，失败用 `default_val`
 - `dtype: float` → `s.parse::<f32>()`，失败用 `default_val`
 - `dtype: string` → 保留为字符串
 
-## Python 集成
+返回值只包含 feature config 中可 embedding 的输出特征：
 
-`dag.py:FeatureDag.__init__` 新增参数 `use_rust` / `config_path`：
+- 标量特征返回 `list[int]`，Python 侧转为 shape `[batch]` 的 `torch.long`。
+- 序列特征返回 `list[list[int]]`，Rust 侧已经按 `pooling` / `seq_len` / `truncation` 完成裁剪和 padding，Python 侧转为 shape `[batch, seq_len]` 的 `torch.long`。
+- 非 embedding 的中间节点不会返回给模型。
 
-```python
-dag = FeatureDag(flow_config,
-    use_rust=True,
-    config_path="examples/shared/feature_config_demo.yaml")
-tensors = dag.preprocess_batch(test_data)  # 自动走 Rust 路径
-```
+## 构建 feat_engine
 
-- Python DAG 始终构建（metadata 被模型构建、CLI export、EmbeddingBucketTracker 依赖）
-- 仅在 `preprocess_batch` 热路径上替换为 Rust
-- 若 `import feat_engine` 失败，静默回退到 Python 实现
-
-## 构建
+从仓库根目录执行：
 
 ```bash
-# 编译 feat_engine 扩展（Python venv 内）
-uv run maturin develop \
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python maturin develop \
   --manifest-path python/rust_feat_bridge/Cargo.toml --uv
 ```
 
-训练入口通过显式参数启用：
+如果 CI 或内网环境禁止访问 crates.io，但依赖已经缓存且 `python/rust_feat_bridge/Cargo.lock` 是最新的，可以使用 Cargo 离线模式：
+
+```bash
+CARGO_NET_OFFLINE=true PYTHONPATH=python/src:$PYTHONPATH \
+  uv run --project python maturin develop \
+  --manifest-path python/rust_feat_bridge/Cargo.toml --uv
+```
+
+构建完成后，当前 uv 环境中应能导入 `feat_engine`：
+
+```bash
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python python - <<'PY'
+import feat_engine
+print(feat_engine.FeatSession)
+PY
+```
+
+如果构建失败，先确认：
+
+- Rust toolchain 可用，`cargo check -p scale-rec-core` 可以通过。
+- 当前 Python 环境由 `uv` 管理，命令在仓库根目录执行。
+- `maturin` 来自 `python/pyproject.toml` 的 dev 依赖，因此构建命令需要带 `--project python`。
+- `python/rust_feat_bridge/Cargo.toml` 依赖的 `scale-rec-core` 路径仍指向本仓库 `crates/core`。
+
+## 训练入口启用
+
+训练 CLI 通过两个参数控制 Rust 预处理：
+
+| 参数 | 行为 |
+|---|---|
+| `--use-rust-preprocess` | 尝试启用 Rust `feat_engine`。如果 import 或初始化失败，默认回退到 Python DAG，并写 warning log。 |
+| `--require-rust-preprocess` | 强制启用 Rust 预处理。该参数隐含 `--use-rust-preprocess`；如果 `feat_engine` 不可用或初始化失败，训练直接失败。 |
+
+推荐在本地验证、生产训练和性能对比时使用 `--require-rust-preprocess`，避免因为扩展缺失而悄悄回到 Python 路径。
+
+单文件 demo 训练示例：
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   python -m train.app.main demo \
+  --data python/artifacts/demo/demo_train_data.txt \
   --feature-config examples/shared/feature_config_demo.yaml \
   --model-config examples/models/gdcn_esmm.yaml \
+  --run-name demo_train_rust_preprocess \
+  --train-config examples/shared/train_defaults.yaml \
+  --epochs 10 \
+  --batch-size 1024 \
+  --no-header \
   --use-rust-preprocess \
   --require-rust-preprocess
 ```
 
-`--use-rust-preprocess` 启用 Rust 预处理；`--require-rust-preprocess` 会在 `feat_engine` 未构建或初始化失败时直接终止训练，而不是回退 Python 路径。
-
-## 测试
+多日流式训练示例：
 
 ```bash
-# Rust 测试
-cargo test         # 146 个测试全部通过（67 core + 38 lib + 41 integration）
-cargo check        # 编译检查
-
-# Python 一致性测试（需要先 build feat_engine）
-uv run pytest python/tests/test_rust_pretrain_consistency.py -v
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
+  python -m train.app.main demo \
+  --data-glob 'data/user_*.txt' \
+  --start-date 20260325 \
+  --end-date 20260331 \
+  --feature-config examples/shared/feature_config_demo.yaml \
+  --model-config examples/models/gdcn_esmm.yaml \
+  --run-name multi_day_rust_preprocess \
+  --train-config examples/shared/train_defaults.yaml \
+  --epochs 3 \
+  --batch-size 2048 \
+  --read-chunk-rows 65536 \
+  --prefetch-batches 2 \
+  --fast-no-na \
+  --no-header \
+  --require-rust-preprocess
 ```
 
-一致性测试验证：使用相同输入，Rust `FeatSession` 和 Python `FeatureDag` 输出的 45 个 embeddable features 完全相同。
+`python/src/train/app/main.py` 会根据上述参数创建 `FeatureDag`：
 
-## Benchmark
+```python
+FeatureDag(
+    flow_config,
+    use_rust=args.use_rust_preprocess or args.require_rust_preprocess,
+    config_path=args.feature_config,
+    require_rust=args.require_rust_preprocess,
+)
+```
 
-预处理吞吐基准脚本会模拟训练热路径：pandas batch 切片、列转 `list`、`FeatureDag.preprocess_batch()`，以及 Python 侧 `torch.tensor()` 构造。
+## 代码中直接使用
+
+训练主入口之外，也可以在测试、benchmark 或自定义训练脚本中直接构建 `FeatureDag`：
+
+```python
+from train.core.config import FlowConfig
+from train.core.dag import FeatureDag
+
+flow_config = FlowConfig.from_yaml("examples/shared/feature_config_demo.yaml")
+dag = FeatureDag(
+    flow_config,
+    use_rust=True,
+    config_path="examples/shared/feature_config_demo.yaml",
+    require_rust=True,
+)
+
+tensors = dag.preprocess_batch(
+    {
+        "user_id": ["1001", "1002"],
+        "item_id": ["2001", "2002"],
+        "scene": ["1", "2"],
+    }
+)
+```
+
+`preprocess_batch()` 接受两种输入：
+
+| 输入形式 | 说明 |
+|---|---|
+| `list[dict]` | 行式样本。Python 会先转成 DataFrame/列式数据，再交给预处理路径。 |
+| `dict[str, list]` | 列式 batch。训练热路径和 benchmark 推荐使用这种形式，减少行列转换成本。 |
+
+## 数据契约和边界行为
+
+Rust 路径以 feature YAML 的 `sources` 为唯一输入 schema：
+
+- 只会读取 `sources` 中声明的列；额外列会在 Python `FeatureDag` 包装层过滤掉。
+- 缺失列由 Rust `DagExecutor` 按 source `default_val` 补齐。
+- 列内 `None` 会按 source 默认值处理。
+- Python 侧会在调用 Rust 前执行 `str(v) if v is not None else None`，因此输入中的 int/float 会以字符串形式进入 Rust parser。
+- 解析失败使用 source 默认值，不中断训练；如果需要发现脏数据，应结合 feature quality、样本检查或 debug 工具。
+- 所有输入列长度必须一致；训练 reader 和 batch 构造逻辑应保证这一点。
+
+与 Python 路径相比，语义上需要重点关注：
+
+| 项目 | Rust 训练预处理行为 |
+|---|---|
+| dtype 解析 | 使用 `scale_rec_core::feats::defaults::parse_string_to_fv()`，与推理侧 typed parsing 对齐 |
+| DAG 构建 | 使用 `scale_rec_core::feats::builder::DagBuilder` |
+| DAG 执行 | 使用 `scale_rec_core::feats::executor::DagExecutor` |
+| pooling/padding | 使用 `scale_rec_core::feats::tensor_utils::feature_column_to_vec()` |
+| 输出 dtype | Python 包装层统一转成 `torch.long` |
+| debug tracer | Rust 路径不输出 Python tracer 的逐样本 trace |
+
+## 与 prefetch 配合
+
+`--prefetch-batches` 会在线程池中提前调用 `preprocessor.preprocess_batch()`。启用 Rust 路径后，`FeatSession` 在 Rust 执行阶段会释放 GIL，因此 prefetch 能减少训练 loop 等待预处理的时间。
+
+建议：
+
+- CPU 核数充足且模型训练等待数据时，设置 `--prefetch-batches 1` 或 `2`。
+- 如果数据读取或模型训练已经占满 CPU，prefetch 过高可能增加上下文切换和内存占用。
+- 大 batch 下优先调大 `--read-chunk-rows`，避免 reader 切片过碎。
+- 对本地未压缩大文件可同时使用 `--memory-map`；NULL 很少时可使用 `--fast-no-na`。
+
+## 验证一致性
+
+首次启用或修改算子后，至少执行一致性测试：
+
+```bash
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
+  pytest python/tests/test_rust_pretrain_consistency.py -v
+```
+
+该测试使用相同 feature config 和输入 batch，比较 Rust `FeatSession` 与 Python `FeatureDag` 的 embeddable feature 输出。
+
+涉及算子、pooling、padding 或 feature config schema 的改动时，建议同时执行：
+
+```bash
+cargo test -p scale-rec-core
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python pytest python/tests/test_dag.py -q
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python pytest python/tests/test_rust_pretrain_consistency.py -q
+```
+
+如果改动可能影响 serving 语义，再执行端到端一致性：
+
+```bash
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
+  python -m scale_rec_demo.verify_all --models all --force-train
+```
+
+## 性能 benchmark
+
+预处理吞吐基准脚本模拟训练热路径：batch 切片、列转 `list`、`FeatureDag.preprocess_batch()`，以及 Python 侧 `torch.tensor()` 构造。脚本默认使用训练入口相同的 null markers：`NULL`、`\N`、`null`、`None`、空字符串，并在进入 Python/Rust 预处理前转成 `None`。
+
+对比 Python 与 Rust：
 
 ```bash
 PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
@@ -133,14 +301,60 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
   --profile
 ```
 
-输出指标：
+只跑 Rust：
 
-- `prepare_s`：pandas batch 切片后构造 `dict[str, list]` 的耗时。
-- `preprocess_s`：`FeatureDag.preprocess_batch()` 耗时，包含 Rust/Python DAG、PyO3 边界、返回值转 tensor。
-- `total_s` / `rows/s`：端到端预处理吞吐，用于比较后续优化。
-- `--profile`：额外拆分 Python execute/tensor 或 Rust parse/execute/extract，并输出 top operator types / operators。
+```bash
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
+  python -m scale_rec_demo.benchmark_preprocess \
+  --data python/artifacts/demo/demo_train_data.txt \
+  --feature-config examples/shared/feature_config_demo.yaml \
+  --mode rust \
+  --batch-sizes 1024,2048 \
+  --repeat 5 \
+  --warmup-batches 2 \
+  --no-header \
+  --require-rust \
+  --profile
+```
 
-当前 demo 基线（2000 行，Windows dev build）显示 Rust 路径主要耗时在 `rust_execute_s`；小样本下热点集中在 `FeatureHash`、`StringParser`、`JsonExtractList`、`ListOverlap`。
+关键指标：
+
+| 指标 | 含义 |
+|---|---|
+| `prepare_s` | Python reader/batch 切片后构造 `dict[str, list]` 的耗时 |
+| `preprocess_s` | `FeatureDag.preprocess_batch()` 总耗时，包含 Rust/Python DAG、PyO3 边界和 tensor 构造 |
+| `rust_parse_s` | Rust 将 `str | None` 按 source dtype 解析为 `Fv` 的耗时 |
+| `rust_execute_s` | Rust DAG 执行耗时 |
+| `rust_extract_s` | Rust 提取 embeddable features 并执行 pooling/padding 的耗时 |
+| `rows/s` | 端到端预处理吞吐 |
+| `op:*` / `op_type:*` | `--profile` 下每个 operator 或 operator type 的耗时 |
+
+解读建议：
+
+- `prepare_s` 高：优先调 reader、`--read-chunk-rows`、输入格式和列式 batch 构造。
+- `rust_parse_s` 高：检查原始列是否有大量复杂字符串转换，或是否能减少 source 数量。
+- `rust_execute_s` 高：看 `op_type:*` 热点，优先优化高频 hash、JSON、split、sequence 算子。
+- `rust_extract_s` 高：检查序列特征 `seq_len`、padding 数量和 embedding feature 数量。
+- Rust 和 Python 差距小：瓶颈可能不在 DAG，继续看训练 loop、模型或 IO。
+
+## 常见问题
+
+| 现象 | 处理 |
+|---|---|
+| `ModuleNotFoundError: feat_engine` | 先执行 `uv run --project python maturin develop --manifest-path python/rust_feat_bridge/Cargo.toml --uv`。生产训练使用 `--require-rust-preprocess` 让问题显式失败。 |
+| `config_path is required when use_rust=True` | 直接构造 `FeatureDag` 时必须传 feature YAML 路径；训练 CLI 会自动传 `args.feature_config`。 |
+| 训练日志显示 fallback 到 Python DAG | 检查 `feat_engine` 是否构建在当前 uv 环境，以及初始化时 feature YAML 是否能被 Rust parser 解析。 |
+| Rust/Python 输出不一致 | 先跑 `python/tests/test_rust_pretrain_consistency.py`，定位到具体 feature 后检查对应 Rust/Python operator 实现、默认值、padding/truncation。 |
+| benchmark 中小 batch Rust 不明显更快 | PyO3 边界和 `torch.tensor()` 构造有固定成本；增大 batch size 或启用 prefetch 后再比较端到端训练吞吐。 |
+| debug tracer 没有 Rust operator 细节 | Rust 路径不走 Python tracer；使用 benchmark `--profile` 查看 Rust operator timings，或临时关闭 Rust 路径用 Python debug。 |
+
+## 实现约束
+
+- `python/rust_feat_bridge` 不加入根 workspace，避免常规 Rust 构建默认编译 Python 扩展。
+- `feat_engine` 只依赖 `scale-rec-core` 的特征配置、DAG、算子和 tensor 工具，不依赖 PyTorch 或 Candle。
+- 返回 Python list 后再由 Python 包装层创建 `torch.Tensor`，避免 bridge 引入 PyTorch C++/Rust 绑定。
+- `FeatureDag` 中 Python DAG 始终构建；Rust 只替换训练热路径 `preprocess_batch()`。
+- 新增 operator 时必须同时保证 Rust registry、Python registry 和一致性测试覆盖。
 
 ### 预处理优化记录
 

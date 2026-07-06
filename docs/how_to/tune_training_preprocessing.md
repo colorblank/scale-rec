@@ -43,6 +43,8 @@ PYTHONPATH=python/src:$PYTHONPATH uv run --project python \
 
 如果 profile 显示 CPU 时间仍主要消耗在 FeatureHash、DictMapper、Bucketing 或 sequence padding，可以考虑训练侧 Rust preprocessor backend。
 
+启用参数、构建步骤、一致性验证和 benchmark 说明见 [Rust 训练阶段特征预处理](../rust-pretrain-preprocessing.md)。
+
 建议路径：
 
 ```text

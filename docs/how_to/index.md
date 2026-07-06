@@ -29,4 +29,5 @@ How-to 文档面向具体操作：你已经知道目标，只需要稳定步骤�
 | 排查 Python/Rust 输出不一致 | [Debug Python/Rust Mismatch](debug_python_rust_mismatch.md) |
 | 查看 bucket hit count 和 feature quality | [Inspect Feature Quality](inspect_feature_quality.md) |
 | 优化训练预处理性能 | [Tune Training Preprocessing](tune_training_preprocessing.md) |
+| 训练阶段启用 Rust 特征预处理 | [Rust 训练阶段特征预处理](../rust-pretrain-preprocessing.md) |
 | 运行 HTTP 压测 | [HTTP 压测报告](../notes/http_benchmark_report.md)、[Performance Tuning](../tutorials/performance_tuning.md) |

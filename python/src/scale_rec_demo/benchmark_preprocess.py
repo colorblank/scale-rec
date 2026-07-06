@@ -22,6 +22,8 @@ import torch
 from train.core.config import FlowConfig, Role
 from train.core.dag import FeatureDag
 
+NULL_MARKERS = ("NULL", "\\N", "null", "None", "")
+
 
 @dataclass
 class BenchResult:
@@ -77,6 +79,12 @@ def _parse_args() -> argparse.Namespace:
         help="fail if Rust feat_engine is unavailable",
     )
     parser.add_argument("--no-header", action="store_true", help="input file has no header row")
+    parser.add_argument(
+        "--null-markers",
+        nargs="*",
+        default=list(NULL_MARKERS),
+        help="string markers treated as missing values before preprocessing",
+    )
     parser.add_argument("--separator", default="\\t", help="field separator; use '\\t' for tab")
     parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
     parser.add_argument(
@@ -102,11 +110,12 @@ def _load_dataframe(
     no_header: bool,
     separator: str,
     rows: int,
+    null_markers: list[str],
 ) -> pd.DataFrame:
     source_names = [source.name for source in flow_config.sources]
     nrows = rows if rows > 0 else None
     if no_header:
-        return pd.read_csv(
+        df = pd.read_csv(
             path,
             sep=separator,
             header=None,
@@ -114,7 +123,9 @@ def _load_dataframe(
             nrows=nrows,
             keep_default_na=False,
         )
-    return pd.read_csv(path, sep=separator, nrows=nrows, keep_default_na=False)
+    else:
+        df = pd.read_csv(path, sep=separator, nrows=nrows, keep_default_na=False)
+    return df.replace(list(null_markers), None)
 
 
 def _feature_source_names(flow_config: FlowConfig, df: pd.DataFrame) -> list[str]:
@@ -395,6 +406,7 @@ def main() -> None:
         no_header=args.no_header,
         separator=separator,
         rows=args.rows,
+        null_markers=args.null_markers,
     )
     feature_names = _feature_source_names(flow_config, df)
     batch_sizes = [int(item.strip()) for item in args.batch_sizes.split(",") if item.strip()]

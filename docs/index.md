@@ -24,6 +24,7 @@ scale-rec 文档按 PyTorch 风格分为快速开始、教程、操作指南、�
 | 入口 | 内容 |
 |---|---|
 | [How-to index](how_to/index.md) | 常见操作入口和当前旧文档映射 |
+| [Rust training preprocessing](rust-pretrain-preprocessing.md) | 训练阶段启用 Rust 特征预处理、验证一致性和 benchmark |
 
 ## Reference
 

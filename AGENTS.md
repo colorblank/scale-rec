@@ -30,7 +30,7 @@ Python 代码统一使用 uv + ruff，不需要手动激活 venv。所有命令�
 ```bash
 # ── 构建 Rust 预处理模块 (feat_engine) ──
 # 可选：构建后 dag.py 可使用 use_rust=True 启用 Rust DAG 执行
-PYTHONPATH=python/src:$PYTHONPATH uv run maturin develop --manifest-path python/rust_feat_bridge/Cargo.toml --uv
+PYTHONPATH=python/src:$PYTHONPATH uv run --project python maturin develop --manifest-path python/rust_feat_bridge/Cargo.toml --uv
 
 # ── 测试与检查 ──
 PYTHONPATH=python/src:$PYTHONPATH uv run pytest python/tests/ -v
