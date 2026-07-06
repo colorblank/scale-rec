@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 
 use candle_core::{Module, Result, Tensor};
-use candle_nn::{linear, Linear, VarBuilder};
+use candle_nn::{layer_norm, linear, Linear, VarBuilder};
 
 use crate::layers::embedding::{FeatureEmbeddings, FeatureSpec};
 use crate::models::output_contract::OutputContract;
@@ -25,7 +25,8 @@ pub struct MixFormerModel {
     /// Projects concatenated features to [B, N*D].
     input_proj: Linear,
     blocks: Vec<MixFormerBlock>,
-    output_proj: Linear,
+    output_norm: candle_nn::LayerNorm,
+    output_linear: Linear,
     output_head: Option<OutputHead>,
     num_heads: usize,
     d: usize,
@@ -43,6 +44,13 @@ impl MixFormerModel {
         num_layers: usize,
         contract: &OutputContract,
     ) -> Result<Self> {
+        if d % num_heads != 0 {
+            candle_core::bail!(
+                "MixFormer: d ({}) must be divisible by num_heads ({}) for head_mixing",
+                d,
+                num_heads
+            );
+        }
         let total_dim: usize = features.iter().map(|f| f.embed_dim).sum();
 
         let embeddings = FeatureEmbeddings::new(vb.pp("embeddings"), features)?;
@@ -54,7 +62,8 @@ impl MixFormerModel {
             blocks.push(block);
         }
 
-        let output_proj = linear(d, d, vb.pp("output_proj.1"))?;
+        let output_norm = layer_norm(d, 1e-5, vb.pp("output_proj.0"))?;
+        let output_linear = linear(d, d, vb.pp("output_proj.1"))?;
 
         let mut representation_dims = HashMap::new();
         representation_dims.insert("shared".to_string(), d);
@@ -64,7 +73,8 @@ impl MixFormerModel {
             embeddings,
             input_proj,
             blocks,
-            output_proj,
+            output_norm,
+            output_linear,
             output_head: Some(output_head),
             num_heads,
             d,
@@ -75,9 +85,12 @@ impl MixFormerModel {
     fn shared(&self, x_inputs: &HashMap<String, Tensor>) -> Result<Tensor> {
         let stacked = self.embeddings.forward_stacked(x_inputs)?;
 
-        // Concatenate and mean-pool fields → [B, total_dim]
-        let x = Tensor::cat(&stacked, 1)?; // [B, F, dim]
-        let x = x.mean(1)?; // [B, total_dim]
+        // Flatten per-field embeddings: [B, 1, dim_i] → [B, dim_i] → cat → [B, total_dim]
+        let mut flat = Vec::with_capacity(stacked.len());
+        for emb in &stacked {
+            flat.push(emb.squeeze(1)?);
+        }
+        let x = Tensor::cat(&flat, 1)?;
 
         // Project to multi-head query space
         let x = self.input_proj.forward(&x)?; // [B, N*D]
@@ -92,19 +105,17 @@ impl MixFormerModel {
 
         // Pool heads → [B, D]
         let h = h.mean(1)?;
-        self.output_proj.forward(&h)
+        let h = self.output_norm.forward(&h)?;
+        self.output_linear.forward(&h)
     }
 }
 
 impl Model for MixFormerModel {
     fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<ModelOutput> {
-        if self.output_head.is_some() {
-            return self.forward_execution(x_inputs).map(|exec| exec.outputs);
-        }
-        let shared = self.shared(x_inputs)?;
-        let mut reps = HashMap::new();
-        reps.insert("shared".to_string(), shared);
         if let Some(ref head) = self.output_head {
+            let shared = self.shared(x_inputs)?;
+            let mut reps = HashMap::new();
+            reps.insert("shared".to_string(), shared);
             let exec = head.forward(&reps)?;
             Ok(exec.outputs)
         } else {
@@ -121,8 +132,9 @@ impl Model for MixFormerModel {
         if let Some(ref head) = self.output_head {
             head.forward(&reps)
         } else {
-            let outputs = self.forward(x_inputs)?;
-            Ok(ModelExecution::new(outputs.clone(), outputs))
+            Err(candle_core::Error::Msg(
+                "MixFormer has no output configured".into(),
+            ))
         }
     }
 }

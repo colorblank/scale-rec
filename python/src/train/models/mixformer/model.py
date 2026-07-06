@@ -54,6 +54,8 @@ class MixFormerModel(nn.Module):
         output_contract: NormalizedOutputContract | None = None,
     ) -> None:
         super().__init__()
+        if d % num_heads != 0:
+            raise ValueError(f"MixFormer: d ({d}) must be divisible by num_heads ({num_heads})")
         self.d = d
         self.num_heads = num_heads
 
@@ -106,10 +108,10 @@ class MixFormerModel(nn.Module):
 
     def _shared(self, x_inputs: FeatureTensorMap) -> torch.Tensor:
         """Compute shared representation: [B, D]"""
-        # Stack per-field embeddings and project
+        # Flatten per-field embeddings: [B, 1, dim_i] → [B, dim_i] → cat → [B, total_dim]
         stacked = self.embeddings.forward_stacked(x_inputs)
-        x = torch.cat(stacked, dim=1)  # [B, F, total_dim_sum/F_avg]
-        x = x.mean(dim=1)  # [B, total_dim_sum]
+        flat = [s.squeeze(1) for s in stacked]
+        x = torch.cat(flat, dim=1)
 
         # Project to multi-head query space
         x = self.input_proj(x)  # [B, N*D]

@@ -1,31 +1,51 @@
 # MixFormer: Co-Scaling Up Dense and Sequence in Industrial Recommenders — KDD 2026
 # Paper: arXiv:2602.14110
 #
-# MixFormer-small config (N=16, D=386, L=4, as in paper Table 1)
+# MixFormer config (N=16, D=384, L=4)
+# NOTE: D must be divisible by N for head_mixing; paper's D=386 is adjusted to 384.
 # -------------------------------------------------------------------
 type: mixformer
-d: 386
+d: 384
 d_ff: 1024
 num_heads: 16
 num_layers: 4
 output_contract:
   version: 1
-  towers:
-    - name: click
-      output: binary_logit
-    - name: finish
-      output: binary_logit
+  graph:
+    towers:
+      - name: click_logit
+        kind: binary_logit
+        hidden_dims: [4]
+      - name: finish_logit
+        kind: binary_logit
+        hidden_dims: [4]
+    relations:
+      - name: click_prob
+        op: sigmoid
+        inputs: [click_logit]
+      - name: finish_prob
+        op: sigmoid
+        inputs: [finish_logit]
   objectives:
-    - source: click
+    - name: click_loss
+      source: click_logit
       label: is_click
-      loss: binary_cross_entropy
-    - source: finish
+      loss: binary_cross_entropy_with_logits
+    - name: finish_loss
+      source: finish_logit
       label: is_finish
-      loss: binary_cross_entropy
+      loss: binary_cross_entropy_with_logits
   metrics:
-    - source: click
+    - name: click_auc
+      source: click_logit
       label: is_click
       type: auc
-    - source: finish
+    - name: finish_auc
+      source: finish_logit
       label: is_finish
       type: auc
+  outputs:
+    - name: click
+      source: click_prob
+    - name: finish
+      source: finish_prob
