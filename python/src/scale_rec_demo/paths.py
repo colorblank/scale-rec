@@ -33,5 +33,6 @@ MODEL_CONFIGS = {
     "demo_mixformer": MODEL_EXAMPLES_DIR / "mixformer.yaml",
     "demo_onerank": MODEL_EXAMPLES_DIR / "onerank.yaml",
     "demo_onetrans": MODEL_EXAMPLES_DIR / "onetrans.yaml",
+    "demo_uniformer": MODEL_EXAMPLES_DIR / "uniformer.yaml",
     "demo_pepnet": MODEL_EXAMPLES_DIR / "pepnet.yaml",
 }

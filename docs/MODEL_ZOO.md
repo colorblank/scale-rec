@@ -19,6 +19,7 @@
 | `rankmixer` | [RankMixer, arXiv:2507.15551](https://arxiv.org/abs/2507.15551) | `examples/models/rankmixer.yaml` | dense token mixer | 外部 `FeatureTokenizer` token 序列 | RankMixer block + per-token FFN | `shared` | 排序 token 结构明确、希望保留轻量 dense mixer |
 | `rankup` | [RankUp, arXiv:2604.17878](https://arxiv.org/abs/2604.17878) | `examples/models/rankup.yaml` | RankUp sparse feature scaling | 内置 RankUp tokenizer | 随机稀疏特征分组 + multi-embedding + global/cross/task token + RankMixer block | `shared`，以及 `task_0`、`task_1` 等 task token 表示 | Top-K sparse 特征较多，需要扩大稀疏特征容量并使用 task-specific 表示 |
 | `hyformer` | [HyFormer, arXiv:2601.12681](https://arxiv.org/abs/2601.12681) | `examples/models/hyformer.yaml` | hybrid sequence/query model | 内置 HyFormer tokenizer | global query generation + sequence memory cross-attention + RankMixer-style query boosting | `shared` | 同时有非序列特征和序列行为特征，需要用查询 token 解码序列记忆 |
+| `uniformer` | [UniFormer, arXiv:2606.27058](https://arxiv.org/abs/2606.27058) | `examples/models/uniformer.yaml` | feature/task interaction model | 内置 UniFormer tokenizer | FIM feature interaction + TIM task-token interaction | `shared`，以及 `task_0`、`task_1` 等 task token 表示 | 同时需要建模 sequence/non-sequence feature 交互和 task-specific 表示 |
 
 ## 选型建议
 
@@ -32,6 +33,7 @@
 | 希望把 sparse feature 组织成 token 序列 | `unimixer`、`token_mixer_large`、`rankmixer` | 三者共用外部 `FeatureTokenizer`，适合 token 化特征建模 |
 | sparse 特征数量增长，需要扩大 Top-K 特征容量 | `rankup` | 使用随机稀疏分组、多 embedding table、global/cross/task token |
 | 行为序列特征是核心信号 | `hyformer` | 使用 query token 对 sequence memory 做 cross-attention，再做 query boosting |
+| 多任务需要显式 task token 表示 | `uniformer` | TIM 生成 `task_i` 表示，可在 output_contract tower 中直接绑定 |
 
 ## 配置与输出契约
 
@@ -42,7 +44,7 @@
 |---|---|---|
 | `type` | 模型 registry key | 必须是上表中的 model type |
 | 模型私有参数 | 控制 backbone 结构 | 例如 `token_dim`、`num_tokens`、`num_blocks`、`d`、`d_ff` |
-| `output_contract.graph.towers` | 定义 task tower | tower 的 `input` 默认是 `shared`；RankUp 可使用 `task_0` 等表示 |
+| `output_contract.graph.towers` | 定义 task tower | tower 的 `input` 默认是 `shared`；RankUp 和 UniFormer 可使用 `task_0` 等表示 |
 | `output_contract.graph.relations` | 定义输出关系图 | 支持 `sigmoid`、`multiply`、`add`、`identity` |
 | `output_contract.objectives` | 定义训练 loss | 可引用内部 tower 或 relation 节点 |
 | `output_contract.metrics` | 定义评估指标 | 可与 objectives 使用不同节点 |
@@ -62,6 +64,7 @@
 | `rankmixer` | `token_dim`、`num_tokens`、`num_blocks`、`num_heads`、`hidden_factor` | 当前实现要求 `num_heads == num_tokens` 以保持 residual shape |
 | `rankup` | `token_dim`、`num_sparse_tokens`、`num_blocks`、`num_heads`、`permutation_seed`、`multi_embedding_tables`、`use_global_token`、`cross_token`、`num_task_tokens` | `num_sparse_tokens` 不能超过特征数；`cross_token.left/right` pooled dim 必须一致；task tower 可绑定 `task_i` |
 | `hyformer` | `d`、`d_ff`、`num_queries`、`num_layers`、`hidden_factor` | `d` 必须能被 query boosting token 数整除；无序列特征时会退化为非序列 token memory |
+| `uniformer` | `d`、`d_ff`、`num_layers`、`n_heads`、`num_tasks` | `d` 必须能被 `n_heads` 整除；`num_tasks` 决定可绑定的 `task_i` 表示数量 |
 
 ## 输入表示
 
@@ -69,7 +72,7 @@
 |---|---|---|
 | `FeatureEmbeddings` concat | `lr`、`deepfm`、`mmoe`、`esmm`、`gdcn_esmm`、`pepnet` | 每个 feature 直接 embedding/pooling 后拼接 |
 | 外部 `FeatureTokenizer` | `unimixer`、`token_mixer_large`、`rankmixer` | 构建模型时由训练/推理入口创建 tokenizer，权重通常带 `tokenizer.*` 前缀 |
-| 内置 tokenizer | `rankup`、`hyformer` | 模型内部自行管理 embedding、projection、token 构造 |
+| 内置 tokenizer | `rankup`、`hyformer`、`uniformer` | 模型内部自行管理 embedding、projection、token 构造 |
 
 ## 权重与上线注意事项
 

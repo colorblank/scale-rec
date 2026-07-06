@@ -316,6 +316,7 @@ fn test_all_example_models_build_with_native_output_contract() {
         "rankup.yaml",
         "hyformer.yaml",
         "onetrans.yaml",
+        "uniformer.yaml",
         "pepnet.yaml",
     ];
     for name in configs {
@@ -583,6 +584,48 @@ outputs:
             num_layers: 1,
             n_heads: 2,
             pyramid_tail_tokens: None,
+        },
+        &contract,
+    )
+    .unwrap();
+
+    let execution = model.forward_execution(&dummy_inputs(3)).unwrap();
+
+    assert_eq!(execution.nodes.tensor("ctr_logit").unwrap().dims(), &[3, 1]);
+    assert_eq!(execution.outputs.tensor("ctr").unwrap().dims(), &[3, 1]);
+}
+
+#[test]
+fn test_uniformer_forward_with_output_contract() {
+    use scale_rec::models::uniformer::model::{UniFormerConfig, UniFormerModel};
+
+    let features = dummy_features();
+    let contract: scale_rec::models::output_contract::OutputContract = serde_yaml::from_str(
+        r#"
+version: 1
+graph:
+  towers:
+    - {name: ctr_logit, input: task_0, kind: binary_logit, hidden_dims: [4]}
+  relations:
+    - {name: ctr_prob, op: sigmoid, inputs: [ctr_logit]}
+objectives:
+  - {name: ctr_loss, source: ctr_logit, label: is_click, loss: {type: binary_cross_entropy_with_logits}}
+metrics:
+  - {name: ctr_auc, source: ctr_logit, label: is_click, type: auc}
+outputs:
+  - {name: ctr, source: ctr_prob}
+"#,
+    )
+    .unwrap();
+    let model = UniFormerModel::with_output_contract(
+        vb(),
+        &features,
+        UniFormerConfig {
+            d: 4,
+            d_ff: 8,
+            num_layers: 1,
+            n_heads: 2,
+            num_tasks: 1,
         },
         &contract,
     )

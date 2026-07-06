@@ -517,6 +517,30 @@ _MODEL_PARAM_SPECS: dict[str, tuple[set[str], set[str], dict[str, type | tuple[t
             "output_contract": dict,
         },
     ),
+    "uniformer": (
+        _COMMON_MODEL_KEYS
+        | {
+            "d",
+            "d_ff",
+            "num_layers",
+            "n_heads",
+            "num_tasks",
+            "task_config",
+        },
+        {"task_config"},
+        {
+            "d": int,
+            "d_ff": int,
+            "num_layers": int,
+            "n_heads": int,
+            "num_tasks": int,
+            "task_config": dict,
+            "tasks": list,
+            "label_col_map": dict,
+            "metrics": dict,
+            "output_contract": dict,
+        },
+    ),
     "pepnet": (
         _COMMON_MODEL_KEYS
         | {

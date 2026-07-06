@@ -37,6 +37,7 @@ def test_demo_model_configs_exist_and_are_current():
         "demo_mixformer": EXAMPLES_DIR / "models" / "mixformer.yaml",
         "demo_onerank": EXAMPLES_DIR / "models" / "onerank.yaml",
         "demo_onetrans": EXAMPLES_DIR / "models" / "onetrans.yaml",
+        "demo_uniformer": EXAMPLES_DIR / "models" / "uniformer.yaml",
         "demo_pepnet": EXAMPLES_DIR / "models" / "pepnet.yaml",
     }
     ancillary_configs = [
@@ -62,6 +63,7 @@ def test_demo_model_configs_exist_and_are_current():
         "models/mixformer.yaml",
         "models/onerank.yaml",
         "models/onetrans.yaml",
+        "models/uniformer.yaml",
         "models/pepnet.yaml",
         "shared/train_defaults.yaml",
         "shared/demo_label_policy.yaml",
@@ -177,6 +179,7 @@ def test_demo_model_path_index_covers_all_example_models():
         "demo_mixformer": EXAMPLES_DIR / "models" / "mixformer.yaml",
         "demo_onerank": EXAMPLES_DIR / "models" / "onerank.yaml",
         "demo_onetrans": EXAMPLES_DIR / "models" / "onetrans.yaml",
+        "demo_uniformer": EXAMPLES_DIR / "models" / "uniformer.yaml",
         "demo_pepnet": EXAMPLES_DIR / "models" / "pepnet.yaml",
     }
 

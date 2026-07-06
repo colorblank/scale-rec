@@ -25,6 +25,7 @@ from .rankmixer import RankMixerModel
 from .rankup import RankUpConfig, RankUpModel
 from .rankup.tokenizer import CrossTokenConfig as RankUpCrossTokenConfig
 from .token_mixer_large import TokenMixerLargeModel
+from .uniformer import UniFormerConfig, UniFormerModel
 from .unimixer.model import UniMixerModel
 
 # ── registry ──
@@ -564,6 +565,29 @@ def _build_mixformer(
     )
 
 
+def _build_uniformer(
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
+) -> UniFormerModel:
+    output_contract = _parse_output_contract(params)
+    task_config = _parse_task_config(params.get("task_config"))
+    if task_config is None and output_contract is None:
+        raise ValueError("UniFormer requires task_config or output_contract")
+    return UniFormerModel(
+        features,
+        UniFormerConfig(
+            d=params.get("d", 128),
+            d_ff=params.get("d_ff", 512),
+            num_layers=params.get("num_layers", 2),
+            n_heads=params.get("n_heads", 8),
+            num_tasks=params.get("num_tasks", 3),
+        ),
+        task_config=task_config,
+        output_contract=output_contract,
+        pooling_map=params.get("_pooling_map"),
+        seq_len_map=params.get("_seq_len_map"),
+    )
+
+
 def _build_hyformer(
     features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
 ) -> HyFormerModel:
@@ -602,3 +626,4 @@ register_model("pepnet", _spec_esmm, _build_pepnet)
 register_model("fat", _spec_pred, _build_fat)
 register_model("onerank", _spec_pred, _build_onerank)
 register_model("onetrans", _spec_pred, _build_onetrans)
+register_model("uniformer", _spec_pred, _build_uniformer)

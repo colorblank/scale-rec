@@ -108,6 +108,7 @@ def test_native_output_contract_esmm_exposes_public_and_internal_outputs():
         "rankup.yaml",
         "hyformer.yaml",
         "onetrans.yaml",
+        "uniformer.yaml",
         "pepnet.yaml",
     ],
 )
@@ -293,6 +294,51 @@ def test_onetrans_forward_with_output_contract():
     model = OneTransModel(
         FEATURES,
         OneTransConfig(d=4, d_ff=8, num_layers=1, n_heads=2),
+        task_config=None,
+        output_contract=contract,
+    )
+
+    execution = model.forward_execution(_inputs(3))
+
+    assert execution.nodes.tensor("ctr_logit").shape == (3, 1)
+    assert execution.outputs.tensor("ctr").shape == (3, 1)
+
+
+def test_uniformer_forward_with_output_contract():
+    from train.core.output_contract import parse_output_contract
+    from train.models.uniformer import UniFormerConfig, UniFormerModel
+
+    contract = parse_output_contract(
+        {
+            "version": 1,
+            "graph": {
+                "towers": [
+                    {
+                        "name": "ctr_logit",
+                        "input": "task_0",
+                        "kind": "binary_logit",
+                        "hidden_dims": [4],
+                    }
+                ],
+                "relations": [{"name": "ctr_prob", "op": "sigmoid", "inputs": ["ctr_logit"]}],
+            },
+            "objectives": [
+                {
+                    "name": "ctr_loss",
+                    "source": "ctr_logit",
+                    "label": "is_click",
+                    "loss": {"type": "binary_cross_entropy_with_logits"},
+                }
+            ],
+            "metrics": [
+                {"name": "ctr_auc", "source": "ctr_logit", "label": "is_click", "type": "auc"}
+            ],
+            "outputs": [{"name": "ctr", "source": "ctr_prob"}],
+        }
+    )
+    model = UniFormerModel(
+        FEATURES,
+        UniFormerConfig(d=4, d_ff=8, num_layers=1, n_heads=2, num_tasks=1),
         task_config=None,
         output_contract=contract,
     )

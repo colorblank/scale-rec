@@ -42,6 +42,8 @@ pub mod rankmixer;
 pub mod rankup;
 /// TokenMixer-Large：Mixing & Reverting 大规模排序模型。
 pub mod token_mixer_large;
+/// UniFormer: unified multi-view feature and task interaction model.
+pub mod uniformer;
 /// UniMixer 双随机矩阵交互模型。
 pub mod unimixer;
 
@@ -234,6 +236,7 @@ static REGISTRY: LazyLock<HashMap<&'static str, BuildFn>> = LazyLock::new(|| {
     m.insert("mixformer", build_mixformer);
     m.insert("onerank", build_onerank);
     m.insert("onetrans", build_onetrans);
+    m.insert("uniformer", build_uniformer);
     m
 });
 
@@ -712,6 +715,36 @@ fn build_onetrans(
     )?))
 }
 
+fn build_uniformer(
+    vb: VarBuilder,
+    features: &[FeatureSpec],
+    _tokenizer: Option<FeatureTokenizer>,
+    params: &serde_yaml::Value,
+    _options: &ModelBuildOptions,
+) -> Result<Box<dyn Model>> {
+    let config = uniformer::model::UniFormerConfig {
+        d: yaml_usize(params, "d", 128),
+        d_ff: yaml_usize(params, "d_ff", 512),
+        num_layers: yaml_usize(params, "num_layers", 2),
+        n_heads: yaml_usize(params, "n_heads", 8),
+        num_tasks: yaml_usize(params, "num_tasks", 3),
+    };
+    if let Some(contract) = parse_output_contract_param(params)? {
+        return Ok(Box::new(
+            uniformer::model::UniFormerModel::with_output_contract(
+                vb, features, config, &contract,
+            )?,
+        ));
+    }
+    let task_config = parse_multi_task_config(params)?;
+    Ok(Box::new(uniformer::model::UniFormerModel::new(
+        vb,
+        features,
+        config,
+        &task_config,
+    )?))
+}
+
 fn build_pepnet(
     vb: VarBuilder,
     features: &[FeatureSpec],
@@ -1004,6 +1037,20 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
                 "num_layers",
                 "n_heads",
                 "pyramid_tail_tokens",
+                "task_config",
+            ],
+            &["task_config"],
+        ),
+        "uniformer" => (
+            &[
+                "tasks",
+                "label_col_map",
+                "metrics",
+                "d",
+                "d_ff",
+                "num_layers",
+                "n_heads",
+                "num_tasks",
                 "task_config",
             ],
             &["task_config"],
