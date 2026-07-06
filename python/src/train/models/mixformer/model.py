@@ -44,7 +44,7 @@ class MixFormerModel(nn.Module):
     def __init__(
         self,
         features: list[FeatureTuple],
-        d: int = 386,
+        d: int = 384,
         d_ff: int = 1024,
         num_heads: int = 16,
         num_layers: int = 4,

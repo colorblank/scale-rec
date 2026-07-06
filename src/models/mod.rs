@@ -658,7 +658,7 @@ fn build_mixformer(
     params: &serde_yaml::Value,
     _options: &ModelBuildOptions,
 ) -> Result<Box<dyn Model>> {
-    let d = yaml_usize(params, "d", 386);
+    let d = yaml_usize(params, "d", 384);
     let d_ff = yaml_usize(params, "d_ff", 1024);
     let num_heads = yaml_usize(params, "num_heads", 16);
     let num_layers = yaml_usize(params, "num_layers", 4);
