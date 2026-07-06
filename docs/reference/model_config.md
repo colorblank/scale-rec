@@ -52,6 +52,14 @@ params:
 | `unimixer` | token mixer 模型 |
 | `token_mixer_large` | larger token mixer |
 | `rankmixer` | ranking mixer 模型 |
+| `full_mix` | parameterized full token mixer |
+| `rankup` | sparse feature scaling token mixer |
+| `hyformer` | hybrid sequence/query model |
+| `pepnet` | personalized gate model |
+| `fat` | field-aware transformer |
+| `mixformer` | dense/sequence co-scaling transformer |
+| `onerank` | transformer-native ranking architecture |
+| `onetrans` | unified sequence/non-sequence transformer |
 
 示例配置在 `examples/models/`。
 
@@ -135,13 +143,14 @@ Rust 和 Python 解析并校验同一份 schema。两端共享接受/拒绝 fixt
 
 当前状态：
 
-- 8 个注册模型 `lr`、`deepfm`、`mmoe`、`esmm`、`gdcn_esmm`、`unimixer`、
-  `token_mixer_large`、`rankmixer` 均支持原生契约。
+- 注册模型 `lr`、`deepfm`、`mmoe`、`esmm`、`gdcn_esmm`、`unimixer`、
+  `token_mixer_large`、`rankmixer`、`full_mix`、`rankup`、`hyformer`、
+  `pepnet`、`fat`、`mixformer`、`onerank`、`onetrans` 均支持原生契约。
 - shared-backbone 模型向 `OutputHead` 暴露 `shared` 表示。
 - MMoE 按 `graph.towers[].input` 的首次出现顺序构建 gate，并暴露同名表示。
 - contract 模型的 `forward()` 只返回公开输出，`forward_execution()` 同时保留内部节点，
   供训练和评估使用。
-- Python 导出与 Rust 加载已覆盖全部 8 个示例模型的 key/shape 绑定检查。
+- Python 导出与 Rust 加载已覆盖示例模型的 key/shape 绑定检查。
 - manifest 保存规范化契约仍属于后续发布治理工作。
 
 ## Loss weighting

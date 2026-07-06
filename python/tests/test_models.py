@@ -105,6 +105,7 @@ def test_native_output_contract_esmm_exposes_public_and_internal_outputs():
         "unimixer.yaml",
         "token_mixer_large.yaml",
         "rankmixer.yaml",
+        "full_mix.yaml",
         "rankup.yaml",
         "hyformer.yaml",
         "onetrans.yaml",
@@ -125,7 +126,7 @@ def test_all_example_models_use_native_output_contract(config_name):
         dag = FeatureDag(FlowConfig.from_yaml(str(REPO_ROOT / "examples/shared/feature_config_demo.yaml")))
         features = dag.feature_tuples()
         inputs = {name: torch.zeros(2, dtype=torch.long) for name, _, _ in features}
-    if config.type in {"unimixer", "token_mixer_large", "rankmixer"}:
+    if config.type in {"unimixer", "token_mixer_large", "rankmixer", "full_mix"}:
         tokenizer = FeatureTokenizer(
             features,
             token_dim=config.params["token_dim"],
@@ -492,6 +493,28 @@ def test_rankmixer_forward():
         relations=[],
     )
     model = RankMixerModel(tokenizer, token_dim, num_tokens, 1, num_tokens, 1.0, task_config)
+
+    out = model(_inputs(3))
+
+    assert out.tensor("ctr").shape == (3, 1)
+    assert out.tensor("cvr").shape == (3, 1)
+
+
+def test_full_mix_forward():
+    from train.models.full_mix.model import FullMixModel
+    from train.models.unimixer.tokenizer import FeatureTokenizer
+
+    token_dim = 4
+    num_tokens = 2
+    tokenizer = FeatureTokenizer(FEATURES, token_dim, num_tokens)
+    task_config = MultiTaskConfig(
+        towers=[
+            TowerConfig("ctr", [8], 1, Activation.RELU),
+            TowerConfig("cvr", [8], 1, Activation.RELU),
+        ],
+        relations=[],
+    )
+    model = FullMixModel(tokenizer, token_dim, num_tokens, 1, 2.0, task_config)
 
     out = model(_inputs(3))
 

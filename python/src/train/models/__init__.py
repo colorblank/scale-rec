@@ -13,6 +13,7 @@ from ..layers.towers import Activation, MultiTaskConfig, TaskRelation, TowerConf
 from .deepfm import DeepFM
 from .esmm import ESMM, default_task_config
 from .fat import FATModel
+from .full_mix import FullMixModel
 from .gdcn_esmm import GDCNESMM
 from .hyformer import HyFormerConfig, HyFormerModel
 from .lr import LogisticRegression
@@ -444,6 +445,26 @@ def _build_rankmixer(
     )
 
 
+def _build_full_mix(
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
+) -> FullMixModel:
+    if tokenizer is None:
+        raise ValueError("FullMix requires external FeatureTokenizer")
+    output_contract = _parse_output_contract(params)
+    tc = _parse_task_config(params.get("task_config"))
+    if tc is None and output_contract is None:
+        raise ValueError("FullMix requires task_config or output_contract")
+    return FullMixModel(
+        tokenizer=tokenizer,
+        token_dim=params.get("token_dim", 64),
+        num_tokens=params.get("num_tokens", 8),
+        num_blocks=params.get("num_blocks", 2),
+        hidden_factor=params.get("hidden_factor", 2.0),
+        task_config=tc,
+        output_contract=output_contract,
+    )
+
+
 def _build_rankup(
     features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
 ) -> RankUpModel:
@@ -597,6 +618,7 @@ register_model("gdcn_esmm", _spec_esmm, _build_gdcn_esmm)
 register_model("unimixer", _spec_unimixer, _build_unimixer)
 register_model("token_mixer_large", _spec_unimixer, _build_token_mixer_large)
 register_model("rankmixer", _spec_unimixer, _build_rankmixer)
+register_model("full_mix", _spec_unimixer, _build_full_mix)
 register_model("rankup", _spec_unimixer, _build_rankup)
 register_model("pepnet", _spec_esmm, _build_pepnet)
 register_model("fat", _spec_pred, _build_fat)

@@ -89,6 +89,7 @@ fn main() -> Result<()> {
     let tokenizer: Option<FeatureTokenizer> = if model_type == "unimixer"
         || model_type == "token_mixer_large"
         || model_type == "rankmixer"
+        || model_type == "full_mix"
     {
         let token_dim = model_config
             .params

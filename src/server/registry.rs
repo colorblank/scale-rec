@@ -1049,7 +1049,10 @@ fn scoped_vb<'a>(vb: VarBuilder<'a>, prefix: &str) -> VarBuilder<'a> {
 }
 
 fn model_requires_feature_tokenizer(model_type: &str) -> bool {
-    matches!(model_type, "unimixer" | "token_mixer_large" | "rankmixer")
+    matches!(
+        model_type,
+        "unimixer" | "token_mixer_large" | "rankmixer" | "full_mix"
+    )
 }
 
 fn validate_weight_binding(binding: &WeightBinding) -> Result<(), String> {
@@ -1161,7 +1164,7 @@ mod tests {
 
     #[test]
     fn identifies_models_requiring_feature_tokenizer() {
-        for model_type in ["unimixer", "token_mixer_large", "rankmixer"] {
+        for model_type in ["unimixer", "token_mixer_large", "rankmixer", "full_mix"] {
             assert!(model_requires_feature_tokenizer(model_type));
         }
         for model_type in ["lr", "deepfm", "mmoe", "esmm", "gdcn_esmm"] {
