@@ -13,7 +13,7 @@
 use std::collections::HashMap;
 
 use candle_core::{Module, Result, Tensor};
-use candle_nn::{linear, Linear, VarBuilder};
+use candle_nn::{layer_norm, linear, Linear, VarBuilder};
 
 use crate::layers::embedding::{FeatureEmbeddings, FeatureSpec};
 use crate::models::output_contract::OutputContract;
@@ -31,7 +31,8 @@ pub struct OneRankModel {
     /// [1, N_max, d] learned positional encoding.
     pos_encoding: Tensor,
     blocks: Vec<OneRankBlock>,
-    sd_proj: Linear,
+    sd_norm: candle_nn::LayerNorm,
+    sd_linear: Linear,
     cross_task: CrossTaskAttention,
     #[allow(dead_code)]
     num_fields: usize,
@@ -86,7 +87,8 @@ impl OneRankModel {
             blocks.push(block);
         }
 
-        let sd_proj = linear(d, d, vb.pp("sd_proj.1"))?;
+        let sd_norm = layer_norm(d, 1e-5, vb.pp("sd_proj.0"))?;
+        let sd_linear = linear(d, d, vb.pp("sd_proj.1"))?;
 
         let cross_task =
             CrossTaskAttention::new(vb.pp("cross_task"), d, num_tasks, cross_task_mask)?;
@@ -104,7 +106,8 @@ impl OneRankModel {
             task_tokens,
             pos_encoding,
             blocks,
-            sd_proj,
+            sd_norm,
+            sd_linear,
             cross_task,
             num_fields,
             num_tasks,
@@ -164,7 +167,8 @@ impl OneRankModel {
 
         // Feature pool → SD: [B, d]
         let feat_pool = h.narrow(1, 0, f)?.mean(1)?;
-        let sd = self.sd_proj.forward(&feat_pool)?;
+        let sd = self.sd_norm.forward(&feat_pool)?;
+        let sd = self.sd_linear.forward(&sd)?;
         let sd = sd.unsqueeze(1)?.expand((b, k, d))?;
 
         // Cross-task attention

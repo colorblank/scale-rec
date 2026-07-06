@@ -82,7 +82,9 @@ class OneRankModel(nn.Module):
             self.input_proj = None
 
         # Transformer blocks
-        self.blocks = nn.ModuleList([OneRankBlock(d, n_heads, dropout) for _ in range(num_layers)])
+        self.blocks = nn.ModuleList([
+            OneRankBlock(d, n_heads, d_ff, dropout) for _ in range(num_layers)
+        ])
 
         # Task-specific situational descriptor projection
         self.sd_proj = nn.Sequential(
