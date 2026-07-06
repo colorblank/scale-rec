@@ -132,11 +132,14 @@ class OneRankModel(nn.Module):
             task_repr: [B, K, d] task token representations.
         """
         stacked = self.embeddings.forward_stacked(x_inputs)
-        x = torch.cat(stacked, dim=1)
+        flat = [s.squeeze(1) for s in stacked]
         if self.input_proj is not None:
-            x = self.input_proj(x)
+            projected = [self.input_proj(f) for f in flat]
+            x = torch.stack(projected, dim=1)
+        else:
+            x = torch.stack(flat, dim=1)
 
-        B, F, _ = x.shape
+        B, F, d = x.shape
         K = self.num_tasks
 
         # Inject task tokens: [B, K, d]

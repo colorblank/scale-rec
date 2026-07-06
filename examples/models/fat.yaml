@@ -43,10 +43,10 @@ output_contract:
       - {name: ctstock_prob,       op: multiply, inputs: [click_prob, stock_prob_uncond]}
 
   objectives:
-    - {name: click_loss, source: click_logit,  label: is_click, loss: {type: binary_cross_entropy}}
-    - {name: cvr_loss,   source: cvr_logit,    label: is_cvr,   loss: {type: binary_cross_entropy}}
-    - {name: detail_loss, source: detail_logit, label: is_click_detail, loss: {type: binary_cross_entropy}}
-    - {name: stock_loss,  source: stock_logit,  label: is_click_stock,  loss: {type: binary_cross_entropy}}
+    - {name: click_loss, source: click_logit,  label: is_click, loss: {type: binary_cross_entropy_with_logits}}
+    - {name: cvr_loss,   source: cvr_logit,    label: is_cvr,   loss: {type: binary_cross_entropy_with_logits}}
+    - {name: detail_loss, source: detail_logit, label: is_click_detail, loss: {type: binary_cross_entropy_with_logits}}
+    - {name: stock_loss,  source: stock_logit,  label: is_click_stock,  loss: {type: binary_cross_entropy_with_logits}}
     - {name: stay_loss,   source: stay_logit,   label: stay_time_label, loss: {type: mse}}
 
   metrics:
@@ -56,6 +56,8 @@ output_contract:
     - {name: stock_auc,  source: stock_logit,  label: is_click_stock,  type: auc}
 
   outputs:
-    - {name: ctr,    source: click_prob}
-    - {name: ctcvr,  source: ctcvr_prob}
-    - {name: cvr,    source: cvr_prob_uncond}
+    - {name: ctr,      source: click_prob}
+    - {name: ctcvr,    source: ctcvr_prob}
+    - {name: cvr,      source: cvr_prob_uncond}
+    - {name: ctdetail, source: ctdetail_prob}
+    - {name: ctstock,  source: ctstock_prob}

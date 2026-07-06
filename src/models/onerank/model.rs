@@ -135,12 +135,17 @@ impl OneRankModel {
         let x = if let Some(ref proj) = self.input_proj {
             let mut projected = Vec::with_capacity(num_fields);
             for emb in &stacked {
-                let e = emb.squeeze(1)?;
-                projected.push(proj.forward(&e)?.unsqueeze(1)?);
+                let e = emb.squeeze(1)?; // [B, embed_dim_i]
+                projected.push(proj.forward(&e)?.unsqueeze(1)?); // [B, 1, d]
             }
             Tensor::cat(&projected, 1)?
         } else {
-            Tensor::cat(&stacked, 1)?
+            // Stack along field dim: all features have same dim = d
+            let mut flat = Vec::with_capacity(num_fields);
+            for emb in &stacked {
+                flat.push(emb.squeeze(1)?.unsqueeze(1)?); // [B, 1, d]
+            }
+            Tensor::cat(&flat, 1)?
         };
 
         let (b, f, d) = x.dims3()?;

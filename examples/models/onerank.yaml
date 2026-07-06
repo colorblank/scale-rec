@@ -1,8 +1,7 @@
 # OneRank: Unified Transformer-Native Ranking Architecture — KDD 2026
 # Paper: arXiv:2606.16838
 #
-# 3-task Click / Add-to-Cart / Order with cascade masking
-# (click → add-to-cart → order funnel as in paper Table 2)
+# 3-task Click / CVR / Detail with cascade masking
 # -------------------------------------------------------------------
 type: onerank
 d: 128
@@ -13,30 +12,42 @@ num_tasks: 3
 cross_task_mask: cascade
 output_contract:
   version: 1
-  towers:
-    - name: click
-      output: binary_logit
-    - name: add_to_cart
-      output: binary_logit
-    - name: order
-      output: binary_logit
+  graph:
+    towers:
+      - {name: click_logit,  kind: binary_logit, hidden_dims: [4]}
+      - {name: cvr_logit,    kind: binary_logit, hidden_dims: [4]}
+      - {name: detail_logit, kind: binary_logit, hidden_dims: [4]}
+    relations:
+      - {name: click_prob,  op: sigmoid, inputs: [click_logit]}
+      - {name: cvr_prob,    op: sigmoid, inputs: [cvr_logit]}
+      - {name: detail_prob, op: sigmoid, inputs: [detail_logit]}
   objectives:
-    - source: click
+    - name: click_loss
+      source: click_logit
       label: is_click
-      loss: binary_cross_entropy
-    - source: add_to_cart
-      label: is_add_to_cart
-      loss: binary_cross_entropy
-    - source: order
-      label: is_order
-      loss: binary_cross_entropy
+      loss: {type: binary_cross_entropy_with_logits}
+    - name: cvr_loss
+      source: cvr_logit
+      label: is_cvr
+      loss: {type: binary_cross_entropy_with_logits}
+    - name: detail_loss
+      source: detail_logit
+      label: is_click_detail
+      loss: {type: binary_cross_entropy_with_logits}
   metrics:
-    - source: click
+    - name: click_auc
+      source: click_logit
       label: is_click
       type: auc
-    - source: add_to_cart
-      label: is_add_to_cart
+    - name: cvr_auc
+      source: cvr_logit
+      label: is_cvr
       type: auc
-    - source: order
-      label: is_order
+    - name: detail_auc
+      source: detail_logit
+      label: is_click_detail
       type: auc
+  outputs:
+    - {name: click,  source: click_prob}
+    - {name: cvr,    source: cvr_prob}
+    - {name: detail, source: detail_prob}
