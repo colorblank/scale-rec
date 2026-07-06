@@ -3,11 +3,16 @@
 use candle_core::{Result, Tensor};
 use candle_nn::{layer_norm, linear, LayerNorm, Linear, Module, VarBuilder};
 
-/// Dedicated GLU-style FFN per token.
+/// Dedicated GLU-style FFN per token (paper Eq. 4).
+///
+///   output_t = (GELU(M_t · W₁) ⊙ (M_t · W₂)) · W₃ + M_t · Wᵣ
+///
+/// where Wᵣ is a learnable residual projection (not merely an identity shortcut).
 pub struct PerTokenGluFfn {
     up: Vec<Linear>,
     gate: Vec<Linear>,
     down: Vec<Linear>,
+    skip: Vec<Linear>,
 }
 
 impl PerTokenGluFfn {
@@ -25,6 +30,7 @@ impl PerTokenGluFfn {
         let mut up = Vec::with_capacity(num_tokens);
         let mut gate = Vec::with_capacity(num_tokens);
         let mut down = Vec::with_capacity(num_tokens);
+        let mut skip = Vec::with_capacity(num_tokens);
         for token_idx in 0..num_tokens {
             up.push(linear(
                 token_dim,
@@ -41,19 +47,34 @@ impl PerTokenGluFfn {
                 token_dim,
                 vb.pp("down").pp(token_idx.to_string()),
             )?);
+            skip.push(linear(
+                token_dim,
+                token_dim,
+                vb.pp("skip").pp(token_idx.to_string()),
+            )?);
         }
-        Ok(Self { up, gate, down })
+        Ok(Self {
+            up,
+            gate,
+            down,
+            skip,
+        })
     }
 
     /// Forward over `[batch, num_tokens, token_dim]`.
+    ///
+    /// Paper Eq. 4: Z_t = (GELU(M_t·W₁) ⊙ (M_t·W₂))·W₃ + M_t·Wᵣ
+    /// Gate path uses identity activation (no sigmoid).
     pub fn forward(&self, x: &Tensor) -> Result<Tensor> {
         let mut outputs = Vec::with_capacity(self.up.len());
         for token_idx in 0..self.up.len() {
             let token = x.narrow(1, token_idx, 1)?.squeeze(1)?;
             let up = self.up[token_idx].forward(&token)?.gelu()?;
-            let gate = candle_nn::ops::sigmoid(&self.gate[token_idx].forward(&token)?)?;
+            let gate = self.gate[token_idx].forward(&token)?; // identity activation
             let hidden = up.mul(&gate)?;
-            outputs.push(self.down[token_idx].forward(&hidden)?.unsqueeze(1)?);
+            let gated = self.down[token_idx].forward(&hidden)?;
+            let residual = self.skip[token_idx].forward(&token)?;
+            outputs.push(gated.add(&residual)?.unsqueeze(1)?);
         }
         Tensor::cat(&outputs, 1)
     }

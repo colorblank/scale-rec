@@ -6,7 +6,13 @@ import torch.nn.functional as F
 
 
 class PerTokenGluFfn(nn.Module):
-    """Dedicated GLU-style FFN per token."""
+    """Dedicated GLU-style FFN per token (paper Eq. 4).
+
+    output_t = (GELU(M_t·W₁) ⊙ (M_t·W₂))·W₃ + M_t·Wᵣ
+
+    Gate path uses identity activation (no sigmoid). Wᵣ is a learnable
+    residual projection, not merely an identity shortcut.
+    """
 
     def __init__(self, num_tokens: int, token_dim: int, hidden_factor: float) -> None:
         super().__init__()
@@ -16,15 +22,16 @@ class PerTokenGluFfn(nn.Module):
         self.up = nn.ModuleList(nn.Linear(token_dim, hidden_dim) for _ in range(num_tokens))
         self.gate = nn.ModuleList(nn.Linear(token_dim, hidden_dim) for _ in range(num_tokens))
         self.down = nn.ModuleList(nn.Linear(hidden_dim, token_dim) for _ in range(num_tokens))
+        self.skip = nn.ModuleList(nn.Linear(token_dim, token_dim) for _ in range(num_tokens))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         outputs = []
-        for token_idx, (up, gate, down) in enumerate(
-            zip(self.up, self.gate, self.down, strict=False)
+        for token_idx, (up, gate, down, skip) in enumerate(
+            zip(self.up, self.gate, self.down, self.skip, strict=False)
         ):
             token = x[:, token_idx, :]
-            hidden = F.gelu(up(token)) * torch.sigmoid(gate(token))
-            outputs.append(down(hidden).unsqueeze(1))
+            hidden = F.gelu(up(token)) * gate(token)  # identity gate, no sigmoid
+            outputs.append((down(hidden) + skip(token)).unsqueeze(1))
         return torch.cat(outputs, dim=1)
 
 
