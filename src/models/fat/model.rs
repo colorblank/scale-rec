@@ -43,8 +43,9 @@ impl FATBlock {
         d_ff: usize,
         n_heads: usize,
         num_fields: usize,
+        dropout: f64,
     ) -> Result<Self> {
-        let attn = FieldDecomposedAttention::new(vb.pp("attn"), d, n_heads, num_fields)?;
+        let attn = FieldDecomposedAttention::new(vb.pp("attn"), d, n_heads, num_fields, dropout)?;
         let ffn = FieldAwareFFN::new(vb.pp("ffn"), d, d_ff)?;
         Ok(Self { attn, ffn })
     }
@@ -87,6 +88,7 @@ impl FATModel {
         k_top: usize,
         deep_hidden_dims: &[usize],
         shared_bottom_dims: &[usize],
+        dropout: f64,
         contract: &OutputContract,
     ) -> Result<Self> {
         let num_fields = features.len();
@@ -113,8 +115,14 @@ impl FATModel {
         // FAT blocks — all blocks share the same field projections per the paper
         let mut blocks = Vec::with_capacity(num_layers);
         for i in 0..num_layers {
-            let block =
-                FATBlock::new(vb.pp(format!("blocks.{}", i)), d, d_ff, n_heads, num_fields)?;
+            let block = FATBlock::new(
+                vb.pp(format!("blocks.{}", i)),
+                d,
+                d_ff,
+                n_heads,
+                num_fields,
+                dropout,
+            )?;
             blocks.push(block);
         }
 
@@ -185,6 +193,7 @@ impl FATModel {
         k_top: usize,
         deep_hidden_dims: &[usize],
         shared_bottom_dims: &[usize],
+        dropout: f64,
         task_config: &MultiTaskConfig,
     ) -> Result<Self> {
         let num_fields = features.len();
@@ -206,8 +215,14 @@ impl FATModel {
 
         let mut blocks = Vec::with_capacity(num_layers);
         for i in 0..num_layers {
-            let block =
-                FATBlock::new(vb.pp(format!("blocks.{}", i)), d, d_ff, n_heads, num_fields)?;
+            let block = FATBlock::new(
+                vb.pp(format!("blocks.{}", i)),
+                d,
+                d_ff,
+                n_heads,
+                num_fields,
+                dropout,
+            )?;
             blocks.push(block);
         }
 

@@ -842,6 +842,7 @@ fn build_fat(
     let m = yaml_usize(params, "M", 64);
     let k = yaml_usize(params, "k", 64);
     let k_top = yaml_usize(params, "K", 3);
+    let dropout = yaml_f64(params, "dropout", 0.0);
     let deep_hidden_dims: Vec<usize> = yaml_usize_seq(params, "deep_hidden_dims");
     let shared_bottom_dims: Vec<usize> = yaml_usize_seq(params, "shared_bottom_dims");
     if let Some(contract) = parse_output_contract_param(params)? {
@@ -857,6 +858,7 @@ fn build_fat(
             k_top,
             &deep_hidden_dims,
             &shared_bottom_dims,
+            dropout,
             &contract,
         )?));
     }
@@ -877,6 +879,7 @@ fn build_fat(
         k_top,
         &deep_hidden_dims,
         &shared_bottom_dims,
+        dropout,
         &task_config,
     )?))
 }
@@ -1036,6 +1039,7 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
                 "M",
                 "k",
                 "K",
+                "dropout",
                 "deep_hidden_dims",
                 "shared_bottom_dims",
                 "task_config",

@@ -1,7 +1,7 @@
 //! Field-Decomposed Attention (§3.2) — field-specific Q/K/V projections
 //! and field-pair interaction modulation.
 
-use candle_core::{Module, Result, Tensor};
+use candle_core::{bail, Module, Result, Tensor};
 use candle_nn::{layer_norm, LayerNorm, VarBuilder};
 
 /// Field-Decomposed Multi-Head Attention layer.
@@ -11,20 +11,30 @@ pub struct FieldDecomposedAttention {
     n_heads: usize,
     d_head: usize,
     num_fields: usize,
+    dropout: f32,
     norm: LayerNorm,
     field_bias: Option<Tensor>,
 }
 
 impl FieldDecomposedAttention {
     /// Create a new field-decomposed attention layer.
-    pub fn new(vb: VarBuilder, d: usize, n_heads: usize, num_fields: usize) -> Result<Self> {
+    pub fn new(
+        vb: VarBuilder,
+        d: usize,
+        n_heads: usize,
+        num_fields: usize,
+        dropout: f64,
+    ) -> Result<Self> {
+        if d % n_heads != 0 {
+            bail!(
+                "FAT attention: d ({}) must be divisible by n_heads ({})",
+                d,
+                n_heads
+            );
+        }
         let norm = layer_norm(d, 1e-5, vb.pp("norm"))?;
         let field_bias = if num_fields > 0 {
-            Some(vb.get_with_hints(
-                (num_fields, d),
-                "field_bias",
-                candle_nn::init::DEFAULT_KAIMING_NORMAL,
-            )?)
+            Some(vb.get_with_hints((num_fields, d), "field_bias", candle_nn::init::ZERO)?)
         } else {
             None
         };
@@ -34,6 +44,7 @@ impl FieldDecomposedAttention {
             n_heads,
             d_head: d / n_heads,
             num_fields,
+            dropout: dropout as f32,
             norm,
             field_bias,
         })
@@ -100,8 +111,13 @@ impl FieldDecomposedAttention {
         let fw = field_pair_w.unsqueeze(0)?.unsqueeze(0)?;
         let scores = scores.broadcast_mul(&fw)?;
 
-        // Softmax + weighted sum over values
+        // Softmax + dropout + weighted sum over values
         let attn = candle_nn::ops::softmax(&scores, 3)?;
+        let attn = if self.dropout > 0. {
+            candle_nn::ops::dropout(&attn, self.dropout)?
+        } else {
+            attn
+        };
         let out = attn.matmul(&v)?; // [B, n_heads, F, d_head]
 
         // Reshape back: [B, n_heads, F, d_head] → [B, F, d]

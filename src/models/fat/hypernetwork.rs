@@ -71,32 +71,48 @@ impl BasisHypernetwork {
         k: usize,
         k_top: usize,
     ) -> Result<Self> {
-        let hvb = vb.pp("hypernetwork");
+        // Caller already prefixes with "hypernetwork", so use vb directly.
+        let hvb = vb;
 
         let bases_q = hvb.get_with_hints(
             (m, d, d),
             "bases_q",
-            candle_nn::init::DEFAULT_KAIMING_NORMAL,
+            candle_nn::init::Init::Randn {
+                mean: 0.0,
+                stdev: 0.02,
+            },
         )?;
         let bases_k = hvb.get_with_hints(
             (m, d, d),
             "bases_k",
-            candle_nn::init::DEFAULT_KAIMING_NORMAL,
+            candle_nn::init::Init::Randn {
+                mean: 0.0,
+                stdev: 0.02,
+            },
         )?;
         let bases_v = hvb.get_with_hints(
             (m, d, d),
             "bases_v",
-            candle_nn::init::DEFAULT_KAIMING_NORMAL,
+            candle_nn::init::Init::Randn {
+                mean: 0.0,
+                stdev: 0.02,
+            },
         )?;
         let bases_ffn1 = hvb.get_with_hints(
             (m, d, d_ff),
             "bases_ffn1",
-            candle_nn::init::DEFAULT_KAIMING_NORMAL,
+            candle_nn::init::Init::Randn {
+                mean: 0.0,
+                stdev: 0.02,
+            },
         )?;
         let bases_ffn2 = hvb.get_with_hints(
             (m, d_ff, d),
             "bases_ffn2",
-            candle_nn::init::DEFAULT_KAIMING_NORMAL,
+            candle_nn::init::Init::Randn {
+                mean: 0.0,
+                stdev: 0.02,
+            },
         )?;
 
         let router_q = linear_no_bias(k, m, hvb.pp("router_q"))?;
@@ -108,12 +124,18 @@ impl BasisHypernetwork {
         let field_meta = hvb.get_with_hints(
             (num_fields, k),
             "field_meta",
-            candle_nn::init::DEFAULT_KAIMING_NORMAL,
+            candle_nn::init::Init::Randn {
+                mean: 0.0,
+                stdev: 0.1,
+            },
         )?;
         let field_pair_w = hvb.get_with_hints(
             (num_fields, num_fields),
             "field_pair_w",
-            candle_nn::init::DEFAULT_KAIMING_NORMAL,
+            candle_nn::init::Init::Randn {
+                mean: 0.0,
+                stdev: 0.01,
+            },
         )?;
 
         Ok(Self {
@@ -138,10 +160,45 @@ impl BasisHypernetwork {
         })
     }
 
-    /// Route: softmax over router scores → dense coefficients [F, M].
+    /// Route: top-K sparse routing → coefficients [F, M].
+    ///
+    /// Selects the top-K bases per field via iterative argmax (Candle 0.10
+    /// lacks a native topk), applies softmax over the K scores, and scatters
+    /// them back into the full M-dimensional coefficient vector.
     fn route(&self, router: &Linear) -> Result<Tensor> {
         let scores = router.forward(&self.field_meta)?; // [F, M]
-        candle_nn::ops::softmax(&scores, 1) // [F, M]
+        let f = self.num_fields;
+        let m = self.m;
+        let k = self.k_top;
+        let device = self.field_meta.device();
+        let dtype = self.field_meta.dtype();
+        let neg_inf = Tensor::from_slice(&[f64::NEG_INFINITY], (1,), device)?;
+
+        // Collect top-K indices and values via iterative argmax
+        let mut topk_vals: Vec<Tensor> = Vec::with_capacity(k);
+        let mut topk_idxs: Vec<Tensor> = Vec::with_capacity(k);
+        let mut remaining = scores;
+        for _ in 0..k {
+            let idx = remaining.argmax(1)?.unsqueeze(1)?; // [F, 1]
+            let val = remaining.gather(&idx, 1)?; // [F, 1]
+            topk_vals.push(val);
+            topk_idxs.push(idx.clone());
+            let fill = neg_inf.broadcast_as((f, 1))?;
+            remaining = remaining.scatter(&idx, &fill, 1)?; // [F, M]
+        }
+
+        // Softmax over the selected K values
+        let vals = Tensor::cat(&topk_vals.iter().map(|t| t.clone()).collect::<Vec<_>>(), 1)?; // [F, K]
+        let alpha = candle_nn::ops::softmax(&vals, 1)?; // [F, K]
+
+        // Scatter softmaxed coefficients at the selected positions
+        let mut coeffs = Tensor::zeros((f, m), dtype, device)?;
+        for k_idx in 0..k {
+            let a = alpha.narrow(1, k_idx, 1)?; // [F, 1]
+            coeffs = coeffs.scatter_add(&topk_idxs[k_idx], &a, 1)?;
+        }
+
+        Ok(coeffs)
     }
 
     /// Compose:  W_f = Σ_m α_f,m · B_m   →   [F, d_in, d_out]
