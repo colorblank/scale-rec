@@ -88,12 +88,8 @@ impl OneRankModel {
 
         let sd_proj = linear(d, d, vb.pp("sd_proj.1"))?;
 
-        let cross_task = CrossTaskAttention::new(
-            vb.pp("cross_task"),
-            d,
-            num_tasks,
-            cross_task_mask,
-        )?;
+        let cross_task =
+            CrossTaskAttention::new(vb.pp("cross_task"), d, num_tasks, cross_task_mask)?;
 
         let task_names: Vec<String> = contract
             .graph

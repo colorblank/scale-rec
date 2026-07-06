@@ -17,12 +17,7 @@ pub struct FieldDecomposedAttention {
 
 impl FieldDecomposedAttention {
     /// Create a new field-decomposed attention layer.
-    pub fn new(
-        vb: VarBuilder,
-        d: usize,
-        n_heads: usize,
-        num_fields: usize,
-    ) -> Result<Self> {
+    pub fn new(vb: VarBuilder, d: usize, n_heads: usize, num_fields: usize) -> Result<Self> {
         let norm = layer_norm(d, 1e-5, vb.pp("norm"))?;
         let field_bias = if num_fields > 0 {
             Some(vb.get_with_hints(
@@ -83,18 +78,22 @@ impl FieldDecomposedAttention {
         let v = self.field_matmul(&x, w_v)?;
 
         // Reshape to multi-head:  [B, F, d] → [B, n_heads, F, d_head]
-        let q = q.reshape((batch, num_fields, self.n_heads, self.d_head))?.permute((0, 2, 1, 3))?;
-        let k = k.reshape((batch, num_fields, self.n_heads, self.d_head))?.permute((0, 2, 1, 3))?;
-        let v = v.reshape((batch, num_fields, self.n_heads, self.d_head))?.permute((0, 2, 1, 3))?;
+        let q = q
+            .reshape((batch, num_fields, self.n_heads, self.d_head))?
+            .permute((0, 2, 1, 3))?;
+        let k = k
+            .reshape((batch, num_fields, self.n_heads, self.d_head))?
+            .permute((0, 2, 1, 3))?;
+        let v = v
+            .reshape((batch, num_fields, self.n_heads, self.d_head))?
+            .permute((0, 2, 1, 3))?;
 
         // Scaled dot-product attention
         // scores [B, n_heads, F, F] = Q @ K^T / sqrt(d_head)
         let scale = (self.d_head as f64).sqrt();
-        let scores = q.matmul(&k.permute((0, 1, 3, 2))?)?.broadcast_div(&Tensor::from_slice(
-            &[scale],
-            (1,),
-            x.device(),
-        )?)?;
+        let scores = q
+            .matmul(&k.permute((0, 1, 3, 2))?)?
+            .broadcast_div(&Tensor::from_slice(&[scale], (1,), x.device())?)?;
 
         // Field-pair interaction modulation
         // field_pair_w: [F, F] → broadcast to [1, 1, F, F]
@@ -103,10 +102,12 @@ impl FieldDecomposedAttention {
 
         // Softmax + weighted sum over values
         let attn = candle_nn::ops::softmax(&scores, 3)?;
-        let out = attn.matmul(&v)?;  // [B, n_heads, F, d_head]
+        let out = attn.matmul(&v)?; // [B, n_heads, F, d_head]
 
         // Reshape back: [B, n_heads, F, d_head] → [B, F, d]
-        let out = out.permute((0, 2, 1, 3))?.reshape((batch, num_fields, self.d))?;
+        let out = out
+            .permute((0, 2, 1, 3))?
+            .reshape((batch, num_fields, self.d))?;
 
         Ok(out)
     }
@@ -121,10 +122,10 @@ impl FieldDecomposedAttention {
         // Iterate over fields (num_fields is typically small, F ~ 10-100)
         let mut outputs = Vec::with_capacity(num_fields);
         for f in 0..num_fields {
-            let x_f = x.narrow(1, f, 1)?.squeeze(1)?;  // [B, d]
-            let w_f = w.get(f)?.squeeze(0)?;  // [d, d]
-            let out_f = x_f.matmul(&w_f)?;  // [B, d]
-            outputs.push(out_f.unsqueeze(1)?);  // [B, 1, d]
+            let x_f = x.narrow(1, f, 1)?.squeeze(1)?; // [B, d]
+            let w_f = w.get(f)?.squeeze(0)?; // [d, d]
+            let out_f = x_f.matmul(&w_f)?; // [B, d]
+            outputs.push(out_f.unsqueeze(1)?); // [B, 1, d]
         }
         Tensor::cat(&outputs, 1)
     }

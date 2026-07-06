@@ -19,6 +19,7 @@ from .lr import LogisticRegression
 from .mixformer import MixFormerModel
 from .mmoe import MMoE
 from .onerank import OneRankModel
+from .onetrans import OneTransConfig, OneTransModel
 from .pepnet import PEPNet
 from .rankmixer import RankMixerModel
 from .rankup import RankUpConfig, RankUpModel
@@ -520,6 +521,29 @@ def _build_onerank(
     )
 
 
+def _build_onetrans(
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
+) -> OneTransModel:
+    output_contract = _parse_output_contract(params)
+    task_config = _parse_task_config(params.get("task_config"))
+    if task_config is None and output_contract is None:
+        raise ValueError("OneTrans requires task_config or output_contract")
+    return OneTransModel(
+        features,
+        OneTransConfig(
+            d=params.get("d", 128),
+            d_ff=params.get("d_ff", 512),
+            num_layers=params.get("num_layers", 2),
+            n_heads=params.get("n_heads", 8),
+            pyramid_tail_tokens=params.get("pyramid_tail_tokens"),
+        ),
+        task_config=task_config,
+        output_contract=output_contract,
+        pooling_map=params.get("_pooling_map"),
+        seq_len_map=params.get("_seq_len_map"),
+    )
+
+
 def _build_mixformer(
     features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
 ) -> MixFormerModel:
@@ -577,3 +601,4 @@ register_model("rankup", _spec_unimixer, _build_rankup)
 register_model("pepnet", _spec_esmm, _build_pepnet)
 register_model("fat", _spec_pred, _build_fat)
 register_model("onerank", _spec_pred, _build_onerank)
+register_model("onetrans", _spec_pred, _build_onetrans)

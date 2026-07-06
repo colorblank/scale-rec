@@ -108,7 +108,9 @@ impl Model for MixFormerModel {
             let exec = head.forward(&reps)?;
             Ok(exec.outputs)
         } else {
-            Err(candle_core::Error::Msg("MixFormer has no output configured".into()))
+            Err(candle_core::Error::Msg(
+                "MixFormer has no output configured".into(),
+            ))
         }
     }
 

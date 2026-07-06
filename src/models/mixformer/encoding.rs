@@ -65,7 +65,12 @@ impl QueryMixer {
         for i in 0..num_heads {
             head_ffns.push(SwiGLUFFN::new(vb.pp(format!("head_ffns.{}", i)), d, d_ff)?);
         }
-        Ok(Self { norm1, norm2, head_ffns, num_heads })
+        Ok(Self {
+            norm1,
+            norm2,
+            head_ffns,
+            num_heads,
+        })
     }
 
     /// Forward: HeadMixing → per-head SwiGLU FFN.
@@ -107,7 +112,11 @@ impl OutputFusion {
         for i in 0..num_heads {
             head_ffns.push(SwiGLUFFN::new(vb.pp(format!("head_ffns.{}", i)), d, d_ff)?);
         }
-        Ok(Self { norm, head_ffns, num_heads })
+        Ok(Self {
+            norm,
+            head_ffns,
+            num_heads,
+        })
     }
 
     /// Forward pass.
@@ -135,7 +144,10 @@ impl MixFormerBlock {
     pub fn new(vb: VarBuilder, d: usize, d_ff: usize, num_heads: usize) -> Result<Self> {
         let query_mixer = QueryMixer::new(vb.pp("query_mixer"), d, d_ff, num_heads)?;
         let output_fusion = OutputFusion::new(vb.pp("output_fusion"), d, d_ff, num_heads)?;
-        Ok(Self { query_mixer, output_fusion })
+        Ok(Self {
+            query_mixer,
+            output_fusion,
+        })
     }
 
     /// Forward pass: QueryMixer → OutputFusion.

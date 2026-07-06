@@ -37,14 +37,22 @@ struct FATBlock {
 }
 
 impl FATBlock {
-    fn new(vb: VarBuilder, d: usize, d_ff: usize, n_heads: usize, num_fields: usize) -> Result<Self> {
+    fn new(
+        vb: VarBuilder,
+        d: usize,
+        d_ff: usize,
+        n_heads: usize,
+        num_fields: usize,
+    ) -> Result<Self> {
         let attn = FieldDecomposedAttention::new(vb.pp("attn"), d, n_heads, num_fields)?;
         let ffn = FieldAwareFFN::new(vb.pp("ffn"), d, d_ff)?;
         Ok(Self { attn, ffn })
     }
 
     fn forward(&self, x: &Tensor, proj: &FieldProjections) -> Result<Tensor> {
-        let attn_out = self.attn.forward(x, &proj.w_q, &proj.w_k, &proj.w_v, &proj.field_pair_w)?;
+        let attn_out = self
+            .attn
+            .forward(x, &proj.w_q, &proj.w_k, &proj.w_v, &proj.field_pair_w)?;
         let ffn_out = self.ffn.forward(&attn_out, &proj.w_ffn1, &proj.w_ffn2)?;
         ffn_out.add(x)
     }
@@ -97,17 +105,16 @@ impl FATModel {
         };
 
         // Hypernetwork — loads bases and routers from safetensors
-        let hypernet = BasisHypernetwork::new(
-            vb.pp("hypernetwork"),
-            num_fields, d, d_ff, m, k, k_top,
-        )?;
+        let hypernet =
+            BasisHypernetwork::new(vb.pp("hypernetwork"), num_fields, d, d_ff, m, k, k_top)?;
         // Pre-compose all field-specific projections at build time
         let proj = hypernet.precompute_all()?;
 
         // FAT blocks — all blocks share the same field projections per the paper
         let mut blocks = Vec::with_capacity(num_layers);
         for i in 0..num_layers {
-            let block = FATBlock::new(vb.pp(format!("blocks.{}", i)), d, d_ff, n_heads, num_fields)?;
+            let block =
+                FATBlock::new(vb.pp(format!("blocks.{}", i)), d, d_ff, n_heads, num_fields)?;
             blocks.push(block);
         }
 
@@ -193,15 +200,14 @@ impl FATModel {
             None
         };
 
-        let hypernet = BasisHypernetwork::new(
-            vb.pp("hypernetwork"),
-            num_fields, d, d_ff, m, k, k_top,
-        )?;
+        let hypernet =
+            BasisHypernetwork::new(vb.pp("hypernetwork"), num_fields, d, d_ff, m, k, k_top)?;
         let proj = hypernet.precompute_all()?;
 
         let mut blocks = Vec::with_capacity(num_layers);
         for i in 0..num_layers {
-            let block = FATBlock::new(vb.pp(format!("blocks.{}", i)), d, d_ff, n_heads, num_fields)?;
+            let block =
+                FATBlock::new(vb.pp(format!("blocks.{}", i)), d, d_ff, n_heads, num_fields)?;
             blocks.push(block);
         }
 
@@ -262,8 +268,8 @@ impl FATModel {
         let x = if let Some(ref proj) = self.input_proj {
             let mut projected = Vec::with_capacity(num_fields);
             for emb in &stacked {
-                let e = emb.squeeze(1)?;          // [B, dim_i]
-                projected.push(proj.forward(&e)?.unsqueeze(1)?);  // [B, 1, d]
+                let e = emb.squeeze(1)?; // [B, dim_i]
+                projected.push(proj.forward(&e)?.unsqueeze(1)?); // [B, 1, d]
             }
             Tensor::cat(&projected, 1)?
         } else {
@@ -307,7 +313,9 @@ impl Model for FATModel {
         if let Some(ref task) = self.multi_task {
             task.forward(&shared)
         } else {
-            Err(candle_core::Error::Msg("FATModel has no output configured".into()))
+            Err(candle_core::Error::Msg(
+                "FATModel has no output configured".into(),
+            ))
         }
     }
 

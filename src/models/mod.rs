@@ -28,6 +28,8 @@ pub mod mixformer;
 pub mod mmoe;
 /// OneRank: Unified Transformer-Native Ranking Architecture (KDD 2026, arXiv:2606.16838)。
 pub mod onerank;
+/// OneTrans: One Transformer Fits All Features in Recommender Systems (arXiv:2510.26104).
+pub mod onetrans;
 /// Versioned output-contract schema and validation.
 pub mod output_contract;
 /// Contract-driven task towers, relation graph and public output projection.
@@ -231,6 +233,7 @@ static REGISTRY: LazyLock<HashMap<&'static str, BuildFn>> = LazyLock::new(|| {
     m.insert("fat", build_fat);
     m.insert("mixformer", build_mixformer);
     m.insert("onerank", build_onerank);
+    m.insert("onetrans", build_onetrans);
     m
 });
 
@@ -681,6 +684,34 @@ fn build_onerank(
     )?))
 }
 
+fn build_onetrans(
+    vb: VarBuilder,
+    features: &[FeatureSpec],
+    _tokenizer: Option<FeatureTokenizer>,
+    params: &serde_yaml::Value,
+    _options: &ModelBuildOptions,
+) -> Result<Box<dyn Model>> {
+    let config = onetrans::model::OneTransConfig {
+        d: yaml_usize(params, "d", 128),
+        d_ff: yaml_usize(params, "d_ff", 512),
+        num_layers: yaml_usize(params, "num_layers", 2),
+        n_heads: yaml_usize(params, "n_heads", 8),
+        pyramid_tail_tokens: yaml_usize_opt(params, "pyramid_tail_tokens"),
+    };
+    if let Some(contract) = parse_output_contract_param(params)? {
+        return Ok(Box::new(
+            onetrans::model::OneTransModel::with_output_contract(vb, features, config, &contract)?,
+        ));
+    }
+    let task_config = parse_multi_task_config(params)?;
+    Ok(Box::new(onetrans::model::OneTransModel::new(
+        vb,
+        features,
+        config,
+        &task_config,
+    )?))
+}
+
 fn build_pepnet(
     vb: VarBuilder,
     features: &[FeatureSpec],
@@ -963,6 +994,20 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
             ],
             &[],
         ),
+        "onetrans" => (
+            &[
+                "tasks",
+                "label_col_map",
+                "metrics",
+                "d",
+                "d_ff",
+                "num_layers",
+                "n_heads",
+                "pyramid_tail_tokens",
+                "task_config",
+            ],
+            &["task_config"],
+        ),
         _ => return Ok(()),
     };
     let has_output_contract = params.get("output_contract").is_some();
@@ -1040,6 +1085,7 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
         "K",
         "num_tasks",
         "num_heads",
+        "pyramid_tail_tokens",
         "num_sparse_tokens",
         "permutation_seed",
         "multi_embedding_tables",

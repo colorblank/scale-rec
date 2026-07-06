@@ -35,10 +35,10 @@ impl FieldAwareFFN {
 
         // FAT-FFN: SiLU(x · W₁) · W₂
         // SiLU(x) = x * sigmoid(x)  (identical to Swish with β=1)
-        let hidden = self.field_matmul(&x, w_1)?;           // [B, F, d_ff]
+        let hidden = self.field_matmul(&x, w_1)?; // [B, F, d_ff]
         let sig = candle_nn::ops::sigmoid(&hidden)?;
-        let hidden = hidden.mul(&sig)?;                     // SiLU activation
-        let output = self.field_matmul(&hidden, w_2)?;     // [B, F, d]
+        let hidden = hidden.mul(&sig)?; // SiLU activation
+        let output = self.field_matmul(&hidden, w_2)?; // [B, F, d]
 
         Ok(output)
     }
@@ -48,10 +48,10 @@ impl FieldAwareFFN {
         let (_batch, num_fields, _) = x.dims3()?;
         let mut outputs = Vec::with_capacity(num_fields);
         for f in 0..num_fields {
-            let x_f = x.narrow(1, f, 1)?.squeeze(1)?;     // [B, d_in]
-            let w_f = w.get(f)?.squeeze(0)?;                // [d_in, d_out]
-            let out_f = x_f.matmul(&w_f)?;                  // [B, d_out]
-            outputs.push(out_f.unsqueeze(1)?);               // [B, 1, d_out]
+            let x_f = x.narrow(1, f, 1)?.squeeze(1)?; // [B, d_in]
+            let w_f = w.get(f)?.squeeze(0)?; // [d_in, d_out]
+            let out_f = x_f.matmul(&w_f)?; // [B, d_out]
+            outputs.push(out_f.unsqueeze(1)?); // [B, 1, d_out]
         }
         Tensor::cat(&outputs, 1)
     }

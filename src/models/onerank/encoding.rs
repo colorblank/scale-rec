@@ -64,9 +64,15 @@ impl OneRankBlock {
         let v = self.v_proj.forward(&x)?;
 
         // Reshape to multi-head: [B, n_heads, N, d_head]
-        let q = q.reshape((b, n, self.n_heads, self.d_head))?.permute((0, 2, 1, 3))?;
-        let k = k.reshape((b, n, self.n_heads, self.d_head))?.permute((0, 2, 1, 3))?;
-        let v = v.reshape((b, n, self.n_heads, self.d_head))?.permute((0, 2, 1, 3))?;
+        let q = q
+            .reshape((b, n, self.n_heads, self.d_head))?
+            .permute((0, 2, 1, 3))?;
+        let k = k
+            .reshape((b, n, self.n_heads, self.d_head))?
+            .permute((0, 2, 1, 3))?;
+        let v = v
+            .reshape((b, n, self.n_heads, self.d_head))?
+            .permute((0, 2, 1, 3))?;
 
         // Scaled dot-product: scores [B, n_heads, N, N]
         let scale = (self.d_head as f64).sqrt();

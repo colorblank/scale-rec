@@ -11,5 +11,5 @@
 //!   6. Dynamic matching scoring: s_k = z_k^T · r_k
 
 pub mod encoding;
-pub mod prediction;
 pub mod model;
+pub mod prediction;

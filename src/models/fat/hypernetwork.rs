@@ -140,8 +140,8 @@ impl BasisHypernetwork {
 
     /// Route: softmax over router scores → dense coefficients [F, M].
     fn route(&self, router: &Linear) -> Result<Tensor> {
-        let scores = router.forward(&self.field_meta)?;  // [F, M]
-        candle_nn::ops::softmax(&scores, 1)  // [F, M]
+        let scores = router.forward(&self.field_meta)?; // [F, M]
+        candle_nn::ops::softmax(&scores, 1) // [F, M]
     }
 
     /// Compose:  W_f = Σ_m α_f,m · B_m   →   [F, d_in, d_out]
@@ -151,10 +151,10 @@ impl BasisHypernetwork {
         // alpha: [F, M],  bases: [M, d_in, d_out]
         // Expand for broadcasting:
         //   α_{f,m,1,1} · B_{m,d_in,d_out} → sum over m
-        let a = alpha.unsqueeze(2)?.unsqueeze(3)?;      // [F, M, 1, 1]
-        let b = bases.unsqueeze(0)?;                     // [1, M, d_in, d_out]
-        let weighted = a.broadcast_mul(&b)?;             // [F, M, d_in, d_out]
-        weighted.sum(1)                                  // [F, d_in, d_out]
+        let a = alpha.unsqueeze(2)?.unsqueeze(3)?; // [F, M, 1, 1]
+        let b = bases.unsqueeze(0)?; // [1, M, d_in, d_out]
+        let weighted = a.broadcast_mul(&b)?; // [F, M, d_in, d_out]
+        weighted.sum(1) // [F, d_in, d_out]
     }
 
     /// Pre-compute all field-specific projections.
