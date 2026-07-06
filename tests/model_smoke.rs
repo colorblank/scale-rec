@@ -313,6 +313,7 @@ fn test_all_example_models_build_with_native_output_contract() {
         "unimixer.yaml",
         "token_mixer_large.yaml",
         "rankmixer.yaml",
+        "full_mix.yaml",
         "rankup.yaml",
         "hyformer.yaml",
         "onetrans.yaml",
@@ -336,7 +337,7 @@ fn test_all_example_models_build_with_native_output_contract() {
         };
         let tokenizer = if matches!(
             config.model_type.as_str(),
-            "unimixer" | "token_mixer_large" | "rankmixer"
+            "unimixer" | "token_mixer_large" | "rankmixer" | "full_mix"
         ) {
             let token_dim = config.params["token_dim"].as_u64().unwrap() as usize;
             let num_tokens = config.params["num_tokens"].as_u64().unwrap() as usize;
@@ -459,6 +460,34 @@ fn test_rankmixer_forward_shape() {
         vb,
     )
     .unwrap();
+    let out = model.forward(&dummy_inputs(3)).unwrap();
+    assert!(out.contains_key("ctr"));
+    assert_eq!(out.tensor("ctr").unwrap().dims(), &[3, 1]);
+}
+
+#[test]
+fn test_full_mix_forward_shape() {
+    use scale_rec::models::full_mix::model::FullMixModel;
+    use scale_rec::models::unimixer::tokenizer::FeatureTokenizer;
+
+    let features = dummy_features();
+    let token_dim = 4;
+    let num_tokens = 2;
+    let vb = vb();
+    let tokenizer =
+        FeatureTokenizer::new(vb.pp("tokenizer"), &features, token_dim, num_tokens).unwrap();
+    let task_config = MultiTaskConfig {
+        towers: vec![TowerConfig {
+            name: "ctr".into(),
+            hidden_dims: vec![8],
+            output_dim: 1,
+            activation: Activation::Relu,
+            output_kind: OutputKind::BinaryLogit,
+        }],
+        relations: vec![],
+    };
+    let model =
+        FullMixModel::new(tokenizer, token_dim, num_tokens, 1, 2.0, &task_config, vb).unwrap();
     let out = model.forward(&dummy_inputs(3)).unwrap();
     assert!(out.contains_key("ctr"));
     assert_eq!(out.tensor("ctr").unwrap().dims(), &[3, 1]);

@@ -17,6 +17,7 @@
 | `unimixer` | [UniMixer, arXiv:2604.00590](https://arxiv.org/abs/2604.00590) | `examples/models/unimixer.yaml` | token mixing 排序模型 | 外部 `FeatureTokenizer` token 序列 | UniMixer / UniMixerLite token interaction | `shared` | 中等规模 token 化 sparse 特征，需要稳定 token 交互 |
 | `token_mixer_large` | [TokenMixer-Large, arXiv:2602.06563](https://arxiv.org/abs/2602.06563) | `examples/models/token_mixer_large.yaml` | 大规模 token mixer | 外部 `FeatureTokenizer` token 序列 | Mixing & Reverting + per-token SwiGLU | `shared` | token 数和 token_dim 较大、需要更强 token mixing 的排序模型 |
 | `rankmixer` | [RankMixer, arXiv:2507.15551](https://arxiv.org/abs/2507.15551) | `examples/models/rankmixer.yaml` | dense token mixer | 外部 `FeatureTokenizer` token 序列 | RankMixer block + per-token FFN | `shared` | 排序 token 结构明确、希望保留轻量 dense mixer |
+| `full_mix` | [RankElastor, arXiv:2605.23191](https://arxiv.org/abs/2605.23191) | `examples/models/full_mix.yaml` | parameterized full mixer | 外部 `FeatureTokenizer` token 序列 | flattened full mixing + GLU per-token FFN | `shared` | RankMixer 出现 representation collapse 风险、需要更强可学习 token mixing |
 | `rankup` | [RankUp, arXiv:2604.17878](https://arxiv.org/abs/2604.17878) | `examples/models/rankup.yaml` | RankUp sparse feature scaling | 内置 RankUp tokenizer | 随机稀疏特征分组 + multi-embedding + global/cross/task token + RankMixer block | `shared`，以及 `task_0`、`task_1` 等 task token 表示 | Top-K sparse 特征较多，需要扩大稀疏特征容量并使用 task-specific 表示 |
 | `hyformer` | [HyFormer, arXiv:2601.12681](https://arxiv.org/abs/2601.12681) | `examples/models/hyformer.yaml` | hybrid sequence/query model | 内置 HyFormer tokenizer | global query generation + sequence memory cross-attention + RankMixer-style query boosting | `shared` | 同时有非序列特征和序列行为特征，需要用查询 token 解码序列记忆 |
 | `uniformer` | [UniFormer, arXiv:2606.27058](https://arxiv.org/abs/2606.27058) | `examples/models/uniformer.yaml` | feature/task interaction model | 内置 UniFormer tokenizer | FIM feature interaction + TIM task-token interaction | `shared`，以及 `task_0`、`task_1` 等 task token 表示 | 同时需要建模 sequence/non-sequence feature 交互和 task-specific 表示 |
@@ -30,7 +31,7 @@
 | CTR/CVR/详情/收藏/停留等多任务排序 | `esmm`、`gdcn_esmm` | 原生支持 tower + relation 的概率图，例如 `ctcvr_prob = click_prob * cvr_prob` |
 | 多任务目标差异大，任务之间共享不完全一致 | `mmoe` | expert + gate 可以按任务选择不同共享表示 |
 | 需要场景、用户、物品 prior 做个性化门控 | `pepnet` | `ep_prior_features`、`pp_prior_features` 明确控制 gate 输入 |
-| 希望把 sparse feature 组织成 token 序列 | `unimixer`、`token_mixer_large`、`rankmixer` | 三者共用外部 `FeatureTokenizer`，适合 token 化特征建模 |
+| 希望把 sparse feature 组织成 token 序列 | `unimixer`、`token_mixer_large`、`rankmixer`、`full_mix` | 这些模型共用外部 `FeatureTokenizer`，适合 token 化特征建模 |
 | sparse 特征数量增长，需要扩大 Top-K 特征容量 | `rankup` | 使用随机稀疏分组、多 embedding table、global/cross/task token |
 | 行为序列特征是核心信号 | `hyformer` | 使用 query token 对 sequence memory 做 cross-attention，再做 query boosting |
 | 多任务需要显式 task token 表示 | `uniformer` | TIM 生成 `task_i` 表示，可在 output_contract tower 中直接绑定 |
@@ -62,6 +63,7 @@
 | `unimixer` | `token_dim`、`num_tokens`、`num_blocks`、`block_size`、`use_lite`、`hidden_factor`、`num_basis`、`rank`、`use_siamese` | 需要外部 `FeatureTokenizer`；`total_embed_dim` 需要能按 `num_tokens` 分组 |
 | `token_mixer_large` | `token_dim`、`num_tokens`、`num_blocks`、`num_heads`、`hidden_factor`、`down_init_scale` | `num_heads` 必须满足 block 内部 reshape 约束 |
 | `rankmixer` | `token_dim`、`num_tokens`、`num_blocks`、`num_heads`、`hidden_factor` | 当前实现要求 `num_heads == num_tokens` 以保持 residual shape |
+| `full_mix` | `token_dim`、`num_tokens`、`num_blocks`、`hidden_factor` | 需要外部 `FeatureTokenizer`；full mixing 的参数量随 `(num_tokens * token_dim)^2` 增长 |
 | `rankup` | `token_dim`、`num_sparse_tokens`、`num_blocks`、`num_heads`、`permutation_seed`、`multi_embedding_tables`、`use_global_token`、`cross_token`、`num_task_tokens` | `num_sparse_tokens` 不能超过特征数；`cross_token.left/right` pooled dim 必须一致；task tower 可绑定 `task_i` |
 | `hyformer` | `d`、`d_ff`、`num_queries`、`num_layers`、`hidden_factor` | `d` 必须能被 query boosting token 数整除；无序列特征时会退化为非序列 token memory |
 | `uniformer` | `d`、`d_ff`、`num_layers`、`n_heads`、`num_tasks` | `d` 必须能被 `n_heads` 整除；`num_tasks` 决定可绑定的 `task_i` 表示数量 |
@@ -71,7 +73,7 @@
 | 输入方式 | 模型 | 说明 |
 |---|---|---|
 | `FeatureEmbeddings` concat | `lr`、`deepfm`、`mmoe`、`esmm`、`gdcn_esmm`、`pepnet` | 每个 feature 直接 embedding/pooling 后拼接 |
-| 外部 `FeatureTokenizer` | `unimixer`、`token_mixer_large`、`rankmixer` | 构建模型时由训练/推理入口创建 tokenizer，权重通常带 `tokenizer.*` 前缀 |
+| 外部 `FeatureTokenizer` | `unimixer`、`token_mixer_large`、`rankmixer`、`full_mix` | 构建模型时由训练/推理入口创建 tokenizer，权重通常带 `tokenizer.*` 前缀 |
 | 内置 tokenizer | `rankup`、`hyformer`、`uniformer` | 模型内部自行管理 embedding、projection、token 构造 |
 
 ## 权重与上线注意事项

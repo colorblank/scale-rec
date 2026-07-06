@@ -435,6 +435,28 @@ _MODEL_PARAM_SPECS: dict[str, tuple[set[str], set[str], dict[str, type | tuple[t
             "output_contract": dict,
         },
     ),
+    "full_mix": (
+        _COMMON_MODEL_KEYS
+        | {
+            "token_dim",
+            "num_tokens",
+            "num_blocks",
+            "hidden_factor",
+            "task_config",
+        },
+        {"task_config"},
+        {
+            "token_dim": int,
+            "num_tokens": int,
+            "num_blocks": int,
+            "hidden_factor": (int, float),
+            "task_config": dict,
+            "tasks": list,
+            "label_col_map": dict,
+            "metrics": dict,
+            "output_contract": dict,
+        },
+    ),
     "rankup": (
         _COMMON_MODEL_KEYS
         | {

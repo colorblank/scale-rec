@@ -16,6 +16,8 @@ pub mod deepfm;
 pub mod esmm;
 /// FAT: Field-Aware Transformer (KDD 2026, arXiv:2511.12081)。
 pub mod fat;
+/// Full-Mix / RankElastor: parameterized full token mixing with GLU P-FFNs.
+pub mod full_mix;
 /// GDCN + ESMM 混合模型。
 pub mod gdcn_esmm;
 /// HyFormer: Revisiting sequence modeling and feature interaction in CTR prediction (arXiv:2601.12681).
@@ -229,6 +231,7 @@ static REGISTRY: LazyLock<HashMap<&'static str, BuildFn>> = LazyLock::new(|| {
     m.insert("unimixer", build_unimixer);
     m.insert("token_mixer_large", build_token_mixer_large);
     m.insert("rankmixer", build_rankmixer);
+    m.insert("full_mix", build_full_mix);
     m.insert("rankup", build_rankup);
     m.insert("pepnet", build_pepnet);
     m.insert("hyformer", build_hyformer);
@@ -563,6 +566,45 @@ fn build_rankmixer(
         num_tokens,
         num_blocks,
         num_heads,
+        hidden_factor,
+        &task_config,
+        vb,
+    )?))
+}
+
+fn build_full_mix(
+    vb: VarBuilder,
+    _features: &[FeatureSpec],
+    tokenizer: Option<FeatureTokenizer>,
+    params: &serde_yaml::Value,
+    _options: &ModelBuildOptions,
+) -> Result<Box<dyn Model>> {
+    let tokenizer = tokenizer.ok_or_else(|| {
+        candle_core::Error::Msg("FullMix requires external FeatureTokenizer".into())
+    })?;
+    let token_dim = yaml_usize(params, "token_dim", 64);
+    let num_tokens = yaml_usize(params, "num_tokens", 8);
+    let num_blocks = yaml_usize(params, "num_blocks", 2);
+    let hidden_factor = yaml_f64(params, "hidden_factor", 2.0);
+    if let Some(contract) = parse_output_contract_param(params)? {
+        return Ok(Box::new(
+            full_mix::model::FullMixModel::with_output_contract(
+                tokenizer,
+                token_dim,
+                num_tokens,
+                num_blocks,
+                hidden_factor,
+                &contract,
+                vb,
+            )?,
+        ));
+    }
+    let task_config = parse_multi_task_config(params)?;
+    Ok(Box::new(full_mix::model::FullMixModel::new(
+        tokenizer,
+        token_dim,
+        num_tokens,
+        num_blocks,
         hidden_factor,
         &task_config,
         vb,
@@ -931,6 +973,19 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
                 "num_tokens",
                 "num_blocks",
                 "num_heads",
+                "hidden_factor",
+                "task_config",
+            ],
+            &["task_config"],
+        ),
+        "full_mix" => (
+            &[
+                "tasks",
+                "label_col_map",
+                "metrics",
+                "token_dim",
+                "num_tokens",
+                "num_blocks",
                 "hidden_factor",
                 "task_config",
             ],

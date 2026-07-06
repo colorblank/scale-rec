@@ -27,6 +27,7 @@ MODEL_CONFIGS = {
     "demo_unimixer": MODEL_EXAMPLES_DIR / "unimixer.yaml",
     "demo_token_mixer_large": MODEL_EXAMPLES_DIR / "token_mixer_large.yaml",
     "demo_rankmixer": MODEL_EXAMPLES_DIR / "rankmixer.yaml",
+    "demo_full_mix": MODEL_EXAMPLES_DIR / "full_mix.yaml",
     "demo_rankup": MODEL_EXAMPLES_DIR / "rankup.yaml",
     "demo_hyformer": MODEL_EXAMPLES_DIR / "hyformer.yaml",
     "demo_fat": MODEL_EXAMPLES_DIR / "fat.yaml",
