@@ -12,6 +12,8 @@ use tracing::error;
 
 /// Deep Interest Network (DIN, arXiv:1706.06978)。
 pub mod din;
+/// DCN V2: Improved Deep & Cross Network (arXiv:2008.13535)。
+pub mod dcnv2;
 /// DeepFM 模型。
 pub mod deepfm;
 /// ESMM 多任务模型。
@@ -226,6 +228,7 @@ type BuildFn = fn(
 static REGISTRY: LazyLock<HashMap<&'static str, BuildFn>> = LazyLock::new(|| {
     let mut m: HashMap<&'static str, BuildFn> = HashMap::new();
     m.insert("din", build_din);
+    m.insert("dcnv2", build_dcnv2);
     m.insert("lr", build_lr);
     m.insert("deepfm", build_deepfm);
     m.insert("mmoe", build_mmoe);
@@ -283,6 +286,35 @@ impl ModelConfig {
 }
 
 // ── per-model build functions ──
+
+fn build_dcnv2(
+    vb: VarBuilder,
+    features: &[FeatureSpec],
+    _tokenizer: Option<FeatureTokenizer>,
+    params: &serde_yaml::Value,
+    _options: &ModelBuildOptions,
+) -> Result<Box<dyn Model>> {
+    let cross_layers = yaml_usize(params, "cross_layers", 3);
+    let deep_hidden_dims: Vec<usize> = yaml_usize_seq(params, "deep_hidden_dims");
+    let shared_bottom_dims: Vec<usize> = yaml_usize_seq(params, "shared_bottom_dims");
+    if let Some(contract) = parse_output_contract_param(params)? {
+        return Ok(Box::new(dcnv2::DCNV2::with_output_contract(
+            vb,
+            features,
+            cross_layers,
+            &deep_hidden_dims,
+            &shared_bottom_dims,
+            &contract,
+        )?));
+    }
+    Ok(Box::new(dcnv2::DCNV2::new(
+        vb,
+        features,
+        cross_layers,
+        &deep_hidden_dims,
+        &shared_bottom_dims,
+    )?))
+}
 
 fn build_din(
     vb: VarBuilder,
@@ -942,6 +974,17 @@ fn build_fat(
 
 fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result<()> {
     let (allowed, required): (&[&str], &[&str]) = match model_type {
+        "dcnv2" => (
+            &[
+                "tasks",
+                "label_col_map",
+                "metrics",
+                "cross_layers",
+                "deep_hidden_dims",
+                "shared_bottom_dims",
+            ],
+            &[],
+        ),
         "din" => (
             &[
                 "tasks",

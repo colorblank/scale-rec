@@ -10,6 +10,7 @@ import torch.nn as nn
 from ..core.task import TaskContract, parse_task_specs
 from ..layers.embedding import FeatureTuple
 from ..layers.towers import Activation, MultiTaskConfig, TaskRelation, TowerConfig
+from .dcnv2 import DCNV2
 from .deepfm import DeepFM
 from .din import DIN
 from .esmm import ESMM, default_task_config
@@ -188,6 +189,20 @@ def _build_lr(
 ) -> LogisticRegression:
     return LogisticRegression(
         features,
+        pooling_map=params.get("_pooling_map"),
+        total_dim=params.get("_total_dim"),
+        output_contract=_parse_output_contract(params),
+    )
+
+
+def _build_dcnv2(
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
+) -> DCNV2:
+    return DCNV2(
+        features,
+        cross_layers=params.get("cross_layers", 3),
+        deep_hidden_dims=params.get("deep_hidden_dims", []),
+        shared_bottom_dims=params.get("shared_bottom_dims", []),
         pooling_map=params.get("_pooling_map"),
         total_dim=params.get("_total_dim"),
         output_contract=_parse_output_contract(params),
@@ -651,6 +666,7 @@ def _build_hyformer(
     )
 
 
+register_model("dcnv2", _spec_pred, _build_dcnv2)
 register_model("din", _spec_pred, _build_din)
 register_model("lr", _spec_pred, _build_lr)
 register_model("deepfm", _spec_pred, _build_deepfm)
