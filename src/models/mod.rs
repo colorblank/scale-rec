@@ -14,6 +14,8 @@ use tracing::error;
 pub mod din;
 /// DCN V2: Improved Deep & Cross Network (arXiv:2008.13535)。
 pub mod dcnv2;
+/// FinalMLP: Two-stream MLP with feature gating and interaction aggregation (arXiv:2304.00902)。
+pub mod finalmlp;
 /// DeepFM 模型。
 pub mod deepfm;
 /// ESMM 多任务模型。
@@ -227,6 +229,7 @@ type BuildFn = fn(
 
 static REGISTRY: LazyLock<HashMap<&'static str, BuildFn>> = LazyLock::new(|| {
     let mut m: HashMap<&'static str, BuildFn> = HashMap::new();
+    m.insert("finalmlp", build_finalmlp);
     m.insert("din", build_din);
     m.insert("dcnv2", build_dcnv2);
     m.insert("lr", build_lr);
@@ -313,6 +316,35 @@ fn build_dcnv2(
         cross_layers,
         &deep_hidden_dims,
         &shared_bottom_dims,
+    )?))
+}
+
+fn build_finalmlp(
+    vb: VarBuilder,
+    features: &[FeatureSpec],
+    _tokenizer: Option<FeatureTokenizer>,
+    params: &serde_yaml::Value,
+    _options: &ModelBuildOptions,
+) -> Result<Box<dyn Model>> {
+    let stream_hidden_dims: Vec<usize> = yaml_usize_seq(params, "stream_hidden_dims");
+    let gate_hidden_dim = yaml_usize(params, "gate_hidden_dim", 64);
+    let fusion_hidden_dims: Vec<usize> = yaml_usize_seq(params, "fusion_hidden_dims");
+    if let Some(contract) = parse_output_contract_param(params)? {
+        return Ok(Box::new(finalmlp::FinalMLP::with_output_contract(
+            vb,
+            features,
+            &stream_hidden_dims,
+            gate_hidden_dim,
+            &fusion_hidden_dims,
+            &contract,
+        )?));
+    }
+    Ok(Box::new(finalmlp::FinalMLP::new(
+        vb,
+        features,
+        &stream_hidden_dims,
+        gate_hidden_dim,
+        &fusion_hidden_dims,
     )?))
 }
 
@@ -974,6 +1006,17 @@ fn build_fat(
 
 fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result<()> {
     let (allowed, required): (&[&str], &[&str]) = match model_type {
+        "finalmlp" => (
+            &[
+                "tasks",
+                "label_col_map",
+                "metrics",
+                "stream_hidden_dims",
+                "gate_hidden_dim",
+                "fusion_hidden_dims",
+            ],
+            &[],
+        ),
         "dcnv2" => (
             &[
                 "tasks",
@@ -1270,6 +1313,8 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
         "stay_hidden_dims",
         "ep_prior_features",
         "pp_prior_features",
+        "stream_hidden_dims",
+        "fusion_hidden_dims",
     ] {
         expect_optional_seq(model_type, params, key)?;
     }
@@ -1283,6 +1328,7 @@ fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result
         expect_optional_mapping(model_type, params, key)?;
     }
     for key in [
+        "gate_hidden_dim",
         "fm_k",
         "num_experts",
         "expert_output_dim",

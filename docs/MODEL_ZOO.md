@@ -8,6 +8,7 @@
 
 | Model type | 论文/arXiv | 示例配置 | 模型类别 | 输入表示 | 核心结构 | 输出表示 | 适用场景 |
 |---|---|---|---|---|---|---|---|---|
+| `finalmlp` | [FinalMLP, arXiv:2304.00902](https://arxiv.org/abs/2304.00902) | `examples/models/finalmlp.yaml` | 双流 MLP | feature embedding concat | feature gating + two-stream MLP + interaction aggregation | `shared` 标量 logit | 需要特征交互且希望保持纯 MLP 架构的 CTR 预估 |
 | `dcnv2` | [DCN V2, arXiv:2008.13535](https://arxiv.org/abs/2008.13535) | `examples/models/dcnv2.yaml` | 交叉网络 | feature embedding concat | gated cross network + optional deep MLP | `shared` 标量 logit | 需要显式 feature cross 交互的 CTR 预估；比 DeepFM 更高阶的交叉 |
 | `din` | [DIN, arXiv:1706.06978](https://arxiv.org/abs/1706.06978) | `examples/models/din.yaml` | 注意力兴趣网络 | shared item embedding + other feature concat | activation unit (attention over behavior sequence) + MLP | `shared` 标量 logit | 用户行为序列是关键信号的 CTR 预估；需要自适应候选物料的用户兴趣表示 |
 | `deepfm` | [DeepFM, arXiv:1703.04247](https://arxiv.org/abs/1703.04247) | `examples/models/deepfm.yaml` | FM + DNN | feature embedding concat | FM 一阶/二阶交互 + MLP | `shared` 标量 logit | 稀疏 ID 特征为主、需要显式二阶交互的 CTR 任务 |
@@ -29,6 +30,7 @@
 |---|---|---|
 | 先验证训练链路、特征配置、导出和 Rust serving | `lr`、`deepfm` | 参数少，失败时更容易定位是特征、标签还是模型问题 |
 | 单目标 CTR，用户行为序列是关键信号 | `din` | Activation unit 自适应学习候选物料相关的用户兴趣表示 |
+| 单目标 CTR，需要特征交互且希望纯 MLP 架构 | `finalmlp` | Feature gating + 双流 MLP + 交互聚合，无需专用交互网络 |
 | 单目标 CTR，需要显式 feature cross 交互 | `dcnv2`、`deepfm`、`gdcn_esmm` | DCNV2 使用 gated cross network 学习高阶交叉；DeepFM 提供二阶 FM 交互；GDCN 显式建模 gated cross |
 | CTR/CVR/详情/收藏/停留等多任务排序 | `esmm`、`gdcn_esmm` | 原生支持 tower + relation 的概率图，例如 `ctcvr_prob = click_prob * cvr_prob` |
 | 多任务目标差异大，任务之间共享不完全一致 | `mmoe` | expert + gate 可以按任务选择不同共享表示 |
@@ -57,6 +59,7 @@
 
 | Model type | 关键参数 | 约束与注意事项 |
 |---|---|---|---|
+| `finalmlp` | `stream_hidden_dims`、`gate_hidden_dim`、`fusion_hidden_dims` | `stream_hidden_dims` 定义双流 MLP 隐藏层；`gate_hidden_dim` 控制门控网络容量；`fusion_hidden_dims` 为空时 fusion 退化为单层 linear |
 | `dcnv2` | `cross_layers`、`deep_hidden_dims`、`shared_bottom_dims` | `cross_layers` 增加会改变权重结构；`deep_hidden_dims` 为空时退化为纯 Cross Network（无 deep 分支） |
 | `din` | `item_vocab_size`、`embed_dim`、`activation_hidden_dims`、`mlp_hidden_dims`、`behavior_feature`、`candidate_feature` | `item_vocab_size` 和 `embed_dim` 对 behavior 和 candidate feature 共享；`behavior_feature` 必须是序列特征，`candidate_feature` 必须是标量特征 |
 | `deepfm` | `fm_k`、`deep_hidden_dims` | `fm_k` 影响二阶 FM embedding 维度，改变后旧权重不可直接复用 |
@@ -76,7 +79,7 @@
 
 | 输入方式 | 模型 | 说明 |
 |---|---|---|
-| `FeatureEmbeddings` concat | `lr`、`dcnv2`、`deepfm`、`mmoe`、`esmm`、`gdcn_esmm`、`pepnet` | 每个 feature 直接 embedding/pooling 后拼接 |
+| `FeatureEmbeddings` concat | `lr`、`finalmlp`、`dcnv2`、`deepfm`、`mmoe`、`esmm`、`gdcn_esmm`、`pepnet` | 每个 feature 直接 embedding/pooling 后拼接 |
 | shared item embedding + `FeatureEmbeddings` concat | `din` | behavior 和 candidate feature 共享同一张 item embedding table；其余 feature 由 `FeatureEmbeddings` pooling 后拼接 |
 | 外部 `FeatureTokenizer` | `unimixer`、`token_mixer_large`、`rankmixer`、`full_mix` | 构建模型时由训练/推理入口创建 tokenizer，权重通常带 `tokenizer.*` 前缀 |
 | 内置 tokenizer | `rankup`、`hyformer`、`uniformer` | 模型内部自行管理 embedding、projection、token 构造 |

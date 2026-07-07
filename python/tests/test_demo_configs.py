@@ -23,6 +23,7 @@ EXAMPLES_DIR = REPO_ROOT / "examples"
 
 def test_demo_model_configs_exist_and_are_current():
     model_configs = {
+        "demo_finalmlp": EXAMPLES_DIR / "models" / "finalmlp.yaml",
         "demo_dcnv2": EXAMPLES_DIR / "models" / "dcnv2.yaml",
         "demo_din": EXAMPLES_DIR / "models" / "din.yaml",
         "demo_lr": EXAMPLES_DIR / "models" / "lr.yaml",
@@ -52,6 +53,7 @@ def test_demo_model_configs_exist_and_are_current():
         path.relative_to(EXAMPLES_DIR).as_posix() for path in EXAMPLES_DIR.rglob("*.yaml")
     }
     expected_files = {
+        "models/finalmlp.yaml",
         "models/dcnv2.yaml",
         "models/din.yaml",
         "models/lr.yaml",
@@ -171,6 +173,7 @@ def test_serving_array_applies_output_kind_semantics():
 
 def test_demo_model_path_index_covers_all_example_models():
     assert MODEL_CONFIGS == {
+        "demo_finalmlp": EXAMPLES_DIR / "models" / "finalmlp.yaml",
         "demo_dcnv2": EXAMPLES_DIR / "models" / "dcnv2.yaml",
         "demo_din": EXAMPLES_DIR / "models" / "din.yaml",
         "demo_lr": EXAMPLES_DIR / "models" / "lr.yaml",

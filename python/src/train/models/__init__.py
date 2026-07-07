@@ -13,6 +13,7 @@ from ..layers.towers import Activation, MultiTaskConfig, TaskRelation, TowerConf
 from .dcnv2 import DCNV2
 from .deepfm import DeepFM
 from .din import DIN
+from .finalmlp import FinalMLP
 from .esmm import ESMM, default_task_config
 from .fat import FATModel
 from .full_mix import FullMixModel
@@ -203,6 +204,20 @@ def _build_dcnv2(
         cross_layers=params.get("cross_layers", 3),
         deep_hidden_dims=params.get("deep_hidden_dims", []),
         shared_bottom_dims=params.get("shared_bottom_dims", []),
+        pooling_map=params.get("_pooling_map"),
+        total_dim=params.get("_total_dim"),
+        output_contract=_parse_output_contract(params),
+    )
+
+
+def _build_finalmlp(
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
+) -> FinalMLP:
+    return FinalMLP(
+        features,
+        stream_hidden_dims=params.get("stream_hidden_dims", []),
+        gate_hidden_dim=params.get("gate_hidden_dim", 64),
+        fusion_hidden_dims=params.get("fusion_hidden_dims", []),
         pooling_map=params.get("_pooling_map"),
         total_dim=params.get("_total_dim"),
         output_contract=_parse_output_contract(params),
@@ -666,6 +681,7 @@ def _build_hyformer(
     )
 
 
+register_model("finalmlp", _spec_pred, _build_finalmlp)
 register_model("dcnv2", _spec_pred, _build_dcnv2)
 register_model("din", _spec_pred, _build_din)
 register_model("lr", _spec_pred, _build_lr)

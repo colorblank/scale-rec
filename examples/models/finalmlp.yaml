@@ -1,0 +1,35 @@
+type: finalmlp
+stream_hidden_dims: [64, 32]
+gate_hidden_dim: 64
+fusion_hidden_dims: []
+output_contract:
+  version: 1
+  graph:
+    towers:
+      - name: pred_logit
+        input: shared
+        kind: binary_logit
+        hidden_dims: []
+        activation: none
+    relations:
+      - name: pred_prob
+        op: sigmoid
+        inputs: [pred_logit]
+  objectives:
+    - name: pred_loss
+      source: pred_logit
+      label: is_click
+      loss:
+        type: binary_cross_entropy_with_logits
+  metrics:
+    - name: pred_auc
+      source: pred_logit
+      label: is_click
+      type: auc
+    - name: pred_logloss
+      source: pred_prob
+      label: is_click
+      type: logloss
+  outputs:
+    - name: pred
+      source: pred_prob

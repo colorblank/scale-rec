@@ -19,6 +19,7 @@ MODEL_EXAMPLES_DIR = EXAMPLES_DIR / "models"
 DEMO_FEATURE_CONFIG = SHARED_EXAMPLES_DIR / "feature_config_demo.yaml"
 
 MODEL_CONFIGS = {
+    "demo_finalmlp": MODEL_EXAMPLES_DIR / "finalmlp.yaml",
     "demo_dcnv2": MODEL_EXAMPLES_DIR / "dcnv2.yaml",
     "demo_din": MODEL_EXAMPLES_DIR / "din.yaml",
     "demo_lr": MODEL_EXAMPLES_DIR / "lr.yaml",
