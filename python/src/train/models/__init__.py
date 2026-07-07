@@ -11,6 +11,7 @@ from ..core.task import TaskContract, parse_task_specs
 from ..layers.embedding import FeatureTuple
 from ..layers.towers import Activation, MultiTaskConfig, TaskRelation, TowerConfig
 from .deepfm import DeepFM
+from .din import DIN
 from .esmm import ESMM, default_task_config
 from .fat import FATModel
 from .full_mix import FullMixModel
@@ -187,6 +188,23 @@ def _build_lr(
 ) -> LogisticRegression:
     return LogisticRegression(
         features,
+        pooling_map=params.get("_pooling_map"),
+        total_dim=params.get("_total_dim"),
+        output_contract=_parse_output_contract(params),
+    )
+
+
+def _build_din(
+    features: list[FeatureTuple], tokenizer: nn.Module | None = None, **params: Any
+) -> DIN:
+    return DIN(
+        features,
+        item_vocab_size=params.get("item_vocab_size", 10000),
+        embed_dim=params.get("embed_dim", 16),
+        activation_hidden_dims=params.get("activation_hidden_dims", []),
+        mlp_hidden_dims=params.get("mlp_hidden_dims", []),
+        behavior_feature=params.get("behavior_feature", "hist_item_ids"),
+        candidate_feature=params.get("candidate_feature", "item_id"),
         pooling_map=params.get("_pooling_map"),
         total_dim=params.get("_total_dim"),
         output_contract=_parse_output_contract(params),
@@ -633,6 +651,7 @@ def _build_hyformer(
     )
 
 
+register_model("din", _spec_pred, _build_din)
 register_model("lr", _spec_pred, _build_lr)
 register_model("deepfm", _spec_pred, _build_deepfm)
 register_model("mixformer", _spec_pred, _build_mixformer)

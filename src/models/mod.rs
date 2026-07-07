@@ -10,6 +10,8 @@ use crate::layers::towers::MultiTaskConfig;
 use crate::models::unimixer::tokenizer::FeatureTokenizer;
 use tracing::error;
 
+/// Deep Interest Network (DIN, arXiv:1706.06978)。
+pub mod din;
 /// DeepFM 模型。
 pub mod deepfm;
 /// ESMM 多任务模型。
@@ -223,6 +225,7 @@ type BuildFn = fn(
 
 static REGISTRY: LazyLock<HashMap<&'static str, BuildFn>> = LazyLock::new(|| {
     let mut m: HashMap<&'static str, BuildFn> = HashMap::new();
+    m.insert("din", build_din);
     m.insert("lr", build_lr);
     m.insert("deepfm", build_deepfm);
     m.insert("mmoe", build_mmoe);
@@ -280,6 +283,50 @@ impl ModelConfig {
 }
 
 // ── per-model build functions ──
+
+fn build_din(
+    vb: VarBuilder,
+    features: &[FeatureSpec],
+    _tokenizer: Option<FeatureTokenizer>,
+    params: &serde_yaml::Value,
+    _options: &ModelBuildOptions,
+) -> Result<Box<dyn Model>> {
+    let item_vocab_size = yaml_usize(params, "item_vocab_size", 10000);
+    let embed_dim = yaml_usize(params, "embed_dim", 16);
+    let activation_hidden_dims: Vec<usize> = yaml_usize_seq(params, "activation_hidden_dims");
+    let mlp_hidden_dims: Vec<usize> = yaml_usize_seq(params, "mlp_hidden_dims");
+    let behavior_feature = params
+        .get("behavior_feature")
+        .and_then(|v| v.as_str())
+        .unwrap_or("hist_item_ids");
+    let candidate_feature = params
+        .get("candidate_feature")
+        .and_then(|v| v.as_str())
+        .unwrap_or("item_id");
+    if let Some(contract) = parse_output_contract_param(params)? {
+        return Ok(Box::new(din::DIN::with_output_contract(
+            vb,
+            features,
+            item_vocab_size,
+            embed_dim,
+            &activation_hidden_dims,
+            &mlp_hidden_dims,
+            behavior_feature,
+            candidate_feature,
+            &contract,
+        )?));
+    }
+    Ok(Box::new(din::DIN::new(
+        vb,
+        features,
+        item_vocab_size,
+        embed_dim,
+        &activation_hidden_dims,
+        &mlp_hidden_dims,
+        behavior_feature,
+        candidate_feature,
+    )?))
+}
 
 fn build_lr(
     vb: VarBuilder,
@@ -895,6 +942,20 @@ fn build_fat(
 
 fn validate_model_params(model_type: &str, params: &serde_yaml::Value) -> Result<()> {
     let (allowed, required): (&[&str], &[&str]) = match model_type {
+        "din" => (
+            &[
+                "tasks",
+                "label_col_map",
+                "metrics",
+                "item_vocab_size",
+                "embed_dim",
+                "activation_hidden_dims",
+                "mlp_hidden_dims",
+                "behavior_feature",
+                "candidate_feature",
+            ],
+            &[],
+        ),
         "lr" => (&["tasks", "label_col_map", "metrics"], &[]),
         "deepfm" => (
             &[
