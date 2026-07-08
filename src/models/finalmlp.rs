@@ -1,7 +1,7 @@
 //! FinalMLP: Two-stream MLP with feature gating and interaction aggregation.
 //!
 //! Two parallel MLPs receive differently gated feature inputs;
-//! their outputs are fused via interaction aggregation.
+//! their outputs are fused via learnable bilinear interaction aggregation.
 //! Paper: arXiv:2304.00902 (AAAI 2023).
 
 use super::output_contract::OutputContract;
@@ -11,10 +11,10 @@ use crate::layers::embedding::{FeatureEmbeddings, FeatureSpec};
 use crate::layers::mlp::Mlp;
 use crate::layers::towers::Activation;
 use candle_core::{Result, Tensor};
-use candle_nn::{linear, Linear, Module, VarBuilder};
+use candle_nn::{linear, linear_no_bias, Init, Linear, Module, VarBuilder};
 use std::collections::HashMap;
 
-/// FinalMLP model: two-stream MLP with feature gating and interaction aggregation.
+/// FinalMLP model: two-stream MLP with feature gating and bilinear aggregation.
 pub struct FinalMLP {
     embeddings: FeatureEmbeddings,
     stream1_gate_0: Linear,
@@ -23,33 +23,32 @@ pub struct FinalMLP {
     stream2_gate_1: Linear,
     stream1_mlp: Mlp,
     stream2_mlp: Mlp,
-    fusion: Mlp,
+    fusion_o1: Linear,
+    fusion_o2: Linear,
+    fusion_bilinear: Linear,
+    fusion_bias: Tensor,
     output_head: Option<OutputHead>,
 }
 
 impl FinalMLP {
     #[allow(clippy::too_many_arguments)]
-    /// Construct FinalMLP: shared embeddings → two gated streams → fusion.
+    /// Construct FinalMLP: shared embeddings → two gated streams → bilinear fusion.
     pub fn new(
         vb: VarBuilder,
         features: &[FeatureSpec],
         stream_hidden_dims: &[usize],
         gate_hidden_dim: usize,
-        fusion_hidden_dims: &[usize],
+        _fusion_hidden_dims: &[usize],
     ) -> Result<Self> {
         let embeddings = FeatureEmbeddings::new(vb.pp("embeddings"), features)?;
         let total_dim = embeddings.total_dim;
 
         let stream_output_dim = *stream_hidden_dims.last().unwrap_or(&1);
 
-        let stream1_gate_0 =
-            linear(total_dim, gate_hidden_dim, vb.pp("stream1_gate.0"))?;
-        let stream1_gate_1 =
-            linear(gate_hidden_dim, total_dim, vb.pp("stream1_gate.1"))?;
-        let stream2_gate_0 =
-            linear(total_dim, gate_hidden_dim, vb.pp("stream2_gate.0"))?;
-        let stream2_gate_1 =
-            linear(gate_hidden_dim, total_dim, vb.pp("stream2_gate.1"))?;
+        let stream1_gate_0 = linear(total_dim, gate_hidden_dim, vb.pp("stream1_gate.0"))?;
+        let stream1_gate_1 = linear(gate_hidden_dim, total_dim, vb.pp("stream1_gate.1"))?;
+        let stream2_gate_0 = linear(total_dim, gate_hidden_dim, vb.pp("stream2_gate.0"))?;
+        let stream2_gate_1 = linear(gate_hidden_dim, total_dim, vb.pp("stream2_gate.1"))?;
 
         let stream1_mlp = Mlp::new(
             vb.pp("stream1_mlp"),
@@ -67,14 +66,14 @@ impl FinalMLP {
             Activation::Relu,
         )?;
 
-        let fusion_input_dim = stream_output_dim * 3;
-        let fusion = Mlp::new(
-            vb.pp("fusion"),
-            fusion_input_dim,
-            fusion_hidden_dims,
-            1,
-            Activation::Relu,
+        let fusion_o1 = linear_no_bias(stream_output_dim, 1, vb.pp("fusion_o1"))?;
+        let fusion_o2 = linear_no_bias(stream_output_dim, 1, vb.pp("fusion_o2"))?;
+        let fusion_bilinear = linear_no_bias(
+            stream_output_dim,
+            stream_output_dim,
+            vb.pp("fusion_bilinear"),
         )?;
+        let fusion_bias = vb.get_with_hints((1,), "fusion_bias", Init::Const(0.0))?;
 
         Ok(Self {
             embeddings,
@@ -84,7 +83,10 @@ impl FinalMLP {
             stream2_gate_1,
             stream1_mlp,
             stream2_mlp,
-            fusion,
+            fusion_o1,
+            fusion_o2,
+            fusion_bilinear,
+            fusion_bias,
             output_head: None,
         })
     }
@@ -114,13 +116,20 @@ impl FinalMLP {
         Ok(model)
     }
 
-    fn compute_gate(
-        x: &Tensor,
-        linear0: &Linear,
-        linear1: &Linear,
-    ) -> Result<Tensor> {
+    fn compute_gate(x: &Tensor, linear0: &Linear, linear1: &Linear) -> Result<Tensor> {
         let hidden = linear0.forward(x)?.relu()?;
-        candle_nn::ops::sigmoid(&linear1.forward(&hidden)?)
+        candle_nn::ops::sigmoid(&linear1.forward(&hidden)?)?.affine(2.0, 0.0)
+    }
+
+    fn bilinear_fusion(&self, h1: &Tensor, h2: &Tensor) -> Result<Tensor> {
+        let linear_terms = self
+            .fusion_o1
+            .forward(h1)?
+            .broadcast_add(&self.fusion_o2.forward(h2)?)?;
+        let bilinear = self.fusion_bilinear.forward(h1)?.mul(h2)?.sum_keepdim(1)?;
+        linear_terms
+            .broadcast_add(&bilinear)?
+            .broadcast_add(&self.fusion_bias)
     }
 
     fn shared(&self, x_inputs: &HashMap<String, Tensor>) -> Result<Tensor> {
@@ -134,9 +143,7 @@ impl FinalMLP {
         let x2 = x.mul(&gate2)?;
         let h2 = self.stream2_mlp.forward(&x2)?;
 
-        let prod = h1.mul(&h2)?;
-        let combined = Tensor::cat(&[&h1, &h2, &prod], 1)?;
-        self.fusion.forward(&combined)
+        self.bilinear_fusion(&h1, &h2)
     }
 }
 

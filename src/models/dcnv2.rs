@@ -1,23 +1,62 @@
 //! DCN V2: Improved Deep & Cross Network (arXiv:2008.13535).
 //!
-//! Single-task CTR model with gated cross network + optional deep MLP.
-//! Cross network uses the DCNv2-style gated cross layer (sigmoid-gated feature crossing).
+//! Single-task CTR model with full-rank DCN-V2 cross layers + optional deep MLP.
 
 use super::output_contract::OutputContract;
 use super::output_head::OutputHead;
 use super::{Model, ModelExecution, ModelOutput};
 use crate::layers::embedding::{FeatureEmbeddings, FeatureSpec};
-use crate::layers::gdcn::GatedCrossNetwork;
 use crate::layers::mlp::Mlp;
 use crate::layers::towers::Activation;
 use candle_core::{Result, Tensor};
-use candle_nn::{Module, VarBuilder};
+use candle_nn::{linear_no_bias, Linear, Module, VarBuilder};
 use std::collections::HashMap;
 
-/// DCN V2 model: gated cross network + optional deep MLP.
+/// Full-rank DCN-V2 cross network.
+struct DcnV2CrossNetwork {
+    layers: Vec<DcnV2CrossLayer>,
+}
+
+struct DcnV2CrossLayer {
+    weight: Linear,
+    bias: Tensor,
+}
+
+impl DcnV2CrossNetwork {
+    fn new(vb: VarBuilder, input_dim: usize, num_layers: usize) -> Result<Self> {
+        if input_dim == 0 {
+            candle_core::bail!("input_dim must be positive");
+        }
+        if num_layers == 0 {
+            candle_core::bail!("cross_layers must be positive");
+        }
+        let mut layers = Vec::with_capacity(num_layers);
+        for i in 0..num_layers {
+            layers.push(DcnV2CrossLayer {
+                weight: linear_no_bias(input_dim, input_dim, vb.pp(format!("cross.{}", i)))?,
+                bias: vb.get(input_dim, &format!("bias.{}", i))?,
+            });
+        }
+        Ok(Self { layers })
+    }
+}
+
+impl Module for DcnV2CrossNetwork {
+    fn forward(&self, x: &Tensor) -> Result<Tensor> {
+        let x0 = x;
+        let mut xi = x.clone();
+        for layer in &self.layers {
+            let crossed = layer.weight.forward(&xi)?.broadcast_add(&layer.bias)?;
+            xi = x0.mul(&crossed)?.broadcast_add(&xi)?;
+        }
+        Ok(xi)
+    }
+}
+
+/// DCN V2 model: full-rank cross network + optional deep MLP.
 pub struct DCNV2 {
     embeddings: FeatureEmbeddings,
-    cross: GatedCrossNetwork,
+    cross: DcnV2CrossNetwork,
     deep: Option<Mlp>,
     shared_bottom: Option<Mlp>,
     output_head: Option<OutputHead>,
@@ -34,7 +73,7 @@ impl DCNV2 {
     ) -> Result<Self> {
         let embeddings = FeatureEmbeddings::new(vb.pp("embeddings"), features)?;
         let input_dim = embeddings.total_dim;
-        let cross = GatedCrossNetwork::new(vb.pp("cross"), input_dim, cross_layers)?;
+        let cross = DcnV2CrossNetwork::new(vb.pp("cross"), input_dim, cross_layers)?;
 
         let (deep, fusion_dim) = if deep_hidden_dims.is_empty() {
             (None, input_dim)
@@ -83,7 +122,7 @@ impl DCNV2 {
     ) -> Result<Self> {
         let embeddings = FeatureEmbeddings::new(vb.pp("embeddings"), features)?;
         let input_dim = embeddings.total_dim;
-        let cross = GatedCrossNetwork::new(vb.pp("cross"), input_dim, cross_layers)?;
+        let cross = DcnV2CrossNetwork::new(vb.pp("cross"), input_dim, cross_layers)?;
 
         let (deep, fusion_dim) = if deep_hidden_dims.is_empty() {
             (None, input_dim)

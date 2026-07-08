@@ -8,8 +8,11 @@ from train.layers.embedding import FeatureEmbeddings
 from train.layers.gdcn import GatedCrossNetwork
 from train.layers.towers import Activation, MultiTaskConfig, TaskRelation, TowerConfig
 from train.models import get_output_spec
+from train.models.dcnv2 import DcnV2CrossNetwork
 from train.models.deepfm import DeepFM
+from train.models.din import DIN
 from train.models.esmm import ESMM
+from train.models.finalmlp import FinalMLP
 from train.models.gdcn_esmm import GDCNESMM
 from train.models.lr import LogisticRegression
 from train.models.mmoe import MMoE
@@ -167,6 +170,61 @@ def test_gated_cross_network_forward():
 
     assert out.shape == (3, 8)
 
+
+
+def test_dcnv2_cross_layer_uses_full_rank_formula_without_gate():
+    layer = DcnV2CrossNetwork(input_dim=2, num_layers=1)
+    with torch.no_grad():
+        layer.cross[0].weight.copy_(torch.eye(2))
+        layer.bias[0].zero_()
+
+    out = layer(torch.tensor([[2.0, 3.0]]))
+
+    assert torch.allclose(out, torch.tensor([[6.0, 12.0]]))
+    assert all("gate" not in name for name in layer.state_dict())
+
+
+def test_din_uses_unnormalized_activation_weights_and_excludes_interest_features():
+    model = DIN(
+        [("hist", 8, 1), ("item", 8, 1)],
+        item_vocab_size=8,
+        embed_dim=1,
+        activation_hidden_dims=[],
+        mlp_hidden_dims=[],
+        behavior_feature="hist",
+        candidate_feature="item",
+    )
+    model.mlp = torch.nn.Identity()
+    with torch.no_grad():
+        model.item_embedding.weight.zero_()
+        model.item_embedding.weight[1, 0] = 2.0
+        model.item_embedding.weight[2, 0] = 3.0
+        model.item_embedding.weight[3, 0] = 4.0
+        model.activation_unit.output.weight.zero_()
+        model.activation_unit.output.bias.fill_(1.0)
+
+    out = model._shared({"hist": torch.tensor([[1, 2]]), "item": torch.tensor([3])})
+
+    assert model.embeddings is None
+    assert torch.allclose(out, torch.tensor([[5.0, 4.0]]))
+
+
+def test_finalmlp_uses_paper_gate_scale_and_bilinear_fusion_params():
+    model = FinalMLP(FEATURES, stream_hidden_dims=[4], gate_hidden_dim=3)
+    x = torch.randn(2, 8)
+    with torch.no_grad():
+        for layer in model.stream1_gate:
+            layer.weight.zero_()
+            layer.bias.zero_()
+
+    gate = model._gate(x, model.stream1_gate)
+
+    assert torch.allclose(gate, torch.ones_like(x))
+    state_keys = set(model.state_dict())
+    assert "fusion_bilinear.weight" in state_keys
+    assert "fusion_o1.weight" in state_keys
+    assert "fusion_o2.weight" in state_keys
+    assert "fusion.output.weight" not in state_keys
 
 def test_mmoe_forward():
     model = MMoE(FEATURES, [8], 2, [8], 4, [("ctr", [4]), ("cvr", [4])])

@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 if TYPE_CHECKING:
     from ..core.config import PoolingMode
@@ -21,7 +20,7 @@ class DIN(nn.Module):
     """Deep Interest Network.
 
     Shared item embedding for behavior sequence + candidate ad.
-    Local activation unit computes adaptive user interest via attention.
+    Local activation unit computes adaptive, unnormalized user interest weights.
     """
 
     def __init__(
@@ -45,10 +44,14 @@ class DIN(nn.Module):
         self.item_embedding = nn.Embedding(item_vocab_size, embed_dim)
 
         other_features = [
-            (n, v, e) for n, v, e in features
-            if n != behavior_feature and n != candidate_feature
+            feature
+            for feature in features
+            if feature[0] not in {behavior_feature, candidate_feature}
         ]
-        self.embeddings = FeatureEmbeddings(other_features, pooling_map, total_dim=total_dim)
+        self.embeddings = (
+            FeatureEmbeddings(other_features, pooling_map) if other_features else None
+        )
+        other_dim = self.embeddings.total_dim if self.embeddings is not None else 0
 
         self.activation_unit = Mlp(
             4 * embed_dim,
@@ -57,7 +60,7 @@ class DIN(nn.Module):
             Activation.RELU,
         )
 
-        mlp_input_dim = embed_dim + embed_dim + self.embeddings.total_dim
+        mlp_input_dim = embed_dim + embed_dim + other_dim
         self.mlp = Mlp(
             mlp_input_dim,
             mlp_hidden_dims or [],
@@ -84,6 +87,8 @@ class DIN(nn.Module):
         behavior_idx = x_inputs[self.behavior_feature]
         candidate_idx = x_inputs[self.candidate_feature]
 
+        if behavior_idx.dim() == 1:
+            behavior_idx = behavior_idx.unsqueeze(1)
         behavior_embs = self.item_embedding(behavior_idx)
         candidate_emb = self.item_embedding(candidate_idx)
 
@@ -95,12 +100,13 @@ class DIN(nn.Module):
 
         au_input = torch.cat([behavior_embs, candidate_emb_3d, prod, diff], dim=2)
         au_input_flat = au_input.reshape(batch * seq_len, 4 * embed_dim)
-        attn_weights_flat = self.activation_unit(au_input_flat)
-        attn_weights = attn_weights_flat.reshape(batch, seq_len, 1)
-        attn_probs = F.softmax(attn_weights, dim=1)
+        attn_weights = self.activation_unit(au_input_flat).reshape(batch, seq_len, 1)
 
-        interest_emb = (behavior_embs * attn_probs).sum(dim=1)
+        interest_emb = (behavior_embs * attn_weights).sum(dim=1)
 
-        other_emb = self.embeddings(x_inputs)
-        combined = torch.cat([interest_emb, candidate_emb, other_emb], dim=1)
+        if self.embeddings is not None:
+            other_emb = self.embeddings(x_inputs)
+            combined = torch.cat([interest_emb, candidate_emb, other_emb], dim=1)
+        else:
+            combined = torch.cat([interest_emb, candidate_emb], dim=1)
         return self.mlp(combined)

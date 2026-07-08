@@ -1,6 +1,6 @@
 //! Deep Interest Network (DIN, arXiv:1706.06978).
 //!
-//! DIN uses a local activation unit (attention) to adaptively learn user interest
+//! DIN uses a local activation unit to adaptively learn user interest
 //! representation from behavior sequences with respect to a candidate ad.
 //! Shared item embedding table for both behavior items and candidate ad.
 
@@ -17,7 +17,7 @@ use std::collections::HashMap;
 /// Deep Interest Network model.
 pub struct DIN {
     item_embedding: candle_nn::Embedding,
-    embeddings: FeatureEmbeddings,
+    embeddings: Option<FeatureEmbeddings>,
     activation_unit: Mlp,
     mlp: Mlp,
     output_head: Option<OutputHead>,
@@ -42,10 +42,20 @@ impl DIN {
 
         let other_features: Vec<FeatureSpec> = features
             .iter()
-            .filter(|f| f.name != behavior_feature && f.name != candidate_feature)
+            .filter(|feature| feature.name != behavior_feature && feature.name != candidate_feature)
             .cloned()
             .collect();
-        let embeddings = FeatureEmbeddings::new(vb.pp("embeddings"), &other_features)?;
+        let embeddings = if other_features.is_empty() {
+            None
+        } else {
+            Some(FeatureEmbeddings::new(
+                vb.pp("embeddings"),
+                &other_features,
+            )?)
+        };
+        let other_dim = embeddings
+            .as_ref()
+            .map_or(0, |embeddings| embeddings.total_dim);
 
         let activation_unit = Mlp::new(
             vb.pp("activation_unit"),
@@ -57,7 +67,7 @@ impl DIN {
 
         let mlp = Mlp::new(
             vb.pp("mlp"),
-            embed_dim + embed_dim + embeddings.total_dim,
+            embed_dim + embed_dim + other_dim,
             mlp_hidden_dims,
             1,
             Activation::Relu,
@@ -120,7 +130,12 @@ impl DIN {
             ))
         })?;
 
-        let behavior_embs = self.item_embedding.forward(behavior_indices)?;
+        let behavior_indices = if behavior_indices.rank() == 1 {
+            behavior_indices.unsqueeze(1)?
+        } else {
+            behavior_indices.clone()
+        };
+        let behavior_embs = self.item_embedding.forward(&behavior_indices)?;
         let candidate_emb = self.item_embedding.forward(candidate_indices)?;
 
         let seq_len = behavior_embs.dim(1)?;
@@ -135,15 +150,26 @@ impl DIN {
 
         let au_input = Tensor::cat(&[&behavior_embs, &candidate_emb_3d, &prod, &diff], 2)?;
         let au_input_flat = au_input.reshape((batch * seq_len, 4 * embed_dim))?;
-        let attn_weights_flat = self.activation_unit.forward(&au_input_flat)?;
-        let attn_weights = attn_weights_flat.reshape((batch, seq_len, 1))?;
-        let attn_probs = candle_nn::ops::softmax(&attn_weights, 1)?;
+        let attn_weights = self
+            .activation_unit
+            .forward(&au_input_flat)?
+            .reshape((batch, seq_len, 1))?;
 
-        let interest_emb = behavior_embs.mul(&attn_probs)?.sum(1)?;
+        let interest_emb = behavior_embs
+            .mul(&attn_weights.broadcast_as(behavior_embs.shape())?)?
+            .sum(1)?;
 
-        let other_emb = self.embeddings.forward(x_inputs)?;
-        let combined = Tensor::cat(&[&interest_emb, &candidate_emb, &other_emb], 1)?;
-        self.mlp.forward(&combined)
+        match &self.embeddings {
+            Some(embeddings) => {
+                let other_emb = embeddings.forward(x_inputs)?;
+                let combined = Tensor::cat(&[&interest_emb, &candidate_emb, &other_emb], 1)?;
+                self.mlp.forward(&combined)
+            }
+            None => {
+                let combined = Tensor::cat(&[&interest_emb, &candidate_emb], 1)?;
+                self.mlp.forward(&combined)
+            }
+        }
     }
 }
 

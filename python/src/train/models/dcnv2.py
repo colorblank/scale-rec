@@ -1,6 +1,6 @@
 """DCN V2: Improved Deep & Cross Network (arXiv:2008.13535).
 
-Single-task CTR model with gated cross network + optional deep MLP.
+Single-task CTR model with full-rank DCN-V2 cross layers + optional deep MLP.
 """
 
 from typing import TYPE_CHECKING
@@ -14,14 +14,37 @@ if TYPE_CHECKING:
 from ..core.model_output import ModelExecution, ModelOutput
 from ..core.output_contract import NormalizedOutputContract
 from ..layers.embedding import FeatureEmbeddings, FeatureTensorMap, FeatureTuple
-from ..layers.gdcn import GatedCrossNetwork
 from ..layers.mlp import Mlp
 from ..layers.towers import Activation
 from .output_head import OutputHead
 
 
+class DcnV2CrossNetwork(nn.Module):
+    """Full-rank DCN-V2 cross network."""
+
+    def __init__(self, input_dim: int, num_layers: int = 3) -> None:
+        super().__init__()
+        if input_dim <= 0:
+            raise ValueError("input_dim must be positive")
+        if num_layers <= 0:
+            raise ValueError("cross_layers must be positive")
+        self.cross = nn.ModuleList(
+            [nn.Linear(input_dim, input_dim, bias=False) for _ in range(num_layers)]
+        )
+        self.bias = nn.ParameterList(
+            [nn.Parameter(torch.zeros(input_dim)) for _ in range(num_layers)]
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x0 = x
+        xi = x
+        for cross, bias in zip(self.cross, self.bias, strict=True):
+            xi = x0 * (cross(xi) + bias) + xi
+        return xi
+
+
 class DCNV2(nn.Module):
-    """DCN V2: gated cross network + optional deep MLP."""
+    """DCN V2: full-rank cross network + optional deep MLP."""
 
     def __init__(
         self,
@@ -39,7 +62,7 @@ class DCNV2(nn.Module):
 
         self.embeddings = FeatureEmbeddings(features, pooling_map, total_dim=total_dim)
         input_dim = self.embeddings.total_dim
-        self.cross = GatedCrossNetwork(input_dim, cross_layers)
+        self.cross = DcnV2CrossNetwork(input_dim, cross_layers)
 
         if deep_hidden_dims:
             self.deep = Mlp(input_dim, deep_hidden_dims[:-1], deep_hidden_dims[-1], Activation.RELU)
