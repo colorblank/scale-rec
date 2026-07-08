@@ -147,12 +147,15 @@ class PEPNet(nn.Module):
 
         if output_contract is not None:
             self.output_contract = output_contract
+            pp_context_dim = prior_dim + total_dim
             self.output_towers = nn.ModuleDict()
             self._tower_inputs: dict[str, str] = {}
             for tower in output_contract.towers:
                 if tower.input != "shared":
                     raise ValueError("PEPNet output_contract towers must use input='shared'")
-                self.output_towers[tower.name] = PersonalizedTaskTower(tower, shared_dim, prior_dim)
+                self.output_towers[tower.name] = PersonalizedTaskTower(
+                    tower, shared_dim, pp_context_dim
+                )
                 self._tower_inputs[tower.name] = tower.input
             relations = {relation.name: relation for relation in output_contract.relations}
             self._relations = [relations[name] for name in output_contract.relation_order]
@@ -165,8 +168,13 @@ class PEPNet(nn.Module):
             raise ValueError("PEPNet requires task_config or output_contract")
         self.task_names = [tower.name for tower in self.task_config.towers]
         self.relation_names = [relation.target for relation in self.task_config.relations]
+        pp_context_dim = prior_dim + total_dim
         for tower in self.task_config.towers:
-            setattr(self, f"{tower.name}_tower", PersonalizedTaskTower(tower, shared_dim, prior_dim))
+            setattr(
+                self,
+                f"{tower.name}_tower",
+                PersonalizedTaskTower(tower, shared_dim, pp_context_dim),
+            )
 
     def _build_domains(self, domains: list[dict]) -> list[_DomainInfo]:
         all_indices: set[int] = set()
@@ -235,11 +243,13 @@ class PEPNet(nn.Module):
             dense_concat = torch.cat([e.squeeze(1) for e in stacked], dim=1)
             gated = dense_concat * epnet_scale
 
+        pp_context = torch.cat([pp_prior, gated.detach()], dim=1)
+
         shared = self.deep(gated) if self.has_deep else gated
         if hasattr(self, "shared_bottom"):
             shared = self.shared_bottom(shared)
 
-        return shared, pp_prior
+        return shared, pp_context
 
     @staticmethod
     def _prior_raw(stacked: list[torch.Tensor], indices: list[int]) -> torch.Tensor:

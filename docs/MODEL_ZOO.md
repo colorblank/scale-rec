@@ -7,9 +7,9 @@
 ## 模型总览
 
 | Model type | 论文/arXiv | 示例配置 | 模型类别 | 输入表示 | 核心结构 | 输出表示 | 适用场景 |
-|---|---|---|---|---|---|---|---|---|
+|---|---|---|---|---|---|---|---|
 | `finalmlp` | [FinalMLP, arXiv:2304.00902](https://arxiv.org/abs/2304.00902) | `examples/models/finalmlp.yaml` | 双流 MLP | feature embedding concat | feature gating + two-stream MLP + interaction aggregation | `shared` 标量 logit | 需要特征交互且希望保持纯 MLP 架构的 CTR 预估 |
-| `dcnv2` | [DCN V2, arXiv:2008.13535](https://arxiv.org/abs/2008.13535) | `examples/models/dcnv2.yaml` | 交叉网络 | feature embedding concat | gated cross network + optional deep MLP | `shared` 标量 logit | 需要显式 feature cross 交互的 CTR 预估；比 DeepFM 更高阶的交叉 |
+| `dcnv2` | [DCN V2, arXiv:2008.13535](https://arxiv.org/abs/2008.13535) | `examples/models/dcnv2.yaml` | 交叉网络 | feature embedding concat | full-rank cross network + optional deep MLP | `shared` 标量 logit | 需要显式 feature cross 交互的 CTR 预估；比 DeepFM 更高阶的交叉 |
 | `din` | [DIN, arXiv:1706.06978](https://arxiv.org/abs/1706.06978) | `examples/models/din.yaml` | 注意力兴趣网络 | shared item embedding + other feature concat | activation unit (attention over behavior sequence) + MLP | `shared` 标量 logit | 用户行为序列是关键信号的 CTR 预估；需要自适应候选物料的用户兴趣表示 |
 | `deepfm` | [DeepFM, arXiv:1703.04247](https://arxiv.org/abs/1703.04247) | `examples/models/deepfm.yaml` | FM + DNN | feature embedding concat | FM 一阶/二阶交互 + MLP | `shared` 标量 logit | 稀疏 ID 特征为主、需要显式二阶交互的 CTR 任务 |
 | `mmoe` | [Modeling Task Relationships in Multi-task Learning with Multi-gate Mixture-of-Experts](https://dl.acm.org/doi/pdf/10.1145/3219819.3220007) | `examples/models/mmoe.yaml` | 多任务专家模型 | feature embedding concat | shared bottom + experts + task gates | 每个 tower 可指定命名 representation，如 `click_rep` | 多任务目标差异明显、希望 gate 学习任务差异 |
@@ -31,7 +31,7 @@
 | 先验证训练链路、特征配置、导出和 Rust serving | `lr`、`deepfm` | 参数少，失败时更容易定位是特征、标签还是模型问题 |
 | 单目标 CTR，用户行为序列是关键信号 | `din` | Activation unit 自适应学习候选物料相关的用户兴趣表示 |
 | 单目标 CTR，需要特征交互且希望纯 MLP 架构 | `finalmlp` | Feature gating + 双流 MLP + 交互聚合，无需专用交互网络 |
-| 单目标 CTR，需要显式 feature cross 交互 | `dcnv2`、`deepfm`、`gdcn_esmm` | DCNV2 使用 gated cross network 学习高阶交叉；DeepFM 提供二阶 FM 交互；GDCN 显式建模 gated cross |
+| 单目标 CTR，需要显式 feature cross 交互 | `dcnv2`、`deepfm`、`gdcn_esmm` | DCNV2 使用 full-rank cross network 学习高阶交叉；DeepFM 提供二阶 FM 交互；GDCN 显式建模 gated cross |
 | CTR/CVR/详情/收藏/停留等多任务排序 | `esmm`、`gdcn_esmm` | 原生支持 tower + relation 的概率图，例如 `ctcvr_prob = click_prob * cvr_prob` |
 | 多任务目标差异大，任务之间共享不完全一致 | `mmoe` | expert + gate 可以按任务选择不同共享表示 |
 | 需要场景、用户、物品 prior 做个性化门控 | `pepnet` | `ep_prior_features`、`pp_prior_features` 明确控制 gate 输入 |

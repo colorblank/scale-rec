@@ -1,6 +1,6 @@
-use crate::models::output_head::execute_relation as execute_contract_relation;
 use super::PEPNet;
 use crate::layers::towers::apply_relation;
+use crate::models::output_head::execute_relation as execute_contract_relation;
 use crate::models::{Model, ModelExecution, ModelOutput};
 use candle_core::{Module, Result, Tensor};
 use std::collections::HashMap;
@@ -53,6 +53,8 @@ impl PEPNet {
             dense_concat.broadcast_mul(&epnet_scale)?
         };
 
+        let pp_context = Tensor::cat(&[&pp_prior, &gated], 1)?;
+
         let mut shared = match &self.deep {
             Some(deep) => deep.forward(&gated)?,
             None => gated,
@@ -60,7 +62,7 @@ impl PEPNet {
         if let Some(shared_bottom) = &self.shared_bottom {
             shared = shared_bottom.forward(&shared)?;
         }
-        Ok((shared, pp_prior))
+        Ok((shared, pp_context))
     }
 }
 

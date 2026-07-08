@@ -1,12 +1,12 @@
-use crate::models::output_contract::OutputContract;
-use crate::models::output_head::{
-    activation as contract_activation, output_kind as contract_output_kind,
-};
 use super::tower::PersonalizedTower;
 use super::{ContractMode, PEPNet};
 use crate::layers::embedding::FeatureSpec;
 use crate::layers::mlp::Mlp;
 use crate::layers::towers::{Activation, MultiTaskConfig, TowerConfig};
+use crate::models::output_contract::OutputContract;
+use crate::models::output_head::{
+    activation as contract_activation, output_kind as contract_output_kind,
+};
 use candle_core::Result;
 use candle_nn::{linear_no_bias, VarBuilder};
 use std::collections::HashMap;
@@ -78,12 +78,13 @@ impl PEPNet {
             )
         };
 
+        let pp_context_dim = prior_dim + total_dim;
         let mut towers = Vec::with_capacity(task_config.towers.len());
         for tower_config in &task_config.towers {
             towers.push(PersonalizedTower::new(
                 tower_config,
                 shared_dim,
-                prior_dim,
+                pp_context_dim,
                 vb.pp(format!("{}_tower", tower_config.name)),
             )?);
         }
@@ -175,6 +176,7 @@ impl PEPNet {
         let validated = contract
             .validate(None)
             .map_err(|e| candle_core::Error::Msg(format!("validate output contract: {e}")))?;
+        let pp_context_dim = prior_dim + total_dim;
         let mut towers = Vec::with_capacity(contract.graph.towers.len());
         for tower in &contract.graph.towers {
             if tower.input != "shared" {
@@ -189,12 +191,17 @@ impl PEPNet {
                     output_kind: contract_output_kind(tower.kind),
                 },
                 shared_dim,
-                prior_dim,
+                pp_context_dim,
                 vb.pp("output_towers").pp(tower.name.clone()),
             )?);
         }
         let relations_by_name: HashMap<&str, &crate::models::output_contract::ContractRelation> =
-            contract.graph.relations.iter().map(|r| (r.name.as_str(), r)).collect();
+            contract
+                .graph
+                .relations
+                .iter()
+                .map(|r| (r.name.as_str(), r))
+                .collect();
         let contract_relations: Vec<crate::models::output_contract::ContractRelation> = validated
             .relation_order
             .iter()

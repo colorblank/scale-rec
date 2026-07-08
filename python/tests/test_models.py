@@ -550,6 +550,18 @@ def test_pepnet_forward_with_deep_without_shared_bottom():
     assert out.tensor("click").shape == (3, 1)
 
 
+def test_pepnet_ppnet_gate_uses_prior_and_epnet_output():
+    task_config = MultiTaskConfig(
+        towers=[TowerConfig("click", [4], 1, Activation.RELU)],
+        relations=[],
+    )
+    model = PEPNet(FEATURES, prior_dim=3, task_config=task_config)
+
+    gate = model.click_tower.pp_gates["0"]
+
+    assert gate.fc1.in_features == 3 + 8
+
+
 def test_unimixer_forward():
     from train.models.unimixer.model import UniMixerModel
     from train.models.unimixer.tokenizer import FeatureTokenizer
