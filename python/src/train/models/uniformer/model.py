@@ -198,7 +198,9 @@ class TaskInteractionLayer(nn.Module):
         self.norm_ffn = _rms_norm(d)
 
     def forward(self, task_tokens: torch.Tensor, feature_tokens: torch.Tensor) -> torch.Tensor:
-        x = task_tokens + self.cross_attn(self.norm_cross(task_tokens), feature_tokens, feature_tokens)
+        x = task_tokens + self.cross_attn(
+            self.norm_cross(task_tokens), feature_tokens, feature_tokens
+        )
         y = x + self.self_attn(self.norm_self(x), x, x)
         return y + self.ffn(self.norm_ffn(y))
 

@@ -16,7 +16,8 @@ use candle_core::{Module, Result, Tensor};
 use candle_nn::{layer_norm, linear, Linear, VarBuilder};
 
 use crate::layers::embedding::{FeatureEmbeddings, FeatureSpec};
-use crate::models::output_contract::OutputContract;
+use crate::models::output_contract::{ContractPublicOutput, ContractRelation, OutputContract};
+use crate::models::output_head::execute_relation as execute_contract_relation;
 use crate::models::{Model, ModelExecution, ModelOutput, OutputKind};
 
 use super::encoding::{build_attention_mask, OneRankBlock};
@@ -41,6 +42,8 @@ pub struct OneRankModel {
     #[allow(dead_code)]
     d: usize,
     task_names: Vec<String>,
+    relations: Vec<ContractRelation>,
+    outputs: Vec<ContractPublicOutput>,
 }
 
 impl OneRankModel {
@@ -93,11 +96,32 @@ impl OneRankModel {
         let cross_task =
             CrossTaskAttention::new(vb.pp("cross_task"), d, num_tasks, cross_task_mask)?;
 
+        let validated = contract.validate(None).map_err(|error| {
+            candle_core::Error::Msg(format!("validate output contract: {error}"))
+        })?;
         let task_names: Vec<String> = contract
             .graph
             .towers
             .iter()
             .map(|t| t.name.clone())
+            .collect();
+        if task_names.len() != num_tasks {
+            candle_core::bail!(
+                "OneRank num_tasks ({}) must match output_contract towers ({})",
+                num_tasks,
+                task_names.len()
+            );
+        }
+        let relations_by_name: HashMap<&str, &ContractRelation> = contract
+            .graph
+            .relations
+            .iter()
+            .map(|relation| (relation.name.as_str(), relation))
+            .collect();
+        let relations = validated
+            .relation_order
+            .iter()
+            .map(|name| relations_by_name[name.as_str()].clone())
             .collect();
 
         Ok(Self {
@@ -113,18 +137,33 @@ impl OneRankModel {
             num_tasks,
             d,
             task_names,
+            relations,
+            outputs: contract.outputs.clone(),
         })
     }
 
-    /// Forward: compute matching scores and produce ModelOutput.
-    pub fn forward_impl(&self, x_inputs: &HashMap<String, Tensor>) -> Result<ModelOutput> {
+    fn forward_impl(&self, x_inputs: &HashMap<String, Tensor>) -> Result<ModelExecution> {
         let scores = self.compute_scores(x_inputs)?;
-        let mut output = ModelOutput::new();
+        let mut nodes = ModelOutput::new();
         for (k, name) in self.task_names.iter().enumerate() {
             let s = scores.narrow(1, k, 1)?.squeeze(1)?;
-            output.insert(name.clone(), s, OutputKind::BinaryLogit);
+            nodes.insert(name.clone(), s, OutputKind::BinaryLogit);
         }
-        Ok(output)
+        for relation in &self.relations {
+            let (tensor, kind) = execute_contract_relation(relation, &nodes)?;
+            nodes.insert(relation.name.clone(), tensor, kind);
+        }
+        let mut outputs = ModelOutput::new();
+        for output in &self.outputs {
+            let source = nodes.get(&output.source).ok_or_else(|| {
+                candle_core::Error::Msg(format!(
+                    "public output '{}' source '{}' is missing",
+                    output.name, output.source
+                ))
+            })?;
+            outputs.insert(output.name.clone(), source.tensor.clone(), source.kind);
+        }
+        Ok(ModelExecution::new(nodes, outputs))
     }
 
     /// Compute per-task matching scores: [B, K]
@@ -187,11 +226,10 @@ impl OneRankModel {
 
 impl Model for OneRankModel {
     fn forward(&self, x_inputs: &HashMap<String, Tensor>) -> Result<ModelOutput> {
-        self.forward_impl(x_inputs)
+        Ok(self.forward_impl(x_inputs)?.outputs)
     }
 
     fn forward_execution(&self, x_inputs: &HashMap<String, Tensor>) -> Result<ModelExecution> {
-        let outputs = self.forward_impl(x_inputs)?;
-        Ok(ModelExecution::new(outputs.clone(), outputs))
+        self.forward_impl(x_inputs)
     }
 }

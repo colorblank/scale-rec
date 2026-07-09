@@ -13,9 +13,9 @@ from ..layers.towers import Activation, MultiTaskConfig, TaskRelation, TowerConf
 from .dcnv2 import DCNV2
 from .deepfm import DeepFM
 from .din import DIN
-from .finalmlp import FinalMLP
 from .esmm import ESMM, default_task_config
 from .fat import FATModel
+from .finalmlp import FinalMLP
 from .full_mix import FullMixModel
 from .gdcn_esmm import GDCNESMM
 from .hyformer import HyFormerConfig, HyFormerModel

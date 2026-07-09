@@ -392,9 +392,7 @@ def main() -> None:
                 _inject_demo_nulls(row, rng)
                 writer.writerow([row[name] for name in SOURCE_NAMES])
 
-    print(
-        f"[Generate demo] {n_users * rows_per_user} rows, {len(SOURCE_NAMES)} cols -> {out_path}"
-    )
+    print(f"[Generate demo] {n_users * rows_per_user} rows, {len(SOURCE_NAMES)} cols -> {out_path}")
 
 
 if __name__ == "__main__":

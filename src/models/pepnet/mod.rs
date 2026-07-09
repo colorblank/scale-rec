@@ -3,11 +3,11 @@
 //! Architecture:
 //!   FeatureEmbeddings → EPNet (per-domain gates) → Deep MLP → shared_bottom → PPNet gate → towers
 
-mod gate;
-mod tower;
 mod build;
 mod construct;
+mod gate;
 mod model;
+mod tower;
 
 use super::output_contract::{ContractPublicOutput, ContractRelation};
 use crate::layers::embedding::FeatureEmbeddings;

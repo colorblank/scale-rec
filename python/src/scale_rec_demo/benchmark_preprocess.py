@@ -339,9 +339,7 @@ def _print_table(results: list[BenchResult]) -> None:
     if not results:
         print("no benchmark results")
         return
-    header = (
-        "mode    batch  rows    batches  rows/s    total_s  prepare_s  preprocess_s  features"
-    )
+    header = "mode    batch  rows    batches  rows/s    total_s  prepare_s  preprocess_s  features"
     print(header)
     print("-" * len(header))
     for result in results:

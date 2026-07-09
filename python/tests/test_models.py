@@ -110,6 +110,9 @@ def test_native_output_contract_esmm_exposes_public_and_internal_outputs():
         "rankmixer.yaml",
         "full_mix.yaml",
         "rankup.yaml",
+        "fat.yaml",
+        "mixformer.yaml",
+        "onerank.yaml",
         "hyformer.yaml",
         "onetrans.yaml",
         "uniformer.yaml",
@@ -127,7 +130,9 @@ def test_all_example_models_use_native_output_contract(config_name):
         from train.core.config import FlowConfig
         from train.core.dag import FeatureDag
 
-        dag = FeatureDag(FlowConfig.from_yaml(str(REPO_ROOT / "examples/shared/feature_config_demo.yaml")))
+        dag = FeatureDag(
+            FlowConfig.from_yaml(str(REPO_ROOT / "examples/shared/feature_config_demo.yaml"))
+        )
         features = dag.feature_tuples()
         inputs = {name: torch.zeros(2, dtype=torch.long) for name, _, _ in features}
     if config.type in {"unimixer", "token_mixer_large", "rankmixer", "full_mix"}:
@@ -169,7 +174,6 @@ def test_gated_cross_network_forward():
     out = layer(torch.randn(3, 8))
 
     assert out.shape == (3, 8)
-
 
 
 def test_dcnv2_cross_layer_uses_full_rank_formula_without_gate():
@@ -226,6 +230,7 @@ def test_finalmlp_uses_paper_gate_scale_and_bilinear_fusion_params():
     assert "fusion_o2.weight" in state_keys
     assert "fusion.output.weight" not in state_keys
 
+
 def test_mmoe_forward():
     model = MMoE(FEATURES, [8], 2, [8], 4, [("ctr", [4]), ("cvr", [4])])
     out = model(_inputs(3))
@@ -258,7 +263,9 @@ def test_rankup_forward_with_task_token_output_contract():
                     "loss": {"type": "binary_cross_entropy_with_logits"},
                 }
             ],
-            "metrics": [{"name": "ctr_auc", "source": "ctr_logit", "label": "is_click", "type": "auc"}],
+            "metrics": [
+                {"name": "ctr_auc", "source": "ctr_logit", "label": "is_click", "type": "auc"}
+            ],
             "outputs": [{"name": "ctr", "source": "ctr_prob"}],
         }
     )
@@ -560,6 +567,29 @@ def test_pepnet_ppnet_gate_uses_prior_and_epnet_output():
     gate = model.click_tower.pp_gates["0"]
 
     assert gate.fc1.in_features == 3 + 8
+
+
+def test_onerank_attention_bias_does_not_create_nan():
+    from train.models.onerank.encoding import build_attention_mask
+
+    mask = build_attention_mask(num_fields=2, num_tasks=2, device=torch.device("cpu"))
+    bias = torch.zeros_like(mask).masked_fill(mask == 0, float("-inf"))
+
+    assert not torch.isnan(bias).any()
+    assert torch.isneginf(bias[0, 2])
+    assert bias[0, 0] == 0
+
+
+def test_onerank_forward_outputs_are_finite():
+    from train.core.config import ModelConfig
+
+    config = ModelConfig.from_yaml(REPO_ROOT / "examples/models/onerank.yaml")
+    model = config.build(FEATURES)
+
+    out = model(_inputs(3))
+
+    for name in out.names():
+        assert torch.isfinite(out.tensor(name)).all()
 
 
 def test_unimixer_forward():

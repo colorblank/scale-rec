@@ -72,7 +72,7 @@
 | `rankmixer` | `token_dim`、`num_tokens`、`num_blocks`、`num_heads`、`hidden_factor` | 当前实现要求 `num_heads == num_tokens` 以保持 residual shape |
 | `full_mix` | `token_dim`、`num_tokens`、`num_blocks`、`hidden_factor` | 需要外部 `FeatureTokenizer`；full mixing 的参数量随 `(num_tokens * token_dim)^2` 增长 |
 | `rankup` | `token_dim`、`num_sparse_tokens`、`num_blocks`、`num_heads`、`permutation_seed`、`multi_embedding_tables`、`use_global_token`、`cross_token`、`num_task_tokens` | `num_sparse_tokens` 不能超过特征数；`cross_token.left/right` pooled dim 必须一致；task tower 可绑定 `task_i` |
-| `hyformer` | `d`、`d_ff`、`num_queries`、`num_layers`、`hidden_factor` | `d` 必须能被 query boosting token 数整除；无序列特征时会退化为非序列 token memory |
+| `hyformer` | `d`、`d_ff`、`num_queries`、`num_layers`、`hidden_factor` | query token 解码 sequence memory 后，与非序列 token 一起做 token mixing；无序列特征时会退化为非序列 token memory |
 | `uniformer` | `d`、`d_ff`、`num_layers`、`n_heads`、`num_tasks` | `d` 必须能被 `n_heads` 整除；`num_tasks` 决定可绑定的 `task_i` 表示数量 |
 
 ## 输入表示

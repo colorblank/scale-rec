@@ -63,7 +63,10 @@ class CrossTaskAttention(nn.Module):
         v = self.v_proj(x)
 
         scores = torch.matmul(q, k.transpose(-2, -1)) / (self.d**0.5)
-        bias = (1.0 - self.cross_mask) * float("-inf")
+        bias = torch.zeros_like(self.cross_mask).masked_fill(
+            self.cross_mask == 0,
+            float("-inf"),
+        )
         scores = scores + bias[None, :, :]
         attn = torch.softmax(scores, dim=-1)
         x = torch.matmul(attn, v)

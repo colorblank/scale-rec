@@ -82,9 +82,7 @@ def test_demo_model_configs_exist_and_are_current():
         assert path.exists(), path
     assert actual_files == expected_files
 
-    demo_fc = FlowConfig.from_yaml(
-        str(EXAMPLES_DIR / "shared" / "feature_config_demo.yaml")
-    )
+    demo_fc = FlowConfig.from_yaml(str(EXAMPLES_DIR / "shared" / "feature_config_demo.yaml"))
     assert [s.name for s in demo_fc.label_sources] == [
         "is_click",
         "is_cvr",

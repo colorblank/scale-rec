@@ -74,9 +74,7 @@ class BasisHypernetwork(nn.Module):
 
         # Field-pair interaction modulation:  w_{f_i, f_j} ∈ ℝ
         # Initialized from 𝒩(0, 0.01) per paper §5.1.3
-        self.field_pair_w = nn.Parameter(
-            torch.randn(num_fields, num_fields) * 0.01
-        )
+        self.field_pair_w = nn.Parameter(torch.randn(num_fields, num_fields) * 0.01)
 
     def _route(self, router: nn.Linear, field_ids: torch.Tensor) -> torch.Tensor:
         """Compute top-K sparse selection coefficients.
@@ -88,10 +86,10 @@ class BasisHypernetwork(nn.Module):
         Returns:
             coefficients: [N, M]  (sparse: only K non-zeros per row).
         """
-        meta = self.field_meta[field_ids]          # [N, k]
-        scores = router(meta)                       # [N, M]
+        meta = self.field_meta[field_ids]  # [N, k]
+        scores = router(meta)  # [N, M]
         topk_vals, topk_idx = torch.topk(scores, self.K, dim=-1)  # [N, K]
-        alpha = F.softmax(topk_vals, dim=-1)        # [N, K]
+        alpha = F.softmax(topk_vals, dim=-1)  # [N, K]
 
         coeffs = torch.zeros(scores.shape[0], self.M, device=scores.device)
         coeffs.scatter_(1, topk_idx, alpha)
@@ -107,7 +105,7 @@ class BasisHypernetwork(nn.Module):
         Returns:
             projections: [F, d_in, d_out]
         """
-        return torch.einsum("fm,mid_out->fid_out", coefficients, bases)
+        return torch.einsum("fm,mio->fio", coefficients, bases)
 
     def compose_all_qkv(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compose Q, K, V projections for all fields.

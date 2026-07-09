@@ -26,10 +26,10 @@ impl OneRankBlock {
     /// Create a new OneRank block.
     pub fn new(vb: VarBuilder, d: usize, d_ff: usize, n_heads: usize) -> Result<Self> {
         let norm1 = layer_norm(d, 1e-5, vb.pp("norm1"))?;
-        let q_proj = linear(d, d, vb.pp("attn.q_proj"))?;
-        let k_proj = linear(d, d, vb.pp("attn.k_proj"))?;
-        let v_proj = linear(d, d, vb.pp("attn.v_proj"))?;
-        let o_proj = linear(d, d, vb.pp("attn.o_proj"))?;
+        let q_proj = linear(d, d, vb.pp("q_proj"))?;
+        let k_proj = linear(d, d, vb.pp("k_proj"))?;
+        let v_proj = linear(d, d, vb.pp("v_proj"))?;
+        let o_proj = linear(d, d, vb.pp("o_proj"))?;
         let norm2 = layer_norm(d, 1e-5, vb.pp("norm2"))?;
         let ffn_1 = linear(d, d_ff, vb.pp("ffn.0"))?;
         let ffn_2 = linear(d_ff, d, vb.pp("ffn.2"))?;

@@ -48,9 +48,7 @@ class DIN(nn.Module):
             for feature in features
             if feature[0] not in {behavior_feature, candidate_feature}
         ]
-        self.embeddings = (
-            FeatureEmbeddings(other_features, pooling_map) if other_features else None
-        )
+        self.embeddings = FeatureEmbeddings(other_features, pooling_map) if other_features else None
         other_dim = self.embeddings.total_dim if self.embeddings is not None else 0
 
         self.activation_unit = Mlp(

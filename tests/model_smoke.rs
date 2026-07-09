@@ -225,7 +225,8 @@ fn test_pepnet_forward_shape() {
             op: RelationOp::Multiply,
         }],
     };
-    let model = pepnet::PEPNet::new(vb(), &dummy_features(), 4, &[8], &[8], &tc, &[], &[], &[]).unwrap();
+    let model =
+        pepnet::PEPNet::new(vb(), &dummy_features(), 4, &[8], &[8], &tc, &[], &[], &[]).unwrap();
     let out = model.forward(&dummy_inputs(3)).unwrap();
     assert_eq!(out.len(), 3);
     assert_eq!(out.tensor("click").unwrap().dims(), &[3, 1]);
@@ -245,7 +246,8 @@ fn test_pepnet_forward_shape_with_deep_without_shared_bottom() {
         }],
         relations: vec![],
     };
-    let model = pepnet::PEPNet::new(vb(), &dummy_features(), 4, &[8], &[], &tc, &[], &[], &[]).unwrap();
+    let model =
+        pepnet::PEPNet::new(vb(), &dummy_features(), 4, &[8], &[], &tc, &[], &[], &[]).unwrap();
     let out = model.forward(&dummy_inputs(3)).unwrap();
     assert_eq!(out.len(), 1);
     assert_eq!(out.tensor("click").unwrap().dims(), &[3, 1]);

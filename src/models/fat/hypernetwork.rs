@@ -172,7 +172,7 @@ impl BasisHypernetwork {
         let k = self.k_top;
         let device = self.field_meta.device();
         let dtype = self.field_meta.dtype();
-        let neg_inf = Tensor::from_slice(&[f64::NEG_INFINITY], (1,), device)?;
+        let neg_inf = Tensor::from_slice(&[f32::NEG_INFINITY], (1,), device)?;
 
         // Collect top-K indices and values via iterative argmax
         let mut topk_vals: Vec<Tensor> = Vec::with_capacity(k);
@@ -183,8 +183,8 @@ impl BasisHypernetwork {
             let val = remaining.gather(&idx, 1)?; // [F, 1]
             topk_vals.push(val);
             topk_idxs.push(idx.clone());
-            let fill = neg_inf.broadcast_as((f, 1))?;
-            remaining = remaining.scatter(&idx, &fill, 1)?; // [F, M]
+            let fill = neg_inf.broadcast_as((f, 1))?.contiguous()?;
+            remaining = remaining.contiguous()?.scatter(&idx, &fill, 1)?; // [F, M]
         }
 
         // Softmax over the selected K values
@@ -195,7 +195,9 @@ impl BasisHypernetwork {
         let mut coeffs = Tensor::zeros((f, m), dtype, device)?;
         for k_idx in 0..k {
             let a = alpha.narrow(1, k_idx, 1)?; // [F, 1]
-            coeffs = coeffs.scatter_add(&topk_idxs[k_idx], &a, 1)?;
+            coeffs = coeffs
+                .contiguous()?
+                .scatter_add(&topk_idxs[k_idx], &a.contiguous()?, 1)?;
         }
 
         Ok(coeffs)

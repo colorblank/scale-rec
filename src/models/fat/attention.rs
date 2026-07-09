@@ -101,7 +101,7 @@ impl FieldDecomposedAttention {
 
         // Scaled dot-product attention
         // scores [B, n_heads, F, F] = Q @ K^T / sqrt(d_head)
-        let scale = (self.d_head as f64).sqrt();
+        let scale = (self.d_head as f32).sqrt();
         let scores = q
             .matmul(&k.permute((0, 1, 3, 2))?)?
             .broadcast_div(&Tensor::from_slice(&[scale], (1,), x.device())?)?;

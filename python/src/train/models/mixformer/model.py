@@ -19,7 +19,7 @@ import torch.nn as nn
 if TYPE_CHECKING:
     from ...core.config import PoolingMode
 
-from ...core.model_output import ModelExecution, ModelOutput, OutputKind
+from ...core.model_output import BINARY_LOGIT, ModelExecution, ModelOutput
 from ...core.output_contract import NormalizedOutputContract
 from ...layers.embedding import FeatureEmbeddings, FeatureTensorMap, FeatureTuple
 from ..output_head import OutputHead
@@ -94,7 +94,7 @@ class MixFormerModel(nn.Module):
         outputs = ModelOutput()
         scores = self._shared(x_inputs)
         name = self.task_names[0]
-        outputs.insert(name, scores, OutputKind.BinaryLogit)
+        outputs.insert(name, scores, BINARY_LOGIT)
         return outputs
 
     def forward_execution(self, x_inputs: FeatureTensorMap) -> ModelExecution:
@@ -103,7 +103,7 @@ class MixFormerModel(nn.Module):
             return self.output_head.forward({"shared": shared})
         outputs = ModelOutput()
         name = self.task_names[0]
-        outputs.insert(name, shared, OutputKind.BinaryLogit)
+        outputs.insert(name, shared, BINARY_LOGIT)
         return ModelExecution(nodes=outputs, outputs=outputs)
 
     def _shared(self, x_inputs: FeatureTensorMap) -> torch.Tensor:

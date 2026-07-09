@@ -270,15 +270,15 @@ struct OneTransBlock {
     q_shared: Linear,
     k_shared: Linear,
     v_shared: Linear,
-    q_non_sequence: Vec<Linear>,
-    k_non_sequence: Vec<Linear>,
-    v_non_sequence: Vec<Linear>,
+    q_non_sequence: Linear,
+    k_non_sequence: Linear,
+    v_non_sequence: Linear,
     o_proj: Linear,
     norm2: RmsNorm,
     seq_ffn_up: Linear,
     seq_ffn_down: Linear,
-    ns_ffn_up: Vec<Linear>,
-    ns_ffn_down: Vec<Linear>,
+    ns_ffn_up: Linear,
+    ns_ffn_down: Linear,
     d: usize,
     n_heads: usize,
     d_head: usize,
@@ -291,37 +291,18 @@ impl OneTransBlock {
         d: usize,
         d_ff: usize,
         n_heads: usize,
-        max_tokens: usize,
+        _max_tokens: usize,
         pyramid_tail_tokens: Option<usize>,
     ) -> Result<Self> {
         let norm1 = rms_norm(d, 1e-5, vb.pp("norm1"))?;
         let q_shared = linear(d, d, vb.pp("attn.q_shared"))?;
         let k_shared = linear(d, d, vb.pp("attn.k_shared"))?;
         let v_shared = linear(d, d, vb.pp("attn.v_shared"))?;
-        let mut q_non_sequence = Vec::with_capacity(max_tokens);
-        let mut k_non_sequence = Vec::with_capacity(max_tokens);
-        let mut v_non_sequence = Vec::with_capacity(max_tokens);
-        let mut ns_ffn_up = Vec::with_capacity(max_tokens);
-        let mut ns_ffn_down = Vec::with_capacity(max_tokens);
-        for idx in 0..max_tokens {
-            q_non_sequence.push(linear(
-                d,
-                d,
-                vb.pp("attn.q_non_sequence").pp(idx.to_string()),
-            )?);
-            k_non_sequence.push(linear(
-                d,
-                d,
-                vb.pp("attn.k_non_sequence").pp(idx.to_string()),
-            )?);
-            v_non_sequence.push(linear(
-                d,
-                d,
-                vb.pp("attn.v_non_sequence").pp(idx.to_string()),
-            )?);
-            ns_ffn_up.push(linear(d, d_ff, vb.pp("ns_ffn.up").pp(idx.to_string()))?);
-            ns_ffn_down.push(linear(d_ff, d, vb.pp("ns_ffn.down").pp(idx.to_string()))?);
-        }
+        let q_non_sequence = linear(d, d, vb.pp("attn.q_non_sequence"))?;
+        let k_non_sequence = linear(d, d, vb.pp("attn.k_non_sequence"))?;
+        let v_non_sequence = linear(d, d, vb.pp("attn.v_non_sequence"))?;
+        let ns_ffn_up = linear(d, d_ff, vb.pp("ns_ffn.up"))?;
+        let ns_ffn_down = linear(d_ff, d, vb.pp("ns_ffn.down"))?;
         Ok(Self {
             norm1,
             q_shared,
@@ -403,7 +384,7 @@ impl OneTransBlock {
         x: &Tensor,
         is_sequence: &[bool],
         shared: &Linear,
-        per_token: &[Linear],
+        non_sequence: &Linear,
     ) -> Result<Tensor> {
         let mut outputs = Vec::with_capacity(is_sequence.len());
         for (idx, is_seq) in is_sequence.iter().copied().enumerate() {
@@ -411,7 +392,7 @@ impl OneTransBlock {
             let projected = if is_seq {
                 shared.forward(&token)?
             } else {
-                per_token[idx].forward(&token)?
+                non_sequence.forward(&token)?
             };
             outputs.push(projected.unsqueeze(1)?);
         }
@@ -426,7 +407,8 @@ impl OneTransBlock {
                 self.seq_ffn_down
                     .forward(&self.seq_ffn_up.forward(&token)?.gelu()?)?
             } else {
-                self.ns_ffn_down[idx].forward(&self.ns_ffn_up[idx].forward(&token)?.gelu()?)?
+                self.ns_ffn_down
+                    .forward(&self.ns_ffn_up.forward(&token)?.gelu()?)?
             };
             outputs.push(projected.unsqueeze(1)?);
         }

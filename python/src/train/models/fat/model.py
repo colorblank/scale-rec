@@ -131,10 +131,9 @@ class FATModel(nn.Module):
         )
 
         # Stacked FAT blocks
-        self.blocks = nn.ModuleList([
-            FATBlock(model_dim, d_ff, n_heads, num_fields, dropout)
-            for _ in range(num_layers)
-        ])
+        self.blocks = nn.ModuleList(
+            [FATBlock(model_dim, d_ff, n_heads, num_fields, dropout) for _ in range(num_layers)]
+        )
 
         # Sum pooling → global vector, then optional projection
         self.output_proj = nn.Linear(model_dim, model_dim)
@@ -150,7 +149,10 @@ class FATModel(nn.Module):
         # Shared bottom MLP (before task towers)
         if shared_bottom_dims:
             self.shared_bottom = Mlp(
-                fusion_dim, shared_bottom_dims[:-1], shared_bottom_dims[-1], Activation.RELU,
+                fusion_dim,
+                shared_bottom_dims[:-1],
+                shared_bottom_dims[-1],
+                Activation.RELU,
             )
             shared_dim = shared_bottom_dims[-1]
         else:

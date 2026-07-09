@@ -249,9 +249,7 @@ def _parse_loss(raw: Any, context: str) -> LossSpec:
         raise ValueError(f"{context} has parameters not valid for {loss_type}: {sorted(invalid)}")
     epsilon = value.get(
         "epsilon",
-        1e-7
-        if loss_type in {"binary_cross_entropy", "focal_binary_cross_entropy"}
-        else None,
+        1e-7 if loss_type in {"binary_cross_entropy", "focal_binary_cross_entropy"} else None,
     )
     if epsilon is not None and not (0.0 < float(epsilon) < 0.5):
         raise ValueError(f"{context}.epsilon must be between 0 and 0.5")
@@ -267,8 +265,7 @@ def _parse_loss(raw: Any, context: str) -> LossSpec:
     gamma = value.get(
         "gamma",
         2.0
-        if loss_type
-        in {"focal_binary_cross_entropy", "focal_binary_cross_entropy_with_logits"}
+        if loss_type in {"focal_binary_cross_entropy", "focal_binary_cross_entropy_with_logits"}
         else None,
     )
     if gamma is not None and (not math.isfinite(float(gamma)) or float(gamma) < 0):

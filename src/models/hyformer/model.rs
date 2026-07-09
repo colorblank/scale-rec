@@ -10,7 +10,6 @@ use crate::layers::embedding::FeatureSpec;
 use crate::layers::towers::{MultiTaskConfig, MultiTaskTower};
 use crate::models::output_contract::OutputContract;
 use crate::models::output_head::OutputHead;
-use crate::models::rankmixer::block::RankMixerBlock;
 use crate::models::{Model, ModelExecution, ModelOutput};
 
 /// HyFormer construction config.
@@ -286,7 +285,7 @@ struct HyFormerLayer {
     k_proj: Linear,
     v_proj: Linear,
     out_proj: Linear,
-    boost: RankMixerBlock,
+    boost: HyFormerBoostBlock,
     num_queries: usize,
 }
 
@@ -304,7 +303,7 @@ impl HyFormerLayer {
             k_proj: linear(d, d, vb.pp("k_proj"))?,
             v_proj: linear(d, d, vb.pp("v_proj"))?,
             out_proj: linear(d, d, vb.pp("out_proj"))?,
-            boost: RankMixerBlock::new(d, token_count, token_count, hidden_factor, vb.pp("boost"))?,
+            boost: HyFormerBoostBlock::new(d, token_count, hidden_factor, vb.pp("boost"))?,
             num_queries,
         })
     }
@@ -330,6 +329,49 @@ impl HyFormerLayer {
     }
 }
 
+struct HyFormerBoostBlock {
+    norm_mixing: LayerNorm,
+    token_mixing: Linear,
+    ffn_up: Linear,
+    ffn_down: Linear,
+    norm_ffn: LayerNorm,
+    d: usize,
+}
+
+impl HyFormerBoostBlock {
+    fn new(d: usize, token_count: usize, hidden_factor: f64, vb: VarBuilder) -> Result<Self> {
+        if token_count == 0 {
+            candle_core::bail!("token_count must be > 0");
+        }
+        let hidden_dim = ((d as f64) * hidden_factor).floor().max(1.0) as usize;
+        Ok(Self {
+            norm_mixing: layer_norm(d, 1e-5, vb.pp("norm_mixing"))?,
+            token_mixing: linear(d, d, vb.pp("token_mixing"))?,
+            ffn_up: linear(d, hidden_dim, vb.pp("ffn_up"))?,
+            ffn_down: linear(hidden_dim, d, vb.pp("ffn_down"))?,
+            norm_ffn: layer_norm(d, 1e-5, vb.pp("norm_ffn"))?,
+            d,
+        })
+    }
+
+    fn forward(&self, x: &Tensor) -> Result<Tensor> {
+        let (batch, token_count, d) = x.dims3()?;
+        if d != self.d {
+            candle_core::bail!("HyFormer boost expected token dim {}, got {}", self.d, d);
+        }
+        let context = x.mean(1)?;
+        let mixed =
+            self.token_mixing
+                .forward(&context)?
+                .unsqueeze(1)?
+                .expand((batch, token_count, d))?;
+        let s = self.norm_mixing.forward(&mixed.add(x)?)?;
+        let hidden = self.ffn_up.forward(&s)?.gelu()?;
+        self.norm_ffn
+            .forward(&self.ffn_down.forward(&hidden)?.add(&s)?)
+    }
+}
+
 fn build_layers(
     vb: VarBuilder,
     token_count: usize,
@@ -340,13 +382,6 @@ fn build_layers(
     }
     if config.hidden_factor <= 0.0 {
         candle_core::bail!("hidden_factor must be > 0");
-    }
-    if config.d % token_count != 0 {
-        candle_core::bail!(
-            "d ({}) must be divisible by HyFormer boost token count ({})",
-            config.d,
-            token_count
-        );
     }
     let mut layers = Vec::with_capacity(config.num_layers);
     for idx in 0..config.num_layers {

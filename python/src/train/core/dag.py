@@ -203,7 +203,9 @@ class FeatureDag:
                 for name, col in columns.items()
             }
             rust_result = self._rust_session.preprocess_batch(str_columns)
-            return {name: torch.tensor(vals, dtype=torch.long) for name, vals in rust_result.items()}
+            return {
+                name: torch.tensor(vals, dtype=torch.long) for name, vals in rust_result.items()
+            }
 
         if self.tracer:
             n_rows = len(next(iter(columns.values()))) if columns else 0

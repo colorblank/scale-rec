@@ -42,7 +42,9 @@ class RankUpModel(nn.Module):
     ) -> None:
         super().__init__()
         if output_contract is not None and config.num_task_tokens == 0:
-            config = RankUpConfig(**{**config.__dict__, "num_task_tokens": len(output_contract.towers)})
+            config = RankUpConfig(
+                **{**config.__dict__, "num_task_tokens": len(output_contract.towers)}
+            )
         self.tokenizer = RankUpTokenizer(
             features,
             config.token_dim,
@@ -61,7 +63,9 @@ class RankUpModel(nn.Module):
             raise ValueError("hidden_factor must be > 0")
         num_heads = config.num_heads or self.tokenizer.num_tokens
         self.blocks = nn.ModuleList(
-            RankMixerBlock(config.token_dim, self.tokenizer.num_tokens, num_heads, config.hidden_factor)
+            RankMixerBlock(
+                config.token_dim, self.tokenizer.num_tokens, num_heads, config.hidden_factor
+            )
             for _ in range(config.num_blocks)
         )
         self.token_dim = config.token_dim

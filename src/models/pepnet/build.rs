@@ -41,8 +41,10 @@ impl PEPNet {
             .enumerate()
             .map(|(i, f)| (f.name.as_str(), i))
             .collect();
-        let feat_name_to_dim: HashMap<&str, usize> =
-            features.iter().map(|f| (f.name.as_str(), f.embed_dim)).collect();
+        let feat_name_to_dim: HashMap<&str, usize> = features
+            .iter()
+            .map(|f| (f.name.as_str(), f.embed_dim))
+            .collect();
 
         let mut all_assigned = vec![false; features.len()];
         let mut infos = Vec::with_capacity(domains.len());
@@ -50,16 +52,13 @@ impl PEPNet {
         let mut gates = Vec::with_capacity(domains.len());
 
         for d in domains.iter() {
-            let name = d["name"].as_str().ok_or_else(|| {
-                candle_core::Error::Msg("PEPNet domain missing 'name'".into())
-            })?;
+            let name = d["name"]
+                .as_str()
+                .ok_or_else(|| candle_core::Error::Msg("PEPNet domain missing 'name'".into()))?;
             let feat_names: Vec<&str> = d["features"]
                 .as_sequence()
                 .ok_or_else(|| {
-                    candle_core::Error::Msg(format!(
-                        "PEPNet domain '{}' missing 'features'",
-                        name
-                    ))
+                    candle_core::Error::Msg(format!("PEPNet domain '{}' missing 'features'", name))
                 })?
                 .iter()
                 .map(|v| v.as_str().unwrap())

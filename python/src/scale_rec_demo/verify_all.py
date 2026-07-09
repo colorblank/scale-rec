@@ -129,9 +129,7 @@ def save_test_and_pytorch_preds(
     with torch.no_grad():
         features = dag.preprocess_batch(serving_df.to_dict("records"))
         outputs = ensure_model_output(model(features))
-    preds = {
-        f"logit_{name}": serving_array(output) for name, output in outputs.items()
-    }
+    preds = {f"logit_{name}": serving_array(output) for name, output in outputs.items()}
     pd.DataFrame(preds).to_csv(py_preds_csv, index=False)
 
 

@@ -13,7 +13,6 @@ from ...core.output_contract import NormalizedOutputContract
 from ...layers.embedding import FeatureTensorMap, FeatureTuple
 from ...layers.towers import MultiTaskConfig, MultiTaskTower
 from ..output_head import OutputHead
-from ..rankmixer.block import RankMixerBlock
 
 
 @dataclass
@@ -48,10 +47,6 @@ class HyFormerModel(nn.Module):
             raise ValueError("num_layers must be > 0")
         if config.hidden_factor <= 0:
             raise ValueError("hidden_factor must be > 0")
-        if config.d % token_count != 0:
-            raise ValueError(
-                f"d ({config.d}) must be divisible by HyFormer boost token count ({token_count})"
-            )
         self.layers = nn.ModuleList(
             HyFormerLayer(config.d, token_count, config.num_queries, config.hidden_factor)
             for _ in range(config.num_layers)
@@ -201,7 +196,7 @@ class HyFormerLayer(nn.Module):
         self.k_proj = nn.Linear(d, d)
         self.v_proj = nn.Linear(d, d)
         self.out_proj = nn.Linear(d, d)
-        self.boost = RankMixerBlock(d, token_count, token_count, hidden_factor)
+        self.boost = HyFormerBoostBlock(d, token_count, hidden_factor)
         self.num_queries = num_queries
 
     def forward(
@@ -221,3 +216,22 @@ class HyFormerLayer(nn.Module):
         scores = torch.matmul(q, k.transpose(1, 2)) / (q.shape[-1] ** 0.5)
         decoded = torch.matmul(torch.softmax(scores, dim=2), v)
         return self.out_proj(decoded) + queries
+
+
+class HyFormerBoostBlock(nn.Module):
+    def __init__(self, d: int, token_count: int, hidden_factor: float) -> None:
+        super().__init__()
+        if token_count <= 0:
+            raise ValueError("token_count must be > 0")
+        hidden_dim = max(1, int(d * hidden_factor))
+        self.norm_mixing = nn.LayerNorm(d)
+        self.token_mixing = nn.Linear(d, d)
+        self.ffn_up = nn.Linear(d, hidden_dim)
+        self.ffn_down = nn.Linear(hidden_dim, d)
+        self.norm_ffn = nn.LayerNorm(d)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        context = x.mean(dim=1, keepdim=True)
+        mixed = self.token_mixing(context).expand_as(x)
+        s = self.norm_mixing(mixed + x)
+        return self.norm_ffn(self.ffn_down(F.gelu(self.ffn_up(s))) + s)

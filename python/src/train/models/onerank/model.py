@@ -22,9 +22,10 @@ import torch.nn as nn
 if TYPE_CHECKING:
     from ...core.config import PoolingMode
 
-from ...core.model_output import ModelExecution, ModelOutput, OutputKind
+from ...core.model_output import BINARY_LOGIT, ModelExecution, ModelOutput
 from ...core.output_contract import NormalizedOutputContract
 from ...layers.embedding import FeatureEmbeddings, FeatureTensorMap, FeatureTuple
+from ..output_head import _execute_relation
 from .encoding import OneRankBlock, build_attention_mask
 from .prediction import CrossTaskAttention, matching_score
 
@@ -82,9 +83,9 @@ class OneRankModel(nn.Module):
             self.input_proj = None
 
         # Transformer blocks
-        self.blocks = nn.ModuleList([
-            OneRankBlock(d, n_heads, d_ff, dropout) for _ in range(num_layers)
-        ])
+        self.blocks = nn.ModuleList(
+            [OneRankBlock(d, n_heads, d_ff, dropout) for _ in range(num_layers)]
+        )
 
         # Task-specific situational descriptor projection
         self.sd_proj = nn.Sequential(
@@ -98,6 +99,13 @@ class OneRankModel(nn.Module):
         if output_contract is not None:
             self.output_contract = output_contract
             self.task_names = [tower.name for tower in output_contract.towers]
+            if len(self.task_names) != num_tasks:
+                raise ValueError(
+                    f"OneRank num_tasks ({num_tasks}) must match output_contract towers "
+                    f"({len(self.task_names)})"
+                )
+            relations = {relation.name: relation for relation in output_contract.relations}
+            self._relations = [relations[name] for name in output_contract.relation_order]
         else:
             self.task_names = [f"task_{i}" for i in range(num_tasks)]
 
@@ -108,21 +116,29 @@ class OneRankModel(nn.Module):
         scores, _ = self._shared(x_inputs)
         outputs = ModelOutput()
         for k, name in enumerate(self.task_names):
-            outputs.insert(name, scores[:, k], OutputKind.BinaryLogit)
+            outputs.insert(name, scores[:, k], BINARY_LOGIT)
         return outputs
 
     def forward_execution(self, x_inputs: FeatureTensorMap) -> ModelExecution:
         """Forward pass returning full execution graph."""
         scores, _ = self._shared(x_inputs)
+        nodes = ModelOutput()
+        for k, name in enumerate(self.task_names):
+            nodes.insert(name, scores[:, k], BINARY_LOGIT)
         if hasattr(self, "output_contract"):
             outputs = ModelOutput()
-            for k, name in enumerate(self.task_names):
-                outputs.insert(name, scores[:, k], OutputKind.BinaryLogit)
-            return ModelExecution(nodes=outputs, outputs=outputs)
-        outputs = ModelOutput()
-        for k, name in enumerate(self.task_names):
-            outputs.insert(name, scores[:, k], OutputKind.BinaryLogit)
-        return ModelExecution(nodes=outputs, outputs=outputs)
+            for relation in self._relations:
+                tensor, kind = _execute_relation(relation, nodes)
+                nodes.insert(relation.name, tensor, kind)
+            for output in self.output_contract.outputs:
+                source = nodes.get(output.source)
+                if source is None:
+                    raise ValueError(
+                        f"public output '{output.name}' source '{output.source}' is missing"
+                    )
+                outputs.insert(output.name, source.tensor, source.kind)
+            return ModelExecution(nodes=nodes, outputs=outputs)
+        return ModelExecution(nodes=nodes, outputs=nodes)
 
     def _shared(self, x_inputs: FeatureTensorMap) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute matching scores and task representations.
@@ -139,7 +155,7 @@ class OneRankModel(nn.Module):
         else:
             x = torch.stack(flat, dim=1)
 
-        B, F, d = x.shape
+        B, F, _d = x.shape
         K = self.num_tasks
 
         # Inject task tokens: [B, K, d]
@@ -151,7 +167,7 @@ class OneRankModel(nn.Module):
 
         # Build structured attention mask bias
         mask = build_attention_mask(F, K, h.device)
-        mask_bias = (1.0 - mask) * float("-inf")
+        mask_bias = torch.zeros_like(mask).masked_fill(mask == 0, float("-inf"))
 
         # Transformer blocks
         for block in self.blocks:

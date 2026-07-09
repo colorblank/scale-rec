@@ -33,7 +33,9 @@ from .output_head import _execute_relation
 class GateNU(nn.Module):
     """Gate Neural Unit: ReLU hidden layer followed by gamma-scaled sigmoid gate."""
 
-    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int, gamma: float = 2.0) -> None:
+    def __init__(
+        self, input_dim: int, hidden_dim: int, output_dim: int, gamma: float = 2.0
+    ) -> None:
         super().__init__()
         self.fc1 = nn.Linear(input_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, output_dim)
@@ -51,7 +53,9 @@ class PersonalizedTaskTower(nn.Module):
         self.name = config.name
         self.output_kind = config.output_kind if hasattr(config, "output_kind") else config.kind
         activation = config.activation
-        self._act = activation if isinstance(activation, Activation) else Activation.from_str(activation)
+        self._act = (
+            activation if isinstance(activation, Activation) else Activation.from_str(activation)
+        )
         self.hidden = nn.ModuleDict()
         self.pp_gates = nn.ModuleDict()
         in_dim = input_dim
@@ -116,7 +120,9 @@ class PEPNet(nn.Module):
             self.ep_prior_projs = nn.ModuleDict()
             self.epnet_gates = nn.ModuleDict()
             for info in self.domains:
-                self.ep_prior_projs[info.name] = nn.Linear(len(info.prior_indices), prior_dim, bias=False)
+                self.ep_prior_projs[info.name] = nn.Linear(
+                    len(info.prior_indices), prior_dim, bias=False
+                )
                 self.epnet_gates[info.name] = GateNU(prior_dim, prior_dim, info.dim)
             self.ep_prior_proj = None
             self.epnet_gate = None
@@ -139,7 +145,10 @@ class PEPNet(nn.Module):
         # Shared bottom
         if shared_bottom_dims:
             self.shared_bottom = Mlp(
-                fusion_dim, shared_bottom_dims[:-1], shared_bottom_dims[-1], Activation.RELU,
+                fusion_dim,
+                shared_bottom_dims[:-1],
+                shared_bottom_dims[-1],
+                Activation.RELU,
             )
             shared_dim = shared_bottom_dims[-1]
         else:
@@ -189,7 +198,9 @@ class PEPNet(nn.Module):
             prior_names = domain.get("ep_prior_features", feat_names)
             unknown_prior = [n for n in prior_names if n not in self.embeddings.feature_to_idx]
             if unknown_prior:
-                raise ValueError(f"PEPNet domain '{name}' unknown ep_prior_features: {unknown_prior}")
+                raise ValueError(
+                    f"PEPNet domain '{name}' unknown ep_prior_features: {unknown_prior}"
+                )
             prior_indices = [self.embeddings.feature_to_idx[n] for n in prior_names]
             dim = sum(self._feat_dim[n] for n in feat_names)
             infos.append(_DomainInfo(name, feature_indices, prior_indices, dim))
@@ -268,7 +279,9 @@ class PEPNet(nn.Module):
         for output in self.output_contract.outputs:
             source = nodes.get(output.source)
             if source is None:
-                raise ValueError(f"public output '{output.name}' source '{output.source}' is missing")
+                raise ValueError(
+                    f"public output '{output.name}' source '{output.source}' is missing"
+                )
             outputs.insert(output.name, source.tensor, source.kind)
         return ModelExecution(nodes=nodes, outputs=outputs)
 

@@ -82,9 +82,7 @@ def export_manifest_pair(
         build_model_for_dag = importlib.import_module("train.app.cli").build_model_for_dag
         export_to_safetensors = importlib.import_module("train.app.export").export_to_safetensors
         write_model_manifest = importlib.import_module("train.app.manifest").write_model_manifest
-        task_specs_to_manifest = importlib.import_module(
-            "train.core.task"
-        ).task_specs_to_manifest
+        task_specs_to_manifest = importlib.import_module("train.core.task").task_specs_to_manifest
     except ModuleNotFoundError as exc:
         raise _missing_training_deps(exc) from exc
 

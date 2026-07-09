@@ -97,7 +97,7 @@ class FieldDecomposedAttention(nn.Module):
         V = V.view(B, F, self.n_heads, self.d_head).transpose(1, 2)
 
         # Scaled attention scores
-        scores = torch.einsum("bnid,bnjd->bnij", Q, K) * (self.d_head ** -0.5)
+        scores = torch.einsum("bnid,bnjd->bnij", Q, K) * (self.d_head**-0.5)
 
         # Field-pair interaction modulation:  s(i,j) *= w_{f_i, f_j}
         scores = scores * field_pair_w[None, None, :, :]  # [1, 1, F, F]

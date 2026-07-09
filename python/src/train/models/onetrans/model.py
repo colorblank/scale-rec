@@ -176,24 +176,30 @@ class OneTransBlock(nn.Module):
         if pyramid_tail_tokens == 0:
             raise ValueError("pyramid_tail_tokens must be > 0 when set")
         self.norm1 = _rms_norm(d)
-        self.attn = nn.ModuleDict({
-            "q_shared": nn.Linear(d, d),
-            "k_shared": nn.Linear(d, d),
-            "v_shared": nn.Linear(d, d),
-            "q_non_sequence": nn.ModuleList(nn.Linear(d, d) for _ in range(max_tokens)),
-            "k_non_sequence": nn.ModuleList(nn.Linear(d, d) for _ in range(max_tokens)),
-            "v_non_sequence": nn.ModuleList(nn.Linear(d, d) for _ in range(max_tokens)),
-            "o_proj": nn.Linear(d, d),
-        })
+        self.attn = nn.ModuleDict(
+            {
+                "q_shared": nn.Linear(d, d),
+                "k_shared": nn.Linear(d, d),
+                "v_shared": nn.Linear(d, d),
+                "q_non_sequence": nn.Linear(d, d),
+                "k_non_sequence": nn.Linear(d, d),
+                "v_non_sequence": nn.Linear(d, d),
+                "o_proj": nn.Linear(d, d),
+            }
+        )
         self.norm2 = _rms_norm(d)
-        self.seq_ffn = nn.ModuleDict({
-            "up": nn.Linear(d, d_ff),
-            "down": nn.Linear(d_ff, d),
-        })
-        self.ns_ffn = nn.ModuleDict({
-            "up": nn.ModuleList(nn.Linear(d, d_ff) for _ in range(max_tokens)),
-            "down": nn.ModuleList(nn.Linear(d_ff, d) for _ in range(max_tokens)),
-        })
+        self.seq_ffn = nn.ModuleDict(
+            {
+                "up": nn.Linear(d, d_ff),
+                "down": nn.Linear(d_ff, d),
+            }
+        )
+        self.ns_ffn = nn.ModuleDict(
+            {
+                "up": nn.Linear(d, d_ff),
+                "down": nn.Linear(d_ff, d),
+            }
+        )
         self.d = d
         self.n_heads = n_heads
         self.d_head = d // n_heads
@@ -235,11 +241,11 @@ class OneTransBlock(nn.Module):
         x: torch.Tensor,
         is_sequence: list[bool],
         shared: nn.Linear,
-        per_token: nn.ModuleList,
+        non_sequence: nn.Linear,
     ) -> torch.Tensor:
         outputs = []
         for idx, is_seq in enumerate(is_sequence):
-            layer = shared if is_seq else per_token[idx]
+            layer = shared if is_seq else non_sequence
             outputs.append(layer(x[:, idx, :]).unsqueeze(1))
         return torch.cat(outputs, dim=1)
 
@@ -250,7 +256,7 @@ class OneTransBlock(nn.Module):
             if is_seq:
                 out = self.seq_ffn["down"](F.gelu(self.seq_ffn["up"](token)))
             else:
-                out = self.ns_ffn["down"][idx](F.gelu(self.ns_ffn["up"][idx](token)))
+                out = self.ns_ffn["down"](F.gelu(self.ns_ffn["up"](token)))
             outputs.append(out.unsqueeze(1))
         return torch.cat(outputs, dim=1)
 

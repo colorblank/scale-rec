@@ -110,9 +110,7 @@ def test_training_artifacts_manage_run_best_and_published_versions(tmp_path):
     assert published_data["best_version"] == "epoch-0001-step-000001"
     assert published_data["weights_file"] == "published.safetensors"
     assert published_data["checkpoint_dir"].endswith("checkpoints")
-    assert published_data["embedding_bucket_report_file"].endswith(
-        "embedding_bucket_report.yaml"
-    )
+    assert published_data["embedding_bucket_report_file"].endswith("embedding_bucket_report.yaml")
 
     assert run_data["model_name"] == "demo_model"
     assert run_data["model_version"] == "run-001"

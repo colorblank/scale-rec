@@ -94,7 +94,7 @@ class OneRankBlock(nn.Module):
         v = v.view(B, N, self.n_heads, self.d_head).transpose(1, 2)
 
         # Scaled dot-product
-        scores = torch.matmul(q, k.transpose(-2, -1)) * (self.d_head ** -0.5)
+        scores = torch.matmul(q, k.transpose(-2, -1)) * (self.d_head**-0.5)
         scores = scores + mask_bias[None, None, :, :]
 
         attn = torch.softmax(scores, dim=-1)

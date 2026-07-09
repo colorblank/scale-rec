@@ -10,18 +10,18 @@ use crate::layers::towers::MultiTaskConfig;
 use crate::models::unimixer::tokenizer::FeatureTokenizer;
 use tracing::error;
 
-/// Deep Interest Network (DIN, arXiv:1706.06978)。
-pub mod din;
 /// DCN V2: Improved Deep & Cross Network (arXiv:2008.13535)。
 pub mod dcnv2;
-/// FinalMLP: Two-stream MLP with feature gating and interaction aggregation (arXiv:2304.00902)。
-pub mod finalmlp;
 /// DeepFM 模型。
 pub mod deepfm;
+/// Deep Interest Network (DIN, arXiv:1706.06978)。
+pub mod din;
 /// ESMM 多任务模型。
 pub mod esmm;
 /// FAT: Field-Aware Transformer (KDD 2026, arXiv:2511.12081)。
 pub mod fat;
+/// FinalMLP: Two-stream MLP with feature gating and interaction aggregation (arXiv:2304.00902)。
+pub mod finalmlp;
 /// Full-Mix / RankElastor: parameterized full token mixing with GLU P-FFNs.
 pub mod full_mix;
 /// GDCN + ESMM 混合模型。
