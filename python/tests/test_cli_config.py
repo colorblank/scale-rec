@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+from pathlib import Path
 
 import pytest
 import torch
@@ -126,6 +127,28 @@ def test_demo_parser_includes_pandas_streaming_options():
     assert args.read_chunk_rows == 65536
     assert args.fast_no_na is True
     assert args.memory_map is True
+
+
+def test_demo_parser_defaults_use_repo_root_paths():
+    from train.app.main import build_parser
+
+    repo_root = Path(__file__).resolve().parents[2]
+    args = build_parser().parse_args(
+        [
+            "demo",
+            "--model-config",
+            "examples/models/gdcn_esmm.yaml",
+            "--run-name",
+            "demo_train",
+            "--data",
+            "train.tsv",
+        ]
+    )
+
+    assert args.artifact_dir == str(repo_root / "python" / "artifacts" / "demo")
+    assert args.feature_config == str(
+        repo_root / "examples" / "shared" / "feature_config_demo.yaml"
+    )
 
 
 def test_demo_parser_accepts_independent_eval_data():

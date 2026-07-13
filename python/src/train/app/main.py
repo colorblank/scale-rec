@@ -55,7 +55,7 @@ from .cli import (
 )
 from .data import validate_matching_text_format
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[4]
 EXAMPLES_DIR = REPO_ROOT / "examples"
 SHARED_EXAMPLES_DIR = EXAMPLES_DIR / "shared"
 MODEL_EXAMPLES_DIR = EXAMPLES_DIR / "models"
